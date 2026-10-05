@@ -334,15 +334,6 @@ jobs:
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Setup Flatpak and verification tools
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder squashfs-tools
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-          flatpak install -y --user flathub org.electronjs.Electron2.BaseApp//25.08
-
       - name: Build application
         run: cd apps/desktop && npm run build
         env:
@@ -368,9 +359,7 @@ jobs:
         with:
           name: linux-builds
           path: |
-            apps/desktop/dist/*.AppImage
             apps/desktop/dist/*.deb
-            apps/desktop/dist/*.flatpak
             apps/desktop/dist/*.yml
 
   # Finalize macOS notarization (runs in parallel with Windows/Linux builds)
@@ -449,12 +438,12 @@ jobs:
           find dist/macos-intel-builds dist/macos-arm64-builds -type f \( -name "*.zip" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
           # Copy Windows and Linux artifacts (including blockmap for delta updates)
-          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
           # Validate that at least one artifact was copied
-          artifact_count=$(find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) | wc -l)
+          artifact_count=$(find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.deb" \) | wc -l)
           if [ "$artifact_count" -eq 0 ]; then
-            echo "::error::No build artifacts found! Expected .dmg, .zip, .exe, .AppImage, .deb, or .flatpak files."
+            echo "::error::No build artifacts found! Expected .dmg, .zip, .exe, or .deb files."
             exit 1
           fi
 
@@ -592,7 +581,7 @@ jobs:
           find dist/macos-intel-builds dist/macos-arm64-builds -type f \( -name "*.zip" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
           # Copy Windows and Linux artifacts (including blockmap for delta updates)
-          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
       # Merge macOS manifests (same logic as real release)
       - name: Merge macOS manifests
@@ -639,7 +628,7 @@ jobs:
 
           echo "### Build Artifacts" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          find dist -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) >> $GITHUB_STEP_SUMMARY
+          find dist -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.deb" \) >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
 

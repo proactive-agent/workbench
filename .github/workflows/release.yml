@@ -273,14 +273,6 @@ jobs:
       - name: Setup Node.js and install dependencies
         uses: ./.github/actions/setup-node-frontend
 
-      - name: Setup Flatpak and verification tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder squashfs-tools
-          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y --user flathub org.freedesktop.Platform//25.08 org.freedesktop.Sdk//25.08
-          flatpak install -y --user flathub org.electronjs.Electron2.BaseApp//25.08
-
       - name: Build application
         run: cd apps/desktop && npm run build
         env:
@@ -304,9 +296,7 @@ jobs:
         with:
           name: linux-builds
           path: |
-            apps/desktop/dist/*.AppImage
             apps/desktop/dist/*.deb
-            apps/desktop/dist/*.flatpak
             apps/desktop/dist/*.yml
             apps/desktop/dist/*.blockmap
 
@@ -384,17 +374,17 @@ jobs:
           find dist/macos-intel-builds dist/macos-arm64-builds -type f \( -name "*.zip" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
           # Copy Windows and Linux artifacts
-          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+          find dist/windows-builds dist/linux-builds -type f \( -name "*.exe" -o -name "*.deb" -o -name "*.yml" -o -name "*.blockmap" \) -exec cp {} release-assets/ \; 2>/dev/null || true
 
           # Validate that installer files exist
-          installer_count=$(find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) | wc -l)
+          installer_count=$(find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.deb" \) | wc -l)
           if [ "$installer_count" -eq 0 ]; then
-            echo "::error::No installer artifacts found! Expected .dmg, .zip, .exe, .AppImage, .deb, or .flatpak files."
+            echo "::error::No installer artifacts found! Expected .dmg, .zip, .exe, or .deb files."
             exit 1
           fi
 
           echo "Found $installer_count binary artifact(s):"
-          find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.AppImage" -o -name "*.deb" -o -name "*.flatpak" \) -exec basename {} \;
+          find release-assets -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.exe" -o -name "*.deb" \) -exec basename {} \;
 
       # Merge macOS manifests from Intel and ARM64 builds
       # See: https://github.com/electron-userland/electron-builder/issues/5592
@@ -528,7 +518,6 @@ jobs:
 
             **Full Changelog**: https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md
 
-            _VirusTotal scan results will be added automatically after release._
           files: release-assets/*
           draft: false
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}

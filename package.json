@@ -2,7 +2,7 @@
   "name": "auto-claude-workspace",
   "version": "2.8.0-beta.6",
   "description": "Autonomous multi-agent coding framework powered by Claude AI",
-  "license": "AGPL-3.0",
+  "license": "UNLICENSED",
   "author": "Auto Claude Team",
   "workspaces": [
     "apps/*",

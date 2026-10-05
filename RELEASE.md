@@ -122,10 +122,9 @@ Once the PR is approved and merged to `main`, GitHub Actions will automatically:
    - macOS Intel (x64) - code signed & notarized
    - macOS Apple Silicon (arm64) - code signed & notarized
    - Windows (NSIS installer) - code signed
-   - Linux (AppImage + .deb)
-7. **Scan binaries** with VirusTotal
-8. **Create GitHub release** with release notes from CHANGELOG.md
-9. **Update README** with new version badge and download links
+   - Linux (.deb)
+7. **Create GitHub release** with release notes from CHANGELOG.md
+8. **Update README** with new version badge and download links
 
 ### Step 5: Verify
 
@@ -249,5 +248,4 @@ git push origin v2.8.0
 - All macOS binaries are code signed with Apple Developer certificate
 - All macOS binaries are notarized by Apple
 - Windows binaries are code signed
-- All binaries are scanned with VirusTotal
 - SHA256 checksums are generated for all artifacts

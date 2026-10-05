@@ -192,21 +192,9 @@ If electron-rebuild fails on Windows, install Visual Studio Build Tools:
 2. Select "Desktop development with C++" workload
 3. Restart terminal and run `npm install` again
 
-## Git Hooks
+## Commit Message Format
 
-This project uses Husky for Git hooks that run automatically:
-
-### Pre-commit Hook
-
-Runs before each commit:
-- **lint-staged**: Lints staged `.ts`/`.tsx` files
-- **typecheck**: TypeScript type checking
-- **lint**: ESLint checks
-- **npm audit**: Security vulnerability check (high severity)
-
-### Commit Message Format
-
-We use [Conventional Commits](https://www.conventionalcommits.org/). Your commit messages must follow this format:
+We use [Conventional Commits](https://www.conventionalcommits.org/). Commit messages should follow this format:
 
 ```
 type(scope): description

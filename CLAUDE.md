@@ -298,7 +298,6 @@ Full PTY-based terminal integration:
 ### Frontend
 - **Linting:** Biome (`npm run lint` / `npm run lint:fix`)
 - **Type checking:** `npm run typecheck` (strict mode)
-- **Pre-commit:** Husky + lint-staged runs Biome on staged `.ts/.tsx/.js/.jsx/.json`
 - **Testing:** Vitest + React Testing Library + jsdom
 
 

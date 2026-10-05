@@ -144,9 +144,7 @@ Aperant/
 
 ## Development
 
-Want to build and run from source? See [CONTRIBUTING.md](CONTRIBUTING.md) for complete development setup instructions. (Note: code contributions are paused during the 3.0 rebuild — see [Contributing](#contributing) below.)
-
-For Linux-specific builds (Flatpak, AppImage), see [guides/linux.md](guides/linux.md).
+Want to build and run from source? See [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md) for complete development setup instructions. (Note: code contributions are paused during the 3.0 rebuild — see [Contributing](#contributing) below.)
 
 ---
 
@@ -176,7 +174,6 @@ All releases are:
 | `npm run package:mac` | Package for macOS |
 | `npm run package:win` | Package for Windows |
 | `npm run package:linux` | Package for Linux |
-| `npm run package:flatpak` | Package as Flatpak (see [guides/linux.md](guides/linux.md)) |
 | `npm run lint` | Run linter |
 | `npm test` | Run frontend tests |
 
@@ -191,7 +188,7 @@ All releases are:
 - 💡 [Share ideas and feature requests](https://github.com/AndyMik90/Aperant/discussions) for 3.0
 - 💬 [Join the Discord](https://discord.gg/KCXaPBr4Dj) to follow development and influence the roadmap
 
-When contributions reopen, [CONTRIBUTING.md](CONTRIBUTING.md) covers development setup, code style, testing, and the pull request process.
+When contributions reopen, [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md) covers development setup, code style, testing, and the pull request process.
 
 ---
 

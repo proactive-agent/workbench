@@ -13,7 +13,7 @@
     "name": "Auto Claude Team",
     "email": "119136210+AndyMik90@users.noreply.github.com"
   },
-  "license": "AGPL-3.0",
+  "license": "UNLICENSED",
   "engines": {
     "node": ">=24.0.0",
     "npm": ">=10.0.0"
@@ -32,9 +32,7 @@
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
     "package:linux": "electron-builder --linux",
-    "package:flatpak": "electron-builder --linux flatpak",
     "verify:linux": "node scripts/verify-linux-packages.cjs dist",
-    "test:verify-linux": "node --test scripts/verify-linux-packages.test.mjs",
     "start:packaged:mac": "open \"dist/mac-arm64/Auto Claude.app\" || open \"dist/mac/Auto Claude.app\"",
     "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto Claude.exe\"",
     "start:packaged:linux": "./dist/linux-unpacked/auto-claude",
@@ -143,9 +141,7 @@
     "electron": "40.0.0",
     "electron-builder": "^26.8.1",
     "electron-vite": "^5.0.0",
-    "husky": "^9.1.7",
     "jsdom": "^27.3.0",
-    "lint-staged": "^16.4.0",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
@@ -225,39 +221,15 @@
     "win": {
       "icon": "resources/icon.ico",
       "target": [
-        "nsis",
-        "zip"
+        "nsis"
       ]
     },
     "linux": {
       "icon": "resources/icons",
       "target": [
-        "AppImage",
-        "deb",
-        "flatpak"
+        "deb"
       ],
       "category": "Development"
-    },
-    "flatpak": {
-      "runtime": "org.freedesktop.Platform",
-      "runtimeVersion": "25.08",
-      "sdk": "org.freedesktop.Sdk",
-      "base": "org.electronjs.Electron2.BaseApp",
-      "baseVersion": "25.08",
-      "finishArgs": [
-        "--socket=wayland",
-        "--socket=x11",
-        "--share=ipc",
-        "--share=network",
-        "--device=dri",
-        "--filesystem=home",
-        "--talk-name=org.freedesktop.Notifications"
-      ]
     }
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,json}": [
-      "biome check --write --no-errors-on-unmatched"
-    ]
   }
 }
