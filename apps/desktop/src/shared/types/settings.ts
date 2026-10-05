@@ -4,7 +4,6 @@
 
 import type { NotificationSettings, MemoryEmbeddingProvider } from './project';
 import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
-import type { SupportedLanguage } from '../constants/i18n';
 import type { ProviderAccount, BuiltinProvider } from './provider-account';
 import type { ProviderModelSpec } from '../constants/models';
 
@@ -337,8 +336,6 @@ export interface AppSettings {
   _migratedDefaultModelSync?: boolean;
   _migratedUltrathinkToHigh?: boolean;
   _migratedToPerProviderConfig?: boolean;
-  // Language preference for UI (i18n)
-  language?: SupportedLanguage;
   // Developer tools preferences
   preferredIDE?: SupportedIDE;
   customIDEPath?: string;      // For 'custom' IDE

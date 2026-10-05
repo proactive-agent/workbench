@@ -14,18 +14,6 @@ import enTaskReview from './locales/en/taskReview.json';
 import enTerminal from './locales/en/terminal.json';
 import enErrors from './locales/en/errors.json';
 
-// Import French translation resources
-import frCommon from './locales/fr/common.json';
-import frNavigation from './locales/fr/navigation.json';
-import frSettings from './locales/fr/settings.json';
-import frTasks from './locales/fr/tasks.json';
-import frWelcome from './locales/fr/welcome.json';
-import frOnboarding from './locales/fr/onboarding.json';
-import frDialogs from './locales/fr/dialogs.json';
-import frGitlab from './locales/fr/gitlab.json';
-import frTaskReview from './locales/fr/taskReview.json';
-import frTerminal from './locales/fr/terminal.json';
-import frErrors from './locales/fr/errors.json';
 
 export const defaultNS = 'common';
 
@@ -42,19 +30,6 @@ export const resources = {
     taskReview: enTaskReview,
     terminal: enTerminal,
     errors: enErrors
-  },
-  fr: {
-    common: frCommon,
-    navigation: frNavigation,
-    settings: frSettings,
-    tasks: frTasks,
-    welcome: frWelcome,
-    onboarding: frOnboarding,
-    dialogs: frDialogs,
-    gitlab: frGitlab,
-    taskReview: frTaskReview,
-    terminal: frTerminal,
-    errors: frErrors
   }
 } as const;
 
@@ -62,7 +37,7 @@ i18n
   .use(initReactI18next)
   .init({
     resources,
-    lng: 'en', // Default language (will be overridden by settings)
+    lng: 'en',
     fallbackLng: 'en',
     defaultNS,
     ns: ['common', 'navigation', 'settings', 'tasks', 'welcome', 'onboarding', 'dialogs', 'gitlab', 'taskReview', 'terminal', 'errors'],

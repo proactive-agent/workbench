@@ -32,7 +32,7 @@ Auto Claude is a desktop application (+ CLI) where users describe a goal and AI 
 
 **Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `apps/desktop/src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
 
-**i18n required** — All frontend user-facing text uses `react-i18next` translation keys. Hardcoded strings in JSX/TSX break localization for non-English users. Add keys to both `en/*.json` and `fr/*.json`.
+**i18n required** — All frontend user-facing text uses `react-i18next` translation keys. English is the only supported language; add keys to `en/*.json`.
 
 **Platform abstraction** — Never use `process.platform` directly. Import from `apps/desktop/src/main/platform/`. CI tests all three platforms.
 
@@ -126,7 +126,7 @@ autonomous-coding/
 │           │   ├── styles/      # CSS / Tailwind styles
 │           │   └── App.tsx      # Root component
 │           ├── shared/          # Shared types, i18n, constants, utils
-│           │   ├── i18n/locales/# en/*.json, fr/*.json
+│           │   ├── i18n/locales/# en/*.json
 │           │   ├── constants/   # themes.ts, etc.
 │           │   ├── types/       # 19+ type definition files
 │           │   └── utils/       # ANSI sanitizer, shell escape, provider detection
@@ -304,7 +304,7 @@ Full PTY-based terminal integration:
 
 ## i18n Guidelines
 
-All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/{en,fr}/*.json`
+All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/en/*.json`
 
 **Namespaces:** `common`, `navigation`, `settings`, `dialogs`, `tasks`, `errors`, `onboarding`, `welcome`
 
@@ -319,7 +319,7 @@ const { t } = useTranslation(['navigation', 'common']);
 <span>{t('errors:task.parseError', { error })}</span>
 ```
 
-When adding new UI text: add keys to ALL language files, use `namespace:section.key` format.
+When adding new UI text: add keys to the `en` locale files, use `namespace:section.key` format.
 
 ## Cross-Platform
 

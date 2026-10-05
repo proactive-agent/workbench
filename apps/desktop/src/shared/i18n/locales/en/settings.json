@@ -13,10 +13,6 @@
       "title": "Display",
       "description": "Adjust the size of UI elements"
     },
-    "language": {
-      "title": "Language",
-      "description": "Choose your preferred language"
-    },
     "devtools": {
       "title": "Developer Tools",
       "description": "IDE and terminal preferences"
@@ -176,10 +172,6 @@
     "ollamaNoModels": "No Ollama models installed",
     "ollamaNoModelsHint": "Install models in Agent Settings → Ollama tab",
     "apiKeyOnly": "API key"
-  },
-  "language": {
-    "label": "Interface Language",
-    "description": "Select the language for the application interface"
   },
   "scale": {
     "presets": "Scale Presets",
