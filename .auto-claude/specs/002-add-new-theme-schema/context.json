@@ -1,5 +1,5 @@
 {
-  "task_description": "Add a new color theme to the application with customizable CSS variables for both light and dark modes. The theme requires a new entry in COLOR_THEMES, CSS variable blocks in globals.css, and an addition to the ColorTheme union type.",
+  "task_description": "Add a new color theme to the application with user-customizable CSS variables for light and dark modes. The theme requires entries in themes.ts, globals.css, and the ColorTheme type.",
   "scoped_services": ["desktop"],
   "files_to_modify": [
     "apps/desktop/src/shared/constants/themes.ts",
