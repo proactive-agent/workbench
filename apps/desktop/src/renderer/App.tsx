@@ -66,8 +66,8 @@ import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { COLOR_THEMES, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
-import type { Task, Project, ColorTheme } from '../shared/types';
+import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
+import type { Task, Project } from '../shared/types';
 import { ProjectTabBar } from './components/ProjectTabBar';
 import { AddProjectModal } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
@@ -470,12 +470,8 @@ export function App() {
     };
 
     // Apply color theme via data-theme attribute
-    // Validate colorTheme against known themes, fallback to 'default' if invalid
-    const validThemeIds = COLOR_THEMES.map((t) => t.id);
-    const rawColorTheme = settings.colorTheme ?? 'default';
-    const colorTheme: ColorTheme = validThemeIds.includes(rawColorTheme as ColorTheme)
-      ? (rawColorTheme as ColorTheme)
-      : 'default';
+    // Validate colorTheme against known themes, fallback to 'default' if invalid/removed
+    const colorTheme = sanitizeColorTheme(settings.colorTheme);
 
     if (colorTheme === 'default') {
       root.removeAttribute('data-theme');

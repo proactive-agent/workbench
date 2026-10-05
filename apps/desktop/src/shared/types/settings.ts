@@ -9,7 +9,7 @@ import type { ProviderAccount, BuiltinProvider } from './provider-account';
 import type { ProviderModelSpec } from '../constants/models';
 
 // Color theme types for multi-theme support
-export type ColorTheme = 'default' | 'dusk' | 'lime' | 'ocean' | 'retro' | 'neo' | 'forest';
+export type ColorTheme = 'default' | 'claude';
 
 // Developer tools preferences - IDE and terminal selection
 // Comprehensive list based on Stack Overflow Developer Survey 2024, JetBrains Survey, and market research

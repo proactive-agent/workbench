@@ -334,9 +334,9 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
       <div
         ref={setNodeRef}
         className={cn(
-          'flex flex-col rounded-xl border border-white/5 bg-linear-to-b from-secondary/30 to-transparent backdrop-blur-sm transition-all duration-200',
+          'flex flex-col rounded-xl border border-white/5 bg-(image:--column-bg) backdrop-blur-sm transition-all duration-200',
           getColumnBorderColor(),
-          'border-t-2',
+          'border-t-(length:--column-top-width)',
           isOver && 'drop-zone-highlight'
         )}
         style={{ width: COLLAPSED_COLUMN_WIDTH_REM, minWidth: COLLAPSED_COLUMN_WIDTH_REM, maxWidth: COLLAPSED_COLUMN_WIDTH_REM }}
@@ -387,10 +387,10 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
       <div
         ref={setNodeRef}
         className={cn(
-          'flex flex-1 flex-col rounded-xl border border-white/5 bg-linear-to-b from-secondary/30 to-transparent backdrop-blur-sm transition-all duration-200',
+          'flex flex-1 flex-col rounded-xl border border-white/5 bg-(image:--column-bg) backdrop-blur-sm transition-all duration-200',
           !columnWidth && 'min-w-80 max-w-[30rem]',
           getColumnBorderColor(),
-          'border-t-2',
+          'border-t-(length:--column-top-width)',
           isOver && 'drop-zone-highlight'
         )}
       >

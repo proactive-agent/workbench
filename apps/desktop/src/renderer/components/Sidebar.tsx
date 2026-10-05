@@ -301,11 +301,11 @@ export function Sidebar({
         disabled={!selectedProjectId}
         aria-keyshortcuts={item.shortcut}
         className={cn(
-          'flex w-full items-center rounded-lg text-sm transition-all duration-200',
-          'hover:bg-accent hover:text-accent-foreground',
+          'flex w-full items-center rounded-(--nav-item-radius) py-(--nav-item-py) text-sm transition-all duration-200',
+          'hover:bg-nav-hover hover:text-nav-hover-foreground',
           'disabled:pointer-events-none disabled:opacity-50',
-          isActive && 'bg-accent text-accent-foreground',
-          isCollapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
+          isActive && 'bg-nav-active text-nav-active-foreground hover:bg-nav-active hover:text-nav-active-foreground',
+          isCollapsed ? 'justify-center px-2' : 'gap-(--nav-item-gap) px-3'
         )}
       >
         <Icon className="h-4 w-4 shrink-0" />
@@ -354,7 +354,7 @@ export function Sidebar({
           isCollapsed ? "justify-center px-2" : "px-4"
         )}>
           {!isCollapsed && (
-            <span className="electron-no-drag text-lg font-bold text-primary">Aperant</span>
+            <span className="electron-no-drag font-heading text-lg font-bold text-primary">Aperant</span>
           )}
         </div>
 
@@ -395,7 +395,7 @@ export function Sidebar({
             {/* Project Section */}
             <div>
               {!isCollapsed && (
-                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <h3 className="nav-section-label mb-2 px-3 text-xs">
                   {t('sections.project')}
                 </h3>
               )}

@@ -1,7 +1,7 @@
 import { Check, Sun, Moon, Monitor } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Label } from '../ui/label';
-import { COLOR_THEMES } from '../../../shared/constants';
+import { COLOR_THEMES, sanitizeColorTheme } from '../../../shared/constants';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { ColorTheme, AppSettings } from '../../../shared/types';
 
@@ -20,7 +20,7 @@ interface ThemeSelectorProps {
 export function ThemeSelector({ settings, onSettingsChange }: ThemeSelectorProps) {
   const updateStoreSettings = useSettingsStore((state) => state.updateSettings);
 
-  const currentColorTheme = settings.colorTheme || 'default';
+  const currentColorTheme = sanitizeColorTheme(settings.colorTheme);
   const currentMode = settings.theme;
   const isDark = currentMode === 'dark' ||
     (currentMode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);

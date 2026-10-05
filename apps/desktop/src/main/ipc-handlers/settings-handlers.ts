@@ -8,7 +8,7 @@ import { is } from '@electron-toolkit/utils';
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-import { IPC_CHANNELS, DEFAULT_APP_SETTINGS, DEFAULT_AGENT_PROFILES, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, sanitizeThinkingLevel, VALID_THINKING_LEVELS } from '../../shared/constants';
+import { IPC_CHANNELS, DEFAULT_APP_SETTINGS, DEFAULT_AGENT_PROFILES, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, sanitizeThinkingLevel, VALID_THINKING_LEVELS, sanitizeColorTheme } from '../../shared/constants';
 import { setAppLanguage } from '../app-language';
 import type {
   AppSettings,
@@ -363,6 +363,13 @@ export function registerSettingsHandlers(
           settings.providerAgentConfig = perProvider;
         }
         settings._migratedToPerProviderConfig = true;
+        needsSave = true;
+      }
+
+      // Migration: Reset color themes that no longer exist (removed in earlier releases) to 'default'
+      const sanitizedColorTheme = sanitizeColorTheme(settings.colorTheme);
+      if (settings.colorTheme !== undefined && settings.colorTheme !== sanitizedColorTheme) {
+        settings.colorTheme = sanitizedColorTheme;
         needsSave = true;
       }
 
