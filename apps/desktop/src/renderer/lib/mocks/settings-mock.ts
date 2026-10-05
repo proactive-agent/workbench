@@ -49,6 +49,8 @@ export const settingsMock = {
   downloadStableUpdate: async () => ({ success: true }),
   installAppUpdate: () => { console.warn('[browser-mock] installAppUpdate called'); },
   getDownloadedAppUpdate: async () => ({ success: true, data: null }),
+  getAppIcon: async () => null,
+  onAppIconChanged: () => () => {},
 
   // App Update Event Listeners (no-op in browser mode)
   onAppUpdateAvailable: () => () => {},

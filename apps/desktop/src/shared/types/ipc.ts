@@ -711,6 +711,10 @@ export interface ElectronAPI {
   installAppUpdate: () => void;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
 
+  // Rotating app icon (<userData>/app-icons); null when no custom icons are present
+  getAppIcon: () => Promise<string | null>;
+  onAppIconChanged: (callback: (dataUrl: string | null) => void) => () => void;
+
   // Electron app update event listeners
   onAppUpdateAvailable: (
     callback: (info: AppUpdateAvailableEvent) => void

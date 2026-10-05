@@ -48,7 +48,7 @@ for (const envPath of possibleEnvPaths) {
   }
 }
 
-import { app, BrowserWindow, shell, nativeImage, session, screen, Menu, MenuItem } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, nativeImage, session, screen, Menu, MenuItem, type NativeImage } from 'electron';
 import { join } from 'path';
 import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
@@ -552,9 +552,9 @@ app.whenReady().then(() => {
   createWindow();
 
   // Rotate the app icon through <userData>/app-icons/1.png … n.png (if any)
-  const applyAppIcon = (iconPath: string): boolean => {
+  const applyAppIcon = (iconPath: string): NativeImage | null => {
     const icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) return false;
+    if (icon.isEmpty()) return null;
     if (isMacOS()) {
       app.dock?.setIcon(icon);
     } else {
@@ -562,13 +562,26 @@ app.whenReady().then(() => {
         window.setIcon(icon);
       }
     }
-    return true;
+    return icon;
   };
+  // The sidebar header shows the same rotating icon (null = default "Aperant" wordmark)
+  let headerIconDataUrl: string | null = null;
+  const sendHeaderIcon = (dataUrl: string | null): void => {
+    headerIconDataUrl = dataUrl;
+    mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, dataUrl);
+  };
+  ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrl);
   appIconRotator = new AppIconRotator({
     iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
-    applyIcon: applyAppIcon,
+    applyIcon: (iconPath) => {
+      const icon = applyAppIcon(iconPath);
+      if (!icon) return false;
+      sendHeaderIcon(icon.resize({ height: 96 }).toDataURL());
+      return true;
+    },
     restoreDefaultIcon: () => {
       applyAppIcon(getIconPath());
+      sendHeaderIcon(null);
     },
   });
   appIconRotator.start();

@@ -183,6 +183,8 @@ export const IPC_CHANNELS = {
 
   // App info
   APP_VERSION: 'app:version',
+  APP_ICON_GET: 'app:icon:get',          // Current rotating app icon (data URL or null)
+  APP_ICON_CHANGED: 'app:icon:changed',  // Rotating app icon changed (main -> renderer)
 
   // Shell operations
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',

@@ -106,6 +106,25 @@ export function Sidebar({
   onViewChange
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
+
+  // Rotating header icon from <userData>/app-icons (null = show the wordmark)
+  const [headerIcon, setHeaderIcon] = useState<string | null>(null);
+  useEffect(() => {
+    let active = true;
+    window.electronAPI
+      .getAppIcon()
+      .then((dataUrl) => {
+        if (active) setHeaderIcon(dataUrl);
+      })
+      .catch(() => {
+        // Keep the wordmark if the icon can't be fetched
+      });
+    const unsubscribe = window.electronAPI.onAppIconChanged(setHeaderIcon);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
   const projects = useProjectStore((state) => state.projects);
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
   const settings = useSettingsStore((state) => state.settings);
@@ -351,9 +370,12 @@ export function Sidebar({
           "electron-drag flex h-14 items-center pt-6 transition-all duration-300",
           isCollapsed ? "justify-center px-2" : "px-4"
         )}>
-          {!isCollapsed && (
-            <span className="electron-no-drag font-heading text-lg font-bold text-primary">Aperant</span>
-          )}
+          {!isCollapsed &&
+            (headerIcon ? (
+              <img src={headerIcon} alt="Aperant" className="electron-no-drag h-8 w-auto object-contain" />
+            ) : (
+              <span className="electron-no-drag font-heading text-lg font-bold text-primary">Aperant</span>
+            ))}
         </div>
 
         <Separator className="mt-2" />
