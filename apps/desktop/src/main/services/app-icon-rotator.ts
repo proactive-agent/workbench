@@ -1,20 +1,17 @@
 /**
- * App Icon Rotator
- * ================
+ * Icon Rotator
+ * ============
  *
- * Cycles the application icon through user-provided images. Drop numbered PNGs
- * (1.png, 2.png, …, n.png) into the icons folder (`<userData>/app-icons`) and the
- * icon advances to the next one every interval, wrapping back to 1.png.
+ * Cycles the sidebar header icon through numbered PNGs (1.png, 2.png, …, n.png)
+ * in `<userData>/header-icons/{dark,light}`, advancing every interval and
+ * wrapping back to 1.png.
  *
  * The folder is re-read on every tick, so icons can be added or removed while the
- * app is running. When the folder is empty the default app icon is restored.
+ * app is running. When the folder is empty the default is restored.
  */
 
 import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-
-/** Folder name (inside userData) that holds the rotation icons. */
-export const APP_ICONS_DIR_NAME = 'app-icons';
 
 /** Folder name (inside userData) that holds the sidebar header icons. */
 export const HEADER_ICONS_DIR_NAME = 'header-icons';
@@ -22,9 +19,6 @@ export const HEADER_ICONS_DIR_NAME = 'header-icons';
 /** Header icons have one set per appearance mode: header-icons/dark and header-icons/light. */
 export const HEADER_ICON_MODES = ['dark', 'light'] as const;
 export type HeaderIconMode = (typeof HEADER_ICON_MODES)[number];
-
-/** How often the app (window/dock) icon advances. */
-export const APP_ICON_ROTATION_INTERVAL_MS = 10_000;
 
 /** How often the sidebar header icon advances. */
 export const HEADER_ICON_ROTATION_INTERVAL_MS = 5_000;
@@ -103,7 +97,7 @@ export class AppIconRotator {
       console.warn('[AppIconRotator] Could not create icons folder:', error);
     }
     this.tick();
-    this.timer = setInterval(() => this.tick(), this.deps.intervalMs ?? APP_ICON_ROTATION_INTERVAL_MS);
+    this.timer = setInterval(() => this.tick(), this.deps.intervalMs ?? HEADER_ICON_ROTATION_INTERVAL_MS);
   }
 
   stop(): void {

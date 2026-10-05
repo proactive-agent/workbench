@@ -48,7 +48,7 @@ for (const envPath of possibleEnvPaths) {
   }
 }
 
-import { app, BrowserWindow, ipcMain, shell, nativeImage, session, screen, Menu, MenuItem, type NativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, nativeImage, session, screen, Menu, MenuItem } from 'electron';
 import { join } from 'path';
 import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
@@ -56,7 +56,6 @@ import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
 import {
   AppIconRotator,
-  APP_ICONS_DIR_NAME,
   HEADER_ICON_MODES,
   HEADER_ICON_ROTATION_INTERVAL_MS,
   HEADER_ICONS_DIR_NAME,
@@ -190,7 +189,6 @@ function getIconPath(): string {
 
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
-let appIconRotator: AppIconRotator | null = null;
 let headerIconRotators: AppIconRotator[] = [];
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
@@ -560,11 +558,10 @@ app.whenReady().then(() => {
   // Create window
   createWindow();
 
-  // Seed <userData>/app-icons and <userData>/header-icons with the icons bundled
-  // in resources/ (first run only; user icons are never overwritten)
+  // Seed <userData>/header-icons/{dark,light} with the icons bundled in resources/
+  // (first run only; user icons are never overwritten)
   const bundledResourcesPath = is.dev ? join(__dirname, '../../resources') : process.resourcesPath;
-  const iconDirNames = [APP_ICONS_DIR_NAME, ...HEADER_ICON_MODES.map((mode) => join(HEADER_ICONS_DIR_NAME, mode))];
-  for (const dirName of iconDirNames) {
+  for (const dirName of HEADER_ICON_MODES.map((mode) => join(HEADER_ICONS_DIR_NAME, mode))) {
     try {
       seedRotationIcons(join(bundledResourcesPath, dirName), join(app.getPath('userData'), dirName));
     } catch (error) {
@@ -572,22 +569,9 @@ app.whenReady().then(() => {
     }
   }
 
-  // Rotate the app icon through <userData>/app-icons/1.png … n.png (if any)
-  const applyAppIcon = (iconPath: string): NativeImage | null => {
-    const icon = nativeImage.createFromPath(iconPath);
-    if (icon.isEmpty()) return null;
-    if (isMacOS()) {
-      app.dock?.setIcon(icon);
-    } else {
-      for (const window of BrowserWindow.getAllWindows()) {
-        window.setIcon(icon);
-      }
-    }
-    return icon;
-  };
   // Rotate the sidebar header icons through <userData>/header-icons/{dark,light}/1.png … n.png.
   // Both sets rotate in step; the renderer shows the one matching the appearance mode
-  // (null = default "Aperant" wordmark)
+  // (null = no icons in that set)
   const headerIconDataUrls: Record<HeaderIconMode, string | null> = { dark: null, light: null };
   const sendHeaderIcon = (mode: HeaderIconMode, dataUrl: string | null): void => {
     headerIconDataUrls[mode] = dataUrl;
@@ -610,14 +594,6 @@ app.whenReady().then(() => {
   );
   for (const rotator of headerIconRotators) rotator.start();
 
-  appIconRotator = new AppIconRotator({
-    iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
-    applyIcon: (iconPath) => applyAppIcon(iconPath) !== null,
-    restoreDefaultIcon: () => {
-      applyAppIcon(getIconPath());
-    },
-  });
-  appIconRotator.start();
 
   // Pre-warm CLI tool cache in background (non-blocking)
   // This ensures CLI detection is done before user needs it
@@ -761,7 +737,6 @@ app.on('before-quit', (event) => {
   // Stop synchronous services immediately
   stopPeriodicUpdates();
   rateLimitResumeScheduler.dispose();
-  appIconRotator?.stop();
   for (const rotator of headerIconRotators) rotator.stop();
 
   const usageMonitor = getUsageMonitor();

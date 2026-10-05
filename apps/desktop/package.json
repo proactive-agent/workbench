@@ -190,10 +190,6 @@
         "to": "prompts"
       },
       {
-        "from": "resources/app-icons",
-        "to": "app-icons"
-      },
-      {
         "from": "resources/header-icons",
         "to": "header-icons"
       },
