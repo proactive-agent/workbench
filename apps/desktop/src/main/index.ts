@@ -54,6 +54,7 @@ import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
+import { AppIconRotator, APP_ICONS_DIR_NAME } from './services/app-icon-rotator';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -181,6 +182,7 @@ function getIconPath(): string {
 
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
+let appIconRotator: AppIconRotator | null = null;
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
 
@@ -549,6 +551,28 @@ app.whenReady().then(() => {
   // Create window
   createWindow();
 
+  // Rotate the app icon through <userData>/app-icons/1.png … n.png (if any)
+  const applyAppIcon = (iconPath: string): boolean => {
+    const icon = nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) return false;
+    if (isMacOS()) {
+      app.dock?.setIcon(icon);
+    } else {
+      for (const window of BrowserWindow.getAllWindows()) {
+        window.setIcon(icon);
+      }
+    }
+    return true;
+  };
+  appIconRotator = new AppIconRotator({
+    iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
+    applyIcon: applyAppIcon,
+    restoreDefaultIcon: () => {
+      applyAppIcon(getIconPath());
+    },
+  });
+  appIconRotator.start();
+
   // Pre-warm CLI tool cache in background (non-blocking)
   // This ensures CLI detection is done before user needs it
   // Include all commonly used tools to prevent sync blocking on first use
@@ -691,6 +715,7 @@ app.on('before-quit', (event) => {
   // Stop synchronous services immediately
   stopPeriodicUpdates();
   rateLimitResumeScheduler.dispose();
+  appIconRotator?.stop();
 
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();
