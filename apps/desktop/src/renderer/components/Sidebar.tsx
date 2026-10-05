@@ -99,6 +99,9 @@ const gitlabNavItems: NavItem[] = [
   { id: 'gitlab-merge-requests', labelKey: 'navigation:items.gitlabMRs', icon: GitMerge, shortcut: 'R' }
 ];
 
+/** Half of the 1.5s header icon fade (fade-out, then fade-in). */
+const HEADER_ICON_FADE_HALF_MS = 750;
+
 export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
@@ -125,6 +128,20 @@ export function Sidebar({
       unsubscribe();
     };
   }, []);
+
+  // 1.5s fade-out/fade-in between header icons: fade the shown icon out,
+  // swap it at the midpoint, then fade the new one in
+  const [shownHeaderIcon, setShownHeaderIcon] = useState<string | null>(null);
+  const [headerIconVisible, setHeaderIconVisible] = useState(true);
+  useEffect(() => {
+    if (headerIcon === shownHeaderIcon) return;
+    setHeaderIconVisible(false);
+    const timer = setTimeout(() => {
+      setShownHeaderIcon(headerIcon);
+      setHeaderIconVisible(true);
+    }, HEADER_ICON_FADE_HALF_MS);
+    return () => clearTimeout(timer);
+  }, [headerIcon, shownHeaderIcon]);
   const projects = useProjectStore((state) => state.projects);
   const selectedProjectId = useProjectStore((state) => state.selectedProjectId);
   const settings = useSettingsStore((state) => state.settings);
@@ -370,12 +387,20 @@ export function Sidebar({
           "electron-drag flex h-14 items-center pt-6 transition-all duration-300",
           isCollapsed ? "justify-center px-2" : "px-4"
         )}>
-          {!isCollapsed &&
-            (headerIcon ? (
-              <img src={headerIcon} alt="Aperant" className="electron-no-drag h-8 w-auto object-contain" />
-            ) : (
-              <span className="electron-no-drag font-heading text-lg font-bold text-primary">Aperant</span>
-            ))}
+          {!isCollapsed && (
+            <span
+              className={cn(
+                'electron-no-drag transition-opacity duration-[750ms] ease-in-out motion-reduce:transition-none',
+                headerIconVisible ? 'opacity-100' : 'opacity-0'
+              )}
+            >
+              {shownHeaderIcon ? (
+                <img src={shownHeaderIcon} alt="Aperant" className="h-8 w-auto object-contain" />
+              ) : (
+                <span className="font-heading text-lg font-bold text-primary">Aperant</span>
+              )}
+            </span>
+          )}
         </div>
 
         <Separator className="mt-2" />
