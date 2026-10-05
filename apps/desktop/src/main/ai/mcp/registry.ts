@@ -106,7 +106,7 @@ const PUPPETEER_SERVER: McpServerConfig = {
 function createAutoClaudeServer(specDir: string): McpServerConfig {
   return {
     id: 'auto-claude',
-    name: 'Aperant',
+    name: 'Auto Claude',
     description: 'Build management tools (progress tracking, session context)',
     enabledByDefault: true,
     transport: {

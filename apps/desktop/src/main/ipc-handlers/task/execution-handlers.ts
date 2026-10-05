@@ -172,7 +172,7 @@ export function registerTaskExecutionHandlers(
       console.warn('[TASK_START] Project is not a git repository:', project.path);
       sendTaskError(
         taskId,
-        'Git repository required. Please run "git init" in your project directory. Aperant uses git worktrees for isolated builds.'
+        'Git repository required. Please run "git init" in your project directory. Auto Claude uses git worktrees for isolated builds.'
       );
       return;
     }

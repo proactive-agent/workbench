@@ -28,7 +28,7 @@
     "settings": "Application Settings"
   },
   "messages": {
-    "initializeToCreateTasks": "Initialize Aperant to create tasks"
+    "initializeToCreateTasks": "Initialize Auto Claude to create tasks"
   },
   "updateBanner": {
     "title": "Update Available",

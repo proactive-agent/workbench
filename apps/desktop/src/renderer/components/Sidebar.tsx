@@ -408,7 +408,7 @@ export function Sidebar({
               )}
             >
               {shownHeaderIcon && (
-                <img src={shownHeaderIcon} alt="Aperant" className="h-8 w-auto object-contain" />
+                <img src={shownHeaderIcon} alt="Auto Claude" className="h-8 w-auto object-contain" />
               )}
             </span>
           )}

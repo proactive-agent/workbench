@@ -81,18 +81,20 @@ import { ptyDaemonClient } from './terminal/pty-daemon-client';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Migrate userData from old app name (auto-claude-ui → aperant)
+// Migrate userData from previous app names (aperant, then auto-claude-ui → auto-claude)
 // Must run before any code accesses app.getPath('userData')
 // Skipped for dev builds — dev should start with a clean userData directory
 // ─────────────────────────────────────────────────────────────────────────────
 if (!app.getName().includes('Dev')) {
   const newUserData = app.getPath('userData');
-  const oldUserData = join(dirname(newUserData), 'auto-claude-ui');
-  if (existsSync(oldUserData) && !existsSync(join(newUserData, '.migrated'))) {
+  const oldUserData = ['aperant', 'auto-claude-ui']
+    .map((name) => join(dirname(newUserData), name))
+    .find((dir) => existsSync(dir));
+  if (oldUserData && !existsSync(join(newUserData, '.migrated'))) {
     try {
       cpSync(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
       writeFileSync(join(newUserData, '.migrated'), new Date().toISOString());
-      console.warn('[main] Migrated userData from auto-claude-ui to aperant');
+      console.warn(`[main] Migrated userData from ${oldUserData} to ${newUserData}`);
     } catch (err) {
       console.warn('[main] userData migration failed (non-fatal):', err);
     }
@@ -399,10 +401,10 @@ function createWindow(): void {
 }
 
 // Set app name before ready (for dock tooltip on macOS in dev mode)
-app.setName('Aperant Dev');
+app.setName('Auto Claude Dev');
 if (isMacOS()) {
   // Force the name to appear in dock on macOS
-  app.name = 'Aperant Dev';
+  app.name = 'Auto Claude Dev';
 }
 
 // Fix Windows GPU cache permission errors (0x5 Access Denied)
@@ -415,7 +417,7 @@ if (isWindows()) {
 // Initialize the application
 app.whenReady().then(() => {
   // Set app user model id for Windows
-  electronApp.setAppUserModelId('com.aperant.app.dev');
+  electronApp.setAppUserModelId('com.autoclaude.app.dev');
 
   // Clear cache on Windows to prevent permission errors from stale cache
   if (isWindows()) {

@@ -1,5 +1,5 @@
 {
-  "name": "aperant",
+  "name": "auto-claude",
   "version": "2.8.0-beta.6",
   "type": "module",
   "description": "Autonomous multi-agent coding framework",
@@ -10,7 +10,7 @@
   },
   "main": "./out/main/index.js",
   "author": {
-    "name": "Aperant Team",
+    "name": "Auto Claude Team",
     "email": "119136210+AndyMik90@users.noreply.github.com"
   },
   "license": "AGPL-3.0",
@@ -35,9 +35,9 @@
     "package:flatpak": "electron-builder --linux flatpak",
     "verify:linux": "node scripts/verify-linux-packages.cjs dist",
     "test:verify-linux": "node --test scripts/verify-linux-packages.test.mjs",
-    "start:packaged:mac": "open dist/mac-arm64/Aperant.app || open dist/mac/Aperant.app",
-    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Aperant.exe\"",
-    "start:packaged:linux": "./dist/linux-unpacked/aperant",
+    "start:packaged:mac": "open \"dist/mac-arm64/Auto Claude Dev.app\" || open \"dist/mac/Auto Claude Dev.app\"",
+    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto Claude Dev.exe\"",
+    "start:packaged:linux": "./dist/linux-unpacked/auto-claude",
     "test": "vitest run",
     "test:unit": "vitest run --exclude src/__tests__/integration/ --exclude src/__tests__/e2e/",
     "test:integration": "vitest run src/__tests__/integration/",
@@ -158,8 +158,8 @@
     "@electron/rebuild": "4.0.3"
   },
   "build": {
-    "appId": "com.aperant.app.dev",
-    "productName": "Aperant Dev",
+    "appId": "com.autoclaude.app.dev",
+    "productName": "Auto Claude Dev",
     "npmRebuild": false,
     "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
     "publish": [
