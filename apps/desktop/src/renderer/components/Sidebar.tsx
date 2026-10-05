@@ -107,7 +107,7 @@ export function Sidebar({
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
 
-  // Rotating header icon from <userData>/app-icons (null = show the wordmark)
+  // Rotating header icon from <userData>/header-icons (null = show the wordmark)
   const [headerIcon, setHeaderIcon] = useState<string | null>(null);
   useEffect(() => {
     let active = true;

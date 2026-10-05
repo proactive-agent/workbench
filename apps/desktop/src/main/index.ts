@@ -54,7 +54,7 @@ import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
-import { AppIconRotator, APP_ICONS_DIR_NAME } from './services/app-icon-rotator';
+import { AppIconRotator, APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME } from './services/app-icon-rotator';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -183,6 +183,7 @@ function getIconPath(): string {
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
 let appIconRotator: AppIconRotator | null = null;
+let headerIconRotator: AppIconRotator | null = null;
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
 
@@ -564,24 +565,31 @@ app.whenReady().then(() => {
     }
     return icon;
   };
-  // The sidebar header shows the same rotating icon (null = default "Aperant" wordmark)
+  // Rotate the sidebar header icon through <userData>/header-icons/1.png … n.png
+  // (null = default "Aperant" wordmark)
   let headerIconDataUrl: string | null = null;
   const sendHeaderIcon = (dataUrl: string | null): void => {
     headerIconDataUrl = dataUrl;
     mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, dataUrl);
   };
   ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrl);
-  appIconRotator = new AppIconRotator({
-    iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
+  headerIconRotator = new AppIconRotator({
+    iconsDir: join(app.getPath('userData'), HEADER_ICONS_DIR_NAME),
     applyIcon: (iconPath) => {
-      const icon = applyAppIcon(iconPath);
-      if (!icon) return false;
+      const icon = nativeImage.createFromPath(iconPath);
+      if (icon.isEmpty()) return false;
       sendHeaderIcon(icon.resize({ height: 96 }).toDataURL());
       return true;
     },
+    restoreDefaultIcon: () => sendHeaderIcon(null),
+  });
+  headerIconRotator.start();
+
+  appIconRotator = new AppIconRotator({
+    iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
+    applyIcon: (iconPath) => applyAppIcon(iconPath) !== null,
     restoreDefaultIcon: () => {
       applyAppIcon(getIconPath());
-      sendHeaderIcon(null);
     },
   });
   appIconRotator.start();
@@ -729,6 +737,7 @@ app.on('before-quit', (event) => {
   stopPeriodicUpdates();
   rateLimitResumeScheduler.dispose();
   appIconRotator?.stop();
+  headerIconRotator?.stop();
 
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();
