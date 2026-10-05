@@ -158,8 +158,8 @@
     "@electron/rebuild": "4.0.3"
   },
   "build": {
-    "appId": "com.aperant.app",
-    "productName": "Aperant",
+    "appId": "com.aperant.app.dev",
+    "productName": "Aperant Dev",
     "npmRebuild": false,
     "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
     "publish": [
