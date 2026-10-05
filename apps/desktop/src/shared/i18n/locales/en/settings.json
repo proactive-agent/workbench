@@ -338,9 +338,7 @@
     "soundDescription": "Play sound with notifications"
   },
   "actions": {
-    "save": "Save Settings",
-    "rerunWizard": "Re-run Wizard",
-    "rerunWizardDescription": "Start the setup wizard again"
+    "save": "Save Settings"
   },
   "projectSections": {
     "general": {

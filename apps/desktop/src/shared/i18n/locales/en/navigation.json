@@ -20,15 +20,12 @@
   },
   "actions": {
     "settings": "Settings",
-    "help": "Help & Feedback",
     "newTask": "New Task",
     "collapseSidebar": "Collapse Sidebar",
-    "expandSidebar": "Expand Sidebar",
-    "sponsor": "Sponsor Us"
+    "expandSidebar": "Expand Sidebar"
   },
   "tooltips": {
-    "settings": "Application Settings",
-    "help": "Help & Feedback"
+    "settings": "Application Settings"
   },
   "messages": {
     "initializeToCreateTasks": "Initialize Aperant to create tasks"

@@ -10,10 +10,8 @@ import {
   Package,
   Bell,
   Settings2,
-  Zap,
   Github,
   Database,
-  Sparkles,
   Monitor,
   Code,
   Bug,
@@ -61,7 +59,6 @@ interface AppSettingsDialogProps {
   onOpenChange: (open: boolean) => void;
   initialSection?: AppSection;
   initialProjectSection?: ProjectSettingsSection;
-  onRerunWizard?: () => void;
 }
 
 // App-level settings sections
@@ -87,7 +84,6 @@ const appNavItemsConfig: NavItemConfig<AppSection>[] = [
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
   { id: 'general', icon: Settings2 },
-  { id: 'linear', icon: Zap },
   { id: 'github', icon: Github },
   { id: 'gitlab', icon: GitLabIcon },
   { id: 'memory', icon: Database }
@@ -97,7 +93,7 @@ const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
  * Main application settings dialog container
  * Coordinates app and project settings sections
  */
-export function AppSettingsDialog({ open, onOpenChange, initialSection, initialProjectSection, onRerunWizard }: AppSettingsDialogProps) {
+export function AppSettingsDialog({ open, onOpenChange, initialSection, initialProjectSection }: AppSettingsDialogProps) {
   const { t } = useTranslation('settings');
   const { settings, setSettings, isSaving, error, saveSettings, revertTheme, commitTheme } = useSettings();
   const [version, setVersion] = useState<string>('');
@@ -276,27 +272,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
                           </button>
                         );
                       })}
-
-                      {/* Re-run Wizard button */}
-                      {onRerunWizard && (
-                        <button
-                          onClick={() => {
-                            onOpenChange(false);
-                            onRerunWizard();
-                          }}
-                          className={cn(
-                            'w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all mt-2',
-                            'border border-dashed border-muted-foreground/30',
-                            'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
-                          )}
-                        >
-                          <Sparkles className="h-5 w-5 mt-0.5 shrink-0" />
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm">{t('actions.rerunWizard')}</div>
-                            <div className="text-xs text-muted-foreground truncate">{t('actions.rerunWizardDescription')}</div>
-                          </div>
-                        </button>
-                      )}
                     </div>
                   </div>
 

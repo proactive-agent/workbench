@@ -986,14 +986,6 @@ export function App() {
           }}
           initialSection={settingsInitialSection}
           initialProjectSection={settingsInitialProjectSection}
-          onRerunWizard={() => {
-            // Reset onboarding state to trigger wizard
-            useSettingsStore.getState().updateSettings({ onboardingCompleted: false });
-            // Close settings dialog
-            setIsSettingsDialogOpen(false);
-            // Open onboarding wizard
-            setIsOnboardingWizardOpen(true);
-          }}
         />
 
         {/* Add Project Modal */}
