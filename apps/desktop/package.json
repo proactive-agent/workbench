@@ -35,8 +35,8 @@
     "package:flatpak": "electron-builder --linux flatpak",
     "verify:linux": "node scripts/verify-linux-packages.cjs dist",
     "test:verify-linux": "node --test scripts/verify-linux-packages.test.mjs",
-    "start:packaged:mac": "open \"dist/mac-arm64/Auto Claude Dev.app\" || open \"dist/mac/Auto Claude Dev.app\"",
-    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto Claude Dev.exe\"",
+    "start:packaged:mac": "open \"dist/mac-arm64/Auto Claude.app\" || open \"dist/mac/Auto Claude.app\"",
+    "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto Claude.exe\"",
     "start:packaged:linux": "./dist/linux-unpacked/auto-claude",
     "test": "vitest run",
     "test:unit": "vitest run --exclude src/__tests__/integration/ --exclude src/__tests__/e2e/",
@@ -158,8 +158,8 @@
     "@electron/rebuild": "4.0.3"
   },
   "build": {
-    "appId": "com.autoclaude.app.dev",
-    "productName": "Auto Claude Dev",
+    "appId": "com.autoclaude.app",
+    "productName": "Auto Claude",
     "npmRebuild": false,
     "artifactName": "${productName}-${version}-${platform}-${arch}.${ext}",
     "publish": [
