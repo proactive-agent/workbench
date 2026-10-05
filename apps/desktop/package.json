@@ -20,7 +20,7 @@
   },
   "scripts": {
     "postinstall": "node scripts/postinstall.cjs",
-    "dev": "electron-vite dev",
+    "dev": "electron-vite dev -- --ozone-platform=x11",
     "dev:debug": "cross-env DEBUG=true electron-vite dev",
     "dev:mcp": "electron-vite dev -- --remote-debugging-port=9222",
     "build": "electron-vite build",
