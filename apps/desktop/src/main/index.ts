@@ -76,19 +76,19 @@ import type { AppSettings, AuthFailureInfo } from '../shared/types';
 // Must run before any code accesses app.getPath('userData')
 // Skipped for dev builds — dev should start with a clean userData directory
 // ─────────────────────────────────────────────────────────────────────────────
-// {
-//   const newUserData = app.getPath('userData');
-//   const oldUserData = join(dirname(newUserData), 'auto-claude-ui');
-//   if (existsSync(oldUserData) && !existsSync(join(newUserData, '.migrated'))) {
-//     try {
-//       cpSync(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
-//       writeFileSync(join(newUserData, '.migrated'), new Date().toISOString());
-//       console.warn('[main] Migrated userData from auto-claude-ui to aperant');
-//     } catch (err) {
-//       console.warn('[main] userData migration failed (non-fatal):', err);
-//     }
-//   }
-// }
+if (!app.getName().includes('Dev')) {
+  const newUserData = app.getPath('userData');
+  const oldUserData = join(dirname(newUserData), 'auto-claude-ui');
+  if (existsSync(oldUserData) && !existsSync(join(newUserData, '.migrated'))) {
+    try {
+      cpSync(oldUserData, newUserData, { recursive: true, force: false, errorOnExist: false });
+      writeFileSync(join(newUserData, '.migrated'), new Date().toISOString());
+      console.warn('[main] Migrated userData from auto-claude-ui to aperant');
+    } catch (err) {
+      console.warn('[main] userData migration failed (non-fatal):', err);
+    }
+  }
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Window sizing constants
