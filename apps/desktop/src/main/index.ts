@@ -54,7 +54,14 @@ import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
-import { AppIconRotator, APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME, seedRotationIcons } from './services/app-icon-rotator';
+import {
+  AppIconRotator,
+  APP_ICONS_DIR_NAME,
+  HEADER_ICON_MODES,
+  HEADER_ICONS_DIR_NAME,
+  seedRotationIcons,
+  type HeaderIconMode,
+} from './services/app-icon-rotator';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -183,7 +190,7 @@ function getIconPath(): string {
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
 let appIconRotator: AppIconRotator | null = null;
-let headerIconRotator: AppIconRotator | null = null;
+let headerIconRotators: AppIconRotator[] = [];
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
 
@@ -555,7 +562,8 @@ app.whenReady().then(() => {
   // Seed <userData>/app-icons and <userData>/header-icons with the icons bundled
   // in resources/ (first run only; user icons are never overwritten)
   const bundledResourcesPath = is.dev ? join(__dirname, '../../resources') : process.resourcesPath;
-  for (const dirName of [APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME]) {
+  const iconDirNames = [APP_ICONS_DIR_NAME, ...HEADER_ICON_MODES.map((mode) => join(HEADER_ICONS_DIR_NAME, mode))];
+  for (const dirName of iconDirNames) {
     try {
       seedRotationIcons(join(bundledResourcesPath, dirName), join(app.getPath('userData'), dirName));
     } catch (error) {
@@ -576,25 +584,29 @@ app.whenReady().then(() => {
     }
     return icon;
   };
-  // Rotate the sidebar header icon through <userData>/header-icons/1.png … n.png
+  // Rotate the sidebar header icons through <userData>/header-icons/{dark,light}/1.png … n.png.
+  // Both sets rotate in step; the renderer shows the one matching the appearance mode
   // (null = default "Aperant" wordmark)
-  let headerIconDataUrl: string | null = null;
-  const sendHeaderIcon = (dataUrl: string | null): void => {
-    headerIconDataUrl = dataUrl;
-    mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, dataUrl);
+  const headerIconDataUrls: Record<HeaderIconMode, string | null> = { dark: null, light: null };
+  const sendHeaderIcon = (mode: HeaderIconMode, dataUrl: string | null): void => {
+    headerIconDataUrls[mode] = dataUrl;
+    mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, mode, dataUrl);
   };
-  ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrl);
-  headerIconRotator = new AppIconRotator({
-    iconsDir: join(app.getPath('userData'), HEADER_ICONS_DIR_NAME),
-    applyIcon: (iconPath) => {
-      const icon = nativeImage.createFromPath(iconPath);
-      if (icon.isEmpty()) return false;
-      sendHeaderIcon(icon.resize({ height: 96 }).toDataURL());
-      return true;
-    },
-    restoreDefaultIcon: () => sendHeaderIcon(null),
-  });
-  headerIconRotator.start();
+  ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrls);
+  headerIconRotators = HEADER_ICON_MODES.map(
+    (mode) =>
+      new AppIconRotator({
+        iconsDir: join(app.getPath('userData'), HEADER_ICONS_DIR_NAME, mode),
+        applyIcon: (iconPath) => {
+          const icon = nativeImage.createFromPath(iconPath);
+          if (icon.isEmpty()) return false;
+          sendHeaderIcon(mode, icon.resize({ height: 96 }).toDataURL());
+          return true;
+        },
+        restoreDefaultIcon: () => sendHeaderIcon(mode, null),
+      })
+  );
+  for (const rotator of headerIconRotators) rotator.start();
 
   appIconRotator = new AppIconRotator({
     iconsDir: join(app.getPath('userData'), APP_ICONS_DIR_NAME),
@@ -748,7 +760,7 @@ app.on('before-quit', (event) => {
   stopPeriodicUpdates();
   rateLimitResumeScheduler.dispose();
   appIconRotator?.stop();
-  headerIconRotator?.stop();
+  for (const rotator of headerIconRotators) rotator.stop();
 
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();

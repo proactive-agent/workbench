@@ -183,8 +183,8 @@ export const IPC_CHANNELS = {
 
   // App info
   APP_VERSION: 'app:version',
-  APP_ICON_GET: 'app:icon:get',          // Current rotating sidebar header icon (data URL or null)
-  APP_ICON_CHANGED: 'app:icon:changed',  // Rotating sidebar header icon changed (main -> renderer)
+  APP_ICON_GET: 'app:icon:get',          // Current sidebar header icons per appearance mode (data URL or null)
+  APP_ICON_CHANGED: 'app:icon:changed',  // A sidebar header icon changed: (mode, dataUrl) (main -> renderer)
 
   // Shell operations
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',

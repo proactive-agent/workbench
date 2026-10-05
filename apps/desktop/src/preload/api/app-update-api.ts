@@ -21,10 +21,10 @@ export interface AppUpdateAPI {
   installAppUpdate: () => void;
   getAppVersion: () => Promise<string>;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
-  getAppIcon: () => Promise<string | null>;
+  getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
 
   // Event Listeners
-  onAppIconChanged: (callback: (dataUrl: string | null) => void) => IpcListenerCleanup;
+  onAppIconChanged: (callback: (mode: 'dark' | 'light', dataUrl: string | null) => void) => IpcListenerCleanup;
   onAppUpdateAvailable: (
     callback: (info: AppUpdateAvailableEvent) => void
   ) => IpcListenerCleanup;
@@ -71,12 +71,12 @@ export const createAppUpdateAPI = (): AppUpdateAPI => ({
   getDownloadedAppUpdate: (): Promise<IPCResult<AppUpdateInfo | null>> =>
     invokeIpc(IPC_CHANNELS.APP_UPDATE_GET_DOWNLOADED),
 
-  getAppIcon: (): Promise<string | null> =>
+  getAppIcon: (): Promise<Record<'dark' | 'light', string | null>> =>
     invokeIpc(IPC_CHANNELS.APP_ICON_GET),
 
   // Event Listeners
   onAppIconChanged: (
-    callback: (dataUrl: string | null) => void
+    callback: (mode: 'dark' | 'light', dataUrl: string | null) => void
   ): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.APP_ICON_CHANGED, callback),
 

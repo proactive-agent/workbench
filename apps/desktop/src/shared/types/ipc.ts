@@ -711,9 +711,9 @@ export interface ElectronAPI {
   installAppUpdate: () => void;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
 
-  // Rotating sidebar header icon (<userData>/header-icons); null when no custom icons are present
-  getAppIcon: () => Promise<string | null>;
-  onAppIconChanged: (callback: (dataUrl: string | null) => void) => () => void;
+  // Rotating sidebar header icons (<userData>/header-icons/{dark,light}); null when a set is empty
+  getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
+  onAppIconChanged: (callback: (mode: 'dark' | 'light', dataUrl: string | null) => void) => () => void;
 
   // Electron app update event listeners
   onAppUpdateAvailable: (

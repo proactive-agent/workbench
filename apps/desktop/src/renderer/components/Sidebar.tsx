@@ -110,24 +110,37 @@ export function Sidebar({
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
 
-  // Rotating header icon from <userData>/header-icons (null = show the wordmark)
-  const [headerIcon, setHeaderIcon] = useState<string | null>(null);
+  // Rotating header icons from <userData>/header-icons/{dark,light} (null = show the wordmark)
+  const [headerIcons, setHeaderIcons] = useState<Record<'dark' | 'light', string | null>>({ dark: null, light: null });
   useEffect(() => {
     let active = true;
     window.electronAPI
       .getAppIcon()
-      .then((dataUrl) => {
-        if (active) setHeaderIcon(dataUrl);
+      .then((icons) => {
+        if (active) setHeaderIcons(icons);
       })
       .catch(() => {
-        // Keep the wordmark if the icon can't be fetched
+        // Keep the wordmark if the icons can't be fetched
       });
-    const unsubscribe = window.electronAPI.onAppIconChanged(setHeaderIcon);
+    const unsubscribe = window.electronAPI.onAppIconChanged((mode, dataUrl) => {
+      setHeaderIcons((icons) => ({ ...icons, [mode]: dataUrl }));
+    });
     return () => {
       active = false;
       unsubscribe();
     };
   }, []);
+
+  // Follow the resolved appearance mode (App.tsx toggles the `dark` class on <html>,
+  // including for the System setting)
+  const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => setIsDarkMode(root.classList.contains('dark')));
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+  const headerIcon = isDarkMode ? headerIcons.dark : headerIcons.light;
 
   // 1.5s fade-out/fade-in between header icons: fade the shown icon out,
   // swap it at the midpoint, then fade the new one in
