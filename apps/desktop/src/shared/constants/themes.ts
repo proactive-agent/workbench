@@ -17,14 +17,14 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
   {
     id: 'default',
     name: 'Default',
-    description: 'Oscura-inspired with pale yellow accent',
-    previewColors: { bg: '#F2F2ED', accent: '#E6E7A3', darkBg: '#0B0B0F', darkAccent: '#E6E7A3' }
-  },
-  {
-    id: 'claude',
-    name: 'Claude',
     description: 'Flat warm neutrals with a terracotta accent',
     previewColors: { bg: '#FAF9F5', accent: '#C6613F', darkBg: '#151515', darkAccent: '#D97757' }
+  },
+  {
+    id: 'lime',
+    name: 'Lime',
+    description: 'Oscura-inspired with pale yellow accent',
+    previewColors: { bg: '#F2F2ED', accent: '#E6E7A3', darkBg: '#0B0B0F', darkAccent: '#E6E7A3' }
   }
 ];
 
