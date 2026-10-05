@@ -1,0 +1,11 @@
+{
+  "sourceType": "manual",
+  "category": "feature",
+  "priority": "medium",
+  "complexity": "standard",
+  "impact": "medium",
+  "model": "opus",
+  "thinkingLevel": "high",
+  "baseBranch": "develop",
+  "fastMode": false
+}
