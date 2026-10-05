@@ -1,0 +1,8 @@
+{
+  "feature": "Custom App Icon from Settings",
+  "description": "Allow users to upload a custom application icon from the settings panel, with validation, persistent storage, and app restart to apply changes across all icon locations.",
+  "status": "draft",
+  "planStatus": "draft",
+  "xstateState": "idle",
+  "phases": []
+}
