@@ -235,6 +235,16 @@ export function useIpcListeners(): void {
       }
     );
 
+    // Rate-limit hold changes are applied immediately (not batched) so the hold is
+    // already on the task when the accompanying status change (-> queue) triggers
+    // queue auto-promotion; otherwise the held task would be restarted right away.
+    const cleanupRateLimitHold = window.electronAPI.onTaskRateLimitHoldChange(
+      (taskId: string, hold: import('../../shared/types').RateLimitHold | null, projectId?: string) => {
+        if (!isTaskForCurrentProject(projectId)) return;
+        useTaskStore.getState().updateTask(taskId, { rateLimitHold: hold ?? undefined });
+      }
+    );
+
     const cleanupExecutionProgress = window.electronAPI.onTaskExecutionProgress(
       (taskId: string, progress: ExecutionProgress, projectId?: string) => {
         // Filter by project to prevent multi-project interference
@@ -390,6 +400,7 @@ export function useIpcListeners(): void {
       cleanupError();
       cleanupLog();
       cleanupStatus();
+      cleanupRateLimitHold();
       cleanupExecutionProgress();
       cleanupRoadmapProgress();
       cleanupRoadmapComplete();

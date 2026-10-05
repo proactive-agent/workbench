@@ -26,7 +26,8 @@ const TERMINAL_EVENTS = new Set<string>([
   'CODING_FAILED',
   'QA_MAX_ITERATIONS',
   'QA_AGENT_ERROR',
-  'ALL_SUBTASKS_DONE'
+  'ALL_SUBTASKS_DONE',
+  'RATE_LIMIT_HOLD'
 ]);
 
 export class TaskStateManager {
@@ -118,6 +119,10 @@ export class TaskStateManager {
         const currentState = this.getCurrentState(taskId);
         if (currentState === 'plan_review') {
           this.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+        } else if (currentState === 'queued' || (!currentState && task.status === 'queue' && task.rateLimitHold)) {
+          // Rate-limit hold released: restart via planning; the build orchestrator
+          // skips straight to coding/QA when a plan already exists.
+          this.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
         } else if (currentState === 'human_review' || currentState === 'error') {
           this.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
         } else if (!currentState && task.reviewReason === 'plan_review') {
@@ -391,6 +396,10 @@ export class TaskStateManager {
       case 'error':
         stateValue = 'error';
         contextReviewReason = reviewReason ?? 'errors';
+        break;
+      case 'queue':
+        // Only rate-limit holds are modelled in XState; plain queued tasks start from backlog
+        stateValue = task.rateLimitHold ? 'queued' : 'backlog';
         break;
       default:
         stateValue = 'backlog';

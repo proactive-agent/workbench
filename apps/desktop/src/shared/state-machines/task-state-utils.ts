@@ -15,7 +15,7 @@ import type { TaskStatus, ReviewReason, ExecutionPhase } from '../types';
  */
 export const TASK_STATE_NAMES = [
   'backlog', 'planning', 'plan_review', 'coding',
-  'qa_review', 'qa_fixing', 'human_review', 'error',
+  'qa_review', 'qa_fixing', 'queued', 'human_review', 'error',
   'creating_pr', 'pr_created', 'done'
 ] as const;
 
@@ -33,7 +33,7 @@ export type TaskStateName = typeof TASK_STATE_NAMES[number];
  * blocks — new execution-progress events flow through normally.
  */
 export const XSTATE_SETTLED_STATES: ReadonlySet<string> = new Set<TaskStateName>([
-  'plan_review', 'human_review', 'error', 'creating_pr', 'pr_created', 'done'
+  'plan_review', 'queued', 'human_review', 'error', 'creating_pr', 'pr_created', 'done'
 ]);
 
 /**
@@ -52,6 +52,7 @@ export const XSTATE_TO_PHASE: Record<TaskStateName, ExecutionPhase> & Record<str
   'coding': 'coding',
   'qa_review': 'qa_review',
   'qa_fixing': 'qa_fixing',
+  'queued': 'idle',
   'human_review': 'complete',
   'error': 'failed',
   'creating_pr': 'complete',
@@ -81,6 +82,8 @@ export function mapStateToLegacy(
     case 'qa_review':
     case 'qa_fixing':
       return { status: 'ai_review' };
+    case 'queued':
+      return { status: 'queue' };
     case 'human_review':
       return { status: 'human_review', reviewReason: reviewReason ?? 'completed' };
     case 'error':

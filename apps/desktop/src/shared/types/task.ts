@@ -251,6 +251,23 @@ export interface TaskMetadata {
   archivedInVersion?: string;  // Version in which task was archived (from changelog)
 }
 
+/**
+ * A task paused because the provider's usage limit was hit
+ * (e.g. "You've hit your session limit · resets 8:30pm (Asia/Yerevan)").
+ * The task sits in the Queue column until `resetAt`, when the main process
+ * resumes it from its saved plan/worktree state.
+ */
+export interface RateLimitHold {
+  /** ISO 8601 time when the limit resets and the task should resume */
+  resetAt: string;
+  /** Original limit message from the provider */
+  message: string;
+  /** ISO 8601 time when the task was put on hold */
+  pausedAt: string;
+  /** Build phase that was interrupted (planning, coding, qa_review, qa_fixing) */
+  phase?: string;
+}
+
 export interface Task {
   id: string;
   specId: string;
@@ -269,6 +286,7 @@ export interface Task {
   stagedAt?: string;  // ISO timestamp when changes were staged
   location?: 'main' | 'worktree';  // Where task was loaded from (main project or worktree)
   specsPath?: string;  // Full path to specs directory for this task
+  rateLimitHold?: RateLimitHold;  // Set while the task is queued waiting for a rate-limit reset
   createdAt: Date;
   updatedAt: Date;
 }
@@ -297,6 +315,7 @@ export interface ImplementationPlan {
   };
   recoveryNote?: string;
   description?: string;
+  rateLimitHold?: RateLimitHold | null;  // Persisted rate-limit hold (see RateLimitHold)
 }
 
 export interface Phase {

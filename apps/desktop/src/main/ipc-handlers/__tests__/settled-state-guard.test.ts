@@ -16,6 +16,8 @@ describe('XSTATE_SETTLED_STATES', () => {
     expect(XSTATE_SETTLED_STATES.has('creating_pr')).toBe(true);
     expect(XSTATE_SETTLED_STATES.has('pr_created')).toBe(true);
     expect(XSTATE_SETTLED_STATES.has('done')).toBe(true);
+    // Rate-limit hold: stale 'failed' progress from the exiting worker must not override it
+    expect(XSTATE_SETTLED_STATES.has('queued')).toBe(true);
   });
 
   it('should NOT contain active processing states', () => {

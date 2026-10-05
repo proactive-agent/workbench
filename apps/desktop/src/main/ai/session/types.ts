@@ -153,6 +153,12 @@ export interface SessionError {
   retryable: boolean;
   /** Original error (for logging) */
   cause?: unknown;
+  /**
+   * Absolute time (ISO 8601) when a rate limit resets, when known.
+   * Set for Claude subscription limit messages such as
+   * "You've hit your session limit · resets 8:30pm (Asia/Yerevan)".
+   */
+  rateLimitResetAt?: string;
 }
 
 // =============================================================================

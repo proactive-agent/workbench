@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, Clock, Zap, Target, Shield, Gauge, Palette, FileCode, Bug, Wrench, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical } from 'lucide-react';
+import { Play, Square, Clock, Zap, Target, Shield, Gauge, Palette, FileCode, Bug, Wrench, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical, PauseCircle } from 'lucide-react';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
@@ -34,6 +34,7 @@ import {
 import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
 import { useToast } from '../hooks/use-toast';
 import type { Task, TaskCategory, ReviewReason, TaskStatus } from '../../shared/types';
+import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
 
 // Category icon mapping
 const CategoryIcon: Record<TaskCategory, typeof Zap> = {
@@ -105,6 +106,7 @@ function taskCardPropsAreEqual(prevProps: TaskCardProps, nextProps: TaskCardProp
     prevTask.metadata?.complexity === nextTask.metadata?.complexity &&
     prevTask.metadata?.archivedAt === nextTask.metadata?.archivedAt &&
     prevTask.metadata?.prUrl === nextTask.metadata?.prUrl &&
+    prevTask.rateLimitHold?.resetAt === nextTask.rateLimitHold?.resetAt &&
     // Check if any subtask statuses changed (compare all subtasks)
     prevTask.subtasks.every((s, i) => s.status === nextTask.subtasks[i]?.status)
   );
@@ -133,7 +135,7 @@ export const TaskCard = memo(function TaskCard({
   isSelected,
   onToggleSelect
 }: TaskCardProps) {
-  const { t } = useTranslation(['tasks', 'errors']);
+  const { t, i18n } = useTranslation(['tasks', 'errors']);
   const { toast } = useToast();
   const [isStuck, setIsStuck] = useState(false);
   const [isRecovering, setIsRecovering] = useState(false);
@@ -145,6 +147,19 @@ export const TaskCard = memo(function TaskCard({
 
   // Check if task is in human_review but has no completed subtasks (crashed/incomplete)
   const isIncomplete = isIncompleteHumanReview(task);
+
+  // Rate-limit hold: queued until the provider limit resets, then resumed automatically
+  const isOnHold = isTaskOnRateLimitHold(task);
+  const holdResumeLabel = useMemo(() => {
+    const resetAt = task.rateLimitHold?.resetAt;
+    if (!resetAt) return null;
+    const resetDate = new Date(resetAt);
+    if (Number.isNaN(resetDate.getTime())) return null;
+    const isToday = resetDate.toDateString() === new Date().toDateString();
+    return resetDate.toLocaleString(i18n.language, isToday
+      ? { hour: 'numeric', minute: '2-digit' }
+      : { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }, [task.rateLimitHold?.resetAt, i18n.language]);
 
   // Memoize expensive computations to avoid running on every render
   // Truncate description for card display - full description shown in modal
@@ -370,8 +385,19 @@ export const TaskCard = memo(function TaskCard({
         )}
 
         {/* Metadata badges */}
-        {(task.metadata || isStuck || isIncomplete || hasActiveExecution || reviewReasonInfo) && (
+        {(task.metadata || isStuck || isIncomplete || hasActiveExecution || reviewReasonInfo || isOnHold) && (
           <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {/* Rate-limit hold indicator - task resumes automatically at reset time */}
+            {isOnHold && holdResumeLabel && (
+              <Badge
+                variant="outline"
+                className="text-[10px] px-1.5 py-0.5 flex items-center gap-1 bg-orange-500/10 text-orange-400 border-orange-500/30"
+                title={task.rateLimitHold?.message || undefined}
+              >
+                <PauseCircle className="h-2.5 w-2.5" />
+                {t('labels.onHoldUntil', { time: holdResumeLabel })}
+              </Badge>
+            )}
             {/* Stuck indicator - highest priority */}
             {isStuck && (
               <Badge

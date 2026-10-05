@@ -11,6 +11,7 @@ import { ensureAbsolutePath } from './utils/path-helpers';
 import { writeFileAtomicSync } from './utils/atomic-file';
 import { updateRoadmapFeatureOutcome, revertRoadmapFeatureOutcome } from './utils/roadmap-utils';
 import { safeParseJson } from './utils/json-repair';
+import { parseRateLimitHold } from '../shared/utils/rate-limit-hold';
 
 
 
@@ -534,6 +535,9 @@ export class ProjectStore {
         const stagedInMainProject = planWithStaged?.stagedInMainProject;
         const stagedAt = planWithStaged?.stagedAt;
 
+        // Extract rate-limit hold (task queued until the provider limit resets)
+        const rateLimitHold = parseRateLimitHold(plan?.rateLimitHold);
+
         // Determine title - check if feature looks like a spec ID (e.g., "054-something-something")
         // For JSON error tasks, use directory name with marker for i18n suffix
         let title = hasJsonError ? `${dir.name}${JSON_ERROR_TITLE_SUFFIX}` : (plan?.feature || plan?.title || dir.name);
@@ -578,6 +582,7 @@ export class ProjectStore {
           ...(executionProgress && { executionProgress }),
           stagedInMainProject,
           stagedAt,
+          ...(rateLimitHold && { rateLimitHold }),
           location, // Add location metadata (main vs worktree)
           specsPath: specPath, // Add full path to specs directory
           createdAt: new Date(plan?.created_at || Date.now()),
@@ -610,6 +615,12 @@ export class ProjectStore {
     taskName: string
   ): { status: TaskStatus; reviewReason: ReviewReason | undefined } {
     if (subtasks.length === 0 || hasJsonError) {
+      return { status: finalStatus, reviewReason: finalReviewReason };
+    }
+
+    // Held by a rate limit (e.g. during QA after all subtasks completed): the task
+    // is waiting to resume, not finished — leave it in the queue.
+    if (plan?.rateLimitHold) {
       return { status: finalStatus, reviewReason: finalReviewReason };
     }
 

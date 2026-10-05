@@ -451,6 +451,51 @@ describe('taskMachine', () => {
     });
   });
 
+  describe('rate-limit hold (RATE_LIMIT_HOLD)', () => {
+    const hold: TaskEvent = {
+      type: 'RATE_LIMIT_HOLD',
+      resetAt: '2026-10-05T16:30:00.000Z',
+      message: "You've hit your session limit · resets 8:30pm (Asia/Yerevan)",
+      phase: 'coding'
+    };
+
+    it.each(['planning', 'coding', 'qa_review', 'qa_fixing'])('moves %s to queued', (initialState) => {
+      const snapshot = runEvents([hold], initialState);
+      expect(snapshot.value).toBe('queued');
+      expect(snapshot.context.reviewReason).toBeUndefined();
+    });
+
+    it('is ignored outside active states', () => {
+      expect(runEvents([hold], 'backlog').value).toBe('backlog');
+      expect(runEvents([hold], 'human_review').value).toBe('human_review');
+    });
+
+    it('ignores unexpected PROCESS_EXITED while queued', () => {
+      const snapshot = runEvents([hold, { type: 'PROCESS_EXITED', exitCode: 1, unexpected: true }], 'coding');
+      expect(snapshot.value).toBe('queued');
+    });
+
+    it('resumes from queued via PLANNING_STARTED then follows the build', () => {
+      const snapshot = runEvents(
+        [
+          hold,
+          { type: 'PLANNING_STARTED' },
+          { type: 'CODING_STARTED', subtaskId: '', subtaskDescription: '' }
+        ],
+        'coding'
+      );
+      expect(snapshot.value).toBe('coding');
+    });
+
+    it('can be resumed directly into coding and stopped back to backlog/human_review', () => {
+      expect(runEvents([hold, { type: 'USER_RESUMED' }], 'coding').value).toBe('coding');
+      expect(runEvents([hold, { type: 'USER_STOPPED', hasPlan: false }], 'planning').value).toBe('backlog');
+      const stopped = runEvents([hold, { type: 'USER_STOPPED', hasPlan: true }], 'coding');
+      expect(stopped.value).toBe('human_review');
+      expect(stopped.context.reviewReason).toBe('stopped');
+    });
+  });
+
   describe('state restoration from task', () => {
     it('should restore to correct state from existing task status', () => {
       // Test restoring to different states
@@ -460,6 +505,7 @@ describe('taskMachine', () => {
         { initialState: 'coding', expectedState: 'coding' },
         { initialState: 'qa_review', expectedState: 'qa_review' },
         { initialState: 'qa_fixing', expectedState: 'qa_fixing' },
+        { initialState: 'queued', expectedState: 'queued' },
         { initialState: 'human_review', expectedState: 'human_review' },
         { initialState: 'error', expectedState: 'error' },
         { initialState: 'pr_created', expectedState: 'pr_created' },

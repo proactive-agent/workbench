@@ -31,6 +31,7 @@ import type { Phase } from '../config/types';
 import { QASignoffSchema, validateStructuredOutput } from '../schema';
 import { safeParseJson } from '../../utils/json-repair';
 import type { SessionResult } from '../session/types';
+import { writeRateLimitPauseFile } from './pause-handler';
 
 // =============================================================================
 // Constants
@@ -150,9 +151,11 @@ export interface QAOutcome {
   /** Duration in ms */
   durationMs: number;
   /** Reason if not approved */
-  reason?: 'max_iterations' | 'recurring_issues' | 'consecutive_errors' | 'cancelled' | 'error';
+  reason?: 'max_iterations' | 'recurring_issues' | 'consecutive_errors' | 'cancelled' | 'error' | 'rate_limited';
   /** Error message if failed */
   error?: string;
+  /** Set when QA stopped on a rate limit with a known reset time (reason 'rate_limited') */
+  rateLimitHold?: { resetAt: string; message: string };
 }
 
 /** QA signoff structure from implementation_plan.json */
@@ -255,6 +258,10 @@ export class QALoop extends EventEmitter {
           return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
         }
 
+        if (reviewResult.outcome === 'rate_limited' && reviewResult.error?.rateLimitResetAt) {
+          return this.rateLimitHoldOutcome(iteration - 1, startTime, reviewResult);
+        }
+
         // Read QA signoff from implementation_plan.json
         const signoff = await this.readQASignoff();
         const status = this.resolveQAStatus(signoff);
@@ -316,6 +323,10 @@ export class QALoop extends EventEmitter {
           if (fixResult.outcome === 'cancelled') {
             await this.writeReports('max_iterations');
             return this.outcome(false, iteration, Date.now() - startTime, 'cancelled');
+          }
+
+          if (fixResult.outcome === 'rate_limited' && fixResult.error?.rateLimitResetAt) {
+            return this.rateLimitHoldOutcome(iteration, startTime, fixResult);
           }
 
           if (fixResult.outcome === 'error' || fixResult.outcome === 'auth_failure') {
@@ -598,6 +609,28 @@ export class QALoop extends EventEmitter {
   // ===========================================================================
   // Helpers
   // ===========================================================================
+
+  /** Build the outcome for a rate-limit hold (QA stops; main process resumes later). */
+  private rateLimitHoldOutcome(iterations: number, startTime: number, result: SessionResult): QAOutcome {
+    const message = result.error?.message ?? 'Rate limit reached';
+    const resetAt = result.error?.rateLimitResetAt ?? '';
+    // Marker lets the resumed build orchestrator run QA instead of declaring completion
+    try {
+      writeRateLimitPauseFile(this.config.specDir, message, resetAt, 'qa_review');
+    } catch {
+      // Non-fatal
+    }
+    const outcome: QAOutcome = {
+      approved: false,
+      totalIterations: iterations,
+      durationMs: Date.now() - startTime,
+      reason: 'rate_limited',
+      error: message,
+      rateLimitHold: { resetAt, message },
+    };
+    this.emitTyped('qa-complete', outcome);
+    return outcome;
+  }
 
   private outcome(
     approved: boolean,

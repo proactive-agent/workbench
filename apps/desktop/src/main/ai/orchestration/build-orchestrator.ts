@@ -35,6 +35,12 @@ import { safeParseJson } from '../../utils/json-repair';
 import type { SessionResult } from '../session/types';
 import { iterateSubtasks } from './subtask-iterator';
 import type { SubtaskIteratorConfig, SubtaskResult } from './subtask-iterator';
+import {
+  RATE_LIMIT_PAUSE_FILE,
+  readPauseFile,
+  removePauseFile,
+  writeRateLimitPauseFile,
+} from './pause-handler';
 
 // =============================================================================
 // Constants
@@ -157,6 +163,27 @@ export interface BuildOrchestratorEvents {
   'error': (error: Error, phase: BuildPhase) => void;
 }
 
+/**
+ * Rate-limit hold: the build stopped because the provider limit was hit and
+ * the reset time is known. The caller should queue the task and resume it at
+ * `resetAt` rather than treating the build as failed.
+ */
+export interface BuildRateLimitHold {
+  /** ISO 8601 reset time */
+  resetAt: string;
+  /** Original limit message from the provider */
+  message: string;
+  /** Build phase that was interrupted */
+  phase: BuildPhase;
+}
+
+/** Result of a single build phase runner */
+interface PhaseResult {
+  success: boolean;
+  error?: string;
+  rateLimitHold?: BuildRateLimitHold;
+}
+
 /** Final build outcome */
 export interface BuildOutcome {
   /** Whether the build succeeded */
@@ -171,6 +198,8 @@ export interface BuildOutcome {
   error?: string;
   /** Whether the coding phase completed before failure (indicates QA-phase failure) */
   codingCompleted: boolean;
+  /** Set when the build was put on hold due to a rate limit with a known reset time */
+  rateLimitHold?: BuildRateLimitHold;
 }
 
 // =============================================================================
@@ -242,6 +271,10 @@ export class BuildOrchestrator extends EventEmitter {
     const startTime = Date.now();
 
     try {
+      // A previous run may have been put on hold by a rate limit. The marker tells
+      // us which phase was interrupted (needed to resume QA, see below).
+      const previousHoldPhase = this.consumeRateLimitPauseMarker();
+
       // Determine starting phase
       const isFirstRun = await this.isFirstRun();
 
@@ -249,7 +282,7 @@ export class BuildOrchestrator extends EventEmitter {
         // Planning phase
         const planResult = await this.runPlanningPhase();
         if (!planResult.success) {
-          return this.buildOutcome(false, Date.now() - startTime, planResult.error);
+          return this.buildOutcome(false, Date.now() - startTime, planResult.error, planResult.rateLimitHold);
         }
 
         // Reset subtask statuses to "pending" after first-run planning — the spec
@@ -274,6 +307,15 @@ export class BuildOrchestrator extends EventEmitter {
 
       // Check if build is already complete
       if (await this.isBuildComplete()) {
+        // Resuming after a rate-limit hold during QA: coding is done but QA never
+        // finished, so run QA instead of declaring the build complete.
+        if (previousHoldPhase === 'qa_review' || previousHoldPhase === 'qa_fixing') {
+          this.emitTyped('log', 'Resuming QA after rate-limit hold');
+          this.markPhaseCompleted('planning');
+          this.markPhaseCompleted('coding');
+          const resumedQa = await this.runQAPhase();
+          return this.buildOutcome(resumedQa.success, Date.now() - startTime, resumedQa.error, resumedQa.rateLimitHold);
+        }
         this.transitionPhase('complete', 'Build already complete');
         return this.buildOutcome(true, Date.now() - startTime);
       }
@@ -281,12 +323,12 @@ export class BuildOrchestrator extends EventEmitter {
       // Coding phase
       const codingResult = await this.runCodingPhase();
       if (!codingResult.success) {
-        return this.buildOutcome(false, Date.now() - startTime, codingResult.error);
+        return this.buildOutcome(false, Date.now() - startTime, codingResult.error, codingResult.rateLimitHold);
       }
 
       // QA review phase
       const qaResult = await this.runQAPhase();
-      return this.buildOutcome(qaResult.success, Date.now() - startTime, qaResult.error);
+      return this.buildOutcome(qaResult.success, Date.now() - startTime, qaResult.error, qaResult.rateLimitHold);
 
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -302,7 +344,7 @@ export class BuildOrchestrator extends EventEmitter {
   /**
    * Run the planning phase: invoke planner agent to create implementation_plan.json.
    */
-  private async runPlanningPhase(): Promise<{ success: boolean; error?: string }> {
+  private async runPlanningPhase(): Promise<PhaseResult> {
     this.transitionPhase('planning', 'Creating implementation plan');
     let planningRetryContext: string | undefined;
     let validationFailures = 0;
@@ -338,6 +380,11 @@ export class BuildOrchestrator extends EventEmitter {
 
       if (result.outcome === 'cancelled') {
         return { success: false, error: 'Build cancelled' };
+      }
+
+      const planningHold = this.toRateLimitHold(result, 'planning');
+      if (planningHold) {
+        return { success: false, error: planningHold.message, rateLimitHold: planningHold };
       }
 
       if (result.outcome === 'error' || result.outcome === 'auth_failure' || result.outcome === 'rate_limited') {
@@ -422,7 +469,7 @@ export class BuildOrchestrator extends EventEmitter {
   /**
    * Run the coding phase: iterate through subtasks and invoke coder agent.
    */
-  private async runCodingPhase(): Promise<{ success: boolean; error?: string }> {
+  private async runCodingPhase(): Promise<PhaseResult> {
     this.transitionPhase('coding', 'Starting implementation');
 
     const iteratorConfig: SubtaskIteratorConfig = {
@@ -471,6 +518,12 @@ export class BuildOrchestrator extends EventEmitter {
       return { success: false, error: 'Build cancelled' };
     }
 
+    if (iteratorResult.rateLimitHold) {
+      const hold: BuildRateLimitHold = { ...iteratorResult.rateLimitHold, phase: 'coding' };
+      this.writeRateLimitPauseMarker(hold);
+      return { success: false, error: hold.message, rateLimitHold: hold };
+    }
+
     if (iteratorResult.stuckSubtasks.length > 0 && iteratorResult.completedSubtasks === 0) {
       return {
         success: false,
@@ -490,7 +543,7 @@ export class BuildOrchestrator extends EventEmitter {
   /**
    * Run QA review and optional QA fixing loop.
    */
-  private async runQAPhase(): Promise<{ success: boolean; error?: string }> {
+  private async runQAPhase(): Promise<PhaseResult> {
     // QA review
     this.transitionPhase('qa_review', 'Running QA review');
 
@@ -524,6 +577,11 @@ export class BuildOrchestrator extends EventEmitter {
 
       if (reviewResult.outcome === 'cancelled') {
         return { success: false, error: 'Build cancelled' };
+      }
+
+      const reviewHold = this.toRateLimitHold(reviewResult, 'qa_review');
+      if (reviewHold) {
+        return { success: false, error: reviewHold.message, rateLimitHold: reviewHold };
       }
 
       // Check QA result
@@ -562,6 +620,12 @@ export class BuildOrchestrator extends EventEmitter {
         });
 
         this.emitTyped('session-complete', fixResult, 'qa_fixing');
+
+        const fixHold = this.toRateLimitHold(fixResult, 'qa_fixing');
+        if (fixHold) {
+          return { success: false, error: fixHold.message, rateLimitHold: fixHold };
+        }
+
         this.markPhaseCompleted('qa_fixing');
 
         // Delete qa_report.md before re-review so the reviewer writes a clean verdict.
@@ -758,7 +822,12 @@ export class BuildOrchestrator extends EventEmitter {
   // Helpers
   // ===========================================================================
 
-  private buildOutcome(success: boolean, durationMs: number, error?: string): BuildOutcome {
+  private buildOutcome(
+    success: boolean,
+    durationMs: number,
+    error?: string,
+    rateLimitHold?: BuildRateLimitHold,
+  ): BuildOutcome {
     const outcome: BuildOutcome = {
       success,
       finalPhase: this.currentPhase,
@@ -766,14 +835,53 @@ export class BuildOrchestrator extends EventEmitter {
       durationMs,
       error,
       codingCompleted: this.completedPhases.includes('coding'),
+      ...(rateLimitHold ? { rateLimitHold } : {}),
     };
 
-    if (!success && !isTerminalPhase(this.currentPhase)) {
+    // A rate-limit hold is a pause, not a failure — don't enter the terminal 'failed' phase
+    if (!success && !rateLimitHold && !isTerminalPhase(this.currentPhase)) {
       this.transitionPhase('failed', error ?? 'Build failed');
     }
 
     this.emitTyped('build-complete', outcome);
     return outcome;
+  }
+
+  /**
+   * Convert a rate-limited session result with a known reset time into a hold.
+   * Also writes the RATE_LIMIT_PAUSE marker so a resumed build knows which
+   * phase was interrupted. Returns undefined for any other result.
+   */
+  private toRateLimitHold(result: SessionResult, phase: BuildPhase): BuildRateLimitHold | undefined {
+    const resetAt = result.error?.rateLimitResetAt;
+    if (result.outcome !== 'rate_limited' || !resetAt) return undefined;
+    const hold: BuildRateLimitHold = {
+      resetAt,
+      message: result.error?.message ?? 'Rate limit reached',
+      phase,
+    };
+    this.writeRateLimitPauseMarker(hold);
+    return hold;
+  }
+
+  /** Persist the hold to RATE_LIMIT_PAUSE in the spec dir (best effort). */
+  private writeRateLimitPauseMarker(hold: BuildRateLimitHold): void {
+    try {
+      writeRateLimitPauseFile(this.config.specDir, hold.message, hold.resetAt, hold.phase);
+    } catch {
+      // Non-fatal: the main process persists the hold in the plan file as well
+    }
+  }
+
+  /**
+   * Read and remove a RATE_LIMIT_PAUSE marker left by a previous held run.
+   * @returns The interrupted build phase, if recorded.
+   */
+  private consumeRateLimitPauseMarker(): string | undefined {
+    const data = readPauseFile(this.config.specDir, RATE_LIMIT_PAUSE_FILE);
+    if (!data) return undefined;
+    removePauseFile(this.config.specDir, RATE_LIMIT_PAUSE_FILE);
+    return typeof data.phase === 'string' ? data.phase : undefined;
   }
 
   /**

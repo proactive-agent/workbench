@@ -53,6 +53,7 @@ import { join } from 'path';
 import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
+import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -536,6 +537,15 @@ app.whenReady().then(() => {
   // Setup IPC handlers
   setupIpcHandlers(agentManager, terminalManager, () => mainWindow);
 
+  // Re-arm resume timers for tasks held by a rate limit (holds survive restarts;
+  // holds whose reset time already passed resume shortly after startup)
+  setImmediate(() => {
+    const scheduled = rateLimitResumeScheduler.scanAndScheduleAll();
+    if (scheduled > 0) {
+      console.warn(`[main] Scheduled ${scheduled} rate-limit-held task(s) for resume`);
+    }
+  });
+
   // Create window
   createWindow();
 
@@ -680,6 +690,7 @@ app.on('before-quit', (event) => {
 
   // Stop synchronous services immediately
   stopPeriodicUpdates();
+  rateLimitResumeScheduler.dispose();
 
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();

@@ -49,6 +49,9 @@ export const TASK_STATUS_COLORS: Record<TaskStatusColumn | 'pr_created' | 'error
   error: 'bg-destructive/10 text-destructive'
 };
 
+/** Default max parallel tasks when no project setting is configured */
+export const DEFAULT_MAX_PARALLEL_TASKS = 3;
+
 // Status priority for deduplication: higher = more complete
 // Used in project-store.ts to resolve duplicate tasks (main vs worktree)
 // IMPORTANT: Must follow workflow order: backlog < queue < in_progress < review < done

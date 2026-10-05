@@ -4,6 +4,7 @@
  */
 
 import type { ClaudeUsageData } from '../../shared/types';
+import { isValidTimeZone, parseLimitResetTime } from '../ai/session/claude-limit';
 
 /**
  * Regex to parse /usage command output
@@ -18,6 +19,13 @@ const USAGE_RESET_PATTERN = /Resets?\s+(.+?)(?:\s*$|\n)/i;
  */
 export function parseResetTime(resetTimeStr: string): Date {
   const now = new Date();
+
+  // When an IANA zone is given (e.g. "(Asia/Yerevan)"), compute the reset in that zone
+  const zone = resetTimeStr.match(/\(([^()]+)\)/)?.[1]?.trim();
+  if (zone && isValidTimeZone(zone)) {
+    const zoned = parseLimitResetTime(resetTimeStr, now);
+    if (zoned) return zoned;
+  }
 
   // Try to parse various formats
   // Format: "Dec 17 at 6am (Europe/Oslo)" or "Nov 1, 10:59am"

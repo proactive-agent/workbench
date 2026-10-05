@@ -14,6 +14,7 @@
  */
 
 import type { SessionError, SessionOutcome } from './types';
+import { ClaudeLimitReachedError } from './claude-limit';
 
 // =============================================================================
 // Error Code Constants
@@ -63,6 +64,9 @@ const RATE_LIMIT_PATTERNS = [
   'too many requests',
   'usage limit',
   'quota exceeded',
+  'session limit',
+  'weekly limit',
+  'out of extra usage',
 ] as const;
 
 const AUTH_PATTERNS = [
@@ -95,6 +99,7 @@ export function isBillingError(error: unknown): boolean {
  * Excludes billing errors which also use 429 but are not temporary.
  */
 export function isRateLimitError(error: unknown): boolean {
+  if (error instanceof ClaudeLimitReachedError) return true;
   if (isBillingError(error)) return false;
   const errorStr = errorToString(error);
   if (WORD_BOUNDARY_429.test(errorStr)) return true;
@@ -156,6 +161,21 @@ export interface ClassifiedError {
  * 7. Generic (not retryable)
  */
 export function classifyError(error: unknown): ClassifiedError {
+  // Claude subscription limit message returned as model text (not an HTTP error).
+  // Preserve the original casing (it carries the IANA zone) and the parsed reset time.
+  if (error instanceof ClaudeLimitReachedError) {
+    return {
+      sessionError: {
+        code: ErrorCode.RATE_LIMITED,
+        message: error.limit.message,
+        retryable: true,
+        cause: error,
+        ...(error.resetAt ? { rateLimitResetAt: error.resetAt.toISOString() } : {}),
+      },
+      outcome: 'rate_limited',
+    };
+  }
+
   const message = sanitizeErrorMessage(errorToString(error));
 
   if (isAbortError(error)) {

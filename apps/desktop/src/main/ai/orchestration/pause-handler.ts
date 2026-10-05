@@ -50,6 +50,8 @@ export interface RateLimitPauseData {
   pausedAt: string;
   resetTimestamp: string | null;
   error: string;
+  /** Build phase that was interrupted (set for rate-limit holds) */
+  phase?: string;
 }
 
 /** Data written to AUTH_FAILURE_PAUSE file. */
@@ -114,11 +116,13 @@ export function writeRateLimitPauseFile(
   specDir: string,
   error: string,
   resetTimestamp: string | null,
+  phase?: string,
 ): void {
   const data: RateLimitPauseData = {
     pausedAt: new Date().toISOString(),
     resetTimestamp,
     error,
+    ...(phase ? { phase } : {}),
   };
   writeFileSync(join(specDir, RATE_LIMIT_PAUSE_FILE), JSON.stringify(data, null, 2), 'utf8');
 }

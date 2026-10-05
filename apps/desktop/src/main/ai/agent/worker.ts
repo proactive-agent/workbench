@@ -697,7 +697,16 @@ async function runBuildOrchestrator(
 
   // Emit task events based on orchestration outcome so XState machine
   // can transition to the correct state (e.g., human_review on success).
-  if (outcome.success) {
+  if (outcome.rateLimitHold) {
+    // Provider limit hit with a known reset time: the main process queues the
+    // task and resumes it at resetAt (progress is preserved in the plan/worktree).
+    postLog(`Rate limit reached — holding task until ${outcome.rateLimitHold.resetAt}`);
+    postTaskEvent('RATE_LIMIT_HOLD', {
+      resetAt: outcome.rateLimitHold.resetAt,
+      message: outcome.rateLimitHold.message,
+      phase: outcome.rateLimitHold.phase,
+    });
+  } else if (outcome.success) {
     postTaskEvent('QA_PASSED');
     postTaskEvent('BUILD_COMPLETE');
   } else if (outcome.codingCompleted) {
@@ -715,7 +724,7 @@ async function runBuildOrchestrator(
 
   // Map outcome to a SessionResult-compatible result for the bridge
   const result: SessionResult = {
-    outcome: outcome.success ? 'completed' : 'error',
+    outcome: outcome.success ? 'completed' : outcome.rateLimitHold ? 'rate_limited' : 'error',
     stepsExecuted: outcome.totalIterations,
     usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     messages: [],
@@ -792,7 +801,14 @@ async function runQALoop(
   }
 
   // Emit task events so XState machine transitions correctly.
-  if (outcome.approved) {
+  if (outcome.rateLimitHold) {
+    postLog(`Rate limit reached — holding task until ${outcome.rateLimitHold.resetAt}`);
+    postTaskEvent('RATE_LIMIT_HOLD', {
+      resetAt: outcome.rateLimitHold.resetAt,
+      message: outcome.rateLimitHold.message,
+      phase: 'qa_review',
+    });
+  } else if (outcome.approved) {
     postTaskEvent('QA_PASSED');
   } else if (outcome.reason === 'max_iterations') {
     postTaskEvent('QA_MAX_ITERATIONS');
@@ -801,7 +817,7 @@ async function runQALoop(
   }
 
   const result: SessionResult = {
-    outcome: outcome.approved ? 'completed' : 'error',
+    outcome: outcome.approved ? 'completed' : outcome.rateLimitHold ? 'rate_limited' : 'error',
     stepsExecuted: outcome.totalIterations,
     usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
     messages: [],

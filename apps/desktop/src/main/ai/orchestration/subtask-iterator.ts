@@ -70,6 +70,12 @@ export interface SubtaskIteratorResult {
   stuckSubtasks: string[];
   /** Whether iteration was cancelled */
   cancelled: boolean;
+  /**
+   * Set when iteration stopped because of a rate limit with a known reset time.
+   * The caller should stop the build and schedule a resume at `resetAt`
+   * instead of holding the worker for hours.
+   */
+  rateLimitHold?: { resetAt: string; message: string };
 }
 
 /** Single subtask result for internal tracking */
@@ -191,8 +197,22 @@ export async function iterateSubtasks(
     }
 
     if (result.outcome === 'rate_limited') {
-      // Write pause file so the frontend can show a countdown
       const errorMessage = result.error?.message ?? 'Rate limit reached';
+
+      // Known reset time (e.g. Claude "session limit · resets 8:30pm (Asia/Yerevan)"):
+      // stop iterating so the build can be held and resumed by the main process.
+      // The subtask stays pending/in_progress, so the resumed build picks it up again.
+      if (result.error?.rateLimitResetAt) {
+        return {
+          totalSubtasks,
+          completedSubtasks,
+          stuckSubtasks,
+          cancelled: false,
+          rateLimitHold: { resetAt: result.error.rateLimitResetAt, message: errorMessage },
+        };
+      }
+
+      // Unknown reset time — write pause file so the frontend can show a countdown
       writeRateLimitPauseFile(config.specDir, errorMessage, null);
 
       // Wait for the rate limit to reset (or user to resume early)

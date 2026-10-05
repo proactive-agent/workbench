@@ -192,6 +192,43 @@ describe('runAgentSession', () => {
     expect(result.stepsExecuted).toBe(0);
   });
 
+  it('should treat a Claude limit message response as rate_limited with a reset time', async () => {
+    const limitText = "You've hit your session limit · resets 8:30pm (Asia/Yerevan)";
+    mockStreamText.mockReturnValue(
+      createMockStreamResult(
+        [
+          { type: 'text-delta', id: 'text-1', delta: limitText },
+          { type: 'finish-step', usage: { inputTokens: 10, outputTokens: 5 } },
+        ],
+        { text: limitText },
+      ),
+    );
+
+    const result = await runAgentSession(createMockConfig());
+
+    expect(result.outcome).toBe('rate_limited');
+    expect(result.error?.code).toBe('rate_limited');
+    expect(result.error?.message).toBe(limitText);
+    expect(result.error?.rateLimitResetAt).toBeDefined();
+    expect(Date.parse(result.error?.rateLimitResetAt ?? '')).toBeGreaterThan(Date.now());
+  });
+
+  it('should try an account switch before giving up on a Claude limit message', async () => {
+    const limitText = "You're out of extra usage · resets 8:30pm (Asia/Yerevan)";
+    mockStreamText.mockReturnValue(
+      createMockStreamResult([{ type: 'text-delta', id: 'text-1', delta: limitText }], { text: limitText }),
+    );
+    const onAccountSwitch = vi.fn().mockResolvedValue(null);
+
+    const result = await runAgentSession(createMockConfig(), {
+      onAccountSwitch,
+      currentAccountId: 'account-1',
+    });
+
+    expect(onAccountSwitch).toHaveBeenCalledWith('account-1', expect.objectContaining({ code: 'rate_limited' }));
+    expect(result.outcome).toBe('rate_limited');
+  });
+
   it('should classify generic errors', async () => {
     mockStreamText.mockImplementation(() => {
       throw new Error('Network error');

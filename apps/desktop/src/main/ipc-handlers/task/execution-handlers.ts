@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
+import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir, DEFAULT_MAX_PARALLEL_TASKS } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus, ImageAttachment } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -25,6 +25,8 @@ import { getIsolatedGitEnv, detectWorktreeBranch } from '../../utils/git-isolati
 import { cancelFallbackTimer } from '../agent-events-handlers';
 import { readSettingsFile } from '../../settings-utils';
 import type { ProviderAccount } from '../../../shared/types/provider-account';
+import { rateLimitResumeScheduler, type HeldTaskRef } from '../../services/rate-limit-resume-scheduler';
+import { clearRateLimitHold } from './rate-limit-hold';
 
 /**
  * Check if any provider account is configured (API key or OAuth).
@@ -118,248 +120,306 @@ export function registerTaskExecutionHandlers(
   agentManager: AgentManager,
   getMainWindow: () => BrowserWindow | null
 ): void {
+  /** Send a task error to the renderer (no-op when no window is open). */
+  const sendTaskError = (taskId: string, error: string): void => {
+    const mainWindow = getMainWindow();
+    if (mainWindow) {
+      mainWindow.webContents.send(IPC_CHANNELS.TASK_ERROR, taskId, error);
+    }
+  };
+
+  /**
+   * Start (or resume) a task. Shared by the TASK_START IPC handler and the
+   * rate-limit resume scheduler. Resuming reuses the existing plan/worktree:
+   * completed subtasks are skipped by the build orchestrator.
+   */
+  const startTask = async (taskId: string): Promise<void> => {
+    console.warn('[TASK_START] Received request for taskId:', taskId);
+
+    // Cancel any pending fallback timer from previous process exit
+    // This prevents the stale timer from incorrectly stopping the newly restarted task
+    cancelFallbackTimer(taskId);
+
+    // Ensure profile manager is initialized before checking auth
+    // This prevents race condition where auth check runs before profile data loads from disk
+    const initResult = await ensureProfileManagerInitialized();
+    if (!initResult.success) {
+      sendTaskError(taskId, initResult.error);
+      return;
+    }
+    const profileManager = initResult.profileManager;
+
+    // Find task and project
+    // First search all projects to find the task, then verify the project matches
+    // task.projectId to prevent cross-project contamination when multiple projects
+    // have tasks with overlapping specIds (e.g., after delete/recreate).
+    const { task, project: foundProject } = findTaskAndProject(taskId);
+
+    if (!task || !foundProject) {
+      console.warn('[TASK_START] Task or project not found for taskId:', taskId);
+      sendTaskError(taskId, 'Task or project not found');
+      return;
+    }
+
+    // Use task's own projectId as the authoritative source (prevents wrong-project execution)
+    const project = (task.projectId && task.projectId !== foundProject.id)
+      ? (projectStore.getProject(task.projectId) ?? foundProject)
+      : foundProject;
+
+    // Check git status - Auto Claude requires git for worktree-based builds
+    const gitStatus = checkGitStatus(project.path);
+    if (!gitStatus.isGitRepo) {
+      console.warn('[TASK_START] Project is not a git repository:', project.path);
+      sendTaskError(
+        taskId,
+        'Git repository required. Please run "git init" in your project directory. Aperant uses git worktrees for isolated builds.'
+      );
+      return;
+    }
+    if (!gitStatus.hasCommits) {
+      console.warn('[TASK_START] Git repository has no commits:', project.path);
+      sendTaskError(
+        taskId,
+        'Git repository has no commits. Please make an initial commit first (git add . && git commit -m "Initial commit").'
+      );
+      return;
+    }
+
+    // Check authentication - requires valid legacy profile OR provider account
+    if (!profileManager.hasValidAuth() && !hasAnyProviderAccount()) {
+      console.warn('[TASK_START] No valid authentication for active profile or provider accounts');
+      sendTaskError(
+        taskId,
+        'Authentication required. Please add an account in Settings > Accounts before starting tasks.'
+      );
+      return;
+    }
+
+    console.warn('[TASK_START] Found task:', task.specId, 'status:', task.status, 'reviewReason:', task.reviewReason, 'subtasks:', task.subtasks.length);
+
+    // Starting (manually or via the resume scheduler) releases any rate-limit hold
+    clearRateLimitHold(project, task, getMainWindow);
+
+    // Clear stale tracking state from any previous execution so that:
+    // - terminalEventSeen doesn't suppress future PROCESS_EXITED events
+    // - lastSequenceByTask doesn't drop events from the new process
+    taskStateManager.prepareForRestart(taskId);
+
+    // Check if implementation_plan.json has valid subtasks BEFORE XState handling.
+    // This is more reliable than task.subtasks.length which may not be loaded yet.
+    const specsBaseDir = getSpecsDir(project.autoBuildPath);
+    const specDir = path.join(
+      project.path,
+      specsBaseDir,
+      task.specId
+    );
+    const planFilePath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
+    let planHasSubtasks = false;
+    const planContent = safeReadFileSync(planFilePath);
+    if (planContent) {
+      try {
+        const plan = JSON.parse(planContent);
+        planHasSubtasks = checkSubtasksCompletion(plan).totalCount > 0;
+      } catch {
+        // Invalid/corrupt plan file - treat as no subtasks
+      }
+    }
+
+    // Immediately mark as started so the UI moves the card to In Progress.
+    // Use XState actor state as source of truth (if actor exists), with task data as fallback.
+    // - plan_review: User approved the plan, send PLAN_APPROVED to transition to coding
+    // - human_review/error: User resuming, send USER_RESUMED
+    // - backlog/other: Fresh start, send PLANNING_STARTED
+    const currentXState = taskStateManager.getCurrentState(taskId);
+    console.warn('[TASK_START] Current XState:', currentXState, '| Task status:', task.status, task.reviewReason);
+
+    if (currentXState === 'plan_review') {
+      // XState says plan_review - send PLAN_APPROVED
+      console.warn('[TASK_START] XState: plan_review -> coding via PLAN_APPROVED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+    } else if (currentXState === 'queued') {
+      // Released from a rate-limit hold. PLANNING_STARTED moves to In Progress; the build
+      // orchestrator skips planning when a plan exists and resumes coding/QA.
+      console.warn('[TASK_START] XState: queued (rate-limit hold) -> planning via PLANNING_STARTED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
+    } else if (currentXState === 'error' && !planHasSubtasks) {
+      // FIX (#1562): Task crashed during planning (no subtasks yet).
+      // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).
+      console.warn('[TASK_START] XState: error with no plan subtasks -> planning via PLANNING_STARTED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
+    } else if (currentXState === 'human_review' || currentXState === 'error') {
+      // XState says human_review or error - send USER_RESUMED
+      console.warn('[TASK_START] XState:', currentXState, '-> coding via USER_RESUMED');
+      taskStateManager.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
+    } else if (currentXState) {
+      // XState actor exists but in another state (coding, planning, etc.)
+      // This shouldn't happen normally, but handle gracefully
+      console.warn('[TASK_START] XState in unexpected state:', currentXState, '- sending PLANNING_STARTED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
+    } else if (task.status === 'human_review' && task.reviewReason === 'plan_review') {
+      // No XState actor - fallback to task data (e.g., after app restart)
+      console.warn('[TASK_START] No XState actor, task data: plan_review -> coding via PLAN_APPROVED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+    } else if (task.status === 'error' && !planHasSubtasks) {
+      // FIX (#1562): No XState actor, task crashed during planning (no subtasks).
+      // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).
+      console.warn('[TASK_START] No XState actor, error with no plan subtasks -> planning via PLANNING_STARTED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
+    } else if (task.status === 'human_review' || task.status === 'error') {
+      // No XState actor - fallback to task data for resuming
+      console.warn('[TASK_START] No XState actor, task data:', task.status, '-> coding via USER_RESUMED');
+      taskStateManager.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
+    } else {
+      // Fresh start - PLANNING_STARTED transitions from backlog to planning
+      console.warn('[TASK_START] Fresh start via PLANNING_STARTED');
+      taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
+    }
+
+    // Reset any stuck subtasks before starting execution
+    // This handles recovery from previous rate limits or crashes
+    const planPath = getPlanPath(project, task);
+    const resetResult = await resetStuckSubtasks(planPath, project.id);
+    if (resetResult.success && resetResult.resetCount > 0) {
+      console.warn(`[TASK_START] Reset ${resetResult.resetCount} stuck subtask(s) before starting`);
+    }
+
+    // Start file watcher for this task
+    // Use worktree path if it exists, since the backend writes implementation_plan.json there
+    const watchSpecDir = getSpecDirForWatcher(project.path, specsBaseDir, task.specId);
+    fileWatcher.watch(taskId, watchSpecDir).catch((err) => {
+      console.error(`[TASK_START] Failed to watch spec dir for ${taskId}:`, err);
+    });
+
+    // Check if spec.md exists (indicates spec creation was already done or in progress)
+    // Check main project path for spec file (spec is created before worktree)
+    const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
+    const hasSpec = existsSync(specFilePath);
+
+    // Check if this task needs spec creation first (no spec file = not yet created)
+    // OR if it has a spec but no implementation plan subtasks (spec created, needs planning/building)
+    const needsSpecCreation = !hasSpec;
+    // FIX (#1562): Check actual plan file for subtasks, not just task.subtasks.length.
+    // When a task crashes during planning, it may have spec.md but an empty/missing
+    // implementation_plan.json. Previously, this path would call startTaskExecution
+    // (run.py) which expects subtasks to exist. Now we check the actual plan file.
+    const needsImplementation = hasSpec && !planHasSubtasks;
+
+    console.warn('[TASK_START] hasSpec:', hasSpec, 'planHasSubtasks:', planHasSubtasks, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation);
+
+    // Get base branch: task-level override takes precedence over project settings
+    const baseBranch = task.metadata?.baseBranch || project.settings?.mainBranch;
+
+    if (needsSpecCreation) {
+      // No spec file - need to run spec_runner.py to create the spec
+      const taskDescription = task.description || task.title;
+      console.warn('[TASK_START] Starting spec creation for:', task.specId, 'in:', specDir, 'baseBranch:', baseBranch);
+
+      // Start spec creation process - pass the existing spec directory
+      // so spec_runner uses it instead of creating a new one
+      // Also pass baseBranch so worktrees are created from the correct branch
+      agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, task.metadata, baseBranch, project.id);
+    } else if (needsImplementation) {
+      // Spec exists but no valid subtasks in implementation plan
+      // FIX (#1562): Use startTaskExecution (run.py) which will create the planner
+      // agent session to generate the implementation plan. run.py handles the case
+      // where implementation_plan.json is missing or has no subtasks - the planner
+      // agent will generate the plan before the coder starts.
+      console.warn('[TASK_START] Starting task execution (no valid subtasks in plan) for:', task.specId);
+      agentManager.startTaskExecution(
+        taskId,
+        project.path,
+        task.specId,
+        {
+          parallel: false,  // Sequential for planning phase
+          workers: 1,
+          baseBranch,
+          useWorktree: task.metadata?.useWorktree,
+          useLocalBranch: task.metadata?.useLocalBranch,
+          pushNewBranches: task.metadata?.pushNewBranches
+        },
+        project.id
+      );
+    } else {
+      // Task has subtasks, start normal execution
+      // Note: Parallel execution is handled internally by the agent, not via CLI flags
+      console.warn('[TASK_START] Starting task execution (has subtasks) for:', task.specId);
+
+      agentManager.startTaskExecution(
+        taskId,
+        project.path,
+        task.specId,
+        {
+          parallel: false,
+          workers: 1,
+          baseBranch,
+          useWorktree: task.metadata?.useWorktree,
+          useLocalBranch: task.metadata?.useLocalBranch,
+          pushNewBranches: task.metadata?.pushNewBranches
+        },
+        project.id
+      );
+    }
+  };
+
   /**
    * Start a task
    */
   ipcMain.on(
     IPC_CHANNELS.TASK_START,
     async (_, taskId: string, _options?: TaskStartOptions) => {
-      console.warn('[TASK_START] Received request for taskId:', taskId);
-
-      // Cancel any pending fallback timer from previous process exit
-      // This prevents the stale timer from incorrectly stopping the newly restarted task
-      cancelFallbackTimer(taskId);
-
-      const mainWindow = getMainWindow();
-      if (!mainWindow) {
+      if (!getMainWindow()) {
         console.warn('[TASK_START] No main window found');
         return;
       }
-
-      // Ensure profile manager is initialized before checking auth
-      // This prevents race condition where auth check runs before profile data loads from disk
-      const initResult = await ensureProfileManagerInitialized();
-      if (!initResult.success) {
-        mainWindow.webContents.send(
-          IPC_CHANNELS.TASK_ERROR,
-          taskId,
-          initResult.error
-        );
-        return;
-      }
-      const profileManager = initResult.profileManager;
-
-      // Find task and project
-      // First search all projects to find the task, then verify the project matches
-      // task.projectId to prevent cross-project contamination when multiple projects
-      // have tasks with overlapping specIds (e.g., after delete/recreate).
-      const { task, project: foundProject } = findTaskAndProject(taskId);
-
-      if (!task || !foundProject) {
-        console.warn('[TASK_START] Task or project not found for taskId:', taskId);
-        mainWindow.webContents.send(
-          IPC_CHANNELS.TASK_ERROR,
-          taskId,
-          'Task or project not found'
-        );
-        return;
-      }
-
-      // Use task's own projectId as the authoritative source (prevents wrong-project execution)
-      const project = (task.projectId && task.projectId !== foundProject.id)
-        ? (projectStore.getProject(task.projectId) ?? foundProject)
-        : foundProject;
-
-      // Check git status - Auto Claude requires git for worktree-based builds
-      const gitStatus = checkGitStatus(project.path);
-      if (!gitStatus.isGitRepo) {
-        console.warn('[TASK_START] Project is not a git repository:', project.path);
-        mainWindow.webContents.send(
-          IPC_CHANNELS.TASK_ERROR,
-          taskId,
-          'Git repository required. Please run "git init" in your project directory. Aperant uses git worktrees for isolated builds.'
-        );
-        return;
-      }
-      if (!gitStatus.hasCommits) {
-        console.warn('[TASK_START] Git repository has no commits:', project.path);
-        mainWindow.webContents.send(
-          IPC_CHANNELS.TASK_ERROR,
-          taskId,
-          'Git repository has no commits. Please make an initial commit first (git add . && git commit -m "Initial commit").'
-        );
-        return;
-      }
-
-      // Check authentication - requires valid legacy profile OR provider account
-      if (!profileManager.hasValidAuth() && !hasAnyProviderAccount()) {
-        console.warn('[TASK_START] No valid authentication for active profile or provider accounts');
-        mainWindow.webContents.send(
-          IPC_CHANNELS.TASK_ERROR,
-          taskId,
-          'Authentication required. Please add an account in Settings > Accounts before starting tasks.'
-        );
-        return;
-      }
-
-      console.warn('[TASK_START] Found task:', task.specId, 'status:', task.status, 'reviewReason:', task.reviewReason, 'subtasks:', task.subtasks.length);
-
-      // Clear stale tracking state from any previous execution so that:
-      // - terminalEventSeen doesn't suppress future PROCESS_EXITED events
-      // - lastSequenceByTask doesn't drop events from the new process
-      taskStateManager.prepareForRestart(taskId);
-
-      // Check if implementation_plan.json has valid subtasks BEFORE XState handling.
-      // This is more reliable than task.subtasks.length which may not be loaded yet.
-      const specsBaseDir = getSpecsDir(project.autoBuildPath);
-      const specDir = path.join(
-        project.path,
-        specsBaseDir,
-        task.specId
-      );
-      const planFilePath = path.join(specDir, AUTO_BUILD_PATHS.IMPLEMENTATION_PLAN);
-      let planHasSubtasks = false;
-      const planContent = safeReadFileSync(planFilePath);
-      if (planContent) {
-        try {
-          const plan = JSON.parse(planContent);
-          planHasSubtasks = checkSubtasksCompletion(plan).totalCount > 0;
-        } catch {
-          // Invalid/corrupt plan file - treat as no subtasks
-        }
-      }
-
-      // Immediately mark as started so the UI moves the card to In Progress.
-      // Use XState actor state as source of truth (if actor exists), with task data as fallback.
-      // - plan_review: User approved the plan, send PLAN_APPROVED to transition to coding
-      // - human_review/error: User resuming, send USER_RESUMED
-      // - backlog/other: Fresh start, send PLANNING_STARTED
-      const currentXState = taskStateManager.getCurrentState(taskId);
-      console.warn('[TASK_START] Current XState:', currentXState, '| Task status:', task.status, task.reviewReason);
-
-      if (currentXState === 'plan_review') {
-        // XState says plan_review - send PLAN_APPROVED
-        console.warn('[TASK_START] XState: plan_review -> coding via PLAN_APPROVED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
-      } else if (currentXState === 'error' && !planHasSubtasks) {
-        // FIX (#1562): Task crashed during planning (no subtasks yet).
-        // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).
-        console.warn('[TASK_START] XState: error with no plan subtasks -> planning via PLANNING_STARTED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
-      } else if (currentXState === 'human_review' || currentXState === 'error') {
-        // XState says human_review or error - send USER_RESUMED
-        console.warn('[TASK_START] XState:', currentXState, '-> coding via USER_RESUMED');
-        taskStateManager.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
-      } else if (currentXState) {
-        // XState actor exists but in another state (coding, planning, etc.)
-        // This shouldn't happen normally, but handle gracefully
-        console.warn('[TASK_START] XState in unexpected state:', currentXState, '- sending PLANNING_STARTED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
-      } else if (task.status === 'human_review' && task.reviewReason === 'plan_review') {
-        // No XState actor - fallback to task data (e.g., after app restart)
-        console.warn('[TASK_START] No XState actor, task data: plan_review -> coding via PLAN_APPROVED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
-      } else if (task.status === 'error' && !planHasSubtasks) {
-        // FIX (#1562): No XState actor, task crashed during planning (no subtasks).
-        // Uses planHasSubtasks from implementation_plan.json (more reliable than task.subtasks.length).
-        console.warn('[TASK_START] No XState actor, error with no plan subtasks -> planning via PLANNING_STARTED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
-      } else if (task.status === 'human_review' || task.status === 'error') {
-        // No XState actor - fallback to task data for resuming
-        console.warn('[TASK_START] No XState actor, task data:', task.status, '-> coding via USER_RESUMED');
-        taskStateManager.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
-      } else {
-        // Fresh start - PLANNING_STARTED transitions from backlog to planning
-        console.warn('[TASK_START] Fresh start via PLANNING_STARTED');
-        taskStateManager.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
-      }
-
-      // Reset any stuck subtasks before starting execution
-      // This handles recovery from previous rate limits or crashes
-      const planPath = getPlanPath(project, task);
-      const resetResult = await resetStuckSubtasks(planPath, project.id);
-      if (resetResult.success && resetResult.resetCount > 0) {
-        console.warn(`[TASK_START] Reset ${resetResult.resetCount} stuck subtask(s) before starting`);
-      }
-
-      // Start file watcher for this task
-      // Use worktree path if it exists, since the backend writes implementation_plan.json there
-      const watchSpecDir = getSpecDirForWatcher(project.path, specsBaseDir, task.specId);
-      fileWatcher.watch(taskId, watchSpecDir).catch((err) => {
-        console.error(`[TASK_START] Failed to watch spec dir for ${taskId}:`, err);
-      });
-
-      // Check if spec.md exists (indicates spec creation was already done or in progress)
-      // Check main project path for spec file (spec is created before worktree)
-      const specFilePath = path.join(specDir, AUTO_BUILD_PATHS.SPEC_FILE);
-      const hasSpec = existsSync(specFilePath);
-
-      // Check if this task needs spec creation first (no spec file = not yet created)
-      // OR if it has a spec but no implementation plan subtasks (spec created, needs planning/building)
-      const needsSpecCreation = !hasSpec;
-      // FIX (#1562): Check actual plan file for subtasks, not just task.subtasks.length.
-      // When a task crashes during planning, it may have spec.md but an empty/missing
-      // implementation_plan.json. Previously, this path would call startTaskExecution
-      // (run.py) which expects subtasks to exist. Now we check the actual plan file.
-      const needsImplementation = hasSpec && !planHasSubtasks;
-
-      console.warn('[TASK_START] hasSpec:', hasSpec, 'planHasSubtasks:', planHasSubtasks, 'needsSpecCreation:', needsSpecCreation, 'needsImplementation:', needsImplementation);
-
-      // Get base branch: task-level override takes precedence over project settings
-      const baseBranch = task.metadata?.baseBranch || project.settings?.mainBranch;
-
-      if (needsSpecCreation) {
-        // No spec file - need to run spec_runner.py to create the spec
-        const taskDescription = task.description || task.title;
-        console.warn('[TASK_START] Starting spec creation for:', task.specId, 'in:', specDir, 'baseBranch:', baseBranch);
-
-        // Start spec creation process - pass the existing spec directory
-        // so spec_runner uses it instead of creating a new one
-        // Also pass baseBranch so worktrees are created from the correct branch
-        agentManager.startSpecCreation(taskId, project.path, taskDescription, specDir, task.metadata, baseBranch, project.id);
-      } else if (needsImplementation) {
-        // Spec exists but no valid subtasks in implementation plan
-        // FIX (#1562): Use startTaskExecution (run.py) which will create the planner
-        // agent session to generate the implementation plan. run.py handles the case
-        // where implementation_plan.json is missing or has no subtasks - the planner
-        // agent will generate the plan before the coder starts.
-        console.warn('[TASK_START] Starting task execution (no valid subtasks in plan) for:', task.specId);
-        agentManager.startTaskExecution(
-          taskId,
-          project.path,
-          task.specId,
-          {
-            parallel: false,  // Sequential for planning phase
-            workers: 1,
-            baseBranch,
-            useWorktree: task.metadata?.useWorktree,
-            useLocalBranch: task.metadata?.useLocalBranch,
-            pushNewBranches: task.metadata?.pushNewBranches
-          },
-          project.id
-        );
-      } else {
-        // Task has subtasks, start normal execution
-        // Note: Parallel execution is handled internally by the agent, not via CLI flags
-        console.warn('[TASK_START] Starting task execution (has subtasks) for:', task.specId);
-
-        agentManager.startTaskExecution(
-          taskId,
-          project.path,
-          task.specId,
-          {
-            parallel: false,
-            workers: 1,
-            baseBranch,
-            useWorktree: task.metadata?.useWorktree,
-            useLocalBranch: task.metadata?.useLocalBranch,
-            pushNewBranches: task.metadata?.pushNewBranches
-          },
-          project.id
-        );
-      }
+      await startTask(taskId);
     }
   );
+
+  /**
+   * Resume a task whose rate-limit hold expired (called by the main-process scheduler).
+   * Respects the project's parallel task limit: when full, the hold is cleared and
+   * the task stays queued so normal queue promotion starts it when a slot frees up.
+   */
+  const resumeHeldTask = async (taskId: string, projectId: string): Promise<void> => {
+    const { task, project } = findTaskAndProject(taskId, projectId);
+    if (!task || !project) return;
+    if (!task.rateLimitHold || task.status !== 'queue') {
+      // Hold already released (user started/moved the task)
+      return;
+    }
+    if (agentManager.isRunning(taskId)) {
+      clearRateLimitHold(project, task, getMainWindow);
+      return;
+    }
+
+    const maxParallel = project.settings?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+    const inProgressCount = projectStore.getTasks(project.id).filter(
+      (t) => t.id !== taskId && t.status === 'in_progress' && !t.metadata?.archivedAt
+    ).length;
+    if (inProgressCount >= maxParallel) {
+      console.warn(`[RateLimitResume] Hold expired for ${taskId} but ${inProgressCount}/${maxParallel} tasks are running; leaving it queued`);
+      clearRateLimitHold(project, task, getMainWindow);
+      return;
+    }
+
+    console.warn(`[RateLimitResume] Hold expired for ${taskId}, resuming`);
+    await startTask(taskId);
+  };
+
+  rateLimitResumeScheduler.configure({
+    listHeldTasks: () => {
+      const refs: HeldTaskRef[] = [];
+      for (const project of projectStore.getProjects()) {
+        for (const task of projectStore.getTasks(project.id)) {
+          if (task.status === 'queue' && task.rateLimitHold) {
+            refs.push({ taskId: task.id, projectId: project.id, resetAt: task.rateLimitHold.resetAt });
+          }
+        }
+      }
+      return refs;
+    },
+    resumeTask: resumeHeldTask,
+  });
 
   /**
    * Stop a task
@@ -715,6 +775,11 @@ export function registerTaskExecutionHandlers(
       const planPath = getPlanPath(project, task);
 
       try {
+        // Manually moving a held task out of the queue releases its rate-limit hold
+        if (status !== 'queue') {
+          clearRateLimitHold(project, task, getMainWindow);
+        }
+
         const handledByMachine = taskStateManager.handleManualStatusChange(taskId, status, task, project);
         if (!handledByMachine) {
           // Use shared utility for thread-safe plan file updates (legacy/manual override)

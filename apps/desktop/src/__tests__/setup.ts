@@ -98,6 +98,7 @@ if (typeof window !== 'undefined') {
     onTaskError: vi.fn(() => vi.fn()),
     onTaskLog: vi.fn(() => vi.fn()),
     onTaskStatusChange: vi.fn(() => vi.fn()),
+    onTaskRateLimitHoldChange: vi.fn(() => vi.fn()),
     getSettings: vi.fn(),
     saveSettings: vi.fn(),
     selectDirectory: vi.fn(),

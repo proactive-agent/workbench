@@ -11,6 +11,7 @@ import type {
   TaskLogs,
   TaskLogStreamChunk,
   ReviewReason,
+  RateLimitHold,
   MergeProgress,
   SupportedIDE,
   SupportedTerminal,
@@ -81,6 +82,7 @@ export interface TaskAPI {
   onTaskError: (callback: (taskId: string, error: string, projectId?: string) => void) => () => void;
   onTaskLog: (callback: (taskId: string, log: string, projectId?: string) => void) => () => void;
   onTaskStatusChange: (callback: (taskId: string, status: TaskStatus, projectId?: string, reviewReason?: ReviewReason) => void) => () => void;
+  onTaskRateLimitHoldChange: (callback: (taskId: string, hold: RateLimitHold | null, projectId?: string) => void) => () => void;
   onTaskExecutionProgress: (
     callback: (taskId: string, progress: import('../../shared/types').ExecutionProgress, projectId?: string) => void
   ) => () => void;
@@ -269,6 +271,23 @@ export const createTaskAPI = (): TaskAPI => ({
     ipcRenderer.on(IPC_CHANNELS.TASK_STATUS_CHANGE, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TASK_STATUS_CHANGE, handler);
+    };
+  },
+
+  onTaskRateLimitHoldChange: (
+    callback: (taskId: string, hold: RateLimitHold | null, projectId?: string) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      taskId: string,
+      hold: RateLimitHold | null,
+      projectId?: string
+    ): void => {
+      callback(taskId, hold, projectId);
+    };
+    ipcRenderer.on(IPC_CHANNELS.TASK_RATE_LIMIT_HOLD_CHANGE, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.TASK_RATE_LIMIT_HOLD_CHANGE, handler);
     };
   },
 

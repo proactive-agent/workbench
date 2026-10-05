@@ -20,12 +20,44 @@ import { findTaskAndProject } from "./task/shared";
 import { safeSendToRenderer } from "./utils";
 import { getClaudeProfileManager } from "../claude-profile-manager";
 import { taskStateManager } from "../task-state-manager";
+import { readSettingsFile } from "../settings-utils";
+import { parseRateLimitHold } from "../../shared/utils/rate-limit-hold";
+import { applyRateLimitHold } from "./task/rate-limit-hold";
 
 // Timeout for fallback safety net to check if task is still stuck after process exit
 const STUCK_TASK_FALLBACK_TIMEOUT_MS = 500;
 
 // Map to store active fallback timers so they can be cancelled on task restart
 const fallbackTimers = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Before holding a rate-limited task until its reset time, try switching to another
+ * Claude profile (same rules as AgentProcess.handleRateLimitWithAutoSwap).
+ *
+ * Only applies to the legacy Claude profile system: when provider accounts are
+ * configured, auth is resolved from the provider queue on restart, so switching
+ * the active legacy profile would not change the account used.
+ *
+ * @returns true if the task was restarted on another profile (no hold needed)
+ */
+function tryAutoSwapBeforeHold(agentManager: AgentManager, taskId: string): boolean {
+  const providerAccounts = readSettingsFile()?.providerAccounts;
+  if (Array.isArray(providerAccounts) && providerAccounts.length > 0) {
+    return false;
+  }
+  const profileManager = getClaudeProfileManager();
+  const autoSwitch = profileManager.getAutoSwitchSettings();
+  if (!autoSwitch.enabled || !autoSwitch.autoSwitchOnRateLimit) {
+    return false;
+  }
+  const currentProfileId = profileManager.getActiveProfile()?.id;
+  const bestProfile = profileManager.getBestAvailableProfile(currentProfileId);
+  if (!bestProfile) {
+    return false;
+  }
+  console.warn(`[agent-events-handlers] Rate limit for ${taskId}: switching profile ${currentProfileId} -> ${bestProfile.id} instead of holding`);
+  return agentManager.restartTask(taskId, bestProfile.id);
+}
 
 /**
  * Register all agent-events-related IPC handlers
@@ -239,6 +271,9 @@ export function registerAgenteventsHandlers(
     const { task, project } = findTaskAndProject(taskId, projectId);
     if (!task || !project) return;
 
+    // Rate-limit hold: the task is queued for automatic resume, not failed
+    if (taskStateManager.getCurrentState(taskId) === 'queued') return;
+
     const taskTitle = task.title || task.specId;
     if (code === 0) {
       notificationService.notifyReviewNeeded(taskTitle, project.id, taskId);
@@ -278,6 +313,19 @@ export function registerAgenteventsHandlers(
       reviewReason: task.reviewReason,
       phase: task.executionProgress?.phase
     });
+
+    // Provider limit hit with a known reset time: prefer switching accounts; otherwise
+    // persist the hold (and notify the renderer) BEFORE XState moves the task to the
+    // queue, so queue auto-promotion sees the hold and skips this task.
+    if (event.type === "RATE_LIMIT_HOLD") {
+      if (tryAutoSwapBeforeHold(agentManager, taskId)) {
+        return;
+      }
+      const hold = parseRateLimitHold({ ...event, pausedAt: event.timestamp });
+      if (hold) {
+        applyRateLimitHold(project, task, hold, getMainWindow);
+      }
+    }
 
     const accepted = taskStateManager.handleTaskEvent(taskId, event, task, project);
     console.debug(`[agent-events-handlers] Event ${event.type} accepted: ${accepted}`);

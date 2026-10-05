@@ -30,6 +30,7 @@ import type { ScreenshotSource } from './screenshot';
 import type {
   Task,
   TaskStatus,
+  RateLimitHold,
   TaskStartOptions,
   ImplementationPlan,
   ExecutionProgress,
@@ -237,6 +238,7 @@ export interface ElectronAPI {
   onTaskError: (callback: (taskId: string, error: string, projectId?: string) => void) => () => void;
   onTaskLog: (callback: (taskId: string, log: string, projectId?: string) => void) => () => void;
   onTaskStatusChange: (callback: (taskId: string, status: TaskStatus, projectId?: string, reviewReason?: ReviewReason) => void) => () => void;
+  onTaskRateLimitHoldChange: (callback: (taskId: string, hold: RateLimitHold | null, projectId?: string) => void) => () => void;
   onTaskExecutionProgress: (callback: (taskId: string, progress: ExecutionProgress, projectId?: string) => void) => () => void;
 
   // Terminal operations

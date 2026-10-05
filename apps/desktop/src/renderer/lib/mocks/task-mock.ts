@@ -103,6 +103,7 @@ export const taskMock = {
   onTaskError: () => () => {},
   onTaskLog: () => () => {},
   onTaskStatusChange: () => () => {},
+  onTaskRateLimitHoldChange: () => () => {},
   onTaskExecutionProgress: () => () => {},
   onTaskLogsChanged: () => () => {},
   onTaskLogsStream: () => () => {},

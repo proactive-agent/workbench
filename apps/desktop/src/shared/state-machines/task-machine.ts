@@ -29,6 +29,7 @@ export type TaskEvent =
   | { type: 'QA_AGENT_ERROR'; iteration: number; consecutiveErrors: number }
   | { type: 'PROCESS_EXITED'; exitCode: number; signal?: string; unexpected?: boolean }
   | { type: 'USER_STOPPED'; hasPlan?: boolean }
+  | { type: 'RATE_LIMIT_HOLD'; resetAt: string; message: string; phase?: string }
   | { type: 'USER_RESUMED' }
   | { type: 'MARK_DONE' }
   | { type: 'CREATE_PR' }
@@ -74,6 +75,7 @@ export const taskMachine = createMachine(
           // Fallback: if QA_PASSED arrives while in planning (entire build completed), go to human_review
           QA_PASSED: { target: 'human_review', actions: 'setReviewReasonCompleted' },
           PLANNING_FAILED: { target: 'error', actions: ['setReviewReasonErrors', 'setError'] },
+          RATE_LIMIT_HOLD: { target: 'queued', actions: 'clearReviewReason' },
           USER_STOPPED: [
             { target: 'backlog', guard: 'noPlanYet', actions: 'clearReviewReason' },
             { target: 'human_review', actions: 'setReviewReasonStopped' }
@@ -100,6 +102,7 @@ export const taskMachine = createMachine(
           // Fallback: if QA fails while XState is still in coding (missed QA_STARTED), handle gracefully
           QA_MAX_ITERATIONS: { target: 'error', actions: 'setReviewReasonErrors' },
           QA_AGENT_ERROR: { target: 'error', actions: 'setReviewReasonErrors' },
+          RATE_LIMIT_HOLD: { target: 'queued', actions: 'clearReviewReason' },
           USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' },
           PROCESS_EXITED: { target: 'error', guard: 'unexpectedExit', actions: 'setReviewReasonErrors' }
         }
@@ -110,6 +113,7 @@ export const taskMachine = createMachine(
           QA_PASSED: { target: 'human_review', actions: 'setReviewReasonCompleted' },
           QA_MAX_ITERATIONS: { target: 'error', actions: 'setReviewReasonErrors' },
           QA_AGENT_ERROR: { target: 'error', actions: 'setReviewReasonErrors' },
+          RATE_LIMIT_HOLD: { target: 'queued', actions: 'clearReviewReason' },
           USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' },
           PROCESS_EXITED: { target: 'error', guard: 'unexpectedExit', actions: 'setReviewReasonErrors' }
         }
@@ -121,8 +125,25 @@ export const taskMachine = createMachine(
           QA_PASSED: { target: 'human_review', actions: 'setReviewReasonCompleted' },
           QA_MAX_ITERATIONS: { target: 'error', actions: 'setReviewReasonErrors' },
           QA_AGENT_ERROR: { target: 'error', actions: 'setReviewReasonErrors' },
+          RATE_LIMIT_HOLD: { target: 'queued', actions: 'clearReviewReason' },
           USER_STOPPED: { target: 'human_review', actions: 'setReviewReasonStopped' },
           PROCESS_EXITED: { target: 'error', guard: 'unexpectedExit', actions: 'setReviewReasonErrors' }
+        }
+      },
+      // Waiting in the Queue column for a provider rate limit to reset.
+      // The main-process scheduler (or the user) restarts the task, which
+      // resumes from the saved plan/worktree state.
+      queued: {
+        on: {
+          PLANNING_STARTED: { target: 'planning', actions: 'clearReviewReason' },
+          CODING_STARTED: { target: 'coding', actions: 'clearReviewReason' },
+          USER_RESUMED: { target: 'coding', actions: 'clearReviewReason' },
+          RATE_LIMIT_HOLD: 'queued',
+          USER_STOPPED: [
+            { target: 'backlog', guard: 'noPlanYet', actions: 'clearReviewReason' },
+            { target: 'human_review', actions: 'setReviewReasonStopped' }
+          ],
+          MARK_DONE: 'done'
         }
       },
       human_review: {

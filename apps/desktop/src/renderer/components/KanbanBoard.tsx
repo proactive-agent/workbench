@@ -30,6 +30,7 @@ import { QueueSettingsModal } from './QueueSettingsModal';
 import { TASK_STATUS_COLUMNS, TASK_STATUS_LABELS } from '../../shared/constants';
 import { cn } from '../lib/utils';
 import { persistTaskStatus, forceCompleteTask, archiveTasks, deleteTasks, useTaskStore, isQueueAtCapacity, DEFAULT_MAX_PARALLEL_TASKS } from '../stores/task-store';
+import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
 import { updateProjectSettings, useProjectStore } from '../stores/project-store';
 import { useKanbanSettingsStore, DEFAULT_COLUMN_WIDTH, MIN_COLUMN_WIDTH, MAX_COLUMN_WIDTH, COLLAPSED_COLUMN_WIDTH_REM, MIN_COLUMN_WIDTH_REM, MAX_COLUMN_WIDTH_REM, BASE_FONT_SIZE, pxToRem } from '../stores/kanban-settings-store';
 import { useToast } from '../hooks/use-toast';
@@ -1097,8 +1098,11 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         const inProgressCount = currentTasks.filter((t) =>
           t.status === 'in_progress' && !t.metadata?.archivedAt
         ).length;
+        // Tasks on a rate-limit hold are resumed by the main process at their reset
+        // time; promoting them earlier would just hit the provider limit again.
         const queuedTasks = currentTasks.filter((t) =>
-          t.status === 'queue' && !t.metadata?.archivedAt && !attemptedTaskIds.has(t.id)
+          t.status === 'queue' && !t.metadata?.archivedAt && !attemptedTaskIds.has(t.id) &&
+          !isTaskOnRateLimitHold(t)
         );
 
         // Stop if no capacity, no queued tasks, or too many consecutive failures

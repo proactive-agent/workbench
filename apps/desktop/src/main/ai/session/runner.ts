@@ -27,6 +27,7 @@ import { buildThinkingProviderOptions } from '../config/types';
 import { createStreamHandler } from './stream-handler';
 import type { FullStreamPart } from './stream-handler';
 import { classifyError, isAuthenticationError, isRateLimitError } from './error-classifier';
+import { ClaudeLimitReachedError, detectClaudeLimitMessage } from './claude-limit';
 import { ProgressTracker } from './progress-tracker';
 import type {
   SessionConfig,
@@ -565,6 +566,16 @@ async function executeStream(
   } catch {
     // Fall through — use empty text. The stream handler already captured
     // all text deltas, so this is just the final concatenated text.
+  }
+
+  // Claude subscription limits can arrive as plain assistant text rather than an
+  // HTTP 429 (e.g. "You've hit your session limit · resets 8:30pm (Asia/Yerevan)").
+  // Treating that as a successful session would mark subtasks complete and loop
+  // forever, so surface it as a rate-limit error. Throwing routes it through the
+  // outer catch, which tries an account switch before giving up.
+  const limitMessage = detectClaudeLimitMessage(responseText);
+  if (limitMessage) {
+    throw new ClaudeLimitReachedError(limitMessage);
   }
 
   // Extract structured output if schema was provided.

@@ -3,9 +3,10 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState } from '../../shared/types';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
+import { DEFAULT_MAX_PARALLEL_TASKS } from '../../shared/constants/task';
 
 /** Default max parallel tasks when no project setting is configured */
-export const DEFAULT_MAX_PARALLEL_TASKS = 3;
+export { DEFAULT_MAX_PARALLEL_TASKS };
 
 
 /** Maximum log entries stored per task to prevent renderer OOM */
@@ -312,8 +313,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
             // When starting a task and no phase is set yet, default to planning
             // This prevents the "no active phase" UI state during startup race condition
             executionProgress = { phase: 'planning' as ExecutionPhase, phaseProgress: 0, overallProgress: 0 };
-          } else if (['human_review', 'error', 'done', 'pr_created'].includes(status)) {
-            // Reset execution progress when task reaches terminal states
+          } else if (['queue', 'human_review', 'error', 'done', 'pr_created'].includes(status)) {
+            // Reset execution progress when task reaches terminal states (or is queued, e.g. rate-limit hold)
             // This prevents stuck tasks from showing stale progress indicators
             executionProgress = { phase: 'idle' as ExecutionPhase, phaseProgress: 0, overallProgress: 0 };
           }

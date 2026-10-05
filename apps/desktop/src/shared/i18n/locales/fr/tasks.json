@@ -32,7 +32,8 @@
     "incomplete": "Incomplet",
     "recovering": "Récupération...",
     "needsRecovery": "Récupération requise",
-    "needsResume": "Reprise requise"
+    "needsResume": "Reprise requise",
+    "onHoldUntil": "En pause · reprise à {{time}}"
   },
   "reviewReason": {
     "completed": "Terminé",

@@ -469,6 +469,55 @@ describe('TaskStateManager', () => {
     });
   });
 
+  describe('rate-limit hold', () => {
+    const holdEvent = (sequence: number) => ({
+      type: 'RATE_LIMIT_HOLD',
+      taskId: mockTask.id,
+      specId: mockTask.specId,
+      projectId: mockProject.id,
+      timestamp: new Date().toISOString(),
+      eventId: `evt-hold-${sequence}`,
+      sequence,
+      resetAt: '2099-01-01T16:30:00.000Z',
+      message: "You've hit your session limit · resets 8:30pm (Asia/Yerevan)",
+      phase: 'coding'
+    });
+
+    it('moves a coding task to queued and survives the non-zero worker exit', () => {
+      const codingTask = createMockTask({
+        status: 'in_progress',
+        executionProgress: { phase: 'coding', phaseProgress: 50, overallProgress: 50 }
+      });
+
+      expect(manager.handleTaskEvent(codingTask.id, holdEvent(0), codingTask, mockProject)).toBe(true);
+      expect(manager.getCurrentState(codingTask.id)).toBe('queued');
+
+      // RATE_LIMIT_HOLD is terminal for the process: exit code 1 must not mark it as error
+      manager.handleProcessExited(codingTask.id, 1, codingTask, mockProject);
+      expect(manager.getCurrentState(codingTask.id)).toBe('queued');
+    });
+
+    it('restores a held queue task into the queued state and restarts via PLANNING_STARTED', () => {
+      const heldTask = createMockTask({
+        status: 'queue',
+        rateLimitHold: {
+          resetAt: '2099-01-01T16:30:00.000Z',
+          message: 'limit',
+          pausedAt: '2098-12-31T00:00:00.000Z'
+        }
+      });
+
+      expect(manager.handleManualStatusChange(heldTask.id, 'in_progress', heldTask, mockProject)).toBe(true);
+      expect(manager.getCurrentState(heldTask.id)).toBe('planning');
+    });
+
+    it('restores a plain queue task (no hold) as backlog', () => {
+      const queuedTask = createMockTask({ status: 'queue' });
+      manager.handleUiEvent(queuedTask.id, { type: 'PLANNING_STARTED' }, queuedTask, mockProject);
+      expect(manager.getCurrentState(queuedTask.id)).toBe('planning');
+    });
+  });
+
   describe('actor state restoration', () => {
     it('should restore actor state from task with in_progress status', () => {
       const taskInProgress = createMockTask({

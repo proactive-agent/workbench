@@ -20,7 +20,7 @@
 import path from 'path';
 import { readFileSync, mkdirSync } from 'fs';
 import { AUTO_BUILD_PATHS, getSpecsDir } from '../../../shared/constants';
-import type { TaskStatus, Project, Task } from '../../../shared/types';
+import type { TaskStatus, Project, Task, RateLimitHold } from '../../../shared/types';
 import { projectStore } from '../../project-store';
 import type { TaskEventPayload } from '../../agent/task-event-schema';
 import { writeFileAtomicSync } from '../../utils/atomic-file';
@@ -292,6 +292,51 @@ export function persistPlanStatusAndReasonSync(
     return true;
   } catch (err) {
     console.warn(`[plan-file-utils] Could not persist status/reason to ${planPath}:`, err);
+    return false;
+  }
+}
+
+/**
+ * Persist (or clear, when `hold` is null) the rate-limit hold on a plan file synchronously.
+ *
+ * WARNING: Bypasses async locking (same caveats as persistPlanStatusSync).
+ *
+ * @returns true if written, false if the plan file is missing or unreadable
+ */
+export function persistPlanRateLimitHoldSync(
+  planPath: string,
+  hold: RateLimitHold | null,
+  projectId?: string
+): boolean {
+  try {
+    const planContent = readFileSync(planPath, 'utf-8');
+    const plan = safeParseJson<Record<string, unknown>>(planContent);
+    if (!plan) {
+      console.warn(`[plan-file-utils] Unrepairable JSON in ${planPath} - rate-limit hold not persisted`);
+      return false;
+    }
+    if (!hold && plan.rateLimitHold === undefined) {
+      return true; // Nothing to clear
+    }
+
+    if (hold) {
+      plan.rateLimitHold = hold;
+    } else {
+      delete plan.rateLimitHold;
+    }
+    plan.updated_at = new Date().toISOString();
+
+    writeFileAtomicSync(planPath, JSON.stringify(plan, null, 2));
+
+    if (projectId) {
+      projectStore.invalidateTasksCache(projectId);
+    }
+    return true;
+  } catch (err) {
+    if (isFileNotFoundError(err)) {
+      return false;
+    }
+    console.warn(`[plan-file-utils] Could not persist rate-limit hold to ${planPath}:`, err);
     return false;
   }
 }
