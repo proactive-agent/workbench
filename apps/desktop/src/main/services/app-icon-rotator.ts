@@ -20,7 +20,7 @@ export const APP_ICONS_DIR_NAME = 'app-icons';
 export const HEADER_ICONS_DIR_NAME = 'header-icons';
 
 /** How often the icon advances. */
-export const APP_ICON_ROTATION_INTERVAL_MS = 10_000;
+export const APP_ICON_ROTATION_INTERVAL_MS = 5_000;
 
 const ICON_FILE_PATTERN = /^(\d+)\.png$/i;
 
