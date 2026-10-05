@@ -1,4 +1,0 @@
-{
-  "task_description": "Add a custom application icon feature to the settings panel. Users can upload a PNG/JPEG/GIF image via a file picker dialog in the settings UI. The uploaded icon must be validated for format (PNG, JPEG, GIF) and size, then persistently stored in the Electron userData directory. The custom icon must be applied everywhere the app icon appears: BrowserWindow icon (index.ts line 247), macOS dock icon (index.ts lines 425-434), and Linux desktop entry (resources/icons/). An app restart flow is needed to apply the new icon. The settings UI section should show a preview of the current icon, an upload button with file picker, validation feedback, and a reset-to-default option.",
-  "workflow_type": "feature"
-}
