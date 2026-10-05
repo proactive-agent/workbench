@@ -407,10 +407,8 @@ export function Sidebar({
                 headerIconVisible ? 'opacity-100' : 'opacity-0'
               )}
             >
-              {shownHeaderIcon ? (
+              {shownHeaderIcon && (
                 <img src={shownHeaderIcon} alt="Aperant" className="h-8 w-auto object-contain" />
-              ) : (
-                <span className="font-heading text-lg font-bold text-primary">Aperant</span>
               )}
             </span>
           )}
