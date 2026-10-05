@@ -10,8 +10,8 @@
  * app is running. When the folder is empty the default app icon is restored.
  */
 
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { basename, join } from 'node:path';
 
 /** Folder name (inside userData) that holds the rotation icons. */
 export const APP_ICONS_DIR_NAME = 'app-icons';
@@ -40,6 +40,31 @@ export function listRotationIcons(iconsDir: string): string[] {
     .filter((entry): entry is { name: string; match: RegExpMatchArray } => entry.match !== null)
     .sort((a, b) => Number(a.match[1]) - Number(b.match[1]))
     .map((entry) => join(iconsDir, entry.name));
+}
+
+/** Marker written after bundled icons were copied, so a folder emptied on purpose stays empty. */
+export const SEEDED_MARKER_FILE = '.seeded';
+
+/**
+ * Copy the icons bundled with the app (resources/<folder>) into the user's icons
+ * folder the first time it is empty, so a fresh install shows them automatically.
+ * Existing user icons are never overwritten.
+ *
+ * @returns Number of icons copied.
+ */
+export function seedRotationIcons(bundledDir: string, iconsDir: string): number {
+  if (existsSync(join(iconsDir, SEEDED_MARKER_FILE))) return 0;
+  if (listRotationIcons(iconsDir).length > 0) return 0;
+
+  const bundled = listRotationIcons(bundledDir);
+  if (bundled.length === 0) return 0;
+
+  mkdirSync(iconsDir, { recursive: true });
+  for (const iconPath of bundled) {
+    copyFileSync(iconPath, join(iconsDir, basename(iconPath)));
+  }
+  writeFileSync(join(iconsDir, SEEDED_MARKER_FILE), new Date().toISOString());
+  return bundled.length;
 }
 
 export interface AppIconRotatorDeps {

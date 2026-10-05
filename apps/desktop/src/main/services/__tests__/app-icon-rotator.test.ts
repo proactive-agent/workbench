@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, unlinkSync, writeFileSync }
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { AppIconRotator, listRotationIcons } from '../app-icon-rotator';
+import { AppIconRotator, listRotationIcons, seedRotationIcons, SEEDED_MARKER_FILE } from '../app-icon-rotator';
 
 let root: string;
 let iconsDir: string;
@@ -90,5 +90,40 @@ describe('AppIconRotator', () => {
     unlinkSync(join(iconsDir, '1.png'));
     rotator.tick();
     expect(restoreDefaultIcon).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('seedRotationIcons', () => {
+  let bundledDir: string;
+
+  beforeEach(() => {
+    bundledDir = join(root, 'bundled');
+    mkdirSync(bundledDir);
+    for (const name of ['1.png', '2.png', '.gitkeep']) writeFileSync(join(bundledDir, name), name);
+  });
+
+  it('copies bundled icons into an empty folder and marks it as seeded', () => {
+    expect(seedRotationIcons(bundledDir, iconsDir)).toBe(2);
+    expect(listRotationIcons(iconsDir).map((p) => p.slice(iconsDir.length + 1))).toEqual(['1.png', '2.png']);
+    expect(existsSync(join(iconsDir, SEEDED_MARKER_FILE))).toBe(true);
+  });
+
+  it('never overwrites existing user icons', () => {
+    mkdirSync(iconsDir);
+    writeFileSync(join(iconsDir, '1.png'), 'mine');
+    expect(seedRotationIcons(bundledDir, iconsDir)).toBe(0);
+    expect(listRotationIcons(iconsDir)).toHaveLength(1);
+  });
+
+  it('does not re-seed a folder the user emptied after seeding', () => {
+    seedRotationIcons(bundledDir, iconsDir);
+    for (const name of ['1.png', '2.png']) unlinkSync(join(iconsDir, name));
+    expect(seedRotationIcons(bundledDir, iconsDir)).toBe(0);
+    expect(listRotationIcons(iconsDir)).toEqual([]);
+  });
+
+  it('does nothing when the app bundles no icons', () => {
+    expect(seedRotationIcons(join(root, 'none'), iconsDir)).toBe(0);
+    expect(existsSync(iconsDir)).toBe(false);
   });
 });

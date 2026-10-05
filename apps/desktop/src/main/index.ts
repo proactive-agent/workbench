@@ -54,7 +54,7 @@ import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
-import { AppIconRotator, APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME } from './services/app-icon-rotator';
+import { AppIconRotator, APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME, seedRotationIcons } from './services/app-icon-rotator';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -551,6 +551,17 @@ app.whenReady().then(() => {
 
   // Create window
   createWindow();
+
+  // Seed <userData>/app-icons and <userData>/header-icons with the icons bundled
+  // in resources/ (first run only; user icons are never overwritten)
+  const bundledResourcesPath = is.dev ? join(__dirname, '../../resources') : process.resourcesPath;
+  for (const dirName of [APP_ICONS_DIR_NAME, HEADER_ICONS_DIR_NAME]) {
+    try {
+      seedRotationIcons(join(bundledResourcesPath, dirName), join(app.getPath('userData'), dirName));
+    } catch (error) {
+      console.warn(`[main] Failed to seed ${dirName}:`, error);
+    }
+  }
 
   // Rotate the app icon through <userData>/app-icons/1.png … n.png (if any)
   const applyAppIcon = (iconPath: string): NativeImage | null => {

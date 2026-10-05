@@ -190,6 +190,14 @@
         "to": "prompts"
       },
       {
+        "from": "resources/app-icons",
+        "to": "app-icons"
+      },
+      {
+        "from": "resources/header-icons",
+        "to": "header-icons"
+      },
+      {
         "from": "../../node_modules/@libsql",
         "to": "node_modules/@libsql"
       },
