@@ -23,8 +23,11 @@ export const HEADER_ICONS_DIR_NAME = 'header-icons';
 export const HEADER_ICON_MODES = ['dark', 'light'] as const;
 export type HeaderIconMode = (typeof HEADER_ICON_MODES)[number];
 
-/** How often the icon advances. */
-export const APP_ICON_ROTATION_INTERVAL_MS = 5_000;
+/** How often the app (window/dock) icon advances. */
+export const APP_ICON_ROTATION_INTERVAL_MS = 10_000;
+
+/** How often the sidebar header icon advances. */
+export const HEADER_ICON_ROTATION_INTERVAL_MS = 5_000;
 
 const ICON_FILE_PATTERN = /^(\d+)\.png$/i;
 

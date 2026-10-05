@@ -58,6 +58,7 @@ import {
   AppIconRotator,
   APP_ICONS_DIR_NAME,
   HEADER_ICON_MODES,
+  HEADER_ICON_ROTATION_INTERVAL_MS,
   HEADER_ICONS_DIR_NAME,
   seedRotationIcons,
   type HeaderIconMode,
@@ -604,6 +605,7 @@ app.whenReady().then(() => {
           return true;
         },
         restoreDefaultIcon: () => sendHeaderIcon(mode, null),
+        intervalMs: HEADER_ICON_ROTATION_INTERVAL_MS,
       })
   );
   for (const rotator of headerIconRotators) rotator.start();
