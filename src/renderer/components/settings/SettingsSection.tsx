@@ -1,24 +1,24 @@
-import { Separator } from '../ui/separator';
-
 interface SettingsSectionProps {
   title: string;
-  description: string;
+  /** Optional supporting text, rendered as subtle muted copy under the heading */
+  description?: string;
   children: React.ReactNode;
 }
 
 /**
- * Reusable wrapper component for settings sections
- * Provides consistent layout and styling
+ * Reusable wrapper component for settings sections.
+ * Renders a compact section heading (claude.ai style) followed by its content.
  */
 export function SettingsSection({ title, description, children }: SettingsSectionProps) {
   return (
-    <div className="space-y-6">
+    <section className="space-y-4">
       <div>
-        <h3 className="text-lg font-semibold text-foreground mb-1">{title}</h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <h2 className="text-[1.0625rem] font-semibold leading-6 text-foreground">{title}</h2>
+        {description && (
+          <p className="mt-0.5 text-[0.8125rem] leading-5 text-muted-foreground">{description}</p>
+        )}
       </div>
-      <Separator />
       {children}
-    </div>
+    </section>
   );
 }

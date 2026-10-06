@@ -193,24 +193,19 @@ export function TerminalFontSettings() {
       {/* Left column: Settings panels (scrollable) */}
       <div className="space-y-6">
         {/* Header section with title and description */}
-        <div className="flex items-start gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Terminal className="h-5 w-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <h2 className="text-xl font-semibold text-foreground">
-              {t('terminalFonts.title', { defaultValue: 'Terminal Fonts' })}
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1">
-              {t('terminalFonts.description', {
-                defaultValue: 'Customize terminal font appearance, cursor behavior, and performance settings. Changes apply immediately to all active terminals.',
-              })}
-            </p>
-          </div>
+        <div>
+          <h2 className="text-[1.0625rem] font-semibold leading-6 text-foreground">
+            {t('terminalFonts.title', { defaultValue: 'Terminal Fonts' })}
+          </h2>
+          <p className="mt-0.5 text-[0.8125rem] leading-5 text-muted-foreground">
+            {t('terminalFonts.description', {
+              defaultValue: 'Customize terminal font appearance, cursor behavior, and performance settings. Changes apply immediately to all active terminals.',
+            })}
+          </p>
         </div>
 
         {/* Import/Export Actions */}
-        <div className="flex items-center gap-2 p-4 rounded-lg border bg-card">
+        <div className="flex flex-wrap items-center gap-1 border-y border-border py-3">
           <span className="text-sm font-medium text-foreground">
             {t('terminalFonts.configActions', { defaultValue: 'Configuration:' })}
           </span>

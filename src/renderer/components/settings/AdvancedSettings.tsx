@@ -15,10 +15,10 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { Button } from '../ui/button';
-import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import { Progress } from '../ui/progress';
 import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 import type {
   AppSettings,
   AppUpdateAvailableEvent,
@@ -263,48 +263,42 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
         title={t('updates.title')}
         description={t('updates.description')}
       >
-        <div className="space-y-6">
-          {/* Current Version Display */}
-          <div className="rounded-lg border border-border bg-muted/50 p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{t('updates.version')}</p>
-                <p className="text-base font-medium text-foreground">
-                  {version || t('updates.loading')}
-                </p>
-              </div>
-              {isCheckingAppUpdate ? (
-                <RefreshCw className="h-6 w-6 animate-spin text-muted-foreground" />
-              ) : appUpdateInfo ? (
-                <Download className="h-6 w-6 text-info" />
-              ) : (
-                <CheckCircle2 className="h-6 w-6 text-success" />
-              )}
-            </div>
-
-            {/* Update status */}
-            {!appUpdateInfo && !isCheckingAppUpdate && (
-              <p className="text-sm text-muted-foreground">
-                {t('updates.latestVersion')}
-              </p>
-            )}
-
-            <div className="pt-2">
+        <div className="space-y-4">
+          <SettingsRows>
+            {/* Current Version Display */}
+            <SettingsRow
+              label={t('updates.version')}
+              description={
+                <span className="flex items-center gap-1.5">
+                  {isCheckingAppUpdate ? (
+                    <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                  ) : appUpdateInfo ? (
+                    <Download className="h-3.5 w-3.5 text-info" />
+                  ) : (
+                    <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+                  )}
+                  <span className="font-mono">{version || t('updates.loading')}</span>
+                  {!appUpdateInfo && !isCheckingAppUpdate && (
+                    <span>· {t('updates.latestVersion')}</span>
+                  )}
+                </span>
+              }
+            >
               <Button
                 size="sm"
                 variant="outline"
                 onClick={checkForAppUpdates}
                 disabled={isCheckingAppUpdate}
               >
-                <RefreshCw className={`mr-2 h-4 w-4 ${isCheckingAppUpdate ? 'animate-spin' : ''}`} />
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${isCheckingAppUpdate ? 'animate-spin' : ''}`} />
                 {t('updates.checkForUpdates')}
               </Button>
-            </div>
-          </div>
+            </SettingsRow>
+          </SettingsRows>
 
           {/* Electron App Update Section - shows when update available */}
           {(appUpdateInfo || isAppUpdateDownloaded) && (
-            <div className="rounded-lg border-2 border-info/50 bg-info/5 p-5 space-y-4">
+            <div className="rounded-lg border border-border bg-card p-5 space-y-4">
               <div className="flex items-center gap-2 text-info">
                 <Sparkles className="h-5 w-5" />
                 <h3 className="font-semibold">{t('updates.appUpdateReady')}</h3>
@@ -412,46 +406,46 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
             </div>
           )}
 
-          <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-            <div className="space-y-1">
-              <Label className="font-medium text-foreground">{t('updates.autoUpdateProjects')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('updates.autoUpdateProjectsDescription')}
-              </p>
-            </div>
-            <Switch
-              checked={settings.autoUpdateAutoBuild}
-              onCheckedChange={(checked) =>
-                onSettingsChange({ ...settings, autoUpdateAutoBuild: checked })
-              }
-            />
-          </div>
-
-          <div className="flex items-center justify-between p-4 rounded-lg border border-border">
-            <div className="space-y-1">
-              <Label className="font-medium text-foreground">{t('updates.betaUpdates')}</Label>
-              <p className="text-sm text-muted-foreground">
-                {t('updates.betaUpdatesDescription')}
-              </p>
-            </div>
-            <Switch
-              checked={settings.betaUpdates ?? false}
-              onCheckedChange={(checked) => {
-                onSettingsChange({ ...settings, betaUpdates: checked });
-                if (checked) {
-                  // Clear downgrade info when enabling beta again
-                  setStableDowngradeInfo(null);
-                } else {
-                  // Clear beta update info when disabling beta, so stable downgrade UI can show
-                  setAppUpdateInfo(null);
+          <SettingsRows>
+            <SettingsRow
+              label={t('updates.autoUpdateProjects')}
+              description={t('updates.autoUpdateProjectsDescription')}
+              htmlFor="autoUpdateAutoBuild"
+            >
+              <Switch
+                id="autoUpdateAutoBuild"
+                checked={settings.autoUpdateAutoBuild}
+                onCheckedChange={(checked) =>
+                  onSettingsChange({ ...settings, autoUpdateAutoBuild: checked })
                 }
-              }}
-            />
-          </div>
+              />
+            </SettingsRow>
+
+            <SettingsRow
+              label={t('updates.betaUpdates')}
+              description={t('updates.betaUpdatesDescription')}
+              htmlFor="betaUpdates"
+            >
+              <Switch
+                id="betaUpdates"
+                checked={settings.betaUpdates ?? false}
+                onCheckedChange={(checked) => {
+                  onSettingsChange({ ...settings, betaUpdates: checked });
+                  if (checked) {
+                    // Clear downgrade info when enabling beta again
+                    setStableDowngradeInfo(null);
+                  } else {
+                    // Clear beta update info when disabling beta, so stable downgrade UI can show
+                    setAppUpdateInfo(null);
+                  }
+                }}
+              />
+            </SettingsRow>
+          </SettingsRows>
 
           {/* Stable Downgrade Section - shown when user turns off beta while on prerelease */}
           {stableDowngradeInfo && !appUpdateInfo && (
-            <div className="rounded-lg border-2 border-warning/50 bg-warning/5 p-5 space-y-4">
+            <div className="rounded-lg border border-warning/40 bg-warning/5 p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2 text-warning">
                   <ArrowDownToLine className="h-5 w-5" />
@@ -566,14 +560,16 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
       title={t('notifications.title')}
       description={t('notifications.description')}
     >
-      <div className="space-y-4">
+      <SettingsRows>
         {notificationItems.map((item) => (
-          <div key={item.key} className="flex items-center justify-between p-4 rounded-lg border border-border">
-            <div className="space-y-1">
-              <Label className="font-medium text-foreground">{t(item.labelKey)}</Label>
-              <p className="text-sm text-muted-foreground">{t(item.descriptionKey)}</p>
-            </div>
+          <SettingsRow
+            key={item.key}
+            label={t(item.labelKey)}
+            description={t(item.descriptionKey)}
+            htmlFor={`notification-${item.key}`}
+          >
             <Switch
+              id={`notification-${item.key}`}
               checked={settings.notifications[item.key]}
               onCheckedChange={(checked) =>
                 onSettingsChange({
@@ -585,9 +581,9 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                 })
               }
             />
-          </div>
+          </SettingsRow>
         ))}
-      </div>
+      </SettingsRows>
     </SettingsSection>
   );
 }

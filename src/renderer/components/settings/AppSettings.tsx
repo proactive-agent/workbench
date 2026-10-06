@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
+import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
-  Settings,
-  Save,
+  Search,
+  X,
   Loader2,
   Palette,
   Bot,
@@ -30,10 +31,8 @@ function GitLabIcon({ className }: { className?: string }) {
 }
 import {
   FullScreenDialog,
-  FullScreenDialogContent,
-  FullScreenDialogHeader,
-  FullScreenDialogBody,
-  FullScreenDialogFooter,
+  FullScreenDialogPortal,
+  FullScreenDialogOverlay,
   FullScreenDialogTitle,
   FullScreenDialogDescription
 } from '../ui/full-screen-dialog';
@@ -102,10 +101,12 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
   const [activeTopLevel, setActiveTopLevel] = useState<'app' | 'project'>('app');
   const [appSection, setAppSection] = useState<AppSection>(initialSection || 'appearance');
   const [projectSection, setProjectSection] = useState<ProjectSettingsSection>('general');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Navigate to initial section when dialog opens with a specific section
   useEffect(() => {
     if (open) {
+      setSearchQuery('');
       if (initialProjectSection) {
         setActiveTopLevel('project');
         setProjectSection(initialProjectSection);
@@ -214,6 +215,31 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
 
   // Determine if project nav items should be disabled
   const projectNavDisabled = !selectedProjectId;
+  const isSavingAny = isSaving || (activeTopLevel === 'project' && !!projectSettingsHook?.isSaving);
+
+  // Filter nav items by translated title (case-insensitive)
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const matchesQuery = (title: string) => !normalizedQuery || title.toLowerCase().includes(normalizedQuery);
+  const filteredAppItems = appNavItemsConfig.filter((item) => matchesQuery(t(`sections.${item.id}.title`)));
+  const filteredProjectItems = projectNavItemsConfig.filter((item) => matchesQuery(t(`projectSections.${item.id}.title`)));
+  const hasNoResults = filteredAppItems.length === 0 && filteredProjectItems.length === 0;
+
+  const rowClass = (isActive: boolean) => cn(
+    'group flex h-8 w-full items-center gap-(--nav-item-gap) rounded-(--nav-item-radius) px-0.5 text-left text-sm text-muted-foreground',
+    'transition-colors duration-150 ease-out',
+    'hover:bg-nav-hover hover:text-nav-hover-foreground',
+    'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
+    'disabled:pointer-events-none disabled:opacity-50',
+    isActive && 'bg-nav-active text-nav-active-foreground hover:bg-nav-active hover:text-nav-active-foreground'
+  );
+
+  const renderRowIcon = (Icon: React.ElementType) => (
+    <span className="flex h-7 w-7 shrink-0 items-center justify-center">
+      <Icon className="h-4 w-4" strokeWidth={1.75} />
+    </span>
+  );
+
+  const isWideSection = activeTopLevel === 'app' && appSection === 'terminal-fonts';
 
   return (
     <FullScreenDialog open={open} onOpenChange={(newOpen) => {
@@ -224,154 +250,196 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
       }
       onOpenChange(newOpen);
     }}>
-      <FullScreenDialogContent>
-        <FullScreenDialogHeader>
-          <FullScreenDialogTitle className="flex items-center gap-3">
-            <Settings className="h-6 w-6" />
-            {t('title')}
-          </FullScreenDialogTitle>
-          <FullScreenDialogDescription>
+      <FullScreenDialogPortal>
+        <FullScreenDialogOverlay className="bg-black/40 backdrop-blur-none" />
+        <DialogPrimitive.Content
+          className={cn(
+            'fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2',
+            'h-[min(820px,calc(100vh-2rem))] w-[min(1120px,calc(100vw-2rem))]',
+            'overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-2xl',
+            'data-[state=open]:animate-in data-[state=closed]:animate-out',
+            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+            'data-[state=closed]:zoom-out-98 data-[state=open]:zoom-in-98',
+            'duration-200 focus:outline-none'
+          )}
+        >
+          <FullScreenDialogTitle className="sr-only">{t('title')}</FullScreenDialogTitle>
+          <FullScreenDialogDescription className="sr-only">
             {t('tabs.app')} & {t('tabs.project')}
           </FullScreenDialogDescription>
-        </FullScreenDialogHeader>
 
-        <FullScreenDialogBody>
-          <div className="flex h-full">
-            {/* Navigation sidebar */}
-            <nav className="w-80 border-r border-border bg-muted/30 p-4">
-              <ScrollArea className="h-full">
-                <div className="space-y-6">
-                  {/* APPLICATION Section */}
+          {/* Navigation sidebar */}
+          <nav
+            aria-label={t('title')}
+            className="flex w-64 shrink-0 flex-col border-r border-border bg-sidebar"
+          >
+            <div className="p-3 pb-2">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
+                  strokeWidth={1.75}
+                />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder={t('search.placeholder')}
+                  aria-label={t('search.ariaLabel')}
+                  className={cn(
+                    'h-8 w-full rounded-lg border border-border bg-transparent pl-8 pr-2 text-sm text-foreground',
+                    'placeholder:text-muted-foreground',
+                    'transition-colors focus-visible:outline-none focus-visible:border-(--input)',
+                    '[&::-webkit-search-cancel-button]:appearance-none'
+                  )}
+                />
+              </div>
+            </div>
+
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="space-y-4 px-3 pb-3">
+                {/* Application group */}
+                {filteredAppItems.length > 0 && (
                   <div>
-                    <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t('tabs.app')}
+                    <h3 className="nav-section-label flex h-8 items-center px-2 text-[0.8125rem]">
+                      {t('nav.app')}
                     </h3>
-                    <div className="space-y-1">
-                      {appNavItemsConfig.map((item) => {
-                        const Icon = item.icon;
+                    <div className="space-y-px">
+                      {filteredAppItems.map((item) => {
                         const isActive = activeTopLevel === 'app' && appSection === item.id;
                         return (
                           <button
                             key={item.id}
+                            type="button"
+                            aria-current={isActive ? 'page' : undefined}
                             onClick={() => {
                               setActiveTopLevel('app');
                               setAppSection(item.id);
                             }}
-                            className={cn(
-                              'w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all',
-                              isActive
-                                ? 'bg-accent text-accent-foreground'
-                                : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
-                            )}
+                            className={rowClass(isActive)}
                           >
-                            <Icon className="h-5 w-5 mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                              <div className="font-medium text-sm">{t(`sections.${item.id}.title`)}</div>
-                              <div className="text-xs text-muted-foreground truncate">{t(`sections.${item.id}.description`)}</div>
-                            </div>
+                            {renderRowIcon(item.icon)}
+                            <span className="truncate">{t(`sections.${item.id}.title`)}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
+                )}
 
-                  {/* PROJECT Section */}
+                {/* Project group */}
+                {filteredProjectItems.length > 0 && (
                   <div>
-                    <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                      {t('tabs.project')}
+                    <h3 className="nav-section-label flex h-8 items-center px-2 text-[0.8125rem]">
+                      {t('nav.project')}
                     </h3>
 
-                    {/* Project Selector */}
-                    <div className="px-1 mb-3">
+                    <div className="mb-1 px-0.5">
                       <ProjectSelector
                         selectedProjectId={selectedProjectId}
                         onProjectChange={handleProjectChange}
+                        compact
                       />
                     </div>
 
-                    {/* Project Nav Items */}
-                    <div className="space-y-1">
-                      {projectNavItemsConfig.map((item) => {
-                        const Icon = item.icon;
+                    <div className="space-y-px">
+                      {filteredProjectItems.map((item) => {
                         const isActive = activeTopLevel === 'project' && projectSection === item.id;
                         return (
                           <button
                             key={item.id}
+                            type="button"
+                            aria-current={isActive ? 'page' : undefined}
                             onClick={() => {
                               setActiveTopLevel('project');
                               setProjectSection(item.id);
                             }}
                             disabled={projectNavDisabled}
-                            className={cn(
-                              'w-full flex items-start gap-3 p-3 rounded-lg text-left transition-all',
-                              isActive
-                                ? 'bg-accent text-accent-foreground'
-                                : projectNavDisabled
-                                  ? 'opacity-50 cursor-not-allowed text-muted-foreground'
-                                  : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
-                            )}
+                            className={rowClass(isActive)}
                           >
-                            <Icon className="h-5 w-5 mt-0.5 shrink-0" />
-                            <div className="min-w-0">
-                              <div className="font-medium text-sm">{t(`projectSections.${item.id}.title`)}</div>
-                              <div className="text-xs text-muted-foreground truncate">{t(`projectSections.${item.id}.description`)}</div>
-                            </div>
+                            {renderRowIcon(item.icon)}
+                            <span className="truncate">{t(`projectSections.${item.id}.title`)}</span>
                           </button>
                         );
                       })}
                     </div>
                   </div>
-                </div>
+                )}
 
-                {/* Version at bottom */}
-                {version && (
-                  <div className="mt-8 pt-4 border-t border-border">
-                    <p className="text-xs text-muted-foreground text-center">
-                      {t('updates.version')} {version}
-                    </p>
+                {hasNoResults && (
+                  <p className="px-2 py-2 text-[0.8125rem] text-muted-foreground">{t('search.noResults')}</p>
+                )}
+              </div>
+            </ScrollArea>
+
+            {/* Version at bottom */}
+            {version && (
+              <div className="px-5 py-3">
+                <p className="text-xs text-muted-foreground">
+                  {t('updates.version')} {version}
+                </p>
+              </div>
+            )}
+          </nav>
+
+          {/* Main content */}
+          <div className="relative flex min-w-0 flex-1 flex-col">
+            <DialogPrimitive.Close
+              aria-label={t('actions.close')}
+              className={cn(
+                'absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg',
+                'text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground',
+                'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)'
+              )}
+            >
+              <X className="h-4 w-4" strokeWidth={1.75} />
+            </DialogPrimitive.Close>
+
+            <ScrollArea className="min-h-0 flex-1">
+              <div
+                className={cn(
+                  'mx-auto w-full px-10 pb-10 pt-12',
+                  isWideSection ? 'max-w-5xl' : 'max-w-[720px]'
+                )}
+              >
+                {renderContent()}
+              </div>
+            </ScrollArea>
+
+            {/* Sticky footer */}
+            <div className="shrink-0 border-t border-border px-10 py-3">
+              <div
+                className={cn(
+                  'mx-auto flex w-full items-center justify-end gap-2',
+                  isWideSection ? 'max-w-5xl' : 'max-w-[720px]'
+                )}
+              >
+                {(error || projectError) && (
+                  <div
+                    role="alert"
+                    className="mr-auto min-w-0 flex-1 truncate rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-1.5 text-sm text-destructive"
+                    title={error || projectError || undefined}
+                  >
+                    {error || projectError}
                   </div>
                 )}
-              </ScrollArea>
-            </nav>
-
-            {/* Main content */}
-            <div className="flex-1 overflow-hidden">
-              <ScrollArea className="h-full">
-                <div className={appSection === 'terminal-fonts' ? 'p-8' : 'p-8 max-w-2xl'}>
-                  {renderContent()}
-                </div>
-              </ScrollArea>
+                <Button variant="ghost" size="sm" onClick={handleCancel}>
+                  {t('common:buttons.cancel', 'Cancel')}
+                </Button>
+                <Button size="sm" onClick={handleSave} disabled={isSavingAny}>
+                  {isSavingAny ? (
+                    <>
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                      {t('common:buttons.saving', 'Saving...')}
+                    </>
+                  ) : (
+                    t('common:buttons.save', 'Save')
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
-        </FullScreenDialogBody>
-
-        <FullScreenDialogFooter>
-          {(error || projectError) && (
-            <div className="flex-1 rounded-lg bg-destructive/10 border border-destructive/30 px-4 py-2 text-sm text-destructive">
-              {error || projectError}
-            </div>
-          )}
-          <Button variant="outline" onClick={handleCancel}>
-            {t('common:buttons.cancel', 'Cancel')}
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={isSaving || (activeTopLevel === 'project' && projectSettingsHook?.isSaving)}
-          >
-            {(isSaving || (activeTopLevel === 'project' && projectSettingsHook?.isSaving)) ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {t('common:buttons.saving', 'Saving...')}
-              </>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                {t('actions.save')}
-              </>
-            )}
-          </Button>
-        </FullScreenDialogFooter>
-      </FullScreenDialogContent>
+        </DialogPrimitive.Content>
+      </FullScreenDialogPortal>
     </FullScreenDialog>
   );
 }

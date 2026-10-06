@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { FolderOpen, Plus, Trash2 } from 'lucide-react';
 import {
   Select,
@@ -11,18 +12,23 @@ import { Separator } from '../ui/separator';
 import { useProjectStore, removeProject } from '../../stores/project-store';
 import { AddProjectModal } from '../AddProjectModal';
 import type { Project } from '../../../shared/types';
+import { cn } from '../../lib/utils';
 
 interface ProjectSelectorProps {
   selectedProjectId: string | null;
   onProjectChange: (projectId: string | null) => void;
   onProjectAdded?: (project: Project, needsInit: boolean) => void;
+  /** Compact nav-style trigger (used in the settings sidebar) */
+  compact?: boolean;
 }
 
 export function ProjectSelector({
   selectedProjectId,
   onProjectChange,
-  onProjectAdded
+  onProjectAdded,
+  compact = false
 }: ProjectSelectorProps) {
+  const { t } = useTranslation('settings');
   const projects = useProjectStore((state) => state.projects);
   const [showAddModal, setShowAddModal] = useState(false);
   const [open, setOpen] = useState(false);
@@ -54,10 +60,16 @@ export function ProjectSelector({
         open={open}
         onOpenChange={setOpen}
       >
-        <SelectTrigger className="w-full [&_span]:truncate">
+        <SelectTrigger
+          className={cn(
+            'w-full [&_span]:truncate',
+            compact && 'h-8 rounded-(--nav-item-radius) border-border bg-transparent px-2 text-sm hover:bg-nav-hover focus:ring-0 focus-visible:shadow-(--shadow-focus)'
+          )}
+          title={compact ? selectedProject?.path : undefined}
+        >
           <div className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <SelectValue placeholder="Select a project..." className="truncate min-w-0 flex-1" />
+            <FolderOpen className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={compact ? 1.75 : 2} />
+            <SelectValue placeholder={t('projectSelector.placeholder')} className="truncate min-w-0 flex-1" />
           </div>
         </SelectTrigger>
         <SelectContent className="min-w-(--radix-select-trigger-width) max-w-(--radix-select-trigger-width)">
@@ -97,7 +109,7 @@ export function ProjectSelector({
       </Select>
 
       {/* Project path - shown when project is selected */}
-      {selectedProject && (
+      {selectedProject && !compact && (
         <div className="mt-2">
           <span
             className="truncate block text-xs text-muted-foreground"

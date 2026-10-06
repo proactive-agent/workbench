@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bug, FolderOpen, Copy, FileText, RefreshCw, Loader2, Check, AlertCircle, Shield } from 'lucide-react';
+import { Bug, FolderOpen, Copy, FileText, RefreshCw, Loader2, Check, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
-import { Label } from '../ui/label';
 import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 import { useSettingsStore } from '../../stores/settings-store';
 import { notifySentryStateChanged } from '../../lib/sentry';
 
@@ -85,73 +85,72 @@ export function DebugSettings() {
       title={t('debug.title', 'Debug & Logs')}
       description={t('debug.description', 'Access logs and debug information for troubleshooting')}
     >
-      <div className="space-y-6">
-        {/* Error Reporting Toggle */}
-        <div className="rounded-lg border border-border p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Shield className="h-5 w-5 text-muted-foreground" />
-              <div>
-                <Label htmlFor="sentry-toggle" className="text-sm font-medium text-foreground cursor-pointer">
-                  {t('debug.errorReporting.label', 'Anonymous Error Reporting')}
-                </Label>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t('debug.errorReporting.description', 'Send crash reports to help improve Auto Claude. No personal data or code is collected.')}
-                </p>
-              </div>
-            </div>
+      <div className="space-y-4">
+        <SettingsRows>
+          {/* Error Reporting Toggle */}
+          <SettingsRow
+            label={t('debug.errorReporting.label', 'Anonymous Error Reporting')}
+            description={t('debug.errorReporting.description', 'Send crash reports to help improve Auto Claude. No personal data or code is collected.')}
+            htmlFor="sentry-toggle"
+          >
             <Switch
               id="sentry-toggle"
               checked={settings.sentryEnabled ?? true}
               onCheckedChange={handleSentryToggle}
             />
-          </div>
-        </div>
+          </SettingsRow>
 
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Button
-            variant="outline"
-            onClick={handleOpenLogsFolder}
-            className="flex items-center gap-2"
-          >
-            <FolderOpen className="h-4 w-4" />
-            {t('debug.openLogsFolder', 'Open Logs Folder')}
-          </Button>
+          {/* Quick Actions */}
+          <SettingsRow
+            label={t('debug.helpTitle', 'Reporting Issues')}
+            description={t('debug.helpText', 'When reporting bugs, click "Copy Debug Info" to get system information and recent errors that help us diagnose the issue.')}
+            footer={
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleOpenLogsFolder}
+                >
+                  <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
+                  {t('debug.openLogsFolder', 'Open Logs Folder')}
+                </Button>
 
-          <Button
-            variant="outline"
-            onClick={handleCopyDebugInfo}
-            className="flex items-center gap-2"
-            disabled={copySuccess}
-          >
-            {copySuccess ? (
-              <>
-                <Check className="h-4 w-4 text-green-500" />
-                {t('debug.copied', 'Copied!')}
-              </>
-            ) : (
-              <>
-                <Copy className="h-4 w-4" />
-                {t('debug.copyDebugInfo', 'Copy Debug Info')}
-              </>
-            )}
-          </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyDebugInfo}
+                  disabled={copySuccess}
+                >
+                  {copySuccess ? (
+                    <>
+                      <Check className="mr-1.5 h-3.5 w-3.5 text-success" />
+                      {t('debug.copied', 'Copied!')}
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="mr-1.5 h-3.5 w-3.5" />
+                      {t('debug.copyDebugInfo', 'Copy Debug Info')}
+                    </>
+                  )}
+                </Button>
 
-          <Button
-            variant="outline"
-            onClick={loadDebugInfo}
-            disabled={isLoading}
-            className="flex items-center gap-2"
-          >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            {t('debug.loadInfo', 'Load Debug Info')}
-          </Button>
-        </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={loadDebugInfo}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {t('debug.loadInfo', 'Load Debug Info')}
+                </Button>
+              </div>
+            }
+          />
+        </SettingsRows>
 
         {/* Error Display */}
         {error && (
@@ -211,21 +210,13 @@ export function DebugSettings() {
             {debugInfo.recentErrors.length === 0 && (
               <div className="rounded-lg border border-border p-4">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Check className="h-4 w-4 text-green-500" />
+                  <Check className="h-4 w-4 text-success" />
                   {t('debug.noRecentErrors', 'No recent errors')}
                 </div>
               </div>
             )}
           </div>
         )}
-
-        {/* Help Text */}
-        <div className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-md">
-          <p className="font-medium mb-1">{t('debug.helpTitle', 'Reporting Issues')}</p>
-          <p>
-            {t('debug.helpText', 'When reporting bugs, click "Copy Debug Info" to get system information and recent errors that help us diagnose the issue.')}
-          </p>
-        </div>
       </div>
     </SettingsSection>
   );

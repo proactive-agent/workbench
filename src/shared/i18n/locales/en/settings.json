@@ -4,6 +4,10 @@
     "app": "App Settings",
     "project": "Project Settings"
   },
+  "nav": {
+    "app": "Application",
+    "project": "Project"
+  },
   "sections": {
     "appearance": {
       "title": "Appearance",
@@ -180,7 +184,12 @@
     "fineTuneDescription": "Adjust from 75% to 200% in 5% increments",
     "default": "Default",
     "comfortable": "Comfortable",
-    "large": "Large"
+    "large": "Large",
+    "reset": "Reset to default (100%)",
+    "decrease": "Decrease scale",
+    "increase": "Increase scale",
+    "apply": "Apply",
+    "applyTitle": "Apply scale changes"
   },
   "logOrder": {
     "label": "Log Order",
@@ -240,7 +249,8 @@
     "autoClaudePathDescription": "Relative path to auto-claude directory in projects",
     "autoClaudePathPlaceholder": "auto-claude (default)",
     "autoNameTerminals": "Automatically name terminals",
-    "autoNameTerminalsDescription": "Use AI to generate descriptive names for terminal tabs based on their activity"
+    "autoNameTerminalsDescription": "Use AI to generate descriptive names for terminal tabs based on their activity",
+    "detecting": "Detecting..."
   },
   "theme": {
     "title": "Appearance",
@@ -338,7 +348,8 @@
     "soundDescription": "Play sound with notifications"
   },
   "actions": {
-    "save": "Save Settings"
+    "save": "Save Settings",
+    "close": "Close settings"
   },
   "projectSections": {
     "general": {
@@ -1174,5 +1185,13 @@
         "description": "An error occurred while saving your provider configuration."
       }
     }
+  },
+  "search": {
+    "placeholder": "Search",
+    "ariaLabel": "Search settings",
+    "noResults": "No matching settings"
+  },
+  "projectSelector": {
+    "placeholder": "Select a project..."
   }
 }

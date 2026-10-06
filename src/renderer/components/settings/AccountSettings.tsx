@@ -263,7 +263,7 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
               <h4 className="text-sm font-semibold text-foreground">{t('accounts.autoSwitching.title')}</h4>
             </div>
 
-            <div className="rounded-lg bg-muted/30 border border-border p-4 space-y-4">
+            <div className="space-y-4">
               <p className="text-sm text-muted-foreground">
                 {t('accounts.autoSwitching.description')}
               </p>

@@ -1,10 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
-import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ProviderAgentTabs } from './ProviderAgentTabs';
 import type {
   AppSettings,
@@ -29,15 +29,15 @@ interface ToolDetectionDisplayProps {
 function ToolDetectionDisplay({ info, isLoading, t }: ToolDetectionDisplayProps) {
   if (isLoading) {
     return (
-      <div className="text-xs text-muted-foreground mt-1">
-        Detecting...
+      <div className="text-xs text-muted-foreground">
+        {t('general.detecting')}
       </div>
     );
   }
 
   if (!info || !info.found) {
     return (
-      <div className="text-xs text-muted-foreground mt-1">
+      <div className="text-xs text-muted-foreground">
         {t('general.notDetected')}
       </div>
     );
@@ -57,7 +57,7 @@ function ToolDetectionDisplay({ info, isLoading, t }: ToolDetectionDisplayProps)
   };
 
   return (
-    <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+    <div className="text-xs text-muted-foreground space-y-0.5">
       <div>
         <span className="font-medium">{t('general.detectedPath')}:</span>{' '}
         <code className="bg-muted px-1 py-0.5 rounded">{info.path}</code>
@@ -121,40 +121,36 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           title={t('general.otherAgentSettings')}
           description={t('general.otherAgentSettingsDescription')}
         >
-          <div className="space-y-6">
-            <div className="space-y-3">
-              <Label htmlFor="agentFramework" className="text-sm font-medium text-foreground">{t('general.agentFramework')}</Label>
-              <p className="text-sm text-muted-foreground">{t('general.agentFrameworkDescription')}</p>
+          <SettingsRows>
+            <SettingsRow
+              label={t('general.agentFramework')}
+              description={t('general.agentFrameworkDescription')}
+              htmlFor="agentFramework"
+            >
               <Select
                 value={settings.agentFramework}
                 onValueChange={(value) => onSettingsChange({ ...settings, agentFramework: value })}
               >
-                <SelectTrigger id="agentFramework" className="w-full max-w-md">
+                <SelectTrigger id="agentFramework" className="h-8 w-56">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="auto-claude">{t('general.agentFrameworkAutoClaude')}</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between max-w-md">
-                <div className="space-y-1">
-                  <Label htmlFor="autoNameTerminals" className="text-sm font-medium text-foreground">
-                    {t('general.aiTerminalNaming')}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {t('general.aiTerminalNamingDescription')}
-                  </p>
-                </div>
-                <Switch
-                  id="autoNameTerminals"
-                  checked={settings.autoNameTerminals}
-                  onCheckedChange={(checked) => onSettingsChange({ ...settings, autoNameTerminals: checked })}
-                />
-              </div>
-            </div>
-          </div>
+            </SettingsRow>
+            <SettingsRow
+              label={t('general.aiTerminalNaming')}
+              description={t('general.aiTerminalNamingDescription')}
+              htmlFor="autoNameTerminals"
+            >
+              <Switch
+                id="autoNameTerminals"
+                checked={settings.autoNameTerminals}
+                onCheckedChange={(checked) => onSettingsChange({ ...settings, autoNameTerminals: checked })}
+              />
+            </SettingsRow>
+          </SettingsRows>
         </SettingsSection>
       </div>
     );
@@ -166,109 +162,127 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
       title={t('general.paths')}
       description={t('general.pathsDescription')}
     >
-      <div className="space-y-6">
-        <div className="space-y-3">
-          <Label htmlFor="pythonPath" className="text-sm font-medium text-foreground">{t('general.pythonPath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.pythonPathDescription')}</p>
-          <Input
-            id="pythonPath"
-            placeholder={t('general.pythonPathPlaceholder')}
-            className="w-full max-w-lg"
-            value={settings.pythonPath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, pythonPath: e.target.value })}
-          />
-          {!settings.pythonPath && (
+      <SettingsRows>
+        <SettingsRow
+          label={t('general.pythonPath')}
+          description={t('general.pythonPathDescription')}
+          htmlFor="pythonPath"
+          stacked
+          footer={!settings.pythonPath ? (
             <ToolDetectionDisplay
               info={toolsInfo?.python || null}
               isLoading={isLoadingTools}
               t={t}
             />
-          )}
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="gitPath" className="text-sm font-medium text-foreground">{t('general.gitPath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.gitPathDescription')}</p>
+          ) : undefined}
+        >
           <Input
-            id="gitPath"
-            placeholder={t('general.gitPathPlaceholder')}
-            className="w-full max-w-lg"
-            value={settings.gitPath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, gitPath: e.target.value })}
+            id="pythonPath"
+            placeholder={t('general.pythonPathPlaceholder')}
+            className="h-9 w-full"
+            value={settings.pythonPath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, pythonPath: e.target.value })}
           />
-          {!settings.gitPath && (
+        </SettingsRow>
+        <SettingsRow
+          label={t('general.gitPath')}
+          description={t('general.gitPathDescription')}
+          htmlFor="gitPath"
+          stacked
+          footer={!settings.gitPath ? (
             <ToolDetectionDisplay
               info={toolsInfo?.git || null}
               isLoading={isLoadingTools}
               t={t}
             />
-          )}
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="githubCLIPath" className="text-sm font-medium text-foreground">{t('general.githubCLIPath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.githubCLIPathDescription')}</p>
+          ) : undefined}
+        >
           <Input
-            id="githubCLIPath"
-            placeholder={t('general.githubCLIPathPlaceholder')}
-            className="w-full max-w-lg"
-            value={settings.githubCLIPath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, githubCLIPath: e.target.value })}
+            id="gitPath"
+            placeholder={t('general.gitPathPlaceholder')}
+            className="h-9 w-full"
+            value={settings.gitPath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, gitPath: e.target.value })}
           />
-          {!settings.githubCLIPath && (
+        </SettingsRow>
+        <SettingsRow
+          label={t('general.githubCLIPath')}
+          description={t('general.githubCLIPathDescription')}
+          htmlFor="githubCLIPath"
+          stacked
+          footer={!settings.githubCLIPath ? (
             <ToolDetectionDisplay
               info={toolsInfo?.gh || null}
               isLoading={isLoadingTools}
               t={t}
             />
-          )}
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="gitlabCLIPath" className="text-sm font-medium text-foreground">{t('general.gitlabCLIPath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.gitlabCLIPathDescription')}</p>
+          ) : undefined}
+        >
           <Input
-            id="gitlabCLIPath"
-            placeholder={t('general.gitlabCLIPathPlaceholder')}
-            className="w-full max-w-lg"
-            value={settings.gitlabCLIPath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, gitlabCLIPath: e.target.value })}
+            id="githubCLIPath"
+            placeholder={t('general.githubCLIPathPlaceholder')}
+            className="h-9 w-full"
+            value={settings.githubCLIPath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, githubCLIPath: e.target.value })}
           />
-          {!settings.gitlabCLIPath && (
+        </SettingsRow>
+        <SettingsRow
+          label={t('general.gitlabCLIPath')}
+          description={t('general.gitlabCLIPathDescription')}
+          htmlFor="gitlabCLIPath"
+          stacked
+          footer={!settings.gitlabCLIPath ? (
             <ToolDetectionDisplay
               info={toolsInfo?.glab || null}
               isLoading={isLoadingTools}
               t={t}
             />
-          )}
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="claudePath" className="text-sm font-medium text-foreground">{t('general.claudePath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.claudePathDescription')}</p>
+          ) : undefined}
+        >
           <Input
-            id="claudePath"
-            placeholder={t('general.claudePathPlaceholder')}
-            className="w-full max-w-lg"
-            value={settings.claudePath || ''}
-            onChange={(e) => onSettingsChange({ ...settings, claudePath: e.target.value })}
+            id="gitlabCLIPath"
+            placeholder={t('general.gitlabCLIPathPlaceholder')}
+            className="h-9 w-full"
+            value={settings.gitlabCLIPath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, gitlabCLIPath: e.target.value })}
           />
-          {!settings.claudePath && (
+        </SettingsRow>
+        <SettingsRow
+          label={t('general.claudePath')}
+          description={t('general.claudePathDescription')}
+          htmlFor="claudePath"
+          stacked
+          footer={!settings.claudePath ? (
             <ToolDetectionDisplay
               info={toolsInfo?.claude || null}
               isLoading={isLoadingTools}
               t={t}
             />
-          )}
-        </div>
-        <div className="space-y-3">
-          <Label htmlFor="autoBuildPath" className="text-sm font-medium text-foreground">{t('general.autoClaudePath')}</Label>
-          <p className="text-sm text-muted-foreground">{t('general.autoClaudePathDescription')}</p>
+          ) : undefined}
+        >
+          <Input
+            id="claudePath"
+            placeholder={t('general.claudePathPlaceholder')}
+            className="h-9 w-full"
+            value={settings.claudePath || ''}
+            onChange={(e) => onSettingsChange({ ...settings, claudePath: e.target.value })}
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('general.autoClaudePath')}
+          description={t('general.autoClaudePathDescription')}
+          htmlFor="autoBuildPath"
+          stacked
+        >
           <Input
             id="autoBuildPath"
             placeholder={t('general.autoClaudePathPlaceholder')}
-            className="w-full max-w-lg"
+            className="h-9 w-full"
             value={settings.autoBuildPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, autoBuildPath: e.target.value })}
           />
-        </div>
-      </div>
+        </SettingsRow>
+      </SettingsRows>
     </SettingsSection>
   );
 }

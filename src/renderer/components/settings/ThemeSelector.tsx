@@ -1,6 +1,7 @@
+import { useTranslation } from 'react-i18next';
 import { Check, Sun, Moon, Monitor } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { Label } from '../ui/label';
+import { SettingsRow, SettingsRows, SegmentedControl, type SegmentedOption } from './SettingsRow';
 import { COLOR_THEMES, sanitizeColorTheme } from '../../../shared/constants';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { ColorTheme, AppSettings } from '../../../shared/types';
@@ -18,6 +19,7 @@ interface ThemeSelectorProps {
  * require saving to take effect.
  */
 export function ThemeSelector({ settings, onSettingsChange }: ThemeSelectorProps) {
+  const { t } = useTranslation('settings');
   const updateStoreSettings = useSettingsStore((state) => state.updateSettings);
 
   const currentColorTheme = sanitizeColorTheme(settings.colorTheme);
@@ -39,48 +41,31 @@ export function ThemeSelector({ settings, onSettingsChange }: ThemeSelectorProps
     updateStoreSettings({ theme: mode });
   };
 
-  const getModeIcon = (mode: string) => {
-    switch (mode) {
-      case 'light':
-        return <Sun className="h-4 w-4" />;
-      case 'dark':
-        return <Moon className="h-4 w-4" />;
-      default:
-        return <Monitor className="h-4 w-4" />;
-    }
-  };
+  const modeOptions: SegmentedOption<'light' | 'dark' | 'system'>[] = [
+    { value: 'system', label: t('theme.system'), icon: Monitor },
+    { value: 'light', label: t('theme.light'), icon: Sun },
+    { value: 'dark', label: t('theme.dark'), icon: Moon }
+  ];
 
   return (
-    <div className="space-y-6">
+    <SettingsRows>
       {/* Mode Toggle */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-foreground">Appearance Mode</Label>
-        <p className="text-sm text-muted-foreground">Choose light, dark, or system preference</p>
-        <div className="grid grid-cols-3 gap-3 max-w-md pt-1">
-          {(['system', 'light', 'dark'] as const).map((mode) => (
-            <button
-              key={mode}
-              onClick={() => handleModeChange(mode)}
-              className={cn(
-                'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                currentMode === mode
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50 hover:bg-accent/50'
-              )}
-            >
-              {getModeIcon(mode)}
-              <span className="text-sm font-medium capitalize">{mode}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <SettingsRow label={t('theme.mode')} description={t('theme.modeDescription')}>
+        <SegmentedControl
+          value={currentMode}
+          options={modeOptions}
+          onValueChange={handleModeChange}
+          ariaLabel={t('theme.mode')}
+        />
+      </SettingsRow>
 
       {/* Color Theme Grid */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-foreground">Color Theme</Label>
-        <p className="text-sm text-muted-foreground">Select a color palette for the interface</p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-1">
+      <SettingsRow
+        label={t('theme.colorTheme')}
+        description={t('theme.colorThemeDescription')}
+        stacked
+      >
+        <div role="radiogroup" aria-label={t('theme.colorTheme')} className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {COLOR_THEMES.map((theme) => {
             const isSelected = currentColorTheme === theme.id;
             const bgColor = isDark ? theme.previewColors.darkBg : theme.previewColors.bg;
@@ -91,48 +76,42 @@ export function ThemeSelector({ settings, onSettingsChange }: ThemeSelectorProps
             return (
               <button
                 key={theme.id}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
                 onClick={() => handleColorThemeChange(theme.id)}
                 className={cn(
-                  'relative flex flex-col p-4 rounded-lg border-2 text-left transition-all',
-                  'hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+                  'relative flex items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors duration-150',
+                  'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
                   isSelected
-                    ? 'border-primary bg-primary/5 shadow-sm'
-                    : 'border-border hover:border-primary/50 hover:bg-accent/30'
+                    ? 'border-foreground/30 bg-nav-active'
+                    : 'border-border hover:bg-nav-hover'
                 )}
               >
-                {/* Selection indicator */}
-                {isSelected && (
-                  <div className="absolute top-2 right-2 w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                    <Check className="w-3 h-3 text-primary-foreground" />
-                  </div>
-                )}
-
                 {/* Preview swatches */}
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="flex -space-x-1.5">
-                    <div
-                      className="w-6 h-6 rounded-full border-2 border-background shadow-sm"
-                      style={{ backgroundColor: bgColor }}
-                      title="Background color"
-                    />
-                    <div
-                      className="w-6 h-6 rounded-full border-2 border-background shadow-sm"
-                      style={{ backgroundColor: accentColor }}
-                      title="Accent color"
-                    />
-                  </div>
+                <div className="flex shrink-0 -space-x-1.5">
+                  <div
+                    className="h-5 w-5 rounded-full border border-border"
+                    style={{ backgroundColor: bgColor }}
+                  />
+                  <div
+                    className="h-5 w-5 rounded-full border border-border"
+                    style={{ backgroundColor: accentColor }}
+                  />
                 </div>
 
                 {/* Theme info */}
-                <div className="space-y-1">
-                  <p className="font-medium text-sm text-foreground">{theme.name}</p>
-                  <p className="text-xs text-muted-foreground line-clamp-2">{theme.description}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm text-foreground">{theme.name}</p>
+                  <p className="truncate text-xs text-muted-foreground" title={theme.description}>{theme.description}</p>
                 </div>
+
+                {isSelected && <Check className="h-4 w-4 shrink-0 text-foreground" strokeWidth={2} />}
               </button>
             );
           })}
         </div>
-      </div>
-    </div>
+      </SettingsRow>
+    </SettingsRows>
   );
 }
