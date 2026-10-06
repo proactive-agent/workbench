@@ -152,7 +152,6 @@ describe('Claude Profile IPC Integration', () => {
 
     // Import and call the registration function
     const { registerTerminalHandlers } = await import('../../main/ipc-handlers/terminal-handlers');
-    // biome-ignore lint/suspicious/noExplicitAny: Test mock types don't match production types
     registerTerminalHandlers(mockTerminalManager as any, () => mockBrowserWindow as any);
   });
 
@@ -209,7 +208,6 @@ describe('Claude Profile IPC Integration', () => {
 
       await handleProfileSave?.(null, profile);
 
-      // biome-ignore lint/style/noNonNullAssertion: Test file - configDir is set in createTestProfile
       expect(existsSync(profile.configDir!)).toBe(true);
     });
 
@@ -224,7 +222,6 @@ describe('Claude Profile IPC Integration', () => {
 
       await handleProfileSave?.(null, profile);
 
-      // biome-ignore lint/style/noNonNullAssertion: Test file - configDir is set in createTestProfile
       expect(existsSync(profile.configDir!)).toBe(false);
     });
 

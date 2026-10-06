@@ -451,7 +451,6 @@ describe('PRStatusPoller Integration Tests', () => {
     });
 
     it('should handle 401 errors indicating expired token', async () => {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: Mock console.error for test
       vi.spyOn(console, 'error').mockImplementation(() => {});
 
       setupFullPollingMocks(1);
@@ -470,7 +469,6 @@ describe('PRStatusPoller Integration Tests', () => {
     });
 
     it('should clear errors when restarting with fresh token', async () => {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: Mock console.error for test
       vi.spyOn(console, 'error').mockImplementation(() => {});
 
       // Start with error
@@ -549,7 +547,6 @@ describe('PRStatusPoller Integration Tests', () => {
 
   describe('Error Recovery', () => {
     it('should continue polling after transient network error', async () => {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: Mock console.error for test
       vi.spyOn(console, 'error').mockImplementation(() => {});
 
       setupFullPollingMocks(1);

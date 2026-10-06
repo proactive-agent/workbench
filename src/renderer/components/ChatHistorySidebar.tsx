@@ -89,7 +89,6 @@ export function ChatHistorySidebar({
 
   // Prune selectedIds when sessions change - removes IDs for sessions no longer displayed
   // Also resets when showArchived toggles
-  // biome-ignore lint/correctness/useExhaustiveDependencies: showArchived is intentionally a dependency to reset selection on filter change
   useEffect(() => {
     setSelectedIds((prev) => {
       if (prev.size === 0) return prev;

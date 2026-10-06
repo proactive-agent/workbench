@@ -14,7 +14,6 @@ vi.mock('@ai-sdk/mcp', () => ({
 
 // Mock StdioClientTransport constructor using a proper constructor function
 vi.mock('@modelcontextprotocol/sdk/client/stdio.js', () => ({
-  // biome-ignore lint/suspicious/noExplicitAny: test mock constructor
   StdioClientTransport: vi.fn().mockImplementation(function (this: any) {
     Object.assign(this, { __kind: 'stdio-transport' });
   }),
@@ -89,7 +88,6 @@ const httpConfig: McpServerConfig = {
 beforeEach(() => {
   vi.clearAllMocks();
   // Default: StdioClientTransport constructor sets __kind on instance
-  // biome-ignore lint/suspicious/noExplicitAny: test mock constructor
   mockStdioClientTransport.mockImplementation(function (this: any) {
     Object.assign(this, FAKE_STDIO_TRANSPORT_PROPS);
   } as unknown as typeof StdioClientTransport);
@@ -272,7 +270,6 @@ describe('mergeMcpTools', () => {
 
     const merged = mergeMcpTools(clients);
 
-    // biome-ignore lint/suspicious/noExplicitAny: test mock property access
     expect((merged.shared_tool as any).version).toBe(2);
   });
 });

@@ -499,7 +499,6 @@ export class ChangelogService extends EventEmitter {
       this.debug('Error in AI version suggestion, falling back to patch bump', error);
       // Fallback to patch bump if AI fails
       // currentVersion is guaranteed non-empty: the try block returns early if falsy or invalid
-      // biome-ignore lint/style/noNonNullAssertion: guarded by early returns in try block
       const [major, minor, patch] = currentVersion!.split('.').map(Number);
       return {
         version: `${major}.${minor}.${patch + 1}`,

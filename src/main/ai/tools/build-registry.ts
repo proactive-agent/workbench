@@ -19,7 +19,6 @@ import { webFetchTool } from './builtin/web-fetch';
 import { webSearchTool } from './builtin/web-search';
 import { spawnSubagentTool } from './builtin/spawn-subagent';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const asDefined = (t: unknown): DefinedTool => t as DefinedTool;
 
 /**

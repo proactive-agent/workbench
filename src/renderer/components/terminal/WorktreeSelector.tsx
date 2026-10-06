@@ -275,7 +275,6 @@ export function WorktreeSelector({
   );
 
   // Reset focused index when search query changes
-  // biome-ignore lint/correctness/useExhaustiveDependencies: we intentionally reset focus when searchQuery changes
   useEffect(() => {
     setFocusedIndex(0);
   }, [searchQuery]);
@@ -297,7 +296,6 @@ export function WorktreeSelector({
     }
   };
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: fetchWorktrees is intentionally excluded to prevent infinite loop
   useEffect(() => {
     if (isOpen && projectPath) {
       fetchWorktrees();

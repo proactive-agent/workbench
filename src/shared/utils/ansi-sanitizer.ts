@@ -19,7 +19,6 @@
  *
  * Examples: \x1b[31m (red), \x1b[?25l (hide cursor), \x1b[200~ (bracketed paste start)
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes require control characters
 const ANSI_CSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
 
 /**
@@ -28,9 +27,7 @@ const ANSI_CSI_PATTERN = /\x1b\[[0-?]*[ -/]*[@-~]/g;
  * - BEL (bell): \x1b]...\x07 - Single character terminator
  * - ST (string terminator): \x1b]...\x1b\\ - Two character terminator (ESC + backslash)
  */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI OSC sequences use BEL terminator
 const ANSI_OSC_BEL_PATTERN = /\x1b\][^\x07]*\x07/g;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI OSC sequences use ST terminator
 const ANSI_OSC_ST_PATTERN = /\x1b\][^\x1b]*\x1b\\/g;
 
 /**

@@ -50,7 +50,6 @@ describe('SubagentExecutorImpl', () => {
     getToolsForAgent: vi.fn(() => ({})),
   } as unknown as ToolRegistry;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mock model for testing
   const mockModel = { modelId: 'test-model' } as any;
 
   const createExecutor = () =>
@@ -145,7 +144,7 @@ describe('SubagentExecutorImpl', () => {
   it('should fire onSubagentEvent callbacks for spawn lifecycle', async () => {
     const onEvent = vi.fn();
     const executor = new SubagentExecutorImpl({
-      model: mockModel, // eslint-disable-line @typescript-eslint/no-unsafe-assignment
+      model: mockModel,
       registry: mockRegistry,
       baseToolContext: mockToolContext,
       loadPrompt: vi.fn().mockResolvedValue('System prompt'),

@@ -84,7 +84,6 @@ export function GitLabIntegration({
     if (authMode === 'oauth-success') {
       fetchUserProjects();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authMode]);
 
   // Check glab CLI on mount
@@ -119,7 +118,6 @@ export function GitLabIntegration({
     } else {
       debugLog('useEffect[branches] - Skipping fetchBranches (conditions not met)');
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [envConfig?.gitlabEnabled, projectPath]);
 
   /**

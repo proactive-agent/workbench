@@ -122,7 +122,6 @@ export function TaskFiles({ task }: TaskFilesProps) {
       loadFileContent(files[0].path);
     }
     // Only run when files change, not on selectedFile changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [files, loadFileContent, selectedFile]);
 
   // Open spec directory in IDE

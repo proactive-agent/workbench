@@ -33,7 +33,6 @@ export class TreeSitterLoader {
   private getWasmDir(): string {
     // Lazy import to avoid issues in test environments
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { app } = require('electron') as typeof import('electron');
       if (app.isPackaged) {
         return join(process.resourcesPath, 'grammars');

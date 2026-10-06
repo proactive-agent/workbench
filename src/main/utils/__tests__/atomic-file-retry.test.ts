@@ -12,9 +12,7 @@ import { rename as originalRename, readFile as originalReadFile } from 'fs/promi
 let renameCallCount = 0;
 let readFileCallCount = 0;
 // Control mock behavior per test
-// biome-ignore lint/suspicious/noExplicitAny: mock functions need flexible types
 let renameMockFn: ((...args: any[]) => Promise<void>) | null = null;
-// biome-ignore lint/suspicious/noExplicitAny: mock functions need flexible types
 let readFileMockFn: ((...args: any[]) => Promise<string | Buffer>) | null = null;
 
 vi.mock('fs/promises', async (importOriginal) => {

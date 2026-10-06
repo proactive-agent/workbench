@@ -544,7 +544,6 @@ function collectFiles(
     if (results.length >= maxCount || depth > 8) return;
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const fs = require('node:fs') as typeof import('node:fs');
       const entries = fs.readdirSync(currentDir, { withFileTypes: true });
 

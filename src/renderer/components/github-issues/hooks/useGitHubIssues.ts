@@ -55,7 +55,6 @@ export function useGitHubIssues(projectId: string | undefined) {
       // If search is active, load all issues for complete search
       loadGitHubIssues(projectId, filterState, isSearchActive);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, filterState, syncStatus?.connected, isSearchActive]);
 
   const handleRefresh = useCallback(() => {

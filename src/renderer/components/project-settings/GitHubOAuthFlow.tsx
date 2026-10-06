@@ -108,7 +108,6 @@ export function GitHubOAuthFlow({ onSuccess, onCancel }: GitHubOAuthFlowProps) {
     return () => {
       clearAuthTimeout();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- Only run once on mount, checkGitHubStatus is intentionally excluded
   }, [clearAuthTimeout]);
 
   // Listen for device code events from the main process

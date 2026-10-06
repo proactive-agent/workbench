@@ -422,7 +422,6 @@ describe('PRStatusPoller', () => {
 
     it('should not start polling for invalid project ID format', async () => {
       // Console error expected for invalid format
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: mock implementation intentionally empty
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
       await poller.startPolling('invalid-format', [1], 'test-token');
@@ -461,7 +460,6 @@ describe('PRStatusPoller', () => {
     });
 
     it('should warn when adding PRs to non-existent context', () => {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: mock implementation intentionally empty
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       poller.addPRs('non-existent/repo', [1, 2]);

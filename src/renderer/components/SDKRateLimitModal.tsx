@@ -94,7 +94,6 @@ export function SDKRateLimitModal() {
         });
       }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSDKModalOpen, sdkRateLimitInfo, profiles]);
 
   // Reset selection when modal closes

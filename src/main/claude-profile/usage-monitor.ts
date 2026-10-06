@@ -756,7 +756,6 @@ export class UsageMonitor extends EventEmitter {
     allProfiles.sort((a, b) => b.availabilityScore - a.availabilityScore);
 
     return {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       activeProfile: this.currentUsage!, // Non-null: _doGetAllProfilesUsage is only called when currentUsage is set
       allProfiles,
       fetchedAt: new Date()

@@ -146,13 +146,9 @@ async function simulateSelectPR(params: SelectPRTestParams): Promise<SelectPRTes
 }
 
 describe('useGitHubPRs - selectPR triggering checkNewCommits', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockCheckNewCommits: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockGetPRReview: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockSetNewCommitsCheck: any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockSetPRReviewResult: any;
 
   beforeEach(() => {
@@ -507,7 +503,6 @@ describe('useGitHubPRs - selectPR triggering checkNewCommits', () => {
 });
 
 describe('useGitHubPRs - checkNewCommits result handling', () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let mockSetNewCommitsCheck: any;
 
   beforeEach(() => {

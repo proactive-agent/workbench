@@ -30,7 +30,6 @@ const OAUTH_TOKEN_PATTERN = /(sk-ant-oat01-[A-Za-z0-9_-]+)/;
  * The URL is displayed when /login is run and needs to be opened in browser
  * Uses \x1b to exclude ANSI escape sequences from URL matching
  */
-// eslint-disable-next-line no-control-regex -- Intentionally matches ANSI escape sequences to exclude them from URLs
 const OAUTH_URL_PATTERN = /https:\/\/claude\.ai\/oauth\/authorize\?[^\s\x1b\]]+/;
 
 /**
@@ -114,7 +113,6 @@ export function hasOAuthUrl(data: string): boolean {
  * often wrap emails in OSC 8 hyperlink sequences, which would otherwise corrupt
  * the email address during regex matching.
  */
-// eslint-disable-next-line no-control-regex
 const ANSI_ESCAPE_PATTERNS = [
   // CSI sequences: \x1b[ followed by optional private mode indicator (?, >, !),
   // then parameters (numbers and semicolons), then a command letter

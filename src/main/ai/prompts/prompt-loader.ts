@@ -56,7 +56,6 @@ export function resolvePromptsDir(): string {
   // Production: Electron bundles prompts into resources
   try {
     // Dynamically import electron to avoid issues in worker threads
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { app } = require('electron') as typeof import('electron');
     if (app?.isPackaged) {
       const prodPath = join(process.resourcesPath, 'prompts');

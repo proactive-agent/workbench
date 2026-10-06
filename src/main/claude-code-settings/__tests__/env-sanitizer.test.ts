@@ -212,7 +212,6 @@ describe('env-sanitizer', () => {
     it('allows numeric keys (converted to strings)', () => {
       const env = {
         validKey: 'value',
-        // biome-ignore lint/suspicious/noExplicitAny: testing object with numeric key
         123: 'valid' as any,
       };
 
@@ -225,7 +224,6 @@ describe('env-sanitizer', () => {
     it('skips invalid value types', () => {
       const env = {
         validKey: 'value',
-        // biome-ignore lint/suspicious/noExplicitAny: testing invalid input
         invalidValue: 123 as any,
       };
 

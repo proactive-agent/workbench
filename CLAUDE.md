@@ -221,7 +221,7 @@ Graph-based semantic memory accessed via a Python MCP sidecar (lives outside thi
 
 ### Tech Stack
 
-React 19, TypeScript (strict), Electron 39, Vercel AI SDK v6, Zustand 5, Tailwind CSS v4, Radix UI, xterm.js 6, Vite 7, Vitest 4, Biome 2, Motion (Framer Motion)
+React 19, TypeScript (strict), Electron 39, Vercel AI SDK v6, Zustand 5, Tailwind CSS v4, Radix UI, xterm.js 6, Vite 7, Vitest 4, Motion (Framer Motion)
 
 ### Path Aliases (tsconfig.json)
 
@@ -290,7 +290,6 @@ Full PTY-based terminal integration:
 ## Code Quality
 
 ### Frontend
-- **Linting:** Biome (`npm run lint` / `npm run lint:fix`)
 - **Type checking:** `npm run typecheck` (strict mode)
 - **Testing:** Vitest + React Testing Library + jsdom
 

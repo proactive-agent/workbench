@@ -153,7 +153,6 @@ export class SubagentExecutorImpl implements SubagentExecutor {
         : undefined;
 
       // 5. Run generateText() with the subagent configuration
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generateText overloads don't resolve with conditional output spread
       const generateOptions: any = {
         model: this.config.model,
         system: systemPrompt,
@@ -171,7 +170,6 @@ export class SubagentExecutorImpl implements SubagentExecutor {
       this.config.onSubagentEvent?.(params.agentType, 'completed');
 
       // 6. Extract results
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- result.output type varies with OUTPUT generic
       const resultAny = result as any;
       const structuredOutput =
         outputSchema && resultAny.output != null

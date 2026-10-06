@@ -158,7 +158,6 @@ function parseAndMigrateProfileData(data: Record<string, unknown>): ProfileStore
       }
 
       // Destructure to remove oauthToken and tokenCreatedAt from the profile
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { oauthToken: _, tokenCreatedAt: __, ...profileWithoutToken } = p;
 
       // MIGRATION: Move profiles from shared ~/.claude to isolated directories

@@ -110,7 +110,6 @@ function sanitizeUserContent(content: string, maxLength = 100_000): string {
   if (!content) return '';
 
   const sanitized = content.replace(
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: intentional control char stripping
     /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g,
     '',
   );

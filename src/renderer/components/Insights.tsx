@@ -183,12 +183,10 @@ export function Insights({ projectId }: InsightsProps) {
     loadInsightsSession(projectId, showArchived);
     const cleanup = setupInsightsListeners();
     return cleanup;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: showArchived is handled by the dedicated effect below; including it here would cause duplicate loads
   }, [projectId]);
 
   // Reload sessions when showArchived changes (skip first run to avoid duplicate load with mount effect)
   const isFirstRun = useRef(true);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: projectId changes are handled by the mount effect above; this effect only reacts to showArchived toggles
   useEffect(() => {
     if (isFirstRun.current) {
       isFirstRun.current = false;
@@ -212,7 +210,6 @@ export function Insights({ projectId }: InsightsProps) {
   }, []);
 
   // Reset task creation state when switching sessions
-  // biome-ignore lint/correctness/useExhaustiveDependencies: session?.id is intentionally used as a trigger
   useEffect(() => {
     setTaskCreated(new Set());
     setCreatingTask(new Set());

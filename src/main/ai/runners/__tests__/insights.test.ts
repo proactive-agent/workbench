@@ -298,7 +298,6 @@ describe('runInsightsQuery', () => {
 
   it('rethrows when streamText iteration throws', async () => {
     mockStreamText.mockReturnValue({
-      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
       fullStream: (async function* () {
         throw new Error('API timeout');
       })(),
@@ -309,7 +308,6 @@ describe('runInsightsQuery', () => {
 
   it('emits error event to callback before rethrowing', async () => {
     mockStreamText.mockReturnValue({
-      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
       fullStream: (async function* () {
         throw new Error('rate limited');
       })(),

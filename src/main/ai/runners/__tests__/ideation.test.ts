@@ -238,7 +238,6 @@ describe('runIdeation', () => {
 
   it('returns failure when streamText iteration throws', async () => {
     mockStreamText.mockReturnValue({
-      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
       fullStream: (async function* () {
         throw new Error('API error');
       })(),
@@ -252,7 +251,6 @@ describe('runIdeation', () => {
 
   it('emits error event to callback when streamText throws', async () => {
     mockStreamText.mockReturnValue({
-      // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
       fullStream: (async function* () {
         throw new Error('network failure');
       })(),

@@ -19,7 +19,6 @@ on:
       - 'vitest.config.ts'
       - 'package*.json'
       - 'tsconfig*.json'
-      - 'biome.jsonc'
       - '.github/workflows/ci.yml'
       - '.github/actions/**'
   pull_request:
@@ -33,7 +32,6 @@ on:
       - 'vitest.config.ts'
       - 'package*.json'
       - 'tsconfig*.json'
-      - 'biome.jsonc'
       - '.github/workflows/ci.yml'
       - '.github/actions/**'
 

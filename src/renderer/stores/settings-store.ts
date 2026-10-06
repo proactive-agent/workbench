@@ -400,7 +400,6 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.electronAPI.saveModelOverrides(overrides);
     if (result.success) {
       set(state => ({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         settings: { ...state.settings, modelOverrides: overrides as any }
       }));
     }

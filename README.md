@@ -123,7 +123,6 @@ All releases are:
 | `npm run package:mac` | Package for macOS |
 | `npm run package:win` | Package for Windows |
 | `npm run package:linux` | Package for Linux |
-| `npm run lint` | Run linter |
 | `npm test` | Run frontend tests |
 
 ---

@@ -126,7 +126,6 @@ console.error = (...args: unknown[]) => {
   const message = args[0]?.toString() || '';
   if (message.includes('[TEST]')) {
     // Sanitize args to prevent log injection from control characters
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: Intentionally matching control chars for sanitization
     const sanitized = args.map(a => typeof a === 'string' ? a.replace(/[\r\n\x00-\x1f]/g, '') : a);
     originalConsoleError(...sanitized);
   }

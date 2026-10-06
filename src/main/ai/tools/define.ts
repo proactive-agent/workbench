@@ -180,7 +180,6 @@ function define<TInput extends z.ZodType, TOutput>(
         return result;
       };
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic TInput can't satisfy tool() overloads at definition site
       return tool({
         description: metadata.description,
         inputSchema: inputSchema as any,

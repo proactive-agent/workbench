@@ -481,7 +481,6 @@ describe('GitHubErrorDisplay', () => {
 
     it('should have accessible button labels', () => {
       const errorInfo = createMockErrorInfo('rate_limit');
-      // eslint-disable-next-line @typescript-eslint/no-empty-function -- callback not needed for this test
       render(<GitHubErrorDisplay error={errorInfo} onRetry={() => { /* no-op */ }} />);
 
       const button = screen.getByRole('button', { name: /retry/i });
@@ -490,7 +489,6 @@ describe('GitHubErrorDisplay', () => {
 
     it('should have accessible settings button label', () => {
       const errorInfo = createMockErrorInfo('auth');
-      // eslint-disable-next-line @typescript-eslint/no-empty-function -- callback not needed for this test
       render(<GitHubErrorDisplay error={errorInfo} onOpenSettings={() => { /* no-op */ }} />);
 
       const button = screen.getByRole('button', { name: /settings/i });

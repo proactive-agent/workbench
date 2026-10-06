@@ -197,7 +197,6 @@ export function AuthTerminal({
     };
 
     createTerminal();
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- configDir is stable for auth terminal lifecycle
   }, [terminalId, onAuthError, configDir, t]);
 
   // Setup terminal event listeners

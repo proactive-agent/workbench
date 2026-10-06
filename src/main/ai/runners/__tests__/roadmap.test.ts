@@ -405,7 +405,6 @@ describe('runRoadmapGeneration', () => {
 
     mockStreamText.mockImplementation(() => {
       return {
-        // biome-ignore lint/correctness/useYield: intentionally throwing before yield to test error path
         fullStream: (async function* () {
           throw new Error('network failure');
         })(),
