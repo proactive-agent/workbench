@@ -203,6 +203,52 @@ app.on('child-process-gone', (_event, details) => {
 // Fixes: pty.node SIGABRT crash caused by environment teardown before PTY cleanup (GitHub #1469)
 let isQuitting = false;
 
+// Renderer recovery budget (prevents infinite reload loops on persistent failures)
+const MAX_RENDERER_RECOVERY_ATTEMPTS = 3;
+const RENDERER_RECOVERY_WINDOW_MS = 60_000;
+const RENDERER_RECOVERY_DELAY_MS = 500;
+let rendererRecoveryAttempts = 0;
+let rendererRecoveryWindowStart = 0;
+
+function resetRendererRecoveryState(): void {
+  rendererRecoveryAttempts = 0;
+  rendererRecoveryWindowStart = 0;
+}
+
+function scheduleRendererRecovery(trigger: string): void {
+  if (!mainWindow || mainWindow.isDestroyed() || isQuitting) {
+    return;
+  }
+
+  const now = Date.now();
+  if (rendererRecoveryWindowStart === 0 || now - rendererRecoveryWindowStart > RENDERER_RECOVERY_WINDOW_MS) {
+    rendererRecoveryWindowStart = now;
+    rendererRecoveryAttempts = 0;
+  }
+
+  if (rendererRecoveryAttempts >= MAX_RENDERER_RECOVERY_ATTEMPTS) {
+    appLog.error(
+      `[main] Renderer recovery budget exhausted after trigger: ${trigger} (${rendererRecoveryAttempts}/${MAX_RENDERER_RECOVERY_ATTEMPTS})`
+    );
+    return;
+  }
+
+  rendererRecoveryAttempts++;
+  appLog.error(
+    `[main] Renderer failure detected (${trigger}). Attempting recovery ${rendererRecoveryAttempts}/${MAX_RENDERER_RECOVERY_ATTEMPTS}`
+  );
+
+  setTimeout(() => {
+    if (!mainWindow || mainWindow.isDestroyed() || isQuitting) {
+      return;
+    }
+    mainWindow.webContents.reload();
+    if (!mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  }, RENDERER_RECOVERY_DELAY_MS);
+}
+
 function createWindow(): void {
   // Get the primary display's work area (accounts for taskbar, dock, etc.)
   // Wrapped in try/catch to handle potential failures with fallback to safe defaults
@@ -271,6 +317,26 @@ function createWindow(): void {
   // Capture renderer process crashes/termination reasons for diagnostics.
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     appLog.error('[main] render-process-gone:', details);
+    if (details.reason !== 'clean-exit') {
+      scheduleRendererRecovery(`render-process-gone:${details.reason}`);
+    }
+  });
+
+  // Recover main-frame load failures (excluding intentional aborted loads, ERR_ABORTED = -3)
+  mainWindow.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+    if (!isMainFrame || errorCode === -3) {
+      return;
+    }
+    appLog.error(`[main] Main frame failed to load (${errorCode}): ${errorDescription} (${validatedURL})`);
+    scheduleRendererRecovery(`did-fail-load:${errorCode}`);
+  });
+
+  // The attempt budget is only reset by its 60s window (not here), so a renderer that
+  // crashes right after every load cannot reload forever
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (rendererRecoveryAttempts > 0) {
+      appLog.warn(`[main] Renderer reloaded after ${rendererRecoveryAttempts} recovery attempt(s)`);
+    }
   });
 
   // Configure initial spell check languages with proper fallback logic
@@ -393,6 +459,7 @@ function createWindow(): void {
     agentManager?.killAll?.()?.catch((err: unknown) => {
       console.warn('[main] Error killing agents on window close:', err);
     });
+    resetRendererRecoveryState();
     mainWindow = null;
   });
 }
