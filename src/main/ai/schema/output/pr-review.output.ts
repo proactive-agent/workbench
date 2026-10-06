@@ -116,7 +116,7 @@ export const SynthesisResultOutputSchema = z.object({
   verdictReasoning: z.string(),
   keptFindingIds: z.array(z.string()),
   removedFindingIds: z.array(z.string()),
-  removalReasons: z.record(z.string(), z.string()),
+  removalReasons: z.object({}).catchall(z.string()),
 });
 
 export type SynthesisResultOutput = z.infer<typeof SynthesisResultOutputSchema>;
