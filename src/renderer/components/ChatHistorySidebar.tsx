@@ -1,15 +1,12 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  Plus,
-  MessageSquare,
   Trash2,
   Pencil,
   Check,
   X,
-  MoreVertical,
+  MoreHorizontal,
   Loader2,
-  CheckSquare,
   Archive,
   ArchiveRestore
 } from 'lucide-react';
@@ -17,7 +14,6 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Checkbox } from './ui/checkbox';
-import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -77,15 +73,6 @@ export function ChatHistorySidebar({
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkArchiveOpen, setBulkArchiveOpen] = useState(false);
 
-  // Clear selection when exiting selection mode
-  const handleToggleSelectionMode = useCallback(() => {
-    setIsSelectionMode((prev) => {
-      if (prev) {
-        setSelectedIds(new Set());
-      }
-      return !prev;
-    });
-  }, []);
 
   // Prune selectedIds when sessions change - removes IDs for sessions no longer displayed
   // Also resets when showArchived toggles
@@ -206,69 +193,10 @@ export function ChatHistorySidebar({
   const sessionsToDelete = sessions.filter((s) => selectedIds.has(s.id));
 
   return (
-    <div className="flex h-full w-64 flex-col border-r border-border bg-muted/30">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-border px-3 py-3">
-        <h3 className="text-sm font-medium text-foreground">{t('insights.chatHistory')}</h3>
-        <div className="flex items-center gap-1">
-          {/* Selection mode toggle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant={isSelectionMode ? 'secondary' : 'ghost'}
-                size="icon"
-                className="h-7 w-7"
-                onClick={handleToggleSelectionMode}
-                aria-label={isSelectionMode ? t('insights.exitSelectMode') : t('insights.selectMode')}
-              >
-                <CheckSquare className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isSelectionMode ? t('insights.exitSelectMode') : t('insights.selectMode')}
-            </TooltipContent>
-          </Tooltip>
-
-          {/* Show archived toggle */}
-          {onToggleShowArchived && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={showArchived ? 'secondary' : 'ghost'}
-                  size="icon"
-                  className="h-7 w-7"
-                  onClick={onToggleShowArchived}
-                  aria-label={showArchived ? t('insights.hideArchived') : t('insights.showArchived')}
-                >
-                  <Archive className={cn('h-4 w-4', showArchived && 'text-primary')} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {showArchived ? t('insights.hideArchived') : t('insights.showArchived')}
-              </TooltipContent>
-            </Tooltip>
-          )}
-
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-7 w-7"
-                onClick={onNewSession}
-                aria-label={t('accessibility.newConversationAriaLabel')}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('accessibility.newConversationAriaLabel')}</TooltipContent>
-          </Tooltip>
-        </div>
-      </div>
-
+    <div className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar">
       {/* Select All / Clear links */}
       {isSelectionMode && sessions.length > 0 && (
-        <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+        <div className="flex items-center justify-between px-4 pb-1.5">
           <button
             type="button"
             className="text-xs text-primary hover:underline"
@@ -297,10 +225,10 @@ export function ChatHistorySidebar({
             {t('insights.noConversations')}
           </div>
         ) : (
-          <div className="py-2">
+          <div className="px-2 pb-2">
             {Object.entries(groupedSessions).map(([dateLabel, dateSessions]) => (
-              <div key={dateLabel} className="mb-2">
-                <div className="px-3 py-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              <div key={dateLabel} className="mb-3 space-y-px">
+                <div className="nav-section-label px-2 pb-1 pt-2 text-[0.8125rem]">
                   {dateLabel}
                 </div>
                 {dateSessions.map((session) => (
@@ -334,7 +262,7 @@ export function ChatHistorySidebar({
 
       {/* Bulk action toolbar */}
       {isSelectionMode && selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 overflow-hidden min-w-0 border-t border-border px-3 py-2">
+        <div className="flex items-center gap-2 overflow-hidden min-w-0 border-t border-border px-2 py-2">
           <Button
             variant="destructive"
             size="sm"
@@ -476,12 +404,12 @@ function SessionItem({
 
   if (isEditing) {
     return (
-      <div className="group flex items-center gap-1 px-2 py-1">
+      <div className="group flex h-8 items-center gap-1">
         <Input
           value={editTitle}
           onChange={(e) => onEditTitleChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="h-7 text-sm"
+          className="h-7 px-2 text-sm"
           autoFocus
         />
         <Button
@@ -511,9 +439,13 @@ function SessionItem({
       role={isSelectionMode ? 'checkbox' : 'button'}
       aria-checked={isSelectionMode ? isSelected : undefined}
       tabIndex={0}
+      title={`${session.title} · ${t('insights.messageCount', { count: session.messageCount })}`}
       className={cn(
-        'group relative cursor-pointer px-2 py-2 transition-colors hover:bg-muted',
-        isActive && 'bg-primary/10 hover:bg-primary/15',
+        'group relative flex h-8 cursor-pointer items-center rounded-(--nav-item-radius) px-2 text-sm text-muted-foreground',
+        'transition-colors duration-150 ease-out',
+        'hover:bg-nav-hover hover:text-nav-hover-foreground',
+        'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
+        isActive && 'bg-nav-active text-nav-active-foreground hover:bg-nav-active hover:text-nav-active-foreground',
         isArchived && 'opacity-50'
       )}
       onClick={isSelectionMode ? onToggleSelect : onSelect}
@@ -525,9 +457,9 @@ function SessionItem({
       }}
     >
       {/* Content with reserved space for the menu button */}
-      <div className="flex items-center gap-1.5 pr-7">
-        {isSelectionMode ? (
-          <div className="shrink-0">
+      <div className={cn('flex min-w-0 flex-1 items-center gap-2', !isSelectionMode && 'group-hover:pr-6 group-focus-within:pr-6')}>
+        {isSelectionMode && (
+          <div className="flex shrink-0 items-center">
             <Checkbox
               checked={isSelected}
               className="h-4 w-4"
@@ -535,35 +467,14 @@ function SessionItem({
               tabIndex={-1}
             />
           </div>
-        ) : (
-          <MessageSquare
-            className={cn(
-              'h-4 w-4 shrink-0',
-              isActive ? 'text-primary' : 'text-muted-foreground'
-            )}
-          />
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <p
-              className={cn(
-                'line-clamp-2 text-sm leading-tight break-words',
-                isActive ? 'font-medium text-foreground' : 'text-foreground/80'
-              )}
-            >
-              {session.title}
-            </p>
-            {isArchived && (
-              <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-0.5 text-[9px] font-medium text-muted-foreground">
-                <Archive className="h-2.5 w-2.5" />
-                {t('insights.archived')}
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-muted-foreground mt-0.5">
-            {t('insights.messageCount', { count: session.messageCount })}
-          </p>
-        </div>
+        <span className="min-w-0 flex-1 truncate">{session.title}</span>
+        {isArchived && (
+          <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.6875rem] text-(--nav-label-color)">
+            <Archive className="h-3 w-3" />
+            <span className="sr-only">{t('insights.archived')}</span>
+          </span>
+        )}
       </div>
 
       {/* Absolutely positioned menu button - hidden in selection mode */}
@@ -573,10 +484,10 @@ function SessionItem({
             <Button
               variant="ghost"
               size="icon"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100 hover:bg-muted-foreground/20 transition-opacity"
+              className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 rounded-md text-muted-foreground opacity-0 transition-opacity hover:bg-transparent hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 data-[state=open]:opacity-100"
               aria-label={t('accessibility.moreOptionsAriaLabel')}
             >
-              <MoreVertical className="h-3.5 w-3.5" />
+              <MoreHorizontal className="h-4 w-4" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" sideOffset={5} className="w-36 z-[100]">

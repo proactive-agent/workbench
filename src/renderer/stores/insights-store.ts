@@ -19,6 +19,8 @@ interface ToolUsage {
 
 interface InsightsState {
   // Data
+  /** Project whose conversation this store currently holds; events for other projects are ignored */
+  projectId: string | null;
   session: InsightsSession | null;
   sessions: InsightsSessionSummary[]; // List of all sessions
   status: InsightsChatStatus;
@@ -32,6 +34,7 @@ interface InsightsState {
   pendingImages: ImageAttachment[]; // Images pending attachment to next message
 
   // Actions
+  setProjectId: (projectId: string) => void;
   setSession: (session: InsightsSession | null) => void;
   setSessions: (sessions: InsightsSessionSummary[]) => void;
   setStatus: (status: InsightsChatStatus) => void;
@@ -58,6 +61,7 @@ const initialStatus: InsightsChatStatus = {
 
 export const useInsightsStore = create<InsightsState>((set, _get) => ({
   // Initial state
+  projectId: null,
   session: null,
   sessions: [],
   status: initialStatus,
@@ -71,6 +75,22 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   pendingImages: [],
 
   // Actions
+  // Switching projects drops the previous project's in-flight state; its reply is still
+  // persisted by the main process and shows up when that project's session is loaded again
+  setProjectId: (projectId) =>
+    set((state) =>
+      state.projectId === projectId
+        ? state
+        : {
+            projectId,
+            status: initialStatus,
+            streamingContent: '',
+            streamingTasks: [],
+            currentTool: null,
+            toolsUsed: []
+          }
+    ),
+
   setSession: (session) => set({ session }),
 
   setSessions: (sessions) => set({ sessions }),
@@ -239,6 +259,7 @@ export async function loadInsightsSessions(projectId: string, includeArchived?: 
 }
 
 export async function loadInsightsSession(projectId: string, includeArchived?: boolean): Promise<void> {
+  useInsightsStore.getState().setProjectId(projectId);
   const result = await window.electronAPI.getInsightsSession(projectId);
   if (result.success && result.data) {
     useInsightsStore.getState().setSession(result.data);
@@ -249,7 +270,30 @@ export async function loadInsightsSession(projectId: string, includeArchived?: b
   await loadInsightsSessions(projectId, includeArchived);
 }
 
+// Full-size data of recently sent images, kept in memory (not persisted) so they can be
+// previewed before the stored copy is available; bounded to the last few images
+const SENT_ATTACHMENT_CACHE_LIMIT = 20;
+const sentAttachmentCache = new Map<string, string>();
+
+/** Data URL of an image sent during this app session, if still cached */
+export function getSentAttachmentDataUrl(attachmentId: string): string | null {
+  return sentAttachmentCache.get(attachmentId) ?? null;
+}
+
+function cacheSentAttachments(images: ImageAttachment[] | undefined): void {
+  for (const image of images ?? []) {
+    if (!image.data || !image.mimeType.startsWith('image/')) continue;
+    sentAttachmentCache.set(image.id, `data:${image.mimeType};base64,${image.data}`);
+    if (sentAttachmentCache.size > SENT_ATTACHMENT_CACHE_LIMIT) {
+      const oldest = sentAttachmentCache.keys().next().value;
+      if (oldest !== undefined) sentAttachmentCache.delete(oldest);
+    }
+  }
+}
+
 export function sendMessage(projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]): void {
+  useInsightsStore.getState().setProjectId(projectId);
+  cacheSentAttachments(images);
   const store = useInsightsStore.getState();
   const session = store.session;
 
@@ -297,6 +341,11 @@ export async function newSession(projectId: string): Promise<void> {
   const result = await window.electronAPI.newInsightsSession(projectId);
   if (result.success && result.data) {
     useInsightsStore.getState().setSession(result.data);
+    // A fresh conversation starts clean: drop the previous one's error/streaming state
+    useInsightsStore.getState().clearStreamingContent();
+    useInsightsStore.getState().clearToolsUsed();
+    useInsightsStore.getState().setCurrentTool(null);
+    useInsightsStore.getState().setStatus({ phase: 'idle', message: '' });
     // Reload sessions list
     await loadInsightsSessions(projectId);
   }
@@ -361,17 +410,18 @@ export async function unarchiveSession(projectId: string, sessionId: string): Pr
 }
 
 export async function updateModelConfig(projectId: string, sessionId: string, modelConfig: InsightsModelConfig): Promise<boolean> {
+  // Update local session state first: a brand-new session isn't on disk until its first message,
+  // so persisting can fail while the selection must still apply (it is sent with the next message)
+  const store = useInsightsStore.getState();
+  if (store.session?.id === sessionId) {
+    store.setSession({
+      ...store.session,
+      modelConfig,
+      updatedAt: new Date()
+    });
+  }
   const result = await window.electronAPI.updateInsightsModelConfig(projectId, sessionId, modelConfig);
   if (result.success) {
-    // Update local session state
-    const store = useInsightsStore.getState();
-    if (store.session?.id === sessionId) {
-      store.setSession({
-        ...store.session,
-        modelConfig,
-        updatedAt: new Date()
-      });
-    }
     // Reload sessions list to reflect the change
     await loadInsightsSessions(projectId);
     return true;
@@ -398,13 +448,16 @@ export async function createTaskFromSuggestion(
   return null;
 }
 
-// IPC listener setup - call this once when the app initializes
+// IPC listener setup - called once at app start (useIpcListeners) so a reply that finishes
+// or fails while the Insights page is not mounted still updates the store
 export function setupInsightsListeners(): () => void {
   const store = useInsightsStore.getState;
+  const isCurrentProject = (projectId: string) => projectId === store().projectId;
 
   // Listen for streaming chunks
   const unsubStreamChunk = window.electronAPI.onInsightsStreamChunk(
-    (_projectId, chunk: InsightsStreamChunk) => {
+    (projectId, chunk: InsightsStreamChunk) => {
+      if (!isCurrentProject(projectId)) return;
       switch (chunk.type) {
         case 'text':
           if (chunk.content) {
@@ -464,12 +517,14 @@ export function setupInsightsListeners(): () => void {
   );
 
   // Listen for status updates
-  const unsubStatus = window.electronAPI.onInsightsStatus((_projectId, status) => {
+  const unsubStatus = window.electronAPI.onInsightsStatus((projectId, status) => {
+    if (!isCurrentProject(projectId)) return;
     store().setStatus(status);
   });
 
   // Listen for errors
-  const unsubError = window.electronAPI.onInsightsError((_projectId, error) => {
+  const unsubError = window.electronAPI.onInsightsError((projectId, error) => {
+    if (!isCurrentProject(projectId)) return;
     store().setStatus({
       phase: 'error',
       error

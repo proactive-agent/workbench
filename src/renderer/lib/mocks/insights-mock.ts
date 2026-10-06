@@ -100,6 +100,10 @@ export const insightsMock = {
     return { success: true };
   },
 
+  getInsightsAttachment: async (_projectId: string, _relativePath: string, _mimeType: string) => ({
+    success: false,
+    error: 'Not available in browser mock'
+  }),
   updateInsightsModelConfig: async (_projectId: string, _sessionId: string, _modelConfig: unknown) => {
     console.warn('[Browser Mock] updateInsightsModelConfig called');
     return { success: true };

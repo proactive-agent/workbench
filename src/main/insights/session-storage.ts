@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlinkSync, rmSync } from 'fs';
 import path from 'path';
 import type { InsightsSession, InsightsSessionSummary, ImageAttachment } from '../../shared/types';
 import { InsightsPaths } from './paths';
@@ -65,7 +65,8 @@ export class SessionStorage {
       }
 
       const sessionPath = this.paths.getSessionPath(projectPath, session.id);
-      writeFileSync(sessionPath, JSON.stringify(session, null, 2), 'utf-8');
+      // Full-size images live in the attachments directory, never in the session JSON
+      writeFileSync(sessionPath, JSON.stringify(this.stripImageDataForPersistence(session), null, 2), 'utf-8');
     } catch (error) {
       console.error(`[SessionStorage] Failed to save session ${session.id}:`, error);
       throw error;
@@ -151,6 +152,7 @@ export class SessionStorage {
       if (!existsSync(sessionPath)) return false;
 
       unlinkSync(sessionPath);
+      rmSync(this.paths.getAttachmentsDir(projectPath, sessionId), { recursive: true, force: true });
       return true;
     } catch {
       return false;
@@ -252,7 +254,8 @@ export class SessionStorage {
 
   /**
    * Strip full-resolution image data from a session for persistence.
-   * Keeps only thumbnail, id, filename, mimeType, and size to prevent bloated JSON files.
+   * Keeps thumbnail, id, filename, mimeType, size and the stored file path (full images live
+   * in the attachments directory) to prevent bloated JSON files.
    */
   private stripImageDataForPersistence(session: InsightsSession): InsightsSession {
     return {
@@ -261,7 +264,7 @@ export class SessionStorage {
         if (!m.images || m.images.length === 0) return m;
         return {
           ...m,
-          images: m.images.map(({ data, path: _path, ...rest }: ImageAttachment) => rest)
+          images: m.images.map(({ data: _data, ...rest }: ImageAttachment) => rest)
         };
       })
     };

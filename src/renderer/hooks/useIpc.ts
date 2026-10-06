@@ -5,6 +5,7 @@ import { useRoadmapStore } from '../stores/roadmap-store';
 import { useRateLimitStore } from '../stores/rate-limit-store';
 import { useAuthFailureStore } from '../stores/auth-failure-store';
 import { useProjectStore } from '../stores/project-store';
+import { setupInsightsListeners } from '../stores/insights-store';
 import type { ImplementationPlan, TaskStatus, RoadmapGenerationStatus, Roadmap, ExecutionProgress, RateLimitInfo, SDKRateLimitInfo, AuthFailureInfo } from '../../shared/types';
 
 /** Maximum log entries to buffer in the batch queue between flushes (OOM prevention) */
@@ -388,6 +389,9 @@ export function useIpcListeners(): void {
       }
     );
 
+    // Insights chat events (kept outside the Insights page so finished/failed replies aren't missed)
+    const cleanupInsights = setupInsightsListeners();
+
     // Cleanup on unmount
     return () => {
       // Flush any pending batched updates before cleanup
@@ -409,6 +413,7 @@ export function useIpcListeners(): void {
       cleanupRateLimit();
       cleanupSDKRateLimit();
       cleanupAuthFailure();
+      cleanupInsights();
     };
   }, [appendLog, setError]);
 }

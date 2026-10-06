@@ -36,6 +36,7 @@ export interface InsightsAPI {
   unarchiveInsightsSession: (projectId: string, sessionId: string) => Promise<IPCResult>;
   renameInsightsSession: (projectId: string, sessionId: string, newTitle: string) => Promise<IPCResult>;
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig) => Promise<IPCResult>;
+  getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
 
   // Event Listeners
   onInsightsStreamChunk: (
@@ -103,6 +104,9 @@ export const createInsightsAPI = (): InsightsAPI => ({
 
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig): Promise<IPCResult> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_UPDATE_MODEL_CONFIG, projectId, sessionId, modelConfig),
+
+  getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string): Promise<IPCResult<string>> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_GET_ATTACHMENT, projectId, relativePath, mimeType),
 
   // Event Listeners
   onInsightsStreamChunk: (

@@ -1,13 +1,8 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  MessageSquare,
-  Send,
   Loader2,
   Plus,
-  Sparkles,
-  User,
-  Bot,
   CheckCircle2,
   AlertCircle,
   Search,
@@ -15,17 +10,18 @@ import {
   FolderSearch,
   PanelLeftClose,
   PanelLeft,
-  Camera,
+  SquarePen,
+  ArrowUp,
+  ChevronDown,
+  Paperclip,
   X
 } from 'lucide-react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from './ui/button';
-import { Textarea } from './ui/textarea';
 import { ScrollArea } from './ui/scroll-area';
-import { Card, CardContent } from './ui/card';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Badge } from './ui/badge';
-import { ScreenshotCapture } from './ScreenshotCapture';
 import { cn } from '../lib/utils';
 import {
   useInsightsStore,
@@ -41,14 +37,13 @@ import {
   unarchiveSession,
   updateModelConfig,
   createTaskFromSuggestion,
-  setupInsightsListeners,
   loadInsightsSessions
 } from '../stores/insights-store';
 import { useImageUpload } from './task-form/useImageUpload';
-import { createThumbnail, generateImageId } from './ImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { InsightsModelSelector } from './InsightsModelSelector';
+import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
 import type { InsightsChatMessage, InsightsModelConfig, TaskMetadata, ImageAttachment } from '../../shared/types';
 import {
   TASK_CATEGORY_LABELS,
@@ -56,7 +51,7 @@ import {
   TASK_COMPLEXITY_LABELS,
   TASK_COMPLEXITY_COLORS,
   MAX_IMAGE_SIZE,
-  MAX_IMAGES_PER_TASK
+  parseInsightsError
 } from '../../shared/constants';
 
 // createSafeLink - factory function that creates a SafeLink component with i18n support
@@ -100,7 +95,7 @@ interface InsightsProps {
 }
 
 export function Insights({ projectId }: InsightsProps) {
-  const { t } = useTranslation('common');
+  const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
   const sessions = useInsightsStore((state) => state.sessions);
   const status = useInsightsStore((state) => state.status);
@@ -120,13 +115,18 @@ export function Insights({ projectId }: InsightsProps) {
   const showArchived = useInsightsStore((state) => state.showArchived);
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
   const [viewportEl, setViewportEl] = useState<HTMLElement | null>(null);
-  const [screenshotOpen, setScreenshotOpen] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
 
   const pendingImages = useInsightsStore((state) => state.pendingImages);
   const setPendingImages = useInsightsStore((state) => state.setPendingImages);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
+
+  // Model choice made before a session exists (or before it is persisted); the session's own config wins
+  const [draftModelConfig, setDraftModelConfig] = useState<InsightsModelConfig | undefined>(undefined);
+  const effectiveModelConfig = session?.modelConfig ?? draftModelConfig;
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
 
@@ -137,16 +137,19 @@ export function Insights({ projectId }: InsightsProps) {
     handleDragOver,
     handleDragLeave,
     handleDrop,
+    addFiles,
     removeImage,
     canAddMore
   } = useImageUpload({
     images: pendingImages,
     onImagesChange: setPendingImages,
     disabled: isLoading,
+    acceptAllFiles: true,
     onError: setImageError,
     errorMessages: {
       maxImagesReached: t('insights.images.maxImagesReached'),
       invalidImageType: t('insights.images.invalidType'),
+      imageTooLarge: t('insights.attachments.tooLarge', { max: Math.round(MAX_IMAGE_SIZE / 1024 / 1024) }),
       processPasteFailed: t('insights.images.processFailed'),
       processDropFailed: t('insights.images.processFailed')
     }
@@ -178,11 +181,9 @@ export function Insights({ projectId }: InsightsProps) {
     }
   }, [viewportEl, handleScroll, checkIfAtBottom]);
 
-  // Load session and set up listeners on mount
+  // Load the project's session on mount (IPC listeners are registered app-wide in useIpcListeners)
   useEffect(() => {
     loadInsightsSession(projectId, showArchived);
-    const cleanup = setupInsightsListeners();
-    return cleanup;
   }, [projectId]);
 
   // Reload sessions when showArchived changes (skip first run to avoid duplicate load with mount effect)
@@ -221,41 +222,11 @@ export function Insights({ projectId }: InsightsProps) {
     if ((!message && !hasImages) || isLoading) return;
 
     setInputValue('');
-    sendMessage(projectId, message, session?.modelConfig, hasImages ? pendingImages : undefined);
+    sendMessage(projectId, message, effectiveModelConfig, hasImages ? pendingImages : undefined);
     setPendingImages([]);
     setImageError(null);
     setIsUserAtBottom(true); // Resume auto-scroll when user sends a message
   };
-
-  const handleScreenshotCapture = useCallback(async (imageData: string) => {
-    // Check image count limit before processing
-    if (pendingImages.length >= MAX_IMAGES_PER_TASK) {
-      setImageError(t('insights.images.maxImagesReached'));
-      return;
-    }
-
-    // imageData is base64 PNG from ScreenshotCapture
-    const approximateSize = Math.ceil(imageData.length * 0.75); // approximate base64 size
-
-    // Validate size - match the validation used for regular image uploads
-    if (approximateSize > MAX_IMAGE_SIZE) {
-      setImageError(t('insights.images.screenshotTooLarge', { size: Math.round(approximateSize / 1024 / 1024), max: Math.round(MAX_IMAGE_SIZE / 1024 / 1024) }));
-      return;
-    }
-
-    const dataUrl = `data:image/png;base64,${imageData}`;
-    const thumbnail = await createThumbnail(dataUrl);
-    const newImage: ImageAttachment = {
-      id: generateImageId(),
-      filename: `screenshot-${Date.now()}.png`,
-      mimeType: 'image/png',
-      size: approximateSize,
-      data: imageData,
-      thumbnail
-    };
-    setPendingImages([...pendingImages, newImage]);
-    setImageError(null);
-  }, [pendingImages, setPendingImages, setImageError, t]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -372,16 +343,200 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const handleModelConfigChange = async (config: InsightsModelConfig) => {
-    // If we have a session, persist the config
+    // Always apply locally so the choice sticks before the conversation exists on disk
+    setDraftModelConfig(config);
     if (session?.id) {
       await updateModelConfig(projectId, session.id, config);
     }
   };
 
   const messages = session?.messages || [];
+  const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
+  const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading;
+
+  // Time-of-day greeting, refreshed every minute so it follows the clock while the page stays open
+  const [hour, setHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const timer = setInterval(() => setHour(new Date().getHours()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const greetingKey =
+    hour < 5 ? 'insights.greeting.night'
+      : hour < 12 ? 'insights.greeting.morning'
+        : hour < 18 ? 'insights.greeting.afternoon'
+          : 'insights.greeting.evening';
+
+  // Auto-grow the composer textarea with its content (capped by max-h-96)
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 384)}px`;
+  }, [inputValue, isEmpty]);
+
+  // The composer moves between the empty-state and conversation layouts; keep focus on it
+  useEffect(() => {
+    if (!isLoading) {
+      textareaRef.current?.focus();
+    }
+  }, [isEmpty]);
+
+  const parsedError = status.phase === 'error' && status.error ? parseInsightsError(status.error) : null;
+  const errorBanner = parsedError ? (
+    <div className="flex items-start gap-2 rounded-xl border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+      <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+      {parsedError.code ? (
+        <div className="min-w-0 space-y-1">
+          <p>{t(`insights.errors.${parsedError.code}`)}</p>
+          <p className="break-words text-xs text-muted-foreground">{parsedError.details}</p>
+        </div>
+      ) : (
+        <span className="min-w-0 break-words">{parsedError.details}</span>
+      )}
+    </div>
+  ) : null;
+
+  const modelSelector = (
+    <InsightsModelSelector
+      currentConfig={effectiveModelConfig}
+      onConfigChange={handleModelConfigChange}
+      disabled={isLoading}
+    />
+  );
+
+  const composer = (
+    <div className="space-y-2">
+      <div
+        className={cn(
+          'relative rounded-(--radius-composer) bg-card',
+          'shadow-[0_4px_20px_rgba(0,0,0,0.075),0_0_0_1px_var(--input)]',
+          'transition-shadow duration-150 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--input)]'
+        )}
+      >
+        {/* Image preview strip */}
+        {pendingImages.length > 0 && (
+          <div className="flex flex-wrap items-center gap-3 px-4 pt-4">
+            {pendingImages.map((image) => (
+              <div key={image.id} className="group relative" title={image.filename}>
+                {image.thumbnail ? (
+                  <button
+                    type="button"
+                    onClick={() => setPreviewAttachment(image)}
+                    className="block h-14 w-14 cursor-zoom-in overflow-hidden rounded-lg border border-border focus-visible:outline-none focus-visible:shadow-(--shadow-focus)"
+                    aria-label={t('insights.attachments.preview', { name: image.filename })}
+                  >
+                    <img src={image.thumbnail} alt={image.filename} className="h-full w-full object-cover" />
+                  </button>
+                ) : (
+                  <div className="flex h-14 max-w-56 items-center gap-2 overflow-hidden rounded-lg border border-border bg-muted px-3">
+                    <FileText className="h-5 w-5 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                    <span className="min-w-0 truncate text-xs text-foreground">{image.filename}</span>
+                  </div>
+                )}
+                {/* Remove button centered on the attachment's top-right corner */}
+                <button
+                  type="button"
+                  onClick={() => removeImage(image.id)}
+                  className="absolute right-0 top-0 flex h-4 w-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-foreground opacity-0 shadow-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                  title={t('insights.images.removeImage')}
+                  aria-label={t('insights.images.removeImage')}
+                >
+                  <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                </button>
+              </div>
+            ))}
+            <span className="text-xs text-muted-foreground">
+              {t('insights.attachments.count', { count: pendingImages.length })}
+            </span>
+          </div>
+        )}
+
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={inputValue}
+          onChange={(e) => setInputValue(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          placeholder={isEmpty ? t('insights.placeholder') : t('insights.replyPlaceholder')}
+          aria-label={t('insights.placeholder')}
+          spellCheck
+          lang={i18n.language}
+          className={cn(
+            'block max-h-96 min-h-[3rem] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 pt-4 pb-1',
+            'text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground',
+            'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60'
+          )}
+          disabled={isLoading}
+        />
+
+        {/* Toolbar */}
+        <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+          <div className="flex items-center gap-0.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="hidden"
+              tabIndex={-1}
+              aria-hidden="true"
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                e.target.value = '';
+                if (files.length > 0) void addFiles(files);
+              }}
+            />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isLoading || !canAddMore}
+                  aria-label={t('insights.attachments.add')}
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t('insights.attachments.add')}</TooltipContent>
+            </Tooltip>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={!canSend}
+            className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+            aria-label={isLoading ? t('insights.sending') : t('insights.send')}
+            title={isLoading ? t('insights.sending') : t('insights.send')}
+          >
+            {isLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
+            )}
+          </button>
+        </div>
+
+        {/* Drag-over overlay */}
+        {isDragOver && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-(--radius-composer) border-2 border-dashed border-primary bg-primary/5">
+            <span className="text-sm font-medium text-primary">
+              {t('insights.attachments.dragOver')}
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* Image error */}
+      {imageError && (
+        <p className="px-1 text-xs text-destructive">{imageError}</p>
+      )}
+    </div>
+  );
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full bg-background">
       {/* Chat History Sidebar */}
       {showSidebar && (
         <ChatHistorySidebar
@@ -401,263 +556,161 @@ export function Insights({ projectId }: InsightsProps) {
         />
       )}
 
-      {/* Main Chat Area */}
-      <div className="flex flex-1 flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4">
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setShowSidebar(!showSidebar)}
-              title={showSidebar ? 'Hide sidebar' : 'Show sidebar'}
-            >
-              {showSidebar ? (
-                <PanelLeftClose className="h-4 w-4" />
-              ) : (
-                <PanelLeft className="h-4 w-4" />
-              )}
-            </Button>
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-              <Sparkles className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-semibold text-foreground">Insights</h2>
-              <p className="text-sm text-muted-foreground">
-                Ask questions about your codebase
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <InsightsModelSelector
-              currentConfig={session?.modelConfig}
-              onConfigChange={handleModelConfigChange}
-              disabled={isLoading}
-            />
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleNewSession}
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              New Chat
-            </Button>
-          </div>
+      {/* Main Chat Area - files can be dropped anywhere in it */}
+      <div
+        className="flex min-w-0 flex-1 flex-col"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {/* Minimal top bar */}
+        <div className="flex h-12 shrink-0 items-center justify-between px-3">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground"
+                onClick={() => setShowSidebar(!showSidebar)}
+                aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
+              >
+                {showSidebar ? (
+                  <PanelLeftClose className="h-4 w-4" />
+                ) : (
+                  <PanelLeft className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
+          </Tooltip>
+          <h2 className="sr-only">{t('insights.title')}</h2>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground"
+                onClick={handleNewSession}
+                aria-label={t('insights.newChat')}
+              >
+                <SquarePen className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{t('insights.newChat')}</TooltipContent>
+          </Tooltip>
         </div>
 
-      {/* Messages */}
-      <ScrollArea
-        className="flex-1 px-6 py-4"
-        onViewportRef={setViewportEl}
-      >
-        {messages.length === 0 && !streamingContent ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-              <MessageSquare className="h-8 w-8 text-muted-foreground" />
-            </div>
-            <h3 className="mb-2 text-lg font-medium text-foreground">
-              Start a Conversation
-            </h3>
-            <p className="max-w-md text-sm text-muted-foreground">
-              Ask questions about your codebase, get suggestions for improvements,
-              or discuss features you'd like to implement.
-            </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-2">
-              {[
-                'What is the architecture of this project?',
-                'Suggest improvements for code quality',
-                'What features could I add next?',
-                'Are there any security concerns?'
-              ].map((suggestion) => (
-                <Button
-                  key={suggestion}
-                  variant="outline"
-                  size="sm"
-                  className="text-xs"
-                  onClick={() => {
-                    setInputValue(suggestion);
-                    textareaRef.current?.focus();
-                  }}
-                >
-                  {suggestion}
-                </Button>
-              ))}
+        {isEmpty ? (
+          /* Empty state: greeting + centered composer */
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4">
+            <div className="flex w-full max-w-[672px] flex-1 flex-col justify-center pb-[12vh]">
+              <h1 className="mb-8 flex items-center justify-center gap-3 text-center font-heading text-[2.125rem] font-normal! leading-tight tracking-tight text-foreground">
+                <SparkMark className="h-9 w-9 shrink-0" />
+                <span>{t(greetingKey)}</span>
+              </h1>
+
+              {composer}
+
+              {/* Meta row */}
+              <div className="mt-2 flex items-center justify-end text-sm">
+                {modelSelector}
+              </div>
+
+              {errorBanner && <div className="mt-6">{errorBanner}</div>}
             </div>
           </div>
         ) : (
-          <div className="space-y-6">
-            {messages.map((message) => (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                markdownComponents={markdownComponents}
-                onCreateTask={handleCreateTask}
-                creatingTask={creatingTask}
-                taskCreated={taskCreated}
-              />
-            ))}
+          <>
+            {/* Messages */}
+            <ScrollArea className="min-h-0 flex-1" onViewportRef={setViewportEl}>
+              <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
+                {messages.map((message) => (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    markdownComponents={markdownComponents}
+                    onCreateTask={handleCreateTask}
+                    creatingTask={creatingTask}
+                    taskCreated={taskCreated}
+                    onPreviewImage={setPreviewAttachment}
+                  />
+                ))}
 
-            {/* Streaming message */}
-            {(streamingContent || currentTool) && (
-              <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                  <Bot className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex-1">
-                  <div className="mb-1 text-sm font-medium text-foreground">
-                    Assistant
+                {/* Streaming message */}
+                {(streamingContent || currentTool) && (
+                  <div className="space-y-2">
+                    {streamingContent && (
+                      <div className="prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-relaxed text-foreground">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+                          {streamingContent}
+                        </ReactMarkdown>
+                      </div>
+                    )}
+                    {/* Tool usage indicator */}
+                    {currentTool && (
+                      <ToolIndicator name={currentTool.name} input={currentTool.input} />
+                    )}
+                    <SparkMark className="h-5 w-5" animate />
                   </div>
-                  {streamingContent && (
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-                        {streamingContent}
-                      </ReactMarkdown>
-                    </div>
-                  )}
-                  {/* Tool usage indicator */}
-                  {currentTool && (
-                    <ToolIndicator name={currentTool.name} input={currentTool.input} />
-                  )}
+                )}
+
+                {/* Thinking indicator */}
+                {status.phase === 'thinking' && !streamingContent && !currentTool && (
+                  <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                    <SparkMark className="h-5 w-5" animate />
+                    {t('insights.thinking')}
+                  </div>
+                )}
+
+                {errorBanner}
+              </div>
+            </ScrollArea>
+
+            {/* Composer pinned to the bottom */}
+            <div className="relative shrink-0 px-4 pb-3">
+              <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background to-transparent" />
+              <div className="mx-auto max-w-3xl">
+                {composer}
+                <div className="mt-1 flex items-center justify-between gap-2 pl-4 text-sm">
+                  <span className="truncate text-[0.6875rem] text-muted-foreground">
+                    {t('insights.images.pasteHint')} · {t('insights.sendHint')}
+                  </span>
+                  {modelSelector}
                 </div>
               </div>
-            )}
-
-            {/* Thinking indicator */}
-            {status.phase === 'thinking' && !streamingContent && !currentTool && (
-              <div className="flex gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                  <Bot className="h-4 w-4 text-primary" />
-                </div>
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Thinking...
-                </div>
-              </div>
-            )}
-
-            {/* Error message */}
-            {status.phase === 'error' && status.error && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 shrink-0" />
-                {status.error}
-              </div>
-            )}
-
-          </div>
+            </div>
+          </>
         )}
-      </ScrollArea>
-
-      {/* Input */}
-      <div className="flex-shrink-0 border-t border-border p-4">
-        <div className="relative flex gap-2">
-          <div className="relative flex-1">
-            <Textarea
-              ref={textareaRef}
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onDrop={handleDrop}
-              placeholder="Ask about your codebase..."
-              className={cn(
-                'min-h-[80px] resize-none',
-                isDragOver && 'border-primary ring-2 ring-primary/20'
-              )}
-              disabled={isLoading}
-            />
-            {/* Drag-over overlay */}
-            {isDragOver && (
-              <div className="absolute inset-0 flex items-center justify-center rounded-md bg-primary/5 border-2 border-dashed border-primary pointer-events-none">
-                <span className="text-sm font-medium text-primary">
-                  {t('insights.images.dragOver')}
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="flex flex-col gap-1 self-end">
-            <Button
-              variant="outline"
-              size="icon"
-              className="h-9 w-9"
-              onClick={() => setScreenshotOpen(true)}
-              disabled={isLoading || !canAddMore}
-              title={t('insights.images.screenshotButton')}
-            >
-              <Camera className="h-4 w-4" />
-            </Button>
-            <Button
-              onClick={handleSend}
-              disabled={(!inputValue.trim() && pendingImages.length === 0) || isLoading}
-              className="h-9 w-9"
-              size="icon"
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-
-        {/* Image analysis warning */}
-        {pendingImages.length > 0 && (
-          <div className="mt-1 flex items-center gap-1.5 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-500">
-            <AlertCircle className="h-3 w-3 shrink-0" />
-            <span>{t('insights.images.analysisUnsupported')}</span>
-          </div>
-        )}
-
-        {/* Image error */}
-        {imageError && (
-          <p className="mt-1 text-xs text-destructive">{imageError}</p>
-        )}
-
-        {/* Image preview strip */}
-        {pendingImages.length > 0 && (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            {pendingImages.map((image) => (
-              <div
-                key={image.id}
-                className="group relative h-16 w-16 rounded-md border border-border overflow-hidden"
-              >
-                <img
-                  src={image.thumbnail || `data:${image.mimeType};base64,${image.data}`}
-                  alt={image.filename}
-                  className="h-full w-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeImage(image.id)}
-                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                  title={t('insights.images.removeImage')}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            <span className="text-xs text-muted-foreground">
-              {t('insights.images.imageCount', { count: pendingImages.length })}
-            </span>
-          </div>
-        )}
-
-        <p className="mt-2 text-xs text-muted-foreground">
-          {t('insights.images.pasteHint')} · Press Enter to send, Shift+Enter for new line
-        </p>
       </div>
 
-      {/* Screenshot capture dialog */}
-      <ScreenshotCapture
-        open={screenshotOpen}
-        onOpenChange={setScreenshotOpen}
-        onCapture={handleScreenshotCapture}
+      <AttachmentPreviewDialog
+        projectId={projectId}
+        attachment={previewAttachment}
+        onClose={() => setPreviewAttachment(null)}
       />
-      </div>
     </div>
+  );
+}
+
+// Claude symbol (Wikimedia Commons "Claude_AI_symbol.svg"), drawn in the brand clay colour
+interface SparkMarkProps {
+  className?: string;
+  animate?: boolean;
+}
+
+const CLAUDE_SYMBOL_PATH =
+  'm19.6 66.5 19.7-11 .3-1-.3-.5h-1l-3.3-.2-11.2-.3L14 53l-9.5-.5-2.4-.5L0 49l.2-1.5 2-1.3 2.9.2 6.3.5 9.5.6 6.9.4L38 49.1h1.6l.2-.7-.5-.4-.4-.4L29 41l-10.6-7-5.6-4.1-3-2-1.5-2-.6-4.2 2.7-3 3.7.3.9.2 3.7 2.9 8 6.1L37 36l1.5 1.2.6-.4.1-.3-.7-1.1L33 25l-6-10.4-2.7-4.3-.7-2.6c-.3-1-.4-2-.4-3l3-4.2L28 0l4.2.6L33.8 2l2.6 6 4.1 9.3L47 29.9l2 3.8 1 3.4.3 1h.7v-.5l.5-7.2 1-8.7 1-11.2.3-3.2 1.6-3.8 3-2L61 2.6l2 2.9-.3 1.8-1.1 7.7L59 27.1l-1.5 8.2h.9l1-1.1 4.1-5.4 6.9-8.6 3-3.5L77 13l2.3-1.8h4.3l3.1 4.7-1.4 4.9-4.4 5.6-3.7 4.7-5.3 7.1-3.2 5.7.3.4h.7l12-2.6 6.4-1.1 7.6-1.3 3.5 1.6.4 1.6-1.4 3.4-8.2 2-9.6 2-14.3 3.3-.2.1.2.3 6.4.6 2.8.2h6.8l12.6 1 3.3 2 1.9 2.7-.3 2-5.1 2.6-6.8-1.6-16-3.8-5.4-1.3h-.8v.4l4.6 4.5 8.3 7.5L89 80.1l.5 2.4-1.3 2-1.4-.2-9.2-7-3.6-3-8-6.8h-.5v.7l1.8 2.7 9.8 14.7.5 4.5-.7 1.4-2.6 1-2.7-.6-5.8-8-6-9-4.7-8.2-.5.4-2.9 30.2-1.3 1.5-3 1.2-2.5-2-1.4-3 1.4-6.2 1.6-8 1.3-6.4 1.2-7.9.7-2.6v-.2H49L43 72l-9 12.3-7.2 7.6-1.7.7-3-1.5.3-2.8L24 86l10-12.8 6-7.9 4-4.6-.1-.5h-.3L17.2 77.4l-4.7.6-2-2 .2-3 1-1 8-5.5Z';
+
+function SparkMark({ className, animate }: SparkMarkProps) {
+  return (
+    <svg
+      viewBox="0 0 100 100"
+      fill="#D97757"
+      aria-hidden="true"
+      className={cn(animate && 'animate-[spin_2.4s_linear_infinite]', className)}
+    >
+      <path d={CLAUDE_SYMBOL_PATH} />
+    </svg>
   );
 }
 
@@ -667,11 +720,13 @@ interface MessageBubbleProps {
   onCreateTask: (messageId: string, taskIndex: number, taskData: { title: string; description: string; metadata?: TaskMetadata }) => void;
   creatingTask: Set<string>;
   taskCreated: Set<string>;
+  onPreviewImage: (image: ImageAttachment) => void;
 }
 
 function MessageBubble({
   message,
   markdownComponents,
+  onPreviewImage,
   onCreateTask,
   creatingTask,
   taskCreated
@@ -679,139 +734,155 @@ function MessageBubble({
   const { t } = useTranslation('common');
   const isUser = message.role === 'user';
 
-  return (
-    <div className="flex gap-3">
-      <div
-        className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full',
-          isUser ? 'bg-muted' : 'bg-primary/10'
-        )}
-      >
-        {isUser ? (
-          <User className="h-4 w-4 text-muted-foreground" />
-        ) : (
-          <Bot className="h-4 w-4 text-primary" />
-        )}
-      </div>
-      <div className="flex-1 space-y-2">
-        <div className="text-sm font-medium text-foreground">
-          {isUser ? 'You' : 'Assistant'}
-        </div>
-        {message.content && (
-          <div className="prose prose-sm dark:prose-invert max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {message.content}
-            </ReactMarkdown>
-          </div>
-        )}
-
-        {/* Image attachments for user messages */}
-        {isUser && message.images && message.images.length > 0 && (
-          <div className="space-y-1.5">
-            <div className="flex flex-wrap gap-2">
-              {message.images
-                .filter(img => img.thumbnail || img.data)
-                .map((image) => (
+  if (isUser) {
+    const attachments = message.images || [];
+    return (
+      <div className="flex flex-col items-end gap-1.5">
+        {attachments.length > 0 && (
+          <div className="flex max-w-[85%] flex-wrap justify-end gap-2">
+            {attachments.map((file) =>
+              file.thumbnail ? (
+                <button
+                  key={file.id}
+                  type="button"
+                  onClick={() => onPreviewImage(file)}
+                  className="cursor-zoom-in rounded-lg focus-visible:outline-none focus-visible:shadow-(--shadow-focus)"
+                  aria-label={t('insights.attachments.preview', { name: file.filename })}
+                >
                   <img
-                    key={image.id}
-                    src={image.thumbnail || `data:${image.mimeType};base64,${image.data}`}
-                    alt={image.filename}
-                    className="max-w-[200px] max-h-[200px] rounded-md border border-border object-contain"
+                    src={file.thumbnail}
+                    alt={file.filename}
+                    className="max-h-[200px] max-w-[200px] rounded-lg border border-border object-contain"
                   />
-                ))}
-            </div>
-            <p className="text-xs text-muted-foreground italic">{t('insights.images.notAnalyzed')}</p>
+                </button>
+              ) : (
+                <div
+                  key={file.id}
+                  className="flex h-12 max-w-64 items-center gap-2 rounded-lg border border-border bg-muted px-3"
+                  title={file.filename}
+                >
+                  <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                  <span className="min-w-0 truncate text-sm text-foreground">{file.filename}</span>
+                </div>
+              )
+            )}
           </div>
         )}
-
-        {/* Tool usage history for assistant messages */}
-        {!isUser && message.toolsUsed && message.toolsUsed.length > 0 && (
-          <ToolUsageHistory tools={message.toolsUsed} />
-        )}
-
-        {/* Task suggestion cards */}
-        {message.suggestedTasks && message.suggestedTasks.length > 0 && (
-          <div className="mt-3 space-y-3">
-            {message.suggestedTasks.map((task, index) => {
-              const taskKey = `${message.id}-${index}`;
-              const isCreating = creatingTask.has(taskKey);
-              const isCreated = taskCreated.has(taskKey);
-
-              return (
-                <Card key={taskKey} className="border-primary/20 bg-primary/5">
-                  <CardContent className="p-4">
-                    <div className="mb-2 flex items-center gap-2">
-                      <Sparkles className="h-4 w-4 text-primary" />
-                      <span className="text-sm font-medium text-primary">
-                        {t('insights.suggestedTask')}
-                      </span>
-                    </div>
-                    <h4 className="mb-2 font-medium text-foreground">
-                      {task.title}
-                    </h4>
-                    <p className="mb-3 text-sm text-muted-foreground">
-                      {task.description}
-                    </p>
-                    {task.metadata && (
-                      <div className="mb-3 flex flex-wrap gap-2">
-                        {task.metadata.category && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              'text-xs',
-                              TASK_CATEGORY_COLORS[task.metadata.category]
-                            )}
-                          >
-                            {TASK_CATEGORY_LABELS[task.metadata.category] ||
-                              task.metadata.category}
-                          </Badge>
-                        )}
-                        {task.metadata.complexity && (
-                          <Badge
-                            variant="outline"
-                            className={cn(
-                              'text-xs',
-                              TASK_COMPLEXITY_COLORS[task.metadata.complexity]
-                            )}
-                          >
-                            {TASK_COMPLEXITY_LABELS[task.metadata.complexity] ||
-                              task.metadata.complexity}
-                          </Badge>
-                        )}
-                      </div>
-                    )}
-                    <Button
-                      size="sm"
-                      onClick={() => onCreateTask(message.id, index, task)}
-                      disabled={isCreating || isCreated}
-                    >
-                      {isCreating ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          {t('insights.creating')}
-                        </>
-                      ) : isCreated ? (
-                        <>
-                          <CheckCircle2 className="mr-2 h-4 w-4" />
-                          {t('insights.taskCreated')}
-                        </>
-                      ) : (
-                        <>
-                          <Plus className="mr-2 h-4 w-4" />
-                          {t('insights.createTask')}
-                        </>
-                      )}
-                    </Button>
-                  </CardContent>
-                </Card>
-              );
-            })}
+        {message.content && (
+          <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-4 py-2.5 text-[0.9375rem] leading-relaxed text-foreground">
+            {message.content}
           </div>
         )}
       </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {message.content && (
+        <div className="prose prose-sm dark:prose-invert max-w-none text-[0.9375rem] leading-relaxed text-foreground">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+            {message.content}
+          </ReactMarkdown>
+        </div>
+      )}
+
+      {/* Tool usage history for assistant messages */}
+      {message.toolsUsed && message.toolsUsed.length > 0 && (
+        <ToolUsageHistory tools={message.toolsUsed} />
+      )}
+
+      {/* Task suggestion cards */}
+      {message.suggestedTasks && message.suggestedTasks.length > 0 && (
+        <div className="space-y-3">
+          {message.suggestedTasks.map((task, index) => {
+            const taskKey = `${message.id}-${index}`;
+            const isCreating = creatingTask.has(taskKey);
+            const isCreated = taskCreated.has(taskKey);
+
+            return (
+              <div key={taskKey} className="rounded-xl border border-border bg-card p-4">
+                <div className="mb-1.5 text-xs font-medium text-muted-foreground">
+                  {t('insights.suggestedTask')}
+                </div>
+                <h4 className="mb-1.5 text-[0.9375rem] font-medium text-foreground">
+                  {task.title}
+                </h4>
+                <p className="mb-3 text-sm text-muted-foreground">
+                  {task.description}
+                </p>
+                {task.metadata && (task.metadata.category || task.metadata.complexity) && (
+                  <div className="mb-3 flex flex-wrap gap-2">
+                    {task.metadata.category && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-xs',
+                          TASK_CATEGORY_COLORS[task.metadata.category]
+                        )}
+                      >
+                        {TASK_CATEGORY_LABELS[task.metadata.category] ||
+                          task.metadata.category}
+                      </Badge>
+                    )}
+                    {task.metadata.complexity && (
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          'text-xs',
+                          TASK_COMPLEXITY_COLORS[task.metadata.complexity]
+                        )}
+                      >
+                        {TASK_COMPLEXITY_LABELS[task.metadata.complexity] ||
+                          task.metadata.complexity}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+                <Button
+                  size="sm"
+                  variant={isCreated ? 'outline' : 'default'}
+                  onClick={() => onCreateTask(message.id, index, task)}
+                  disabled={isCreating || isCreated}
+                >
+                  {isCreating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {t('insights.creating')}
+                    </>
+                  ) : isCreated ? (
+                    <>
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                      {t('insights.taskCreated')}
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="mr-2 h-4 w-4" />
+                      {t('insights.createTask')}
+                    </>
+                  )}
+                </Button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
+
+const getToolIcon = (toolName: string) => {
+  switch (toolName) {
+    case 'Read':
+      return FileText;
+    case 'Glob':
+      return FolderSearch;
+    case 'Grep':
+      return Search;
+    default:
+      return FileText;
+  }
+};
 
 // Tool usage history component for showing tools used in completed messages
 interface ToolUsageHistoryProps {
@@ -823,6 +894,7 @@ interface ToolUsageHistoryProps {
 }
 
 function ToolUsageHistory({ tools }: ToolUsageHistoryProps) {
+  const { t } = useTranslation('common');
   const [expanded, setExpanded] = useState(false);
 
   if (tools.length === 0) return null;
@@ -833,56 +905,31 @@ function ToolUsageHistory({ tools }: ToolUsageHistoryProps) {
     return acc;
   }, {} as Record<string, number>);
 
-  const getToolIcon = (toolName: string) => {
-    switch (toolName) {
-      case 'Read':
-        return FileText;
-      case 'Glob':
-        return FolderSearch;
-      case 'Grep':
-        return Search;
-      default:
-        return FileText;
-    }
-  };
-
-  const getToolColor = (toolName: string) => {
-    switch (toolName) {
-      case 'Read':
-        return 'text-blue-500';
-      case 'Glob':
-        return 'text-amber-500';
-      case 'Grep':
-        return 'text-green-500';
-      default:
-        return 'text-muted-foreground';
-    }
-  };
-
   return (
-    <div className="mt-2">
+    <div>
       <button
         type="button"
         onClick={() => setExpanded(!expanded)}
-        className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        aria-expanded={expanded}
+        className="inline-flex items-center gap-2 rounded-md text-xs text-muted-foreground transition-colors hover:text-foreground"
       >
-        <span className="flex items-center gap-1">
+        <span className="flex items-center gap-1.5">
           {Object.entries(toolCounts).map(([name, count]) => {
             const Icon = getToolIcon(name);
             return (
-              <span key={name} className={cn('flex items-center gap-0.5', getToolColor(name))}>
+              <span key={name} className="flex items-center gap-0.5">
                 <Icon className="h-3 w-3" />
                 <span>{count}</span>
               </span>
             );
           })}
         </span>
-        <span>{tools.length} tool{tools.length !== 1 ? 's' : ''} used</span>
-        <span className="text-[10px]">{expanded ? '▲' : '▼'}</span>
+        <span>{t('insights.tools.toolsUsed', { count: tools.length })}</span>
+        <ChevronDown className={cn('h-3 w-3 transition-transform', expanded && 'rotate-180')} />
       </button>
 
       {expanded && (
-        <div className="mt-2 space-y-1 rounded-md border border-border bg-muted/30 p-2">
+        <div className="mt-2 space-y-1 rounded-xl border border-border p-3">
           {tools.map((tool, index) => {
             const Icon = getToolIcon(tool.name);
             return (
@@ -890,10 +937,10 @@ function ToolUsageHistory({ tools }: ToolUsageHistoryProps) {
                 key={`${tool.name}-${index}`}
                 className="flex items-center gap-2 text-xs"
               >
-                <Icon className={cn('h-3 w-3 shrink-0', getToolColor(tool.name))} />
-                <span className="font-medium">{tool.name}</span>
+                <Icon className="h-3 w-3 shrink-0 text-muted-foreground" />
+                <span className="font-medium text-foreground">{tool.name}</span>
                 {tool.input && (
-                  <span className="text-muted-foreground truncate max-w-[250px]">
+                  <span className="max-w-[250px] truncate text-muted-foreground">
                     {tool.input}
                   </span>
                 )}
@@ -913,47 +960,30 @@ interface ToolIndicatorProps {
 }
 
 function ToolIndicator({ name, input }: ToolIndicatorProps) {
+  const { t } = useTranslation('common');
+
   // Get friendly name and icon for each tool
   const getToolInfo = (toolName: string) => {
     switch (toolName) {
       case 'Read':
-        return {
-          icon: FileText,
-          label: 'Reading file',
-          color: 'text-blue-500 bg-blue-500/10'
-        };
+        return { icon: FileText, label: t('insights.tools.readingFile') };
       case 'Glob':
-        return {
-          icon: FolderSearch,
-          label: 'Searching files',
-          color: 'text-amber-500 bg-amber-500/10'
-        };
+        return { icon: FolderSearch, label: t('insights.tools.searchingFiles') };
       case 'Grep':
-        return {
-          icon: Search,
-          label: 'Searching code',
-          color: 'text-green-500 bg-green-500/10'
-        };
+        return { icon: Search, label: t('insights.tools.searchingCode') };
       default:
-        return {
-          icon: Loader2,
-          label: toolName,
-          color: 'text-primary bg-primary/10'
-        };
+        return { icon: Loader2, label: toolName };
     }
   };
 
-  const { icon: Icon, label, color } = getToolInfo(name);
+  const { icon: Icon, label } = getToolInfo(name);
 
   return (
-    <div className={cn(
-      'mt-2 inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm',
-      color
-    )}>
-      <Icon className="h-4 w-4 animate-pulse" />
-      <span className="font-medium">{label}</span>
+    <div className="inline-flex max-w-full items-center gap-2 rounded-xl border border-border px-3 py-1.5 text-sm">
+      <Icon className="h-4 w-4 shrink-0 animate-pulse text-muted-foreground" />
+      <span className="font-medium text-foreground">{label}</span>
       {input && (
-        <span className="text-muted-foreground truncate max-w-[300px]">
+        <span className="max-w-[300px] truncate text-muted-foreground">
           {input}
         </span>
       )}

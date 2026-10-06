@@ -1,4 +1,6 @@
 import { EventEmitter } from 'events';
+import path from 'path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
 import type {
   InsightsSession,
   InsightsSessionSummary,
@@ -168,9 +170,12 @@ export class InsightsService extends EventEmitter {
       images = images.slice(0, MAX_IMAGES_PER_TASK);
     }
 
-    // Add user message (store thumbnails only for persistence, strip full data)
+    // Full-size images go to the session's attachments directory (so they can be previewed
+    // later); the session JSON keeps only the thumbnail and the stored file's path
+    const sessionId = session.id;
     const persistImages = images?.map(img => ({
       ...img,
+      path: this.storeAttachment(projectPath, sessionId, img),
       data: undefined
     }));
     const userMessage: InsightsChatMessage = {
@@ -181,6 +186,7 @@ export class InsightsService extends EventEmitter {
       images: persistImages && persistImages.length > 0 ? persistImages : undefined
     };
     session.messages.push(userMessage);
+    if (modelConfig) session.modelConfig = modelConfig;
     session.updatedAt = new Date();
     this.sessionManager.saveSession(projectPath, session);
 
@@ -193,8 +199,8 @@ export class InsightsService extends EventEmitter {
       let imageNotation = '';
       if (imageCount > 0 && m.role === 'user') {
         imageNotation = isLastMessage
-          ? `\n[User attached ${imageCount} image(s)]`
-          : `\n[User previously attached ${imageCount} image(s) - not visible in this context]`;
+          ? `\n[User attached ${imageCount} file(s)]`
+          : `\n[User previously attached ${imageCount} file(s) - not visible in this context]`;
       }
       return {
         role: m.role,
@@ -236,6 +242,33 @@ export class InsightsService extends EventEmitter {
       // Error already emitted by executor
       console.error('[InsightsService] Error executing insights:', error);
     }
+  }
+
+  /**
+   * Write an image attachment to disk; returns its path relative to the insights directory
+   */
+  private storeAttachment(projectPath: string, sessionId: string, attachment: ImageAttachment): string | undefined {
+    if (!attachment.data) return undefined;
+    const relativePath = this.paths.getAttachmentRelativePath(sessionId, attachment.id, attachment.mimeType);
+    if (!relativePath) return undefined;
+    try {
+      const absolutePath = path.join(this.paths.getInsightsDir(projectPath), relativePath);
+      mkdirSync(path.dirname(absolutePath), { recursive: true });
+      writeFileSync(absolutePath, Buffer.from(attachment.data, 'base64'));
+      return relativePath;
+    } catch (error) {
+      console.error('[InsightsService] Failed to store attachment:', error);
+      return undefined;
+    }
+  }
+
+  /**
+   * Read a stored image attachment as a data URL (null if missing or outside the attachments dir)
+   */
+  readAttachment(projectPath: string, relativePath: string, mimeType: string): string | null {
+    const absolutePath = this.paths.resolveAttachmentPath(projectPath, relativePath);
+    if (!absolutePath || !existsSync(absolutePath)) return null;
+    return `data:${mimeType};base64,${readFileSync(absolutePath).toString('base64')}`;
   }
 
   /**

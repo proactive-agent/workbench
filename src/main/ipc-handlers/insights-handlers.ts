@@ -377,6 +377,22 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
     }
   );
 
+  // Full-size image attachment of a message (stored under the insights attachments dir)
+  ipcMain.handle(
+    IPC_CHANNELS.INSIGHTS_GET_ATTACHMENT,
+    async (_, projectId: string, relativePath: string, mimeType: string): Promise<IPCResult<string>> => {
+      const project = projectStore.getProject(projectId);
+      if (!project) {
+        return { success: false, error: "Project not found" };
+      }
+      if (!/^image\/(png|jpeg|gif|webp)$/.test(mimeType)) {
+        return { success: false, error: "Unsupported attachment type" };
+      }
+      const dataUrl = insightsService.readAttachment(project.path, relativePath, mimeType);
+      return dataUrl ? { success: true, data: dataUrl } : { success: false, error: "Attachment not found" };
+    }
+  );
+
   // Update model configuration for a session
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_UPDATE_MODEL_CONFIG,
