@@ -400,11 +400,11 @@ export function GitHubSetupModal({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="py-4 space-y-4">
+            <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
               <ProviderAccountsList />
 
               {getProviderAccounts().length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/30 p-3">
+                <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/30 p-3 sticky bottom-0">
                   <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                   <p className="text-sm text-success">
                     {t('githubSetup.aiProviderReady')}

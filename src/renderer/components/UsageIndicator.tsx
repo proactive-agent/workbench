@@ -828,7 +828,7 @@ export function UsageIndicator() {
         <PopoverContent
           side="bottom"
           align="end"
-          className="text-xs w-72 p-0"
+          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -959,7 +959,7 @@ export function UsageIndicator() {
         <PopoverContent
           side="bottom"
           align="end"
-          className="text-xs w-72 p-0"
+          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -1099,7 +1099,7 @@ export function UsageIndicator() {
         <PopoverContent
           side="bottom"
           align="end"
-          className="text-xs w-72 p-0"
+          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -1317,7 +1317,7 @@ export function UsageIndicator() {
       <PopoverContent
         side="bottom"
         align="end"
-        className="text-xs w-72 p-0"
+        className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
