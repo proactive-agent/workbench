@@ -534,6 +534,10 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         let updatedMetadata = task.metadata;
         if (updates.metadata) {
           updatedMetadata = { ...task.metadata, ...updates.metadata };
+          // Keep the user's own description as the task card's source of truth
+          if (updates.description !== undefined) {
+            updatedMetadata.userDescription = updates.description;
+          }
 
           // Process and save attached images if provided
           if (updates.metadata.attachedImages && updates.metadata.attachedImages.length > 0) {
@@ -623,11 +627,19 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
           }
         }
 
-        // Keep the user's own description as the task card's source of truth
-        if (updates.description !== undefined) {
-          updatedMetadata = { ...updatedMetadata, userDescription: updates.description };
+        // Description-only edit: record the user's description in task_metadata.json,
+        // merging into the file on disk so fields written since the task was cached survive
+        if (!updates.metadata && updates.description !== undefined) {
+          const metadataPath = path.join(specDir, 'task_metadata.json');
+          let onDisk: TaskMetadata = {};
           try {
-            writeFileSync(path.join(specDir, 'task_metadata.json'), JSON.stringify(updatedMetadata, null, 2), 'utf-8');
+            onDisk = JSON.parse(readFileSync(metadataPath, 'utf-8')) as TaskMetadata;
+          } catch {
+            // Missing or unreadable — start from the cached metadata
+          }
+          updatedMetadata = { ...task.metadata, ...onDisk, userDescription: updates.description };
+          try {
+            writeFileSync(metadataPath, JSON.stringify(updatedMetadata, null, 2), 'utf-8');
           } catch (err) {
             console.error('Failed to update task_metadata.json:', err);
           }

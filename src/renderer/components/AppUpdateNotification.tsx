@@ -318,7 +318,7 @@ export function AppUpdateNotification() {
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-3">
-          {!isDownloaded && !isDownloading && (
+          {!isDownloading && (
             <Button variant="ghost" onClick={handleSkipVersion} className="text-muted-foreground">
               {t("dialogs:appUpdate.skipThisVersion", "Skip This Version")}
             </Button>

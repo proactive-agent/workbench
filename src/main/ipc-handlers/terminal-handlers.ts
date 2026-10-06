@@ -148,9 +148,11 @@ export function registerTerminalHandlers(
         // See: docs/LONG_LIVED_AUTH_PLAN.md for context
         if (!profile.isDefault) {
           if (!profile.configDir) {
-            // Auto-create a configDir in ~/.claude-profiles/{profile-name}/
-            console.warn('[CLAUDE_PROFILE_SAVE] Profile missing configDir, creating one:', profile.name);
-            profile.configDir = await createProfileDirectory(profile.name);
+            // Auto-create a configDir in ~/.claude-profiles/{profile-id}/. The id is unique
+            // (generateProfileId adds -N), so two accounts with the same display name don't
+            // share a credentials directory.
+            console.warn('[CLAUDE_PROFILE_SAVE] Profile missing configDir, creating one:', profile.id);
+            profile.configDir = await createProfileDirectory(profile.id);
           }
 
           // Security: Validate configDir path to prevent path traversal attacks

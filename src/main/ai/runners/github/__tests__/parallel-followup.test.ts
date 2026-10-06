@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { NoObjectGeneratedError } from 'ai';
+import { NoObjectGeneratedError, NoOutputGeneratedError } from 'ai';
 
 vi.mock('ai', async (importOriginal) => {
   const actual = await importOriginal<typeof import('ai')>();
@@ -48,6 +48,19 @@ describe('ParallelFollowupReviewer specialist output fallback', () => {
     const result = await runSpecialist('new-code-reviewer');
 
     expect(result).toEqual({ type: 'new-code-reviewer', result: raw });
+  });
+
+  it('returns the raw text when reading the output throws (e.g. finishReason length)', async () => {
+    const raw = '{"verifications":[]}';
+    const result = {
+      text: raw,
+      get output(): never {
+        throw new NoOutputGeneratedError({ message: 'No output generated.' });
+      },
+    };
+    vi.mocked(generateText).mockResolvedValueOnce(result as never);
+
+    expect(await runSpecialist('resolution-verifier')).toEqual({ type: 'resolution-verifier', result: raw });
   });
 
   it('still rethrows errors that are not schema mismatches', async () => {

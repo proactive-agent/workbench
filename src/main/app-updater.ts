@@ -179,6 +179,13 @@ export function shouldSuppressUpdate(version: string): boolean {
 }
 
 /**
+ * Only install a downloaded update on quit if the user hasn't skipped or snoozed it.
+ */
+function syncInstallOnQuit(): void {
+  autoUpdater.autoInstallOnAppQuit = !(downloadedUpdateInfo && shouldSuppressUpdate(downloadedUpdateInfo.version));
+}
+
+/**
  * Persist a request to skip a specific version permanently.
  * That version will never trigger notifications again unless a newer version arrives.
  */
@@ -187,6 +194,7 @@ export function skipUpdateVersion(version: string): void {
   settings.skippedUpdateVersion = version;
   delete settings.updateRemindAfter;
   writeSettingsFile(settings);
+  syncInstallOnQuit();
   console.warn('[app-updater] Skipped version:', version);
 }
 
@@ -198,6 +206,7 @@ export function snoozeUpdate(): void {
   const settings = readSettingsFile() || {};
   settings.updateRemindAfter = Date.now() + TWENTY_FOUR_HOURS;
   writeSettingsFile(settings);
+  syncInstallOnQuit();
   console.warn('[app-updater] Snoozed updates until:', new Date(settings.updateRemindAfter as number).toISOString());
 }
 
@@ -279,13 +288,10 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
       return;
     }
 
-    // Check if user has skipped or snoozed this version
+    // Check if user has skipped or snoozed this version. Don't download it: with
+    // autoInstallOnAppQuit, a downloaded update would be installed on the next quit.
     if (shouldSuppressUpdate(info.version)) {
       console.warn('[app-updater] Update suppressed (skipped or snoozed):', info.version);
-      // Still download silently so it's ready when the suppression expires
-      autoUpdater.downloadUpdate().catch((error) => {
-        console.error('[app-updater] Failed to download update:', error.message);
-      });
       return;
     }
 
@@ -322,7 +328,8 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
       releaseDate: info.releaseDate
     };
 
-    // Only notify renderer if update is not suppressed
+    // Only notify renderer (and allow install-on-quit) if update is not suppressed
+    syncInstallOnQuit();
     if (!shouldSuppressUpdate(info.version)) {
       if (mainWindow) {
         mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, downloadedUpdateInfo);

@@ -462,6 +462,7 @@ export async function createSpecForIssue(
     // Create task_metadata.json (consistent with GitHub format for backend compatibility)
     const taskMetadata = {
       sourceType: 'gitlab' as const,
+      userDescription: safeIssue.description || '',
       gitlabIssueIid: safeIssue.iid,
       gitlabUrl: safeIssue.web_url,
       category: determineCategoryFromLabels(safeIssue.labels || []),

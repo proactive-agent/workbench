@@ -16,7 +16,7 @@
  * - Uses createSimpleClient() for lightweight parallel sessions
  */
 
-import { generateText, NoObjectGeneratedError, Output } from 'ai';
+import { generateText, NoObjectGeneratedError, NoOutputGeneratedError, Output } from 'ai';
 import * as crypto from 'node:crypto';
 
 import { createSimpleClient } from '../../client/factory';
@@ -88,6 +88,23 @@ export interface FollowupReviewerConfig {
   model?: ModelShorthand;
   thinkingLevel?: ThinkingLevel;
   fastMode?: boolean;
+}
+
+
+/**
+ * Serialize a generateText result's structured output so downstream parsing is unchanged,
+ * falling back to the raw text when there is no usable output (providers without
+ * Output.object(), or the result.output getter throwing NoOutputGeneratedError /
+ * NoObjectGeneratedError, e.g. on finishReason 'length').
+ */
+function serializeOutputOrText(result: { readonly output: unknown; readonly text: string }): string {
+  try {
+    const output = result.output;
+    if (output) return JSON.stringify(output);
+  } catch (err) {
+    if (!NoObjectGeneratedError.isInstance(err) && !NoOutputGeneratedError.isInstance(err)) throw err;
+  }
+  return result.text;
 }
 
 // =============================================================================
@@ -627,11 +644,7 @@ export class ParallelFollowupReviewer {
           output: Output.object({ schema: ResolutionVerificationOutputSchema }),
           abortSignal,
         });
-        // Use structured output if available; serialize so downstream parsing is unchanged.
-        if (result.output) {
-          return { type, result: JSON.stringify(result.output) };
-        }
-        return { type, result: result.text };
+        return { type, result: serializeOutputOrText(result) };
       }
 
       // new-code-reviewer and comment-analyzer both return { findings: [...] }
@@ -642,12 +655,7 @@ export class ParallelFollowupReviewer {
         output: Output.object({ schema: ReviewFindingsOutputSchema }),
         abortSignal,
       });
-      // Use structured output if available; serialize so downstream parsing is unchanged.
-      if (result.output) {
-        return { type, result: JSON.stringify(result.output) };
-      }
-      // Fall back to raw text for providers that don't support Output.object()
-      return { type, result: result.text };
+      return { type, result: serializeOutputOrText(result) };
     } catch (err) {
       // Output.object() validation failed — hand back the raw text; the caller re-parses it
       // leniently (parseJsonResponse + ResolutionVerificationSchema / ReviewFindingsArraySchema).

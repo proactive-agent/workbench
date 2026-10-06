@@ -71,9 +71,16 @@ function isDisposalErrorMessage(errorMessage: string): boolean {
   return normalized.includes("disposed") || normalized.includes("destroyed") || normalized.includes("detached");
 }
 
-function recordDisposalFailure(channel: string, warningPrefix: string): void {
-  consecutiveDisposalErrors++;
+/**
+ * Back off sending to an unavailable renderer. Only thrown disposal errors count toward
+ * the agent circuit breaker; proactive skips (crashed renderer, destroyed/detached frame)
+ * don't, so a renderer that is being recovered doesn't kill running agents.
+ */
+function recordDisposalFailure(channel: string, warningPrefix: string, countTowardBreaker = true): void {
   rendererUnavailableUntil = Date.now() + RENDERER_RETRY_BACKOFF_MS;
+  if (countTowardBreaker) {
+    consecutiveDisposalErrors++;
+  }
 
   if (consecutiveDisposalErrors >= MAX_CONSECUTIVE_DISPOSAL_ERRORS && !circuitBreakerTriggered && agentManagerRef) {
     circuitBreakerTriggered = true;
@@ -155,14 +162,14 @@ export function safeSendToRenderer(
     // On Electron 40, webContents.send may report "Error sending from webFrameMain"
     // without always throwing synchronously. Proactive checks prevent hot loops.
     if (typeof webContents.isCrashed === "function" && webContents.isCrashed()) {
-      recordDisposalFailure(channel, "[safeSendToRenderer] Renderer crashed, skipping send");
+      recordDisposalFailure(channel, "[safeSendToRenderer] Renderer crashed, skipping send", false);
       return false;
     }
 
     const mainFrame = webContents.mainFrame;
     if (mainFrame && (mainFrame.isDestroyed() || mainFrame.detached)) {
       const reason = mainFrame.isDestroyed() ? "destroyed" : "detached";
-      recordDisposalFailure(channel, `[safeSendToRenderer] Main frame ${reason}, skipping send`);
+      recordDisposalFailure(channel, `[safeSendToRenderer] Main frame ${reason}, skipping send`, false);
       return false;
     }
 

@@ -162,6 +162,7 @@ export async function createSpecForIssue(
     // task_metadata.json
     const metadata: TaskMetadata = {
       sourceType: 'github',
+      userDescription: safeDescription,
       githubIssueNumber: issueNumber,
       githubUrl: safeGithubUrl,
       category,

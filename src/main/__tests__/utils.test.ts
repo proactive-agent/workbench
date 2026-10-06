@@ -123,6 +123,35 @@ describe("safeSendToRenderer", () => {
     });
   });
 
+  describe("circuit breaker during renderer recovery", () => {
+    it("does not kill agents while skipping sends to a crashed renderer", async () => {
+      vi.useFakeTimers();
+      try {
+        const killAll = vi.fn();
+        const { setAgentManagerRef } = await import("../ipc-handlers/utils");
+        setAgentManagerRef({ killAll });
+        mockWindow = {
+          isDestroyed: vi.fn(() => false),
+          webContents: {
+            isDestroyed: vi.fn(() => false),
+            isCrashed: vi.fn(() => true),
+            send: mockSend,
+          },
+        } as unknown as BrowserWindow;
+        getMainWindow = () => mockWindow;
+
+        for (let i = 0; i < 20; i++) {
+          safeSendToRenderer(getMainWindow, "test-channel", "data");
+          vi.advanceTimersByTime(600); // past the send back-off
+        }
+
+        expect(killAll).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe("when main frame is unavailable", () => {
     it("returns false when main frame is destroyed", () => {
       mockWindow = {

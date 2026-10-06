@@ -41,6 +41,8 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
         const suppressed = await window.electronAPI.isAppUpdateSuppressed(newVersion);
         if (suppressed.success && suppressed.data) {
           setUpdateInfo(null);
+          // Forget the version so the banner reappears once a snooze expires
+          currentVersionRef.current = null;
           return;
         }
 

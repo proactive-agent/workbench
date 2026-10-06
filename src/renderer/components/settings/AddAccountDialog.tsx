@@ -310,6 +310,9 @@ export function AddAccountDialog({
       if (isEditing && editAccount?.claudeProfileId) {
         profileId = editAccount.claudeProfileId;
         setOauthProfileId(profileId);
+      } else if (oauthProfileId) {
+        // Retry after a failed/cancelled attempt: reuse the profile created the first time
+        profileId = oauthProfileId;
       } else {
         const profileResult = await window.electronAPI.saveClaudeProfile({
           id: '',
@@ -344,7 +347,7 @@ export function AddAccountDialog({
       setOauthStatus('error');
       setOauthError(err instanceof Error ? err.message : 'Unexpected error');
     }
-  }, [name, t, toast, isCodexOAuth, isEditing, editAccount, provider, addProviderAccount, updateProviderAccount, handleDuplicateEmailError, onOpenChange, refreshUsageData]);
+  }, [name, t, toast, isCodexOAuth, isEditing, editAccount, oauthProfileId, provider, addProviderAccount, updateProviderAccount, handleDuplicateEmailError, onOpenChange, refreshUsageData]);
 
   const handleFallbackTerminal = useCallback(async () => {
     if (!name.trim()) {
