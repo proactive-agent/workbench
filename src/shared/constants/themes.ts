@@ -17,8 +17,8 @@ export const COLOR_THEMES: ColorThemeDefinition[] = [
   {
     id: 'default',
     name: 'Default',
-    description: 'Flat warm neutrals with a terracotta accent',
-    previewColors: { bg: '#FAF9F5', accent: '#C6613F', darkBg: '#151515', darkAccent: '#D97757' }
+    description: 'Anthropic warm neutrals with a clay accent',
+    previewColors: { bg: '#FCFCFB', accent: '#C6613F', darkBg: '#151515', darkAccent: '#D97757' }
   },
   {
     id: 'lime',

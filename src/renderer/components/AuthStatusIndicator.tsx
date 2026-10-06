@@ -144,7 +144,7 @@ export function AuthStatusIndicator() {
                 <AlertTriangle className="h-3.5 w-3.5 motion-safe:animate-pulse" />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs max-w-xs">
+            <TooltipContent side="top" className="text-xs max-w-xs">
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground font-medium">{t('common:usage.usageAlert')}</span>
@@ -175,7 +175,7 @@ export function AuthStatusIndicator() {
               </span>
             </button>
           </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs max-w-xs p-0">
+          <TooltipContent side="top" className="text-xs max-w-xs p-0">
             <div className="p-3 space-y-3">
               {/* Header section */}
               <div className="flex items-center justify-between pb-2 border-b">
@@ -282,7 +282,7 @@ export function AuthStatusIndicator() {
                 {Math.round(usage.sessionPercent)}%
               </div>
             </TooltipTrigger>
-            <TooltipContent side="bottom" className="text-xs max-w-xs">
+            <TooltipContent side="top" className="text-xs max-w-xs">
               <div className="space-y-1">
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground font-medium">{localizeUsageWindowLabel(usage?.usageWindows?.sessionWindowLabel, t)}</span>

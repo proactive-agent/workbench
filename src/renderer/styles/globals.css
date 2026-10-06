@@ -144,42 +144,42 @@
 
 /* ============================================
    DEFAULT THEME (Light)
-   Flat, warm neutrals with terracotta accent — inspired by Claude Desktop.
+   Anthropic product styling — surfaces, text and nav states measured from claude.ai.
    Also defines the shared design tokens other themes override.
    ============================================ */
 :root {
   /* Backgrounds */
-  --background: #FAF9F5;
-  --foreground: #141413;
+  --background: #FCFCFB;
+  --foreground: #0B0B0B;
 
   --card: #FFFFFF;
-  --card-foreground: #141413;
+  --card-foreground: #0B0B0B;
 
   /* Accent - deeper terracotta for legibility on light surfaces */
   --primary: #C6613F;
   --primary-foreground: #FFFFFF;
 
-  --secondary: #F0EEE6;
-  --secondary-foreground: #141413;
+  --secondary: #F0EFEC;
+  --secondary-foreground: #0B0B0B;
 
-  --muted: #F0EEE6;
-  --muted-foreground: #73726C;
+  --muted: #F0EFEC;
+  --muted-foreground: #52514E;
 
-  --accent: #EDEBE3;
-  --accent-foreground: #141413;
+  --accent: #F0EFEC;
+  --accent-foreground: #0B0B0B;
 
   --destructive: #B5463A;
   --destructive-foreground: #FFFFFF;
 
-  --border: #E8E6DC;
-  --input: #E8E6DC;
-  --ring: #C6613F;
+  --border: rgba(11, 11, 11, 0.1);
+  --input: rgba(11, 11, 11, 0.2);
+  --ring: #2A78D6;
 
-  --sidebar: #F5F4ED;
-  --sidebar-foreground: #141413;
+  --sidebar: #FBFBF9;
+  --sidebar-foreground: #0B0B0B;
 
   --popover: #FFFFFF;
-  --popover-foreground: #141413;
+  --popover-foreground: #0B0B0B;
 
   /* Semantic colors - muted, earthy */
   --success: #5A7F4A;
@@ -199,7 +199,7 @@
   --shadow-md: 0 0 #0000;
   --shadow-lg: 0 4px 16px -4px rgba(20, 20, 19, 0.08);
   --shadow-xl: 0 8px 24px -8px rgba(20, 20, 19, 0.12);
-  --shadow-focus: 0 0 0 3px rgba(198, 97, 63, 0.2);
+  --shadow-focus: 0 0 0 1px #2A78D6, 0 0 6px 0 rgba(42, 120, 214, 0.2);
 
   /* Border radius */
   --radius: 8px;
@@ -216,28 +216,28 @@
   /* Elevation (Tailwind shadow utilities) */
   --elevation-sm: 0 0 #0000;
   --elevation-md: 0 0 #0000;
-  --elevation-lg: 0 4px 16px -4px rgba(20, 20, 19, 0.08);
-  --elevation-xl: 0 8px 24px -8px rgba(20, 20, 19, 0.12);
+  --elevation-lg: 0 2px 8px rgba(0, 0, 0, 0.04), 0 12px 32px rgba(0, 0, 0, 0.03), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+  --elevation-xl: 0 4px 12px rgba(0, 0, 0, 0.06), 0 16px 40px rgba(0, 0, 0, 0.08), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
   --elevation-2xl: 0 12px 32px -12px rgba(20, 20, 19, 0.16);
 
   /* Surfaces */
-  --card-border: #E8E6DC;
+  --card-border: rgba(11, 11, 11, 0.1);
   --field: #FFFFFF;
-  --field-border: #DEDCD1;
-  --radius-composer: 16px;
-  --segment: #F0EEE6;
+  --field-border: rgba(11, 11, 11, 0.2);
+  --radius-composer: 14px;
+  --segment: #F0EFEC;
   --segment-active: #FFFFFF;
 
   /* Sidebar navigation */
   --nav-item-py: 0.375rem;
-  --nav-item-gap: 0.625rem;
+  --nav-item-gap: 0.5rem;
   --nav-item-radius: 8px;
-  --nav-hover: #EDEBE3;
-  --nav-hover-foreground: #141413;
-  --nav-active: #E6E4DA;
-  --nav-active-foreground: #141413;
-  --nav-label-color: #8A8880;
-  --nav-label-weight: 500;
+  --nav-hover: #F0EFEC;
+  --nav-hover-foreground: #0B0B0B;
+  --nav-active: #EDECE8;
+  --nav-active-foreground: #0B0B0B;
+  --nav-label-color: #898781;
+  --nav-label-weight: 400;
   --nav-label-transform: none;
   --nav-label-tracking: 0;
 
@@ -249,20 +249,20 @@
   --accent-glow-rgb: 198, 97, 63;
   --warning-glow-rgb: 168, 116, 31;
   --card-surface-shadow: none;
-  --card-hover-border: #D6D3C7;
+  --card-hover-border: rgba(11, 11, 11, 0.2);
   --surface-elevated: #FFFFFF;
-  --scrollbar-thumb: rgba(20, 20, 19, 0.15);
-  --scrollbar-thumb-hover: rgba(20, 20, 19, 0.3);
+  --scrollbar-thumb: rgba(11, 11, 11, 0.15);
+  --scrollbar-thumb-hover: rgba(11, 11, 11, 0.3);
   --progress-sweep-gradient: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
   --task-card-hover-shadow: none;
-  --task-card-hover-border: #D6D3C7;
+  --task-card-hover-border: rgba(11, 11, 11, 0.2);
   --task-card-enhanced-shadow: none;
   --task-card-hover-lift: none;
   --drag-overlay-shadow: 0 0 0 1px var(--card-border), 0 8px 24px -8px rgba(20, 20, 19, 0.15);
   --drag-overlay-card-shadow: 0 8px 24px -8px rgba(20, 20, 19, 0.15);
   --drag-overlay-transform: rotate(1deg);
   --tooltip-bg: #FFFFFF;
-  --tooltip-shadow: 0 2px 8px rgba(20, 20, 19, 0.06);
+  --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.08);
   --review-highlight-border: var(--card-border);
   --review-highlight-bg: var(--muted);
 }
@@ -274,37 +274,37 @@
 .dark {
   /* Backgrounds */
   --background: #151515;
-  --foreground: #ECEBE4;
+  --foreground: #F0EFEC;
 
   --card: #20201F;
-  --card-foreground: #ECEBE4;
+  --card-foreground: #F0EFEC;
 
   /* Accent - Claude terracotta; near-black text has better contrast than white */
   --primary: #D97757;
   --primary-foreground: #141413;
 
   --secondary: #262625;
-  --secondary-foreground: #ECEBE4;
+  --secondary-foreground: #F0EFEC;
 
-  --muted: #1D1D1D;
-  --muted-foreground: #9C9B92;
+  --muted: #1A1A19;
+  --muted-foreground: #C3C2B7;
 
-  --accent: #2A2A29;
-  --accent-foreground: #F5F4EE;
+  --accent: rgba(255, 255, 255, 0.075);
+  --accent-foreground: #F0EFEC;
 
   --destructive: #D1655A;
   --destructive-foreground: #141413;
 
   /* Hairline dividers */
-  --border: #262626;
-  --input: #2E2E2E;
-  --ring: #D97757;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.2);
+  --ring: #2A78D6;
 
   --sidebar: #111111;
-  --sidebar-foreground: #ECEBE4;
+  --sidebar-foreground: #F0EFEC;
 
   --popover: #20201F;
-  --popover-foreground: #ECEBE4;
+  --popover-foreground: #F0EFEC;
 
   /* Semantic colors - muted, desaturated for warm-neutral dark UI */
   --success: #8DB07A;
@@ -324,7 +324,7 @@
   --shadow-md: 0 0 #0000;
   --shadow-lg: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
-  --shadow-focus: 0 0 0 2px rgba(217, 119, 87, 0.25);
+  --shadow-focus: 0 0 0 1px #2A78D6, 0 0 6px 0 rgba(42, 120, 214, 0.2);
 
   /* Border radius */
   --radius: 8px;
@@ -341,28 +341,28 @@
   /* Elevation (Tailwind shadow utilities) */
   --elevation-sm: 0 0 #0000;
   --elevation-md: 0 0 #0000;
-  --elevation-lg: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
-  --elevation-xl: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
+  --elevation-lg: 0 2px 8px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.25), 0 0 0 0.5px rgba(255, 255, 255, 0.06);
+  --elevation-xl: 0 4px 12px rgba(0, 0, 0, 0.4), 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
   --elevation-2xl: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
 
   /* Surfaces */
-  --card-border: #333332;
-  --field: #1D1D1D;
-  --field-border: #2E2E2E;
-  --radius-composer: 16px;
-  --segment: #1D1D1D;
+  --card-border: rgba(255, 255, 255, 0.1);
+  --field: #1A1A19;
+  --field-border: rgba(255, 255, 255, 0.2);
+  --radius-composer: 14px;
+  --segment: #1A1A19;
   --segment-active: #343434;
 
   /* Sidebar navigation */
   --nav-item-py: 0.375rem;
-  --nav-item-gap: 0.625rem;
+  --nav-item-gap: 0.5rem;
   --nav-item-radius: 8px;
-  --nav-hover: #1F1F1F;
-  --nav-hover-foreground: #ECEBE4;
-  --nav-active: #343434;
-  --nav-active-foreground: #F5F4EE;
-  --nav-label-color: #8B8A82;
-  --nav-label-weight: 500;
+  --nav-hover: rgba(255, 255, 255, 0.075);
+  --nav-hover-foreground: #F0EFEC;
+  --nav-active: rgba(255, 255, 255, 0.15);
+  --nav-active-foreground: #F0EFEC;
+  --nav-label-color: #898781;
+  --nav-label-weight: 400;
   --nav-label-transform: none;
   --nav-label-tracking: 0;
 
@@ -374,20 +374,20 @@
   --accent-glow-rgb: 217, 119, 87;
   --warning-glow-rgb: 212, 166, 87;
   --card-surface-shadow: none;
-  --card-hover-border: #45453F;
+  --card-hover-border: rgba(255, 255, 255, 0.2);
   --surface-elevated: #20201F;
-  --scrollbar-thumb: rgba(236, 235, 228, 0.12);
-  --scrollbar-thumb-hover: rgba(236, 235, 228, 0.24);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
   --progress-sweep-gradient: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%);
   --task-card-hover-shadow: none;
-  --task-card-hover-border: #45453F;
+  --task-card-hover-border: rgba(255, 255, 255, 0.2);
   --task-card-enhanced-shadow: none;
   --task-card-hover-lift: none;
   --drag-overlay-shadow: 0 0 0 1px var(--card-border), 0 8px 24px -8px rgba(0, 0, 0, 0.5);
   --drag-overlay-card-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
   --drag-overlay-transform: rotate(1deg);
   --tooltip-bg: #20201F;
-  --tooltip-shadow: none;
+  --tooltip-shadow: 0 8px 24px rgba(0, 0, 0, 0.32), 0 2px 6px rgba(0, 0, 0, 0.2);
   --review-highlight-border: var(--card-border);
   --review-highlight-bg: var(--muted);
 }

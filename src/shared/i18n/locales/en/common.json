@@ -18,14 +18,10 @@
     "marketTrends": "Market Trends:"
   },
   "projectTab": {
-    "settings": "Project settings",
     "showArchived": "Show archived",
     "hideArchived": "Hide archived",
     "showArchivedTasks": "Show archived tasks",
-    "hideArchivedTasks": "Hide archived tasks",
-    "closeTab": "Close tab",
-    "closeTabAriaLabel": "Close tab (removes project from app)",
-    "addProjectAriaLabel": "Add project"
+    "hideArchivedTasks": "Hide archived tasks"
   },
   "accessibility": {
     "deleteFeatureAriaLabel": "Delete feature",
@@ -451,12 +447,9 @@
     "creating": "Creating...",
     "taskCreated": "Task Created",
     "createTask": "Create Task",
-    "chatHistory": "Chat History",
     "archive": "Archive",
     "unarchive": "Unarchive",
     "archiveSelected": "Archive Selected",
-    "showArchived": "Show Archived",
-    "hideArchived": "Hide Archived",
     "bulkDeleteTitle": "Delete Conversations",
     "bulkDeleteDescription": "Are you sure you want to delete {{count}} conversation(s)? This action cannot be undone.",
     "bulkDeleteConfirm": "Delete {{count}} Conversation(s)",
@@ -468,27 +461,78 @@
     "archiveConfirmButton": "Archive {{count}} Conversation(s)",
     "deleteTitle": "Delete Conversation",
     "deleteDescription": "Are you sure you want to delete this conversation? This action cannot be undone.",
-    "selectMode": "Select",
-    "exitSelectMode": "Done",
     "today": "Today",
     "yesterday": "Yesterday",
     "daysAgo": "{{count}} days ago",
     "messageCount": "{{count}} message",
     "messageCount_other": "{{count}} messages",
     "images": {
-      "pasteHint": "Paste an image or screenshot",
-      "dropHint": "Drop image here",
-      "screenshotButton": "Attach screenshot",
-      "removeImage": "Remove image",
-      "imageCount": "{{count}} image attached",
-      "imageCount_plural": "{{count}} images attached",
-      "maxImagesReached": "Maximum number of images reached",
+      "pasteHint": "Paste or drop files",
+      "removeImage": "Remove attachment",
+      "maxImagesReached": "Maximum number of attachments reached",
       "invalidType": "Invalid file type. Please use PNG, JPEG, GIF, or WebP.",
-      "processFailed": "Failed to process image",
-      "dragOver": "Drop image to attach",
-      "analysisUnsupported": "Note: Image analysis is not yet supported. Images are stored for reference but cannot be analyzed by the model.",
-      "screenshotTooLarge": "Screenshot is too large ({{size}}MB). Maximum size is {{max}}MB. Consider capturing a smaller area.",
-      "notAnalyzed": "Images were stored for reference but not analyzed by the model."
+      "processFailed": "Failed to process file"
+    },
+    "title": "Insights",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "night": "Working late?"
+    },
+    "placeholder": "Ask anything about your codebase",
+    "replyPlaceholder": "Reply…",
+    "newChat": "New chat",
+    "showHistory": "Show chat history",
+    "hideHistory": "Hide chat history",
+    "send": "Send message",
+    "sending": "Sending…",
+    "thinking": "Thinking…",
+    "sendHint": "Enter to send · Shift+Enter for new line",
+    "tools": {
+      "readingFile": "Reading file",
+      "searchingFiles": "Searching files",
+      "searchingCode": "Searching code",
+      "toolsUsed_one": "{{count}} tool used",
+      "toolsUsed_other": "{{count}} tools used"
+    },
+    "model": {
+      "title": "Model: {{name}}",
+      "custom": "Custom model…",
+      "customDescription": "Other providers, models and thinking budgets",
+      "effort": "Effort",
+      "moreModels": "More models",
+      "descriptions": {
+        "opus": "For complex, in-depth work",
+        "sonnet": "Balanced for everyday questions",
+        "haiku": "Fastest for quick answers"
+      },
+      "effortLevels": {
+        "low": "Low",
+        "medium": "Medium",
+        "high": "High",
+        "xhigh": "Extra high"
+      },
+      "effortDescriptions": {
+        "low": "Brief consideration",
+        "medium": "Moderate analysis",
+        "high": "Deep thinking",
+        "xhigh": "Maximum reasoning"
+      }
+    },
+    "attachments": {
+      "add": "Add files or images",
+      "dragOver": "Drop files to attach",
+      "count": "{{count}} file attached",
+      "count_plural": "{{count}} files attached",
+      "tooLarge": "File is too large. Maximum size is {{max}}MB.",
+      "preview": "Preview {{name}}",
+      "previewTitle": "Image preview",
+      "loadingPreview": "Loading full-size image"
+    },
+    "errors": {
+      "subscription_rejected": "Anthropic rejected this request for your Claude subscription account (HTTP 429), even though your usage is within limits. Subscription accounts must go through Claude Code — make sure the Claude Code CLI is installed and signed in, or add an Anthropic API key account in Settings → Accounts.",
+      "claude_code_missing": "Claude subscription accounts answer through Claude Code, but the Claude Code CLI isn't installed. Install it from claude.ai/download (or via Settings → Developer Tools), then try again."
     }
   },
   "ideation": {
@@ -954,5 +998,24 @@
       "blockedTooltip": "This PR cannot be merged due to blocking conditions",
       "conflictTooltip": "This PR has merge conflicts that need to be resolved"
     }
+  },
+  "projectsPage": {
+    "title": "Projects",
+    "search": "Search projects",
+    "searchPlaceholder": "Search projects…",
+    "closeSearch": "Close search",
+    "sortBy": {
+      "recent": "Sort by last updated",
+      "name": "Sort by name"
+    },
+    "newProject": "New project",
+    "active": "Active",
+    "notInitialized": "Not initialized yet",
+    "updated": "Updated {{time}}",
+    "actions": "Actions for {{name}}",
+    "open": "Open project",
+    "remove": "Remove from Auto Claude",
+    "empty": "No projects yet. Add a project folder to get started.",
+    "noResults": "No projects match your search."
   }
 }

@@ -1,21 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Download, RefreshCw, AlertCircle } from 'lucide-react';
 import { debugLog } from '../shared/utils/debug-logger';
-import {
-  DndContext,
-  DragOverlay,
-  closestCenter,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragStartEvent,
-  type DragEndEvent
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  horizontalListSortingStrategy
-} from '@dnd-kit/sortable';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
 import { Toaster } from './components/ui/toaster';
@@ -47,6 +33,7 @@ import { Changelog } from './components/Changelog';
 import { Worktrees } from './components/Worktrees';
 import { AgentTools } from './components/AgentTools';
 import { WelcomeScreen } from './components/WelcomeScreen';
+import { ProjectsPage } from './components/ProjectsPage';
 import { RateLimitModal } from './components/RateLimitModal';
 import { SDKRateLimitModal } from './components/SDKRateLimitModal';
 import { AuthFailureModal } from './components/AuthFailureModal';
@@ -68,42 +55,11 @@ import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
 import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
 import type { Task, Project } from '../shared/types';
-import { ProjectTabBar } from './components/ProjectTabBar';
 import { AddProjectModal } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
 
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
-
-// Wrapper component for ProjectTabBar
-interface ProjectTabBarWithContextProps {
-  projects: Project[];
-  activeProjectId: string | null;
-  onProjectSelect: (projectId: string) => void;
-  onProjectClose: (projectId: string) => void;
-  onAddProject: () => void;
-  onSettingsClick: () => void;
-}
-
-function ProjectTabBarWithContext({
-  projects,
-  activeProjectId,
-  onProjectSelect,
-  onProjectClose,
-  onAddProject,
-  onSettingsClick
-}: ProjectTabBarWithContextProps) {
-  return (
-    <ProjectTabBar
-      projects={projects}
-      activeProjectId={activeProjectId}
-      onProjectSelect={onProjectSelect}
-      onProjectClose={onProjectClose}
-      onAddProject={onAddProject}
-      onSettingsClick={onSettingsClick}
-    />
-  );
-}
 
 export function App() {
   // Load IPC listeners for real-time updates
@@ -124,7 +80,6 @@ export function App() {
   const openProjectIds = useProjectStore((state) => state.openProjectIds);
   const openProjectTab = useProjectStore((state) => state.openProjectTab);
   const setActiveProject = useProjectStore((state) => state.setActiveProject);
-  const reorderTabs = useProjectStore((state) => state.reorderTabs);
   const tasks = useTaskStore((state) => state.tasks);
   const settings = useSettingsStore((state) => state.settings);
   const settingsLoading = useSettingsStore((state) => state.isLoading);
@@ -163,18 +118,6 @@ export function App() {
   const [showRemoveProjectDialog, setShowRemoveProjectDialog] = useState(false);
   const [removeProjectError, setRemoveProjectError] = useState<string | null>(null);
   const [projectToRemove, setProjectToRemove] = useState<Project | null>(null);
-
-  // Setup drag sensors
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8, // 8px movement required before drag starts
-      },
-    })
-  );
-
-  // Track dragging state for overlay
-  const [activeDragProject, setActiveDragProject] = useState<Project | null>(null);
 
   // Get tabs and selected project
   const projectTabs = getProjectTabs();
@@ -636,9 +579,12 @@ export function App() {
     }
   };
 
-  const handleProjectTabSelect = (projectId: string) => {
+  // Make a project active (sidebar switcher / Projects page); leaving the Projects page for its board
+  const handleSelectProject = useCallback((projectId: string) => {
+    openProjectTab(projectId);
     setActiveProject(projectId);
-  };
+    setActiveView((view) => (view === 'projects' ? 'kanban' : view));
+  }, [openProjectTab, setActiveProject]);
 
   const handleProjectTabClose = (projectId: string) => {
     // Show confirmation dialog before removing the project
@@ -674,30 +620,6 @@ export function App() {
     setShowRemoveProjectDialog(false);
     setProjectToRemove(null);
     setRemoveProjectError(null);
-  };
-
-  // Handle drag start - set the active dragged project
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    const draggedProject = projectTabs.find(p => p.id === active.id);
-    if (draggedProject) {
-      setActiveDragProject(draggedProject);
-    }
-  };
-
-  // Handle drag end - reorder tabs if dropped over another tab
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveDragProject(null);
-
-    if (!over) return;
-
-    const oldIndex = projectTabs.findIndex(p => p.id === active.id);
-    const newIndex = projectTabs.findIndex(p => p.id === over.id);
-
-    if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
-      reorderTabs(oldIndex, newIndex);
-    }
   };
 
   const handleInitialize = async () => {
@@ -820,48 +742,25 @@ export function App() {
         <Sidebar
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
+          onSelectProject={handleSelectProject}
+          onAddProjectClick={handleAddProject}
           activeView={activeView}
           onViewChange={setActiveView}
         />
 
         {/* Main content */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Project Tabs */}
-          {projectTabs.length > 0 && (
-            <DndContext
-              sensors={sensors}
-              collisionDetection={closestCenter}
-              onDragStart={handleDragStart}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext items={projectTabs.map(p => p.id)} strategy={horizontalListSortingStrategy}>
-                <ProjectTabBarWithContext
-                  projects={projectTabs}
-                  activeProjectId={activeProjectId}
-                  onProjectSelect={handleProjectTabSelect}
-                  onProjectClose={handleProjectTabClose}
-                  onAddProject={handleAddProject}
-                  onSettingsClick={() => setIsSettingsDialogOpen(true)}
-                />
-              </SortableContext>
-
-              {/* Drag overlay - shows what's being dragged */}
-              <DragOverlay>
-                {activeDragProject && (
-                  <div className="flex items-center gap-2 bg-card border border-border rounded-md px-4 py-2.5 shadow-lg max-w-[200px]">
-                    <div className="w-1 h-4 bg-muted-foreground rounded-full" />
-                    <span className="truncate font-medium text-sm">
-                      {activeDragProject.name}
-                    </span>
-                  </div>
-                )}
-              </DragOverlay>
-            </DndContext>
-          )}
-
           {/* Main content area */}
           <main className="flex-1 overflow-hidden">
-            {selectedProject ? (
+            {activeView === 'projects' ? (
+              <ProjectsPage
+                projects={projects}
+                activeProjectId={activeProjectId || selectedProjectId}
+                onSelectProject={handleSelectProject}
+                onAddProject={handleAddProject}
+                onRemoveProject={handleProjectTabClose}
+              />
+            ) : selectedProject ? (
               <>
                 {activeView === 'kanban' && (
                   <KanbanBoard

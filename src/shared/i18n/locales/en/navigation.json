@@ -16,7 +16,8 @@
     "gitlabIssues": "GitLab Issues",
     "gitlabMRs": "GitLab MRs",
     "worktrees": "Worktrees",
-    "agentTools": "MCP Overview"
+    "agentTools": "MCP Overview",
+    "projects": "Projects"
   },
   "actions": {
     "settings": "Settings",
@@ -80,5 +81,13 @@
     "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
     "switchInstallationConfirm": "Switch",
     "versionUnknown": "version unknown"
+  },
+  "projectSwitcher": {
+    "label": "Switch project",
+    "ariaLabel": "Active project: {{name}}",
+    "noProject": "No project selected",
+    "allProjects": "All projects",
+    "addProject": "Add project…",
+    "shortcut": "{{mod}}{{index}}"
   }
 }

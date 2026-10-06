@@ -12,19 +12,13 @@
  * - Pay-per-use / API key providers: shows "Unlimited" badge
  */
 
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Activity, TrendingUp, AlertCircle, Clock, ChevronRight, Info, LogIn, Layers } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
+import { Activity, TrendingUp, AlertCircle, Clock, Info, LogIn } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from './ui/popover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from './ui/tooltip';
 import { useTranslation } from 'react-i18next';
 import { formatTimeRemaining, localizeUsageWindowLabel, hasHardcodedText } from '../../shared/utils/format-time';
 import type { ClaudeUsageSnapshot, ProfileUsageSummary } from '../../shared/types/agent';
@@ -137,6 +131,18 @@ export function UsageIndicator() {
   const [isPinned, setIsPinned] = useState(false);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // The badge sits inside the sidebar footer; open the breakdown above the whole footer with the
+  // same 0.5rem gap it keeps from the sidebar's sides (rem-based so it follows the UI scale)
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [popoverOffset, setPopoverOffset] = useState(8);
+  useLayoutEffect(() => {
+    const trigger = triggerRef.current;
+    if (!isOpen || !trigger?.parentElement) return;
+    const gap = 0.5 * parseFloat(getComputedStyle(document.documentElement).fontSize);
+    const footerTop = trigger.parentElement.getBoundingClientRect().top;
+    setPopoverOffset(Math.round(trigger.getBoundingClientRect().top - footerTop + gap));
+  }, [isOpen]);
+
   const { providerAccounts, settings, setQueueOrder } = useSettingsStore();
 
   const { account: activeAccount, orderedAccounts, crossProviderOrderedAccounts } = useActiveProvider();
@@ -146,7 +152,6 @@ export function UsageIndicator() {
   const hasUsageMonitoring = activeAccount ? accountHasUsageMonitoring(activeAccount) : false;
   // Subscription accounts (any provider) have rate limits even though we can't monitor them
   const hasSubscriptionLimits = activeAccount?.billingModel === 'subscription';
-  const isPayPerUse = activeAccount?.billingModel === 'pay-per-use';
   const isCrossProviderMode = settings.customMixedProfileActive === true && !!settings.customMixedPhaseConfig;
   const crossProviderConfig = settings.customMixedPhaseConfig;
   const crossProviderOrder = useMemo(() => {
@@ -183,90 +188,6 @@ export function UsageIndicator() {
     return name.substring(0, 2).toUpperCase();
   };
 
-  /**
-   * Render the active account footer section.
-   * When cross-provider mode is on, shows a cross-provider summary instead of a single account.
-   */
-  const renderActiveAccountFooter = (opts: {
-    hasOtherItems: boolean;
-    needsReauth?: boolean;
-    usageProfile?: { profileName: string; profileEmail?: string; needsReauthentication?: boolean } | null;
-  }) => {
-    const { hasOtherItems, needsReauth, usageProfile } = opts;
-    const bottomPadding = hasOtherItems ? 'pb-2' : '-mb-3 pb-3 rounded-b-md';
-
-    if (isCrossProviderMode) {
-      return (
-        <button
-          type="button"
-          onClick={handleOpenAccounts}
-          className={`w-full pt-3 border-t flex items-center gap-2.5 hover:bg-muted/50 -mx-3 px-3 ${bottomPadding} transition-colors cursor-pointer group`}
-        >
-          <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 bg-violet-500/10">
-            <Layers className="h-4 w-4 text-violet-500" />
-          </div>
-          <div className="flex-1 min-w-0 text-left">
-            <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-muted-foreground font-medium">
-                {t('common:usage.crossProviderActive')}
-              </span>
-            </div>
-            <div className="font-medium text-xs truncate text-violet-500">
-              {crossProviderLabel}
-            </div>
-          </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
-        </button>
-      );
-    }
-
-    // Standard single-account display
-    const displayName = usageProfile?.profileEmail || usageProfile?.profileName || activeAccount?.name;
-    const initials = getInitials(usageProfile?.profileName || activeAccount?.name || '');
-    const showReauth = needsReauth || usageProfile?.needsReauthentication;
-
-    return activeAccount ? (
-      <button
-        type="button"
-        onClick={handleOpenAccounts}
-        className={`w-full pt-3 border-t flex items-center gap-2.5 hover:bg-muted/50 -mx-3 px-3 ${bottomPadding} transition-colors cursor-pointer group`}
-      >
-        <div className="relative">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-            showReauth ? 'bg-red-500/10' : 'bg-primary/10'
-          }`}>
-            <span className={`text-xs font-semibold ${showReauth ? 'text-red-500' : 'text-primary'}`}>
-              {initials}
-            </span>
-          </div>
-          {showReauth && (
-            <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-red-500 rounded-full border-2 border-background" />
-          )}
-        </div>
-        <div className="flex-1 min-w-0 text-left">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[10px] text-muted-foreground font-medium">
-              {t('common:usage.activeAccount')}
-            </span>
-            {showReauth && (
-              <span className="text-[9px] px-1.5 py-0.5 bg-red-500/10 text-destructive rounded font-semibold">
-                {t('common:usage.needsReauth')}
-              </span>
-            )}
-            <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold border ${
-              PROVIDER_BADGE_COLORS[activeAccount.provider] ?? PROVIDER_BADGE_COLORS['openai-compatible']
-            }`}>
-              {getProviderName(activeAccount.provider)}
-            </span>
-          </div>
-          <div className={`font-medium text-xs truncate ${showReauth ? 'text-destructive' : 'text-primary'}`}>
-            {displayName}
-          </div>
-        </div>
-        <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors flex-shrink-0" />
-      </button>
-    ) : null;
-  };
 
   /**
    * Helper function to format large numbers with locale-aware compact notation
@@ -815,6 +736,7 @@ export function UsageIndicator() {
       <Popover open={isOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
+            ref={triggerRef}
             className={`flex items-center gap-1 px-2 py-1.5 rounded-md border transition-all hover:opacity-80 ${providerBadgeColor}`}
             aria-label={t('common:usage.usageStatusAriaLabel')}
             onMouseEnter={handleMouseEnter}
@@ -826,9 +748,10 @@ export function UsageIndicator() {
           </button>
         </PopoverTrigger>
         <PopoverContent
-          side="bottom"
+          side="top"
           align="end"
-          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
+          sideOffset={popoverOffset}
+          className="text-xs w-[17rem] p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -847,8 +770,6 @@ export function UsageIndicator() {
               </div>
             </div>
 
-            {/* Active account footer */}
-            {renderActiveAccountFooter({ hasOtherItems: otherAccounts.length > 0 })}
 
             {/* Other accounts from the queue */}
             {otherAccounts.length > 0 && (
@@ -946,6 +867,7 @@ export function UsageIndicator() {
       <Popover open={isOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
+            ref={triggerRef}
             className="flex items-center gap-1 px-2 py-1.5 rounded-md border transition-all hover:opacity-80 text-green-500 bg-green-500/10 border-green-500/20"
             aria-label={t('common:usage.usageStatusAriaLabel')}
             onMouseEnter={handleMouseEnter}
@@ -957,9 +879,10 @@ export function UsageIndicator() {
           </button>
         </PopoverTrigger>
         <PopoverContent
-          side="bottom"
+          side="top"
           align="end"
-          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
+          sideOffset={popoverOffset}
+          className="text-xs w-[17rem] p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -977,8 +900,6 @@ export function UsageIndicator() {
               </div>
             </div>
 
-            {/* Active account footer */}
-            {renderActiveAccountFooter({ hasOtherItems: otherAccounts.length > 0 })}
 
             {/* Other accounts from the queue */}
             {otherAccounts.length > 0 && (
@@ -1073,6 +994,7 @@ export function UsageIndicator() {
       <Popover open={isOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
+            ref={triggerRef}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border transition-all hover:opacity-80 ${
               needsReauth
                 ? 'bg-red-500/10 border-red-500/20 text-red-500'
@@ -1097,9 +1019,10 @@ export function UsageIndicator() {
           </button>
         </PopoverTrigger>
         <PopoverContent
-          side="bottom"
+          side="top"
           align="end"
-          className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
+          sideOffset={popoverOffset}
+          className="text-xs w-[17rem] p-0 max-h-[80vh] overflow-y-auto"
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
         >
@@ -1134,8 +1057,6 @@ export function UsageIndicator() {
               )}
             </div>
 
-            {/* Active account footer */}
-            {renderActiveAccountFooter({ hasOtherItems: otherAccounts.length > 0, needsReauth })}
 
             {/* Other accounts with swap buttons */}
             {otherAccounts.length > 0 && (
@@ -1289,7 +1210,8 @@ export function UsageIndicator() {
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
-          className={`flex items-center gap-1 px-2 py-1.5 rounded-md border transition-all hover:opacity-80 ${badgeColorClasses}`}
+          ref={triggerRef}
+          className={`inline-flex h-7 items-center justify-center gap-1 px-2 rounded-md border leading-none transition-all hover:opacity-80 ${badgeColorClasses}`}
           aria-label={t('common:usage.usageStatusAriaLabel')}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
@@ -1302,7 +1224,7 @@ export function UsageIndicator() {
               !
             </span>
           ) : (
-            <div className="flex items-center gap-0.5 text-xs font-semibold font-mono">
+            <div className="flex items-center justify-center gap-0.5 text-xs font-semibold font-mono leading-none tabular-nums">
               <span className={sessionColorClass} title={t('common:usage.sessionShort')}>
                 {Math.round(sessionPercent)}
               </span>
@@ -1315,9 +1237,10 @@ export function UsageIndicator() {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        side="bottom"
+        side="top"
         align="end"
-        className="text-xs w-72 p-0 max-h-[80vh] overflow-y-auto"
+        sideOffset={popoverOffset}
+        className="text-xs w-[17rem] p-0 max-h-[80vh] overflow-y-auto"
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
       >
@@ -1425,11 +1348,6 @@ export function UsageIndicator() {
             </>
           )}
 
-          {/* Active account footer - clickable to go to settings */}
-          {renderActiveAccountFooter({
-            hasOtherItems: otherAccounts.length > 0,
-            usageProfile: usage,
-          })}
 
           {/* Other accounts from priority queue (non-Anthropic or non-OAuth) */}
           {otherAccounts.length > 0 && (
