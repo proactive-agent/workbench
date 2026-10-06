@@ -10,7 +10,6 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/desktop/package.json'
       - 'package.json'
   workflow_dispatch:
     inputs:
@@ -50,7 +49,7 @@ jobs:
       - name: Get package version
         id: package
         run: |
-          VERSION=$(node -p "require('./apps/desktop/package.json').version")
+          VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Package version: $VERSION"
 
@@ -246,6 +245,6 @@ jobs:
             echo "The package version is not newer than the latest tag." >> $GITHUB_STEP_SUMMARY
             echo "To trigger a release, bump the version using:" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "node scripts/bump-version.js patch  # or minor/major" >> $GITHUB_STEP_SUMMARY
+            echo "node .github/scripts/bump-version.js patch  # or minor/major" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi

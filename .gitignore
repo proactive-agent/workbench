@@ -32,11 +32,7 @@ credentials/
 .vscode/
 *.swp
 *.swo
-*.sublime-workspace
-*.sublime-project
-.project
-.classpath
-.settings/
+*~
 
 # ===========================
 # Logs
@@ -44,9 +40,6 @@ credentials/
 logs/
 *.log
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-lerna-debug.log*
 
 # ===========================
 # Git Worktrees (parallel builds)
@@ -57,85 +50,63 @@ lerna-debug.log*
 # Auto Claude Generated
 # ===========================
 .auto-claude/
-.aperant/
-.planning/
-.planning-archive/
-.auto-build-security.json
 .auto-claude-security.json
 .auto-claude-status
 .claude_settings.json
 .update-metadata.json
 
 # ===========================
-# Node.js (apps/desktop)
+# Node.js
 # ===========================
 node_modules
-apps/desktop/node_modules
 .npm
-.yarn/
-.pnp.*
 
 # Build output
 dist/
 out/
+build/
+.vite/
 *.tsbuildinfo
+
+# Compiled TypeScript (sources are .ts)
+src/**/*.js
+src/**/*.js.map
+
+# Other package managers' lockfiles (npm only)
+yarn.lock
+pnpm-lock.yaml
+bun.lock
+bun.lockb
 
 # Cache
 .cache/
-.parcel-cache/
-.turbo/
-.eslintcache
-.prettiercache
 
 # ===========================
-# Electron
+# Electron packages
 # ===========================
-apps/desktop/dist/
-apps/desktop/out/
 *.asar
 *.blockmap
-*.snap
 *.deb
-*.rpm
-*.AppImage
 *.dmg
 *.exe
-*.msi
 
 # ===========================
 # Testing
 # ===========================
 coverage/
-.nyc_output/
 test-results/
 playwright-report/
 playwright/.cache/
-
-# ===========================
-# Python
-# ===========================
-__pycache__/
-*.pyc
 
 # ===========================
 # Misc
 # ===========================
 *.local
 *.bak
+*.backup
 *.tmp
 *.temp
 
-# Development
-dev/
-_bmad/
-_bmad-output/
+# Local tooling and docs
 .claude/
-/docs
-OPUS_ANALYSIS_AND_IDEAS.md
-/.github/agents
-
-# Auto Claude generated files
-.security-key
 /shared_docs
-logs/security/
-Agents.md

@@ -11,21 +11,27 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'apps/**'
+      - 'src/**'
+      - 'prompts/**'
+      - 'resources/**'
+      - '.github/scripts/**'
+      - 'electron.vite.config.ts'
+      - 'vitest.config.ts'
       - 'package*.json'
       - 'tsconfig*.json'
-      - 'biome.jsonc'
       - '.github/workflows/ci.yml'
-      - '.github/actions/**'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'apps/**'
+      - 'src/**'
+      - 'prompts/**'
+      - 'resources/**'
+      - '.github/scripts/**'
+      - 'electron.vite.config.ts'
+      - 'vitest.config.ts'
       - 'package*.json'
       - 'tsconfig*.json'
-      - 'biome.jsonc'
       - '.github/workflows/ci.yml'
-      - '.github/actions/**'
 
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
@@ -53,27 +59,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js frontend
-        uses: ./.github/actions/setup-node-frontend
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          ignore-scripts: 'true'
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
 
       - name: Run TypeScript type check
-        working-directory: apps/desktop
         run: npm run typecheck
 
       - name: Run unit tests with coverage
         if: matrix.os == 'ubuntu-latest'
-        working-directory: apps/desktop
         run: npm run test:coverage
 
       - name: Run unit tests
         if: matrix.os != 'ubuntu-latest'
-        working-directory: apps/desktop
         run: npm run test:unit
 
       - name: Run integration tests
-        working-directory: apps/desktop
         run: npm run test:integration
 
       - name: Upload coverage report
@@ -81,19 +87,17 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: apps/desktop/coverage/
+          path: coverage/
           retention-days: 14
 
       - name: Coverage PR comment
         if: matrix.os == 'ubuntu-latest' && github.event_name == 'pull_request'
         uses: davelosert/vitest-coverage-report-action@v2
         with:
-          working-directory: apps/desktop
           json-summary-path: coverage/coverage-summary.json
           json-final-path: coverage/coverage-final.json
 
       - name: Build application
-        working-directory: apps/desktop
         run: npm run build
 
   # --------------------------------------------------------------------------
