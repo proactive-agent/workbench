@@ -23,8 +23,6 @@ import type { ProjectCapabilities, PromptContext, PromptValidationResult } from 
 const EXPECTED_PROMPT_FILES = [
   'planner.md',
   'coder.md',
-  'coder_recovery.md',
-  'followup_planner.md',
   'qa_reviewer.md',
   'qa_fixer.md',
   'spec_gatherer.md',
@@ -32,7 +30,6 @@ const EXPECTED_PROMPT_FILES = [
   'spec_writer.md',
   'spec_critic.md',
   'complexity_assessor.md',
-  'validation_fixer.md',
 ] as const;
 
 // =============================================================================
