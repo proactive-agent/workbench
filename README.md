@@ -82,18 +82,19 @@ AI-assisted feature planning with competitor analysis and audience targeting.
 ## Project Structure
 
 ```
-Aperant/
-├── apps/
-│   └── desktop/     # Electron desktop application (TypeScript AI agent layer + UI)
-├── guides/          # Additional documentation
-└── .github/scripts/ # Release utilities (bump-version)
+auto-claude/
+├── src/             # Electron app (main process, preload, React renderer, AI agent layer)
+├── prompts/         # Agent system prompts
+├── resources/       # App icons and bundled header icons
+├── e2e/             # Playwright end-to-end tests
+└── .github/         # CI, E2E and release workflows; scripts/ (install, packaging and release helpers)
 ```
 
 ---
 
 ## Development
 
-Want to build and run from source? See [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md) for complete development setup instructions. (Note: code contributions are paused during the 3.0 rebuild — see [Contributing](#contributing) below.)
+Want to build and run from source? Run `npm install`, then `npm run dev`. See the scripts below.
 
 ---
 
@@ -115,7 +116,7 @@ All releases are:
 
 | Command | Description |
 |---------|-------------|
-| `npm run install:all` | Install all dependencies |
+| `npm install` | Install all dependencies |
 | `npm start` | Build and run the desktop app |
 | `npm run dev` | Run in development mode with hot reload |
 | `npm run package` | Package for current platform |
@@ -136,7 +137,6 @@ All releases are:
 - 💡 [Share ideas and feature requests](https://github.com/AndyMik90/Aperant/discussions) for 3.0
 - 💬 [Join the Discord](https://discord.gg/KCXaPBr4Dj) to follow development and influence the roadmap
 
-When contributions reopen, [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md) covers development setup, code style, testing, and the pull request process.
 
 ---
 

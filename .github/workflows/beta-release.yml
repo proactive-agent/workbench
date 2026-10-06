@@ -78,7 +78,7 @@ jobs:
         uses: ./.github/actions/setup-node-frontend
 
       - name: Build application
-        run: cd apps/desktop && npm run build
+        run: npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -87,7 +87,7 @@ jobs:
       - name: Package macOS (Intel)
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/desktop && npm run package:mac -- --x64 --config.extraMetadata.version="$VERSION"
+          npm run package:mac -- --x64 --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
@@ -109,9 +109,9 @@ jobs:
         with:
           name: macos-intel-builds
           path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.zip
-            apps/desktop/dist/*.yml
+            dist/*.dmg
+            dist/*.zip
+            dist/*.yml
 
   # Apple Silicon build on ARM64 runner for native compilation
   build-macos-arm64:
@@ -130,7 +130,7 @@ jobs:
         uses: ./.github/actions/setup-node-frontend
 
       - name: Build application
-        run: cd apps/desktop && npm run build
+        run: npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -139,7 +139,7 @@ jobs:
       - name: Package macOS (Apple Silicon)
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/desktop && npm run package:mac -- --arm64 --config.extraMetadata.version="$VERSION"
+          npm run package:mac -- --arm64 --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE }}
@@ -161,9 +161,9 @@ jobs:
         with:
           name: macos-arm64-builds
           path: |
-            apps/desktop/dist/*.dmg
-            apps/desktop/dist/*.zip
-            apps/desktop/dist/*.yml
+            dist/*.dmg
+            dist/*.zip
+            dist/*.yml
 
   build-windows:
     needs: create-tag
@@ -184,7 +184,7 @@ jobs:
         uses: ./.github/actions/setup-node-frontend
 
       - name: Build application
-        run: cd apps/desktop && npm run build
+        run: npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -194,7 +194,7 @@ jobs:
         shell: bash
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/desktop && npm run package:win -- --config.extraMetadata.version="$VERSION"
+          npm run package:win -- --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Disable electron-builder's built-in signing (we use Azure Trusted Signing instead)
@@ -218,7 +218,7 @@ jobs:
           endpoint: https://neu.codesigning.azure.net/
           trusted-signing-account-name: ${{ secrets.AZURE_SIGNING_ACCOUNT }}
           certificate-profile-name: ${{ secrets.AZURE_CERTIFICATE_PROFILE }}
-          files-folder: apps/desktop/dist
+          files-folder: dist
           files-folder-filter: exe
           file-digest: SHA256
           timestamp-rfc3161: http://timestamp.acs.microsoft.com
@@ -228,7 +228,7 @@ jobs:
         if: env.AZURE_CLIENT_ID != ''
         shell: pwsh
         run: |
-          cd apps/desktop/dist
+          cd dist
           $exeFile = Get-ChildItem -Filter "*.exe" | Select-Object -First 1
           if ($exeFile) {
             Write-Host "Verifying signature on $($exeFile.Name)..."
@@ -252,7 +252,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          cd apps/desktop/dist
+          cd dist
 
           # Find the installer exe (electron-builder names it with "Setup" or just the app name)
           # electron-builder produces one installer exe per build
@@ -319,8 +319,8 @@ jobs:
         with:
           name: windows-builds
           path: |
-            apps/desktop/dist/*.exe
-            apps/desktop/dist/*.yml
+            dist/*.exe
+            dist/*.yml
 
   build-linux:
     needs: create-tag
@@ -335,7 +335,7 @@ jobs:
         uses: ./.github/actions/setup-node-frontend
 
       - name: Build application
-        run: cd apps/desktop && npm run build
+        run: npm run build
         env:
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
           SENTRY_TRACES_SAMPLE_RATE: ${{ secrets.SENTRY_TRACES_SAMPLE_RATE }}
@@ -344,7 +344,7 @@ jobs:
       - name: Package Linux
         run: |
           VERSION="${{ needs.create-tag.outputs.version }}"
-          cd apps/desktop && npm run package:linux -- --config.extraMetadata.version="$VERSION"
+          npm run package:linux -- --config.extraMetadata.version="$VERSION"
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
@@ -352,15 +352,15 @@ jobs:
           SENTRY_PROFILES_SAMPLE_RATE: ${{ secrets.SENTRY_PROFILES_SAMPLE_RATE }}
 
       - name: Verify Linux packages
-        run: cd apps/desktop && npm run verify:linux
+        run: npm run verify:linux
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-builds
           path: |
-            apps/desktop/dist/*.deb
-            apps/desktop/dist/*.yml
+            dist/*.deb
+            dist/*.yml
 
   # Finalize macOS notarization (runs in parallel with Windows/Linux builds)
   finalize-notarization:

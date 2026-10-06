@@ -4,8 +4,6 @@ This file provides guidance to Claude Code when working with this repository.
 
 Auto Claude is an autonomous multi-agent coding framework that plans, builds, and validates software for you. It's a TypeScript-first Electron desktop application with a self-contained AI agent layer (Vercel AI SDK v6). A lightweight Python sidecar provides the optional Graphiti memory system.
 
-> **Deep-dive reference:** [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md) | **Frontend contributing:** [apps/desktop/CONTRIBUTING.md](apps/desktop/CONTRIBUTING.md)
-
 ## Product Overview
 
 Auto Claude is a desktop application (+ CLI) where users describe a goal and AI agents autonomously handle planning, implementation, and QA validation. All work happens in isolated git worktrees so the main branch stays safe.
@@ -30,11 +28,11 @@ Auto Claude is a desktop application (+ CLI) where users describe a goal and AI 
 
 ## Critical Rules
 
-**Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `apps/desktop/src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
+**Vercel AI SDK only** — All AI interactions use the Vercel AI SDK v6 (`ai` package) via the TypeScript agent layer in `src/main/ai/`. NEVER use `@anthropic-ai/sdk` or `anthropic.Anthropic()` directly. Use `createProvider()` from `ai/providers/factory.ts` and `streamText()`/`generateText()` from the `ai` package. Provider-specific adapters (e.g., `@ai-sdk/anthropic`, `@ai-sdk/openai`) are managed through the provider registry.
 
 **i18n required** — All frontend user-facing text uses `react-i18next` translation keys. English is the only supported language; add keys to `en/*.json`.
 
-**Platform abstraction** — Never use `process.platform` directly. Import from `apps/desktop/src/main/platform/`. CI tests all three platforms.
+**Platform abstraction** — Never use `process.platform` directly. Import from `src/main/platform/`. CI tests all three platforms.
 
 **No time estimates** — Provide priority-based ordering instead of duration predictions.
 
@@ -92,64 +90,61 @@ To fully clear all PR review data so reviews run fresh, delete/reset these three
 ## Project Structure
 
 ```
-autonomous-coding/
-├── apps/
-│   └── desktop/                 # Electron desktop application (sole app)
-│       ├── prompts/             # Agent system prompts (.md)
-│       └── src/
-│           ├── main/            # Electron main process
-│           │   ├── ai/          # TypeScript AI agent layer (Vercel AI SDK v6)
-│           │   │   ├── providers/   # Multi-provider registry + factory (9+ providers)
-│           │   │   ├── tools/       # Builtin tools (Read, Write, Edit, Bash, Glob, Grep, etc.)
-│           │   │   ├── security/    # Bash validator, command parser, path containment
-│           │   │   ├── config/      # Agent configs (25+ types), phase config, model resolution
-│           │   │   ├── session/     # streamText() agent loop, error classification, progress
-│           │   │   ├── agent/       # Worker thread executor + bridge
-│           │   │   ├── orchestration/ # Build pipeline (planner → coder → QA)
-│           │   │   ├── runners/     # Utility runners (insights, roadmap, PR review, etc.)
-│           │   │   ├── mcp/         # MCP client integration
-│           │   │   ├── client/      # Client factory convenience constructors
-│           │   │   └── auth/        # Token resolution (reuses claude-profile/)
-│           │   ├── agent/       # Agent queue, process, state, events
-│           │   ├── claude-profile/ # Multi-profile credentials, token refresh, usage
-│           │   ├── terminal/    # PTY daemon, lifecycle, Claude integration
-│           │   ├── platform/    # Cross-platform abstraction
-│           │   ├── ipc-handlers/# 40+ handler modules by domain
-│           │   ├── services/    # Session recovery, profile service
-│           │   └── changelog/   # Changelog generation and formatting
-│           ├── preload/         # Electron preload scripts (electronAPI bridge)
-│           ├── renderer/        # React UI
-│           │   ├── components/  # UI components (onboarding, settings, task, terminal, github, etc.)
-│           │   ├── stores/      # 24+ Zustand state stores
-│           │   ├── contexts/    # React contexts (ViewStateContext)
-│           │   ├── hooks/       # Custom hooks (useIpc, useTerminal, etc.)
-│           │   ├── styles/      # CSS / Tailwind styles
-│           │   └── App.tsx      # Root component
-│           ├── shared/          # Shared types, i18n, constants, utils
-│           │   ├── i18n/locales/# en/*.json
-│           │   ├── constants/   # themes.ts, etc.
-│           │   ├── types/       # 19+ type definition files
-│           │   └── utils/       # ANSI sanitizer, shell escape, provider detection
-│           └── types/           # TypeScript type definitions
-├── guides/                      # Documentation
-└── scripts/                     # Build and utility scripts
+auto-claude/
+├── prompts/             # Agent system prompts (.md)
+├── src/
+│   ├── main/            # Electron main process
+│   │   ├── ai/          # TypeScript AI agent layer (Vercel AI SDK v6)
+│   │   │   ├── providers/   # Multi-provider registry + factory (9+ providers)
+│   │   │   ├── tools/       # Builtin tools (Read, Write, Edit, Bash, Glob, Grep, etc.)
+│   │   │   ├── security/    # Bash validator, command parser, path containment
+│   │   │   ├── config/      # Agent configs (25+ types), phase config, model resolution
+│   │   │   ├── session/     # streamText() agent loop, error classification, progress
+│   │   │   ├── agent/       # Worker thread executor + bridge
+│   │   │   ├── orchestration/ # Build pipeline (planner → coder → QA)
+│   │   │   ├── runners/     # Utility runners (insights, roadmap, PR review, etc.)
+│   │   │   ├── mcp/         # MCP client integration
+│   │   │   ├── client/      # Client factory convenience constructors
+│   │   │   └── auth/        # Token resolution (reuses claude-profile/)
+│   │   ├── agent/       # Agent queue, process, state, events
+│   │   ├── claude-profile/ # Multi-profile credentials, token refresh, usage
+│   │   ├── terminal/    # PTY daemon, lifecycle, Claude integration
+│   │   ├── platform/    # Cross-platform abstraction
+│   │   ├── ipc-handlers/# 40+ handler modules by domain
+│   │   ├── services/    # Session recovery, profile service
+│   │   └── changelog/   # Changelog generation and formatting
+│   ├── preload/         # Electron preload scripts (electronAPI bridge)
+│   ├── renderer/        # React UI
+│   │   ├── components/  # UI components (onboarding, settings, task, terminal, github, etc.)
+│   │   ├── stores/      # 24+ Zustand state stores
+│   │   ├── contexts/    # React contexts (ViewStateContext)
+│   │   ├── hooks/       # Custom hooks (useIpc, useTerminal, etc.)
+│   │   ├── styles/      # CSS / Tailwind styles
+│   │   └── App.tsx      # Root component
+│   ├── shared/          # Shared types, i18n, constants, utils
+│   │   ├── i18n/locales/# en/*.json
+│   │   ├── constants/   # themes.ts, etc.
+│   │   ├── types/       # 19+ type definition files
+│   │   └── utils/       # ANSI sanitizer, shell escape, provider detection
+│   └── types/           # TypeScript type definitions
+├── e2e/                         # Playwright end-to-end tests
+├── resources/                   # App icons and bundled header icons
+└── .github/                     # CI, E2E and release workflows; scripts/ (postinstall, prebuild download, Linux package check, bump-version)
 ```
 
 ## Commands Quick Reference
 
 ### Setup
 ```bash
-npm run install:all              # Install all dependencies from root
-# Or separately:
-cd apps/desktop && npm install
+npm install
 ```
 
 ### Testing
 
 | Stack | Command | Tool |
 |-------|---------|------|
-| Frontend unit | `cd apps/desktop && npm test` | Vitest |
-| Frontend E2E | `cd apps/desktop && npm run test:e2e` | Playwright |
+| Frontend unit | `npm test` | Vitest |
+| Frontend E2E | `npm run test:e2e` | Playwright |
 
 ### Releases
 ```bash
@@ -157,9 +152,8 @@ node .github/scripts/bump-version.js patch|minor|major  # Bump version
 git push && gh pr create --base main             # PR to main triggers release
 ```
 
-See [RELEASE.md](RELEASE.md) for full release process.
 
-## AI Agent Layer (`apps/desktop/src/main/ai/`)
+## AI Agent Layer (`src/main/ai/`)
 
 All AI agent logic lives in TypeScript using the Vercel AI SDK v6. This replaces the previous Python `claude-agent-sdk` integration.
 
@@ -205,7 +199,7 @@ const readTool = tool({
 });
 ```
 
-### Agent Prompts (`apps/desktop/prompts/`)
+### Agent Prompts (`prompts/`)
 
 | Prompt | Purpose |
 |--------|---------|
@@ -221,7 +215,7 @@ Each spec in `.auto-claude/specs/XXX-name/` contains: `spec.md`, `requirements.j
 
 ### Memory System (Graphiti)
 
-Graph-based semantic memory accessed via a Python MCP sidecar (lives outside `apps/desktop/`). The AI layer connects to it via `createMCPClient` from `@ai-sdk/mcp`. Configured through the Electron app's onboarding/settings UI. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#memory-system) for details.
+Graph-based semantic memory accessed via a Python MCP sidecar (lives outside this repository). The AI layer connects to it via `createMCPClient` from `@ai-sdk/mcp`. Configured through the Electron app's onboarding/settings UI. See [ARCHITECTURE.md](shared_docs/ARCHITECTURE.md#memory-system) for details.
 
 ## Frontend Development
 
@@ -303,7 +297,7 @@ Full PTY-based terminal integration:
 
 ## i18n Guidelines
 
-All frontend UI text uses `react-i18next`. Translation files: `apps/desktop/src/shared/i18n/locales/en/*.json`
+All frontend UI text uses `react-i18next`. Translation files: `src/shared/i18n/locales/en/*.json`
 
 **Namespaces:** `common`, `navigation`, `settings`, `dialogs`, `tasks`, `errors`, `onboarding`, `welcome`
 
@@ -324,7 +318,7 @@ When adding new UI text: add keys to the `en` locale files, use `namespace:secti
 
 Supports Windows, macOS, Linux. CI tests all three.
 
-**Platform modules:** `apps/desktop/src/main/platform/`
+**Platform modules:** `src/main/platform/`
 
 | Function | Purpose |
 |----------|---------|

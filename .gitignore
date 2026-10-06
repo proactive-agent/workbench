@@ -32,6 +32,7 @@ credentials/
 .vscode/
 *.swp
 *.swo
+*~
 
 # ===========================
 # Logs
@@ -63,7 +64,19 @@ node_modules
 # Build output
 dist/
 out/
+build/
+.vite/
 *.tsbuildinfo
+
+# Compiled TypeScript (sources are .ts)
+src/**/*.js
+src/**/*.js.map
+
+# Other package managers' lockfiles (npm only)
+yarn.lock
+pnpm-lock.yaml
+bun.lock
+bun.lockb
 
 # Cache
 .cache/
@@ -90,6 +103,7 @@ playwright/.cache/
 # ===========================
 *.local
 *.bak
+*.backup
 *.tmp
 *.temp
 

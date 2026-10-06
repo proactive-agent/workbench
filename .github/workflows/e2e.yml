@@ -10,12 +10,16 @@ on:
   push:
     branches: [main, develop]
     paths:
-      - 'apps/**'
+      - 'src/**'
+      - 'e2e/**'
+      - 'prompts/**'
       - '.github/workflows/e2e.yml'
   pull_request:
     branches: [main, develop]
     paths:
-      - 'apps/**'
+      - 'src/**'
+      - 'e2e/**'
+      - 'prompts/**'
       - '.github/workflows/e2e.yml'
 
 concurrency:
@@ -39,15 +43,12 @@ jobs:
         uses: ./.github/actions/setup-node-frontend
 
       - name: Install Playwright browsers
-        working-directory: apps/desktop
         run: npx playwright install --with-deps chromium
 
       - name: Build application
-        working-directory: apps/desktop
         run: npm run build
 
       - name: Run E2E tests
-        working-directory: apps/desktop
         continue-on-error: true  # Non-blocking while stabilizing — pre-existing __dirname ESM issue
         run: xvfb-run --auto-servernum npm run test:e2e
 
@@ -57,6 +58,6 @@ jobs:
         with:
           name: e2e-report
           path: |
-            apps/desktop/e2e/playwright-report/
-            apps/desktop/e2e/test-results/
+            e2e/playwright-report/
+            e2e/test-results/
           retention-days: 14
