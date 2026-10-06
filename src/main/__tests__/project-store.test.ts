@@ -575,6 +575,29 @@ describe('ProjectStore', () => {
       expect(tasks).toHaveLength(1);
       expect(tasks[0].description).toBe(userDescription);
     });
+    it('should prefer the user-entered description from task_metadata.json over a rewritten requirements.json', async () => {
+      const specsDir = path.join(TEST_PROJECT_PATH, '.auto-claude', 'specs', '008-user-description');
+      mkdirSync(specsDir, { recursive: true });
+
+      const userDescription = 'Exactly what the user typed';
+      writeFileSync(
+        path.join(specsDir, 'requirements.json'),
+        JSON.stringify({ task_description: 'Clear description rewritten by the spec gatherer', workflow_type: 'feature' })
+      );
+      writeFileSync(
+        path.join(specsDir, 'task_metadata.json'),
+        JSON.stringify({ sourceType: 'manual', userDescription })
+      );
+
+      const { ProjectStore } = await import('../project-store');
+      const store = new ProjectStore();
+
+      const project = store.addProject(TEST_PROJECT_PATH);
+      const tasks = store.getTasks(project.id);
+
+      expect(tasks).toHaveLength(1);
+      expect(tasks[0].description).toBe(userDescription);
+    });
   });
 
   describe('persistence', () => {

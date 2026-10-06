@@ -210,7 +210,8 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       // Build metadata with source type
       const taskMetadata: TaskMetadata = {
         sourceType: 'manual',
-        ...metadata
+        ...metadata,
+        userDescription: description
       };
 
       // Process and save attached images
@@ -619,6 +620,16 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
               console.error('Failed to update requirements.json:', err);
             }
+          }
+        }
+
+        // Keep the user's own description as the task card's source of truth
+        if (updates.description !== undefined) {
+          updatedMetadata = { ...updatedMetadata, userDescription: updates.description };
+          try {
+            writeFileSync(path.join(specDir, 'task_metadata.json'), JSON.stringify(updatedMetadata, null, 2), 'utf-8');
+          } catch (err) {
+            console.error('Failed to update task_metadata.json:', err);
           }
         }
 
