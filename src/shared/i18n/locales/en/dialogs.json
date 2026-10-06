@@ -169,7 +169,8 @@
     "claudeCodeChangelog": "View Claude Code Changelog",
     "claudeCodeChangelogAriaLabel": "View Claude Code Changelog (opens in new window)",
     "readOnlyVolumeTitle": "Cannot install from disk image",
-    "readOnlyVolumeDescription": "Please move Auto Claude to your Applications folder before updating."
+    "readOnlyVolumeDescription": "Please move Auto Claude to your Applications folder before updating.",
+    "skipThisVersion": "Skip This Version"
   },
   "addCompetitor": {
     "title": "Add Competitor",

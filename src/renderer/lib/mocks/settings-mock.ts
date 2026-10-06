@@ -49,6 +49,9 @@ export const settingsMock = {
   downloadStableUpdate: async () => ({ success: true }),
   installAppUpdate: () => { console.warn('[browser-mock] installAppUpdate called'); },
   getDownloadedAppUpdate: async () => ({ success: true, data: null }),
+  skipAppUpdate: async (_version: string) => ({ success: true }),
+  snoozeAppUpdate: async () => ({ success: true }),
+  isAppUpdateSuppressed: async (_version: string) => ({ success: true, data: false }),
   getAppIcon: async () => ({ dark: null, light: null }),
   onAppIconChanged: () => () => {},
 

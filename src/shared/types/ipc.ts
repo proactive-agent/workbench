@@ -710,6 +710,9 @@ export interface ElectronAPI {
   downloadStableUpdate: () => Promise<IPCResult>;
   installAppUpdate: () => void;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
+  skipAppUpdate: (version: string) => Promise<IPCResult>;
+  snoozeAppUpdate: () => Promise<IPCResult>;
+  isAppUpdateSuppressed: (version: string) => Promise<IPCResult<boolean>>;
 
   // Rotating sidebar header icons (<userData>/header-icons/{dark,light}); null when a set is empty
   getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
