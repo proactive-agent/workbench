@@ -165,6 +165,26 @@ export function AppUpdateNotification() {
     setIsOpen(false);
   };
 
+  const handleSkipVersion = async () => {
+    try {
+      if (updateInfo) {
+        await window.electronAPI.skipAppUpdate(updateInfo.version);
+      }
+    } catch {
+      // Skip is best-effort; close the dialog regardless
+    }
+    setIsOpen(false);
+  };
+
+  const handleRemindLater = async () => {
+    try {
+      await window.electronAPI.snoozeAppUpdate();
+    } catch {
+      // Snooze is best-effort; close the dialog regardless
+    }
+    setIsOpen(false);
+  };
+
   if (!updateInfo) {
     return null;
   }
@@ -298,7 +318,12 @@ export function AppUpdateNotification() {
         </div>
 
         <DialogFooter className="flex flex-col sm:flex-row gap-3">
-          <Button variant="outline" onClick={handleDismiss} disabled={isDownloading}>
+          {!isDownloading && (
+            <Button variant="ghost" onClick={handleSkipVersion} className="text-muted-foreground">
+              {t("dialogs:appUpdate.skipThisVersion", "Skip This Version")}
+            </Button>
+          )}
+          <Button variant="outline" onClick={isDownloaded ? handleDismiss : handleRemindLater} disabled={isDownloading}>
             {isDownloaded
               ? t("dialogs:appUpdate.installLater", "Install Later")
               : t("dialogs:appUpdate.remindMeLater", "Remind Me Later")}

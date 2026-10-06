@@ -210,7 +210,8 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
       // Build metadata with source type
       const taskMetadata: TaskMetadata = {
         sourceType: 'manual',
-        ...metadata
+        ...metadata,
+        userDescription: description
       };
 
       // Process and save attached images
@@ -533,6 +534,10 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
         let updatedMetadata = task.metadata;
         if (updates.metadata) {
           updatedMetadata = { ...task.metadata, ...updates.metadata };
+          // Keep the user's own description as the task card's source of truth
+          if (updates.description !== undefined) {
+            updatedMetadata.userDescription = updates.description;
+          }
 
           // Process and save attached images if provided
           if (updates.metadata.attachedImages && updates.metadata.attachedImages.length > 0) {
@@ -619,6 +624,24 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
             if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
               console.error('Failed to update requirements.json:', err);
             }
+          }
+        }
+
+        // Description-only edit: record the user's description in task_metadata.json,
+        // merging into the file on disk so fields written since the task was cached survive
+        if (!updates.metadata && updates.description !== undefined) {
+          const metadataPath = path.join(specDir, 'task_metadata.json');
+          let onDisk: TaskMetadata = {};
+          try {
+            onDisk = JSON.parse(readFileSync(metadataPath, 'utf-8')) as TaskMetadata;
+          } catch {
+            // Missing or unreadable — start from the cached metadata
+          }
+          updatedMetadata = { ...task.metadata, ...onDisk, userDescription: updates.description };
+          try {
+            writeFileSync(metadataPath, JSON.stringify(updatedMetadata, null, 2), 'utf-8');
+          } catch (err) {
+            console.error('Failed to update task_metadata.json:', err);
           }
         }
 

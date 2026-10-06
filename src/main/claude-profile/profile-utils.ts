@@ -9,6 +9,10 @@ import { existsSync, readFileSync, readdirSync, mkdirSync } from 'fs';
 import type { ClaudeProfile, APIProfile } from '../../shared/types';
 import { getCredentialsFromKeychain } from './credential-utils';
 
+// Track which configDirs have already been warned about missing platform credentials.
+// This prevents log spam when isProfileAuthenticated() is called repeatedly per profile.
+const warnedStaleProfiles = new Set<string>();
+
 /**
  * Default Claude config directory
  */
@@ -92,7 +96,11 @@ export function isProfileAuthenticated(profile: ClaudeProfile): boolean {
         const platformCreds = getCredentialsFromKeychain(expandedConfigDir);
         if (!platformCreds.token) {
           // .claude.json exists but credential store is missing tokens - NOT authenticated
-          console.warn(`[profile-utils] Profile has .claude.json but no platform credentials for: ${configDir}`);
+          // Only warn once per configDir per session to avoid log spam from repeated calls
+          if (!warnedStaleProfiles.has(configDir)) {
+            warnedStaleProfiles.add(configDir);
+            console.warn(`[profile-utils] Profile has .claude.json but no platform credentials for: ${configDir} — needs re-authentication`);
+          }
           return false;
         }
         return true;

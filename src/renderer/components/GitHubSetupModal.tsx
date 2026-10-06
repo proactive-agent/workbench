@@ -400,7 +400,7 @@ export function GitHubSetupModal({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="py-4 space-y-4">
+            <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
               <ProviderAccountsList />
 
               {getProviderAccounts().length > 0 && (

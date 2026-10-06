@@ -583,6 +583,7 @@ ${(feature.acceptance_criteria || []).map((c: string) => `- [ ] ${c}`).join("\n"
         // Build metadata
         const metadata: TaskMetadata = {
           sourceType: "roadmap",
+          userDescription: taskDescription,
           featureId: feature.id,
           category: "feature",
         };

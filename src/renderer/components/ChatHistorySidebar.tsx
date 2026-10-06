@@ -334,25 +334,25 @@ export function ChatHistorySidebar({
 
       {/* Bulk action toolbar */}
       {isSelectionMode && selectedIds.size > 0 && (
-        <div className="flex items-center gap-2 border-t border-border px-3 py-2">
+        <div className="flex items-center gap-2 overflow-hidden min-w-0 border-t border-border px-3 py-2">
           <Button
             variant="destructive"
             size="sm"
-            className="flex-1 text-xs"
+            className="min-w-0 flex-1 text-xs"
             onClick={() => setBulkDeleteOpen(true)}
           >
-            <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-            {t('selection.deleteSelected')} ({selectedIds.size})
+            <Trash2 className="shrink-0 mr-1.5 h-3.5 w-3.5" />
+            <span className="truncate">{t('selection.deleteSelected')} ({selectedIds.size})</span>
           </Button>
           {onArchiveSessions && (
             <Button
               variant="secondary"
               size="sm"
-              className="flex-1 text-xs"
+              className="min-w-0 flex-1 text-xs"
               onClick={handleBulkArchive}
             >
-              <Archive className="mr-1.5 h-3.5 w-3.5" />
-              {t('insights.archiveSelected')} ({selectedIds.size})
+              <Archive className="shrink-0 mr-1.5 h-3.5 w-3.5" />
+              <span className="truncate">{t('insights.archiveSelected')} ({selectedIds.size})</span>
             </Button>
           )}
         </div>

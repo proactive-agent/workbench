@@ -521,6 +521,7 @@ ${safeDescription || 'No description provided.'}
             // Build metadata
             const metadata: TaskMetadata = {
               sourceType: 'linear',
+              userDescription: description,
               linearIssueId: sanitizeText(issue.id, 100),
               linearIdentifier: safeIdentifier,
               linearUrl: safeUrl,

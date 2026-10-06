@@ -19,9 +19,8 @@ describe("safeSendToRenderer", () => {
     mockSend = vi.fn();
 
     // Clear module-level state before each test to ensure clean state
-    // This is especially important for the warnTimestamps Map which is shared across tests
-    const { _clearWarnTimestampsForTest } = await import("../ipc-handlers/utils");
-    _clearWarnTimestampsForTest();
+    const { _resetSafeSendStateForTest } = await import("../ipc-handlers/utils");
+    _resetSafeSendStateForTest();
 
     // Create a mock window with valid webContents
     mockWindow = {
@@ -95,6 +94,98 @@ describe("safeSendToRenderer", () => {
       mockWindow = {
         isDestroyed: vi.fn(() => false),
         webContents: null,
+      } as unknown as BrowserWindow;
+      getMainWindow = () => mockWindow;
+
+      const result = safeSendToRenderer(getMainWindow, "test-channel", "data");
+
+      expect(result).toBe(false);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("when renderer process is crashed", () => {
+    it("returns false and does not send", () => {
+      mockWindow = {
+        isDestroyed: vi.fn(() => false),
+        webContents: {
+          isDestroyed: vi.fn(() => false),
+          isCrashed: vi.fn(() => true),
+          send: mockSend,
+        },
+      } as unknown as BrowserWindow;
+      getMainWindow = () => mockWindow;
+
+      const result = safeSendToRenderer(getMainWindow, "test-channel", "data");
+
+      expect(result).toBe(false);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("circuit breaker during renderer recovery", () => {
+    it("does not kill agents while skipping sends to a crashed renderer", async () => {
+      vi.useFakeTimers();
+      try {
+        const killAll = vi.fn();
+        const { setAgentManagerRef } = await import("../ipc-handlers/utils");
+        setAgentManagerRef({ killAll });
+        mockWindow = {
+          isDestroyed: vi.fn(() => false),
+          webContents: {
+            isDestroyed: vi.fn(() => false),
+            isCrashed: vi.fn(() => true),
+            send: mockSend,
+          },
+        } as unknown as BrowserWindow;
+        getMainWindow = () => mockWindow;
+
+        for (let i = 0; i < 20; i++) {
+          safeSendToRenderer(getMainWindow, "test-channel", "data");
+          vi.advanceTimersByTime(600); // past the send back-off
+        }
+
+        expect(killAll).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
+  describe("when main frame is unavailable", () => {
+    it("returns false when main frame is destroyed", () => {
+      mockWindow = {
+        isDestroyed: vi.fn(() => false),
+        webContents: {
+          isDestroyed: vi.fn(() => false),
+          isCrashed: vi.fn(() => false),
+          mainFrame: {
+            isDestroyed: vi.fn(() => true),
+            detached: false,
+          },
+          send: mockSend,
+        },
+      } as unknown as BrowserWindow;
+      getMainWindow = () => mockWindow;
+
+      const result = safeSendToRenderer(getMainWindow, "test-channel", "data");
+
+      expect(result).toBe(false);
+      expect(mockSend).not.toHaveBeenCalled();
+    });
+
+    it("returns false when main frame is detached", () => {
+      mockWindow = {
+        isDestroyed: vi.fn(() => false),
+        webContents: {
+          isDestroyed: vi.fn(() => false),
+          isCrashed: vi.fn(() => false),
+          mainFrame: {
+            isDestroyed: vi.fn(() => false),
+            detached: true,
+          },
+          send: mockSend,
+        },
       } as unknown as BrowserWindow;
       getMainWindow = () => mockWindow;
 

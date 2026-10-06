@@ -177,6 +177,7 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
         const taskMetadata: TaskMetadata = {
           sourceType: "insights",
           ...metadata,
+          userDescription: description,
         };
 
         // Create initial implementation_plan.json

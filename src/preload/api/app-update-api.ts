@@ -21,6 +21,9 @@ export interface AppUpdateAPI {
   installAppUpdate: () => void;
   getAppVersion: () => Promise<string>;
   getDownloadedAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
+  skipAppUpdate: (version: string) => Promise<IPCResult>;
+  snoozeAppUpdate: () => Promise<IPCResult>;
+  isAppUpdateSuppressed: (version: string) => Promise<IPCResult<boolean>>;
   getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
 
   // Event Listeners
@@ -70,6 +73,15 @@ export const createAppUpdateAPI = (): AppUpdateAPI => ({
 
   getDownloadedAppUpdate: (): Promise<IPCResult<AppUpdateInfo | null>> =>
     invokeIpc(IPC_CHANNELS.APP_UPDATE_GET_DOWNLOADED),
+
+  skipAppUpdate: (version: string): Promise<IPCResult> =>
+    invokeIpc(IPC_CHANNELS.APP_UPDATE_SKIP_VERSION, version),
+
+  snoozeAppUpdate: (): Promise<IPCResult> =>
+    invokeIpc(IPC_CHANNELS.APP_UPDATE_SNOOZE),
+
+  isAppUpdateSuppressed: (version: string): Promise<IPCResult<boolean>> =>
+    invokeIpc(IPC_CHANNELS.APP_UPDATE_IS_SUPPRESSED, version),
 
   getAppIcon: (): Promise<Record<'dark' | 'light', string | null>> =>
     invokeIpc(IPC_CHANNELS.APP_ICON_GET),

@@ -179,6 +179,9 @@ export type TaskCategory =
   | 'testing';
 
 export interface TaskMetadata {
+  // The description the user entered (shown on the task card; spec agents may rewrite requirements.json)
+  userDescription?: string;
+
   // Origin tracking
   sourceType?: 'ideation' | 'manual' | 'imported' | 'insights' | 'roadmap' | 'linear' | 'github' | 'gitlab';
   ideationType?: string;  // e.g., 'code_improvements', 'security_hardening'

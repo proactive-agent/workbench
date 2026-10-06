@@ -217,9 +217,10 @@ async function scanClaudeInstallations(activePath: string | null): Promise<Claud
  *                           cached latest, cache will be invalidated and fresh data fetched.
  *                           This handles the case where CLI was updated while app was running.
  */
-async function fetchLatestVersion(currentInstalled?: string | null): Promise<string> {
+async function fetchLatestVersion(currentInstalled?: string | null, forceRefresh = false): Promise<string> {
   // Check cache first
-  if (cachedLatestVersion && Date.now() - cachedLatestVersion.timestamp < CACHE_DURATION_MS) {
+  // (bypassed when the user explicitly clicks Refresh)
+  if (!forceRefresh && cachedLatestVersion && Date.now() - cachedLatestVersion.timestamp < CACHE_DURATION_MS) {
     const cachedVersion = cachedLatestVersion.version;
 
     // Invalidate cache if installed version is newer than cached latest
@@ -958,7 +959,7 @@ export function registerClaudeCodeHandlers(): void {
   // Check Claude Code version
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_CODE_CHECK_VERSION,
-    async (): Promise<IPCResult<ClaudeCodeVersionInfo>> => {
+    async (_event, forceRefresh?: boolean): Promise<IPCResult<ClaudeCodeVersionInfo>> => {
       try {
         console.warn('[Claude Code] Checking version...');
 
@@ -980,7 +981,7 @@ export function registerClaudeCodeHandlers(): void {
         let latest: string;
         try {
           console.warn('[Claude Code] Fetching latest version from npm...');
-          latest = await fetchLatestVersion(installed);
+          latest = await fetchLatestVersion(installed, forceRefresh === true);
           console.warn('[Claude Code] Latest version:', latest);
         } catch (error) {
           console.warn('[Claude Code] Failed to fetch latest version, continuing with unknown:', error);

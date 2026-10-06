@@ -18,7 +18,7 @@
  * - Uses createSimpleClient() for lightweight parallel sessions
  */
 
-import { streamText, stepCountIs, Output } from 'ai';
+import { streamText, stepCountIs, Output, NoObjectGeneratedError, NoOutputGeneratedError } from 'ai';
 import type { Tool as AITool } from 'ai';
 import * as crypto from 'node:crypto';
 
@@ -47,6 +47,22 @@ import { getAgentConfig, type AgentType } from '../../config/agent-configs';
 import type { ToolContext } from '../../tools/types';
 import type { ToolRegistry } from '../../tools/registry';
 import type { SecurityProfile } from '../../security/bash-validator';
+
+
+/**
+ * Resolve a stream's structured output, or undefined when the model's reply didn't
+ * produce a schema-valid object (NoObjectGeneratedError) or no output at all, e.g.
+ * finishReason 'length' (NoOutputGeneratedError). Callers then parse stream.text leniently
+ * instead of losing the result.
+ */
+async function readStructuredOutput<T>(output: PromiseLike<T>): Promise<T | undefined> {
+  try {
+    return await output;
+  } catch (err) {
+    if (NoObjectGeneratedError.isInstance(err) || NoOutputGeneratedError.isInstance(err)) return undefined;
+    throw err;
+  }
+}
 
 // =============================================================================
 // Types
@@ -300,7 +316,7 @@ Return ONLY valid JSON (no markdown fencing):
   "summary": "Overall assessment",
   "kept_finding_ids": ["PR-ABC123"],
   "removed_finding_ids": ["PR-XYZ789"],
-  "removal_reasons": { "PR-XYZ789": "False positive because..." }
+  "removal_reasons": [{ "finding_id": "PR-XYZ789", "reason": "False positive because..." }]
 }`;
 }
 
@@ -590,7 +606,7 @@ export class ParallelOrchestratorReviewer {
       for await (const _part of stream.fullStream) { /* consume */ }
 
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
+      const structuredOutput = await readStructuredOutput(stream.output);
       const findings = structuredOutput
         ? parseSpecialistOutput(config.name, structuredOutput)
         : parseSpecialistOutput(config.name, await stream.text);
@@ -783,7 +799,7 @@ Validate each finding by reading the actual code at the specified file and line.
       for await (const _part of stream.fullStream) { /* consume */ }
 
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
+      const structuredOutput = await readStructuredOutput(stream.output);
       let rawValidations: Array<{ findingId: string; validationStatus: string; explanation: string }>;
       if (structuredOutput) {
         rawValidations = structuredOutput.validations;
@@ -928,7 +944,7 @@ Validate each finding by reading the actual code at the specified file and line.
       for await (const _part of stream.fullStream) { /* consume */ }
 
       // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
+      const structuredOutput = await readStructuredOutput(stream.output);
       let data: { verdict: string; verdictReasoning: string; removedFindingIds: string[] } | null;
       if (structuredOutput) {
         data = structuredOutput;

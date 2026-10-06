@@ -27,6 +27,7 @@ import { IPC_CHANNELS } from '../shared/constants';
 import type { AppUpdateInfo } from '../shared/types';
 import { compareVersions } from './updater/version-manager';
 import { isMacOS } from './platform';
+import { readSettingsFile, writeSettingsFile } from './settings-utils';
 
 // GitHub repo info for API calls
 const GITHUB_OWNER = 'AndyMik90';
@@ -156,6 +157,60 @@ function formatReleaseNotes(releaseNotes: UpdateInfo['releaseNotes']): string | 
 }
 
 /**
+ * Read update suppression preferences from settings.
+ */
+function getUpdatePreferences(): { skippedVersion: string | null; remindAfter: number | null } {
+  const settings = readSettingsFile();
+  return {
+    skippedVersion: (settings?.skippedUpdateVersion as string) || null,
+    remindAfter: (settings?.updateRemindAfter as number) || null,
+  };
+}
+
+/**
+ * Check if notifications for a version should be suppressed.
+ * Returns true if the user has skipped this exact version, or snoozed and the snooze hasn't expired.
+ */
+export function shouldSuppressUpdate(version: string): boolean {
+  const prefs = getUpdatePreferences();
+  if (prefs.skippedVersion === version) return true;
+  if (prefs.remindAfter && Date.now() < prefs.remindAfter) return true;
+  return false;
+}
+
+/**
+ * Only install a downloaded update on quit if the user hasn't skipped or snoozed it.
+ */
+function syncInstallOnQuit(): void {
+  autoUpdater.autoInstallOnAppQuit = !(downloadedUpdateInfo && shouldSuppressUpdate(downloadedUpdateInfo.version));
+}
+
+/**
+ * Persist a request to skip a specific version permanently.
+ * That version will never trigger notifications again unless a newer version arrives.
+ */
+export function skipUpdateVersion(version: string): void {
+  const settings = readSettingsFile() || {};
+  settings.skippedUpdateVersion = version;
+  delete settings.updateRemindAfter;
+  writeSettingsFile(settings);
+  syncInstallOnQuit();
+  console.warn('[app-updater] Skipped version:', version);
+}
+
+/**
+ * Snooze update notifications for 24 hours.
+ */
+export function snoozeUpdate(): void {
+  const TWENTY_FOUR_HOURS = 24 * 60 * 60 * 1000;
+  const settings = readSettingsFile() || {};
+  settings.updateRemindAfter = Date.now() + TWENTY_FOUR_HOURS;
+  writeSettingsFile(settings);
+  syncInstallOnQuit();
+  console.warn('[app-updater] Snoozed updates until:', new Date(settings.updateRemindAfter as number).toISOString());
+}
+
+/**
  * Set the update channel for electron-updater.
  * - 'latest': Only receive stable releases (default)
  * - 'beta': Receive pre-release/beta versions
@@ -233,6 +288,13 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
       return;
     }
 
+    // Check if user has skipped or snoozed this version. Don't download it: with
+    // autoInstallOnAppQuit, a downloaded update would be installed on the next quit.
+    if (shouldSuppressUpdate(info.version)) {
+      console.warn('[app-updater] Update suppressed (skipped or snoozed):', info.version);
+      return;
+    }
+
     if (mainWindow) {
       mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_AVAILABLE, {
         version: info.version,
@@ -265,9 +327,15 @@ export function initializeAppUpdater(window: BrowserWindow, betaUpdates = false)
       releaseNotes: formatReleaseNotes(info.releaseNotes),
       releaseDate: info.releaseDate
     };
-    if (mainWindow) {
-      // Reuse downloadedUpdateInfo instead of calling formatReleaseNotes again
-      mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, downloadedUpdateInfo);
+
+    // Only notify renderer (and allow install-on-quit) if update is not suppressed
+    syncInstallOnQuit();
+    if (!shouldSuppressUpdate(info.version)) {
+      if (mainWindow) {
+        mainWindow.webContents.send(IPC_CHANNELS.APP_UPDATE_DOWNLOADED, downloadedUpdateInfo);
+      }
+    } else {
+      console.warn('[app-updater] Downloaded update suppressed (skipped or snoozed):', info.version);
     }
   });
 

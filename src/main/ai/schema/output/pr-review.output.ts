@@ -116,7 +116,9 @@ export const SynthesisResultOutputSchema = z.object({
   verdictReasoning: z.string(),
   keptFindingIds: z.array(z.string()),
   removedFindingIds: z.array(z.string()),
-  removalReasons: z.record(z.string(), z.string()),
+  // An array (not a record/catchall object): the AI SDK closes every object with
+  // additionalProperties:false, so a map would only ever allow {} under strict structured output.
+  removalReasons: z.array(z.object({ findingId: z.string(), reason: z.string() })),
 });
 
 export type SynthesisResultOutput = z.infer<typeof SynthesisResultOutputSchema>;

@@ -14,9 +14,11 @@ const WARN_COOLDOWN_MS = 5000; // 5 seconds between warnings per channel
 
 /** Circuit breaker: kill agents after consecutive renderer disposal errors */
 const MAX_CONSECUTIVE_DISPOSAL_ERRORS = 10;
+const RENDERER_RETRY_BACKOFF_MS = 500;
 let consecutiveDisposalErrors = 0;
 let agentManagerRef: { killAll: () => void | Promise<void> } | null = null;
 let circuitBreakerTriggered = false;
+let rendererUnavailableUntil = 0;
 
 /** Set agent manager reference for circuit breaker cleanup */
 export function setAgentManagerRef(manager: { killAll: () => void | Promise<void> }): void {
@@ -64,6 +66,36 @@ function recordWarning(channel: string): void {
   }
 }
 
+function isDisposalErrorMessage(errorMessage: string): boolean {
+  const normalized = errorMessage.toLowerCase();
+  return normalized.includes("disposed") || normalized.includes("destroyed") || normalized.includes("detached");
+}
+
+/**
+ * Back off sending to an unavailable renderer. Only thrown disposal errors count toward
+ * the agent circuit breaker; proactive skips (crashed renderer, destroyed/detached frame)
+ * don't, so a renderer that is being recovered doesn't kill running agents.
+ */
+function recordDisposalFailure(channel: string, warningPrefix: string, countTowardBreaker = true): void {
+  rendererUnavailableUntil = Date.now() + RENDERER_RETRY_BACKOFF_MS;
+  if (countTowardBreaker) {
+    consecutiveDisposalErrors++;
+  }
+
+  if (consecutiveDisposalErrors >= MAX_CONSECUTIVE_DISPOSAL_ERRORS && !circuitBreakerTriggered && agentManagerRef) {
+    circuitBreakerTriggered = true;
+    console.error("[safeSendToRenderer] Circuit breaker triggered: killing all agents after renderer death");
+    Promise.resolve(agentManagerRef.killAll()).catch((err) => {
+      console.error("[safeSendToRenderer] Error killing agents:", err);
+    });
+  }
+
+  if (!isWithinCooldown(channel)) {
+    console.warn(`${warningPrefix}: ${channel}`);
+    recordWarning(channel);
+  }
+}
+
 /**
  * Safely send IPC message to renderer with frame disposal checks
  *
@@ -108,8 +140,18 @@ export function safeSendToRenderer(
       return false;
     }
 
+    if (rendererUnavailableUntil > Date.now()) {
+      if (!isWithinCooldown(channel)) {
+        console.warn(`[safeSendToRenderer] Renderer unavailable, backing off send: ${channel}`);
+        recordWarning(channel);
+      }
+      return false;
+    }
+
+    const webContents = mainWindow.webContents;
+
     // Check if webContents is destroyed (can happen independently of window)
-    if (!mainWindow.webContents || mainWindow.webContents.isDestroyed()) {
+    if (!webContents || webContents.isDestroyed()) {
       if (!isWithinCooldown(channel)) {
         console.warn(`[safeSendToRenderer] Skipping send to destroyed webContents: ${channel}`);
         recordWarning(channel);
@@ -117,32 +159,34 @@ export function safeSendToRenderer(
       return false;
     }
 
+    // On Electron 40, webContents.send may report "Error sending from webFrameMain"
+    // without always throwing synchronously. Proactive checks prevent hot loops.
+    if (typeof webContents.isCrashed === "function" && webContents.isCrashed()) {
+      recordDisposalFailure(channel, "[safeSendToRenderer] Renderer crashed, skipping send", false);
+      return false;
+    }
+
+    const mainFrame = webContents.mainFrame;
+    if (mainFrame && (mainFrame.isDestroyed() || mainFrame.detached)) {
+      const reason = mainFrame.isDestroyed() ? "destroyed" : "detached";
+      recordDisposalFailure(channel, `[safeSendToRenderer] Main frame ${reason}, skipping send`, false);
+      return false;
+    }
+
     // All checks passed - safe to send
-    mainWindow.webContents.send(channel, ...args);
+    webContents.send(channel, ...args);
     // On successful send, reset circuit breaker state (allow re-trigger after recovery)
     consecutiveDisposalErrors = 0;
     circuitBreakerTriggered = false;
+    rendererUnavailableUntil = 0;
     return true;
   } catch (error) {
     // Catch any disposal errors that might occur between our checks and the actual send
     const errorMessage = error instanceof Error ? error.message : String(error);
 
     // Only log disposal errors once per channel to avoid log spam
-    if (errorMessage.includes("disposed") || errorMessage.includes("destroyed")) {
-      // Circuit breaker: track consecutive disposal errors
-      consecutiveDisposalErrors++;
-      if (consecutiveDisposalErrors >= MAX_CONSECUTIVE_DISPOSAL_ERRORS && !circuitBreakerTriggered && agentManagerRef) {
-        circuitBreakerTriggered = true;
-        console.error('[safeSendToRenderer] Circuit breaker triggered: killing all agents after renderer death');
-        Promise.resolve(agentManagerRef.killAll()).catch((err) => {
-          console.error('[safeSendToRenderer] Error killing agents:', err);
-        });
-      }
-
-      if (!isWithinCooldown(channel)) {
-        console.warn(`[safeSendToRenderer] Frame disposed, skipping send: ${channel}`);
-        recordWarning(channel);
-      }
+    if (isDisposalErrorMessage(errorMessage)) {
+      recordDisposalFailure(channel, "[safeSendToRenderer] Frame disposed, skipping send");
     } else {
       console.error(`[safeSendToRenderer] Error sending to renderer:`, error);
     }
@@ -155,6 +199,17 @@ export function safeSendToRenderer(
  */
 export function _clearWarnTimestampsForTest(): void {
   warnTimestamps.clear();
+}
+
+/**
+ * Reset all safe-send module state (for testing only)
+ */
+export function _resetSafeSendStateForTest(): void {
+  warnTimestamps.clear();
+  consecutiveDisposalErrors = 0;
+  circuitBreakerTriggered = false;
+  rendererUnavailableUntil = 0;
+  agentManagerRef = null;
 }
 
 /**

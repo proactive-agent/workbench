@@ -217,9 +217,23 @@ function coerceSynthesisResult(input: unknown): unknown {
     keptFindingIds: raw.keptFindingIds ?? raw.kept_finding_ids ?? [],
     // Coerce removedFindingIds: accept removed_finding_ids as alias
     removedFindingIds: raw.removedFindingIds ?? raw.removed_finding_ids ?? [],
-    // Coerce removalReasons: accept removal_reasons as alias
-    removalReasons: raw.removalReasons ?? raw.removal_reasons ?? {},
+    // Coerce removalReasons: accept removal_reasons as alias, and the structured-output
+    // array form [{ findingId, reason }] as well as the { [findingId]: reason } map
+    removalReasons: coerceRemovalReasons(raw.removalReasons ?? raw.removal_reasons),
   };
+}
+
+function coerceRemovalReasons(value: unknown): unknown {
+  if (!Array.isArray(value)) return value ?? {};
+  const reasons: Record<string, string> = {};
+  for (const item of value) {
+    if (item && typeof item === 'object') {
+      const { findingId, finding_id, reason } = item as Record<string, unknown>;
+      const id = findingId ?? finding_id;
+      if (typeof id === 'string' && typeof reason === 'string') reasons[id] = reason;
+    }
+  }
+  return reasons;
 }
 
 export const SynthesisResultSchema = z.preprocess(

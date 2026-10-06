@@ -442,7 +442,14 @@ export function registerSettingsHandlers(
         // Strip providerAccounts and globalPriorityOrder — these are managed
         // exclusively by their dedicated IPC handlers (PROVIDER_ACCOUNTS_*)
         // to prevent the general settings save from clobbering them.
-        const { providerAccounts: _pa, globalPriorityOrder: _gpo, ...safeSettings } = settings;
+        // Likewise skippedUpdateVersion/updateRemindAfter are owned by the app updater.
+        const {
+          providerAccounts: _pa,
+          globalPriorityOrder: _gpo,
+          skippedUpdateVersion: _skipped,
+          updateRemindAfter: _remindAfter,
+          ...safeSettings
+        } = settings;
         const newSettings = { ...currentSettings, ...safeSettings };
 
         // Sync defaultModel when agent profile changes (#414)

@@ -448,10 +448,27 @@ export class ProjectStore {
           }
         }
 
+        // Try to read task metadata
+        const metadataPath = path.join(specPath, 'task_metadata.json');
+        let metadata: TaskMetadata | undefined;
+        if (existsSync(metadataPath)) {
+          try {
+            const content = readFileSync(metadataPath, 'utf-8');
+            metadata = JSON.parse(content);
+          } catch {
+            // Ignore parse errors
+          }
+        }
+
         let description = '';
+        // PRIORITY 0: The description the user entered (spec agents may rewrite requirements.json)
+        if (typeof metadata?.userDescription === 'string' && metadata.userDescription.trim()) {
+          description = metadata.userDescription.trim();
+        }
+
         const requirementsPath = path.join(specPath, AUTO_BUILD_PATHS.REQUIREMENTS);
-        // PRIORITY 1: Read original user task description from requirements.json
-        if (existsSync(requirementsPath)) {
+        // PRIORITY 1: Read task description from requirements.json
+        if (!description && existsSync(requirementsPath)) {
           try {
             const reqContent = readFileSync(requirementsPath, 'utf-8');
             const requirements = JSON.parse(reqContent);
@@ -482,18 +499,6 @@ export class ProjectStore {
             }
           } catch {
             // Ignore read errors
-          }
-        }
-
-        // Try to read task metadata
-        const metadataPath = path.join(specPath, 'task_metadata.json');
-        let metadata: TaskMetadata | undefined;
-        if (existsSync(metadataPath)) {
-          try {
-            const content = readFileSync(metadataPath, 'utf-8');
-            metadata = JSON.parse(content);
-          } catch {
-            // Ignore parse errors
           }
         }
 

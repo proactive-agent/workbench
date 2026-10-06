@@ -534,6 +534,9 @@ export const IPC_CHANNELS = {
   APP_UPDATE_INSTALL: 'app-update:install',
   APP_UPDATE_GET_VERSION: 'app-update:get-version',
   APP_UPDATE_GET_DOWNLOADED: 'app-update:get-downloaded',  // Get downloaded update info (for showing Install button on Settings open)
+  APP_UPDATE_SKIP_VERSION: 'app-update:skip-version',  // Skip a specific version permanently
+  APP_UPDATE_SNOOZE: 'app-update:snooze',  // Snooze update notifications for 24 hours
+  APP_UPDATE_IS_SUPPRESSED: 'app-update:is-suppressed',  // Check if update notifications are suppressed
 
   // App auto-update events (main -> renderer)
   APP_UPDATE_AVAILABLE: 'app-update:available',

@@ -243,7 +243,7 @@ export async function convertIdeaToTask(
 
       // Build task description and metadata
       const taskDescription = buildTaskDescription(idea);
-      const metadata = buildTaskMetadata(idea);
+      const metadata = { ...buildTaskMetadata(idea), userDescription: taskDescription };
 
       // Create spec files (inside lock to ensure atomicity)
       createSpecFiles(specDir, idea, taskDescription);

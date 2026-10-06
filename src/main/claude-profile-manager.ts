@@ -12,7 +12,7 @@
  */
 
 import { app } from 'electron';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { mkdir } from 'fs/promises';
 import { homedir } from 'os';
 import type {
@@ -57,6 +57,32 @@ import {
   getEmailFromConfigDir
 } from './claude-profile/profile-utils';
 import { debugLog } from '../shared/utils/debug-logger';
+import { isWindows } from './platform';
+import { readSettingsFile, writeSettingsFile } from './settings-utils';
+
+/** Normalize a profile configDir for comparison (~ expansion, resolution, Windows case). */
+function normalizeConfigDir(configDir: string): string {
+  const resolved = resolve(expandHomePath(configDir));
+  return isWindows() ? resolved.toLowerCase() : resolved;
+}
+
+/** Copy of an object without its undefined-valued keys. */
+function definedFields<T extends object>(value: T): Partial<T> {
+  return Object.fromEntries(Object.entries(value).filter(([, v]) => v !== undefined)) as Partial<T>;
+}
+
+/**
+ * Merge a duplicate profile (same configDir) into the one being kept: the kept profile's
+ * values win, and anything only the duplicate has is filled in.
+ */
+function mergeDuplicateProfile(kept: ClaudeProfile, duplicate: ClaudeProfile): ClaudeProfile {
+  return {
+    ...definedFields(duplicate),
+    ...definedFields(kept),
+    id: kept.id,
+    isDefault: kept.isDefault || duplicate.isDefault,
+  } as ClaudeProfile;
+}
 
 /**
  * Manages Claude Code profiles for multi-account support.
@@ -105,6 +131,10 @@ export class ClaudeProfileManager {
     // This repairs emails that were truncated due to ANSI escape codes in terminal output
     this.migrateCorruptedEmails();
 
+    // Remove duplicate profiles sharing the same configDir
+    // Keeps the first (oldest/default) entry per configDir
+    this.deduplicateProfiles();
+
     // Populate missing subscription metadata for existing profiles
     // This reads subscriptionType and rateLimitTier from Keychain credentials
     this.populateSubscriptionMetadata();
@@ -144,6 +174,78 @@ export class ClaudeProfileManager {
     if (needsSave) {
       this.save();
       console.warn('[ClaudeProfileManager] Email migration complete');
+    }
+  }
+
+  /**
+   * Remove duplicate profiles that share the same configDir (compared after normalization).
+   * The first entry per configDir is kept; data that only a duplicate has (default flag,
+   * OAuth token, email, subscription info, usage) is merged into it. The active profile,
+   * the account priority order and provider accounts that referenced a removed id are
+   * remapped to the kept profile.
+   */
+  private deduplicateProfiles(): void {
+    const keptIndexByDir = new Map<string, number>();
+    const idRemap = new Map<string, string>(); // removed id -> kept id
+    const kept: ClaudeProfile[] = [];
+
+    for (const profile of this.data.profiles) {
+      const key = profile.configDir ? normalizeConfigDir(profile.configDir) : undefined;
+      const existingIndex = key ? keptIndexByDir.get(key) : undefined;
+      if (key === undefined || existingIndex === undefined) {
+        if (key !== undefined) keptIndexByDir.set(key, kept.length);
+        kept.push(profile);
+        continue;
+      }
+      const survivor = kept[existingIndex];
+      kept[existingIndex] = mergeDuplicateProfile(survivor, profile);
+      idRemap.set(profile.id, survivor.id);
+    }
+
+    if (idRemap.size === 0) return;
+
+    this.data.profiles = kept;
+    const remapId = (id: string): string => idRemap.get(id) ?? id;
+
+    if (this.data.activeProfileId) {
+      this.data.activeProfileId = remapId(this.data.activeProfileId);
+    }
+
+    // Unified account priority order uses 'oauth-{profileId}'; keep the first occurrence
+    if (this.data.accountPriorityOrder) {
+      const seen = new Set<string>();
+      this.data.accountPriorityOrder = this.data.accountPriorityOrder
+        .map(id => (id.startsWith('oauth-') ? `oauth-${remapId(id.slice('oauth-'.length))}` : id))
+        .filter(id => (seen.has(id) ? false : (seen.add(id), true)));
+    }
+
+    this.remapProviderAccountProfiles(idRemap);
+
+    debugLog(`[ClaudeProfileManager] Deduplicated profiles: removed ${idRemap.size} duplicates, ${kept.length} remaining`);
+    this.save();
+  }
+
+  /**
+   * Point provider accounts (settings.json) that referenced a removed duplicate profile
+   * at the profile that was kept.
+   */
+  private remapProviderAccountProfiles(idRemap: Map<string, string>): void {
+    try {
+      const settings = readSettingsFile();
+      const accounts = settings?.providerAccounts;
+      if (!settings || !Array.isArray(accounts)) return;
+
+      let changed = false;
+      for (const account of accounts as Array<{ claudeProfileId?: string }>) {
+        const mapped = account.claudeProfileId ? idRemap.get(account.claudeProfileId) : undefined;
+        if (mapped) {
+          account.claudeProfileId = mapped;
+          changed = true;
+        }
+      }
+      if (changed) writeSettingsFile(settings);
+    } catch (error) {
+      console.warn('[ClaudeProfileManager] Failed to remap provider accounts after dedup:', error);
     }
   }
 
@@ -354,7 +456,12 @@ export class ClaudeProfileManager {
   }
 
   /**
-   * Save or update a profile
+   * Save or update a profile.
+   *
+   * Deduplication: If a profile with the same configDir already exists (but
+   * a different ID), we update the existing entry instead of creating a
+   * duplicate. This prevents the profile store from growing unboundedly
+   * when the UI generates new IDs for the same underlying account.
    */
   saveProfile(profile: ClaudeProfile): ClaudeProfile {
     // Expand ~ in configDir path
@@ -362,16 +469,44 @@ export class ClaudeProfileManager {
       profile.configDir = expandHomePath(profile.configDir);
     }
 
-    const index = this.data.profiles.findIndex(p => p.id === profile.id);
+    // First, try exact ID match (normal update path)
+    const indexById = this.data.profiles.findIndex(p => p.id === profile.id);
 
-    if (index >= 0) {
-      // Update existing
-      this.data.profiles[index] = profile;
-    } else {
-      // Add new
-      this.data.profiles.push(profile);
+    if (indexById >= 0) {
+      // Update existing profile by ID
+      this.data.profiles[indexById] = profile;
+      this.save();
+      return profile;
     }
 
+    // No ID match — check for configDir duplicate before adding. Same configDir means the
+    // same credentials, so update the existing entry (keeping its id and any data the
+    // incoming skeleton doesn't carry) instead of creating a duplicate.
+    if (profile.configDir) {
+      const dir = normalizeConfigDir(profile.configDir);
+      const indexByConfigDir = this.data.profiles.findIndex(
+        p => p.configDir !== undefined && normalizeConfigDir(p.configDir) === dir
+      );
+
+      if (indexByConfigDir >= 0) {
+        const existing = this.data.profiles[indexByConfigDir];
+        debugLog('[ClaudeProfileManager] Dedup: profile with configDir already exists, updating instead of adding', {
+          existingId: existing.id,
+          incomingId: profile.id,
+          configDir: profile.configDir,
+        });
+        const merged = mergeDuplicateProfile(
+          { ...existing, ...definedFields(profile), id: existing.id, createdAt: existing.createdAt },
+          existing
+        );
+        this.data.profiles[indexByConfigDir] = merged;
+        this.save();
+        return merged;
+      }
+    }
+
+    // Genuinely new profile — add it
+    this.data.profiles.push(profile);
     this.save();
     return profile;
   }
