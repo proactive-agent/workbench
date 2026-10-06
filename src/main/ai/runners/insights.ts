@@ -11,7 +11,7 @@
  * Uses `createSimpleClient()` with read-only tools (Read, Glob, Grep) and streaming.
  */
 
-import { streamText, stepCountIs } from 'ai';
+import { streamText, stepCountIs, APICallError, RetryError } from 'ai';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
@@ -23,6 +23,9 @@ import type { SecurityProfile } from '../security/bash-validator';
 import { safeParseJson } from '../../utils/json-repair';
 import { parseLLMJson } from '../schema/structured-output';
 import { TaskSuggestionSchema } from '../schema/insight-extractor';
+import type { ImageAttachment } from '../../../shared/types';
+import { buildAttachmentParts } from './insights-attachments';
+import { INSIGHTS_ERROR_CODES, formatInsightsError } from '../../../shared/constants/insights';
 
 // =============================================================================
 // Types
@@ -48,7 +51,12 @@ export interface InsightsConfig {
   thinkingLevel?: ThinkingLevel;
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
+  /** Files attached to the current message (images, PDFs, text/code files) */
+  attachments?: ImageAttachment[];
 }
+
+/** Error raised when the model finishes without producing any answer text */
+export const EMPTY_RESPONSE_ERROR = 'The model returned an empty response';
 
 /** Result of an insights query */
 export interface InsightsResult {
@@ -153,10 +161,21 @@ function loadProjectContext(projectDir: string): string {
 }
 
 /**
+ * Fold the conversation history into a single prompt (each turn is a fresh request).
+ */
+export function buildConversationPrompt(message: string, history: InsightsMessage[] = []): string {
+  if (history.length === 0) return message;
+  const conversationContext = history
+    .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
+    .join('\n\n');
+  return `Previous conversation:\n${conversationContext}\n\nCurrent question: ${message}`;
+}
+
+/**
  * Build the system prompt for the insights agent.
  * Mirrors Python's `build_system_prompt()`.
  */
-function buildSystemPrompt(projectDir: string): string {
+export function buildSystemPrompt(projectDir: string): string {
   const context = loadProjectContext(projectDir);
 
   return `You are an AI assistant helping developers understand and work with their codebase.
@@ -190,7 +209,7 @@ const TASK_SUGGESTION_PREFIX = '__TASK_SUGGESTION__:';
 /**
  * Extract a task suggestion from the response text if present.
  */
-function extractTaskSuggestion(text: string): TaskSuggestion | null {
+export function extractTaskSuggestion(text: string): TaskSuggestion | null {
   const idx = text.indexOf(TASK_SUGGESTION_PREFIX);
   if (idx === -1) return null;
 
@@ -229,18 +248,12 @@ export async function runInsightsQuery(
     modelShorthand = 'sonnet',
     thinkingLevel = 'medium',
     abortSignal,
+    attachments,
   } = config;
 
   const systemPrompt = buildSystemPrompt(projectDir);
 
-  // Build conversation context from history
-  let fullPrompt = message;
-  if (history.length > 0) {
-    const conversationContext = history
-      .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-      .join('\n\n');
-    fullPrompt = `Previous conversation:\n${conversationContext}\n\nCurrent question: ${message}`;
-  }
+  const fullPrompt = buildConversationPrompt(message, history);
 
   // Create tool context for read-only tools
   const toolContext: ToolContext = {
@@ -266,6 +279,11 @@ export async function runInsightsQuery(
 
   const toolCalls: ToolCallInfo[] = [];
   let responseText = '';
+  // streamText reports provider failures (auth, rate limit, overload, ...) as `error` stream
+  // parts instead of throwing; remember the first one so the query fails instead of
+  // resolving with an empty answer
+  let streamError: unknown;
+  const attachmentParts = buildAttachmentParts(attachments);
 
   // Detect Codex models — they require instructions via providerOptions, not system
   const insightsModelId = typeof client.model === 'string' ? client.model : client.model.modelId;
@@ -275,7 +293,10 @@ export async function runInsightsQuery(
     const result = streamText({
       model: client.model,
       system: isCodexInsights ? undefined : client.systemPrompt,
-      prompt: fullPrompt,
+      // Attachments need a multi-part user message; plain questions keep the simple prompt form
+      ...(attachmentParts.length > 0
+        ? { messages: [{ role: 'user' as const, content: [{ type: 'text' as const, text: fullPrompt }, ...attachmentParts] }] }
+        : { prompt: fullPrompt }),
       tools: client.tools,
       stopWhen: stepCountIs(client.maxSteps),
       abortSignal,
@@ -308,11 +329,17 @@ export async function runInsightsQuery(
           break;
         }
         case 'error': {
-          const errorMsg = part.error instanceof Error ? part.error.message : String(part.error);
-          onStream?.({ type: 'error', error: errorMsg });
+          streamError ??= part.error;
           break;
         }
       }
+    }
+
+    if (streamError !== undefined && !responseText.trim()) {
+      throw new Error(describeModelError(streamError), { cause: streamError });
+    }
+    if (!responseText.trim()) {
+      throw new Error(EMPTY_RESPONSE_ERROR);
     }
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
@@ -334,9 +361,54 @@ export async function runInsightsQuery(
 // =============================================================================
 
 /**
+ * Human-readable description of a model call failure.
+ * The AI SDK wraps retried failures in a RetryError whose message often ends in a bare
+ * "Error"; dig out the last API error and report its HTTP status and the provider's message.
+ */
+export function describeModelError(error: unknown): string {
+  const last = RetryError.isInstance(error) ? (error.lastError ?? error) : error;
+
+  if (APICallError.isInstance(last)) {
+    let providerMessage: string | undefined;
+    if (last.responseBody) {
+      const body = safeParseJson<{ error?: { message?: string; type?: string }; message?: string }>(last.responseBody);
+      providerMessage = body?.error?.message ?? body?.message ?? (body ? undefined : last.responseBody.slice(0, 300));
+      if (body?.error?.type && providerMessage && !providerMessage.includes(body.error.type)) {
+        providerMessage = `${body.error.type}: ${providerMessage}`;
+      }
+    }
+    const status = last.statusCode ? `HTTP ${last.statusCode}` : 'Request failed';
+    const detail = providerMessage?.trim() || (last.message && last.message !== 'Error' ? last.message : '');
+    const description = redactSecrets(detail ? `${status} — ${detail}` : status);
+
+    // A 429 whose only message is "Error" is not a usage limit: it's how the Messages API
+    // rejects a Claude subscription token used outside the clients it accepts
+    const body = last.responseBody ? safeParseJson<{ error?: { type?: string; message?: string }; request_id?: string }>(last.responseBody) : null;
+    if (last.statusCode === 429 && body?.error?.type === 'rate_limit_error' && body.error.message?.trim() === 'Error') {
+      const requestId = body.request_id ? ` (request ${body.request_id})` : '';
+      return formatInsightsError(INSIGHTS_ERROR_CODES.subscriptionRejected, `${description}${requestId}`);
+    }
+    return description;
+  }
+
+  if (last instanceof Error) {
+    const cause = last.cause instanceof Error && last.cause.message ? ` (${last.cause.message})` : '';
+    return redactSecrets(`${last.message || last.name}${cause}`);
+  }
+  return redactSecrets(String(last));
+}
+
+/** Mask API keys and bearer tokens that providers sometimes echo back */
+function redactSecrets(message: string): string {
+  return message
+    .replace(/sk-[a-zA-Z0-9-_]{20,}/g, 'sk-***')
+    .replace(/Bearer [a-zA-Z0-9\-_.+/=]+/gi, 'Bearer ***');
+}
+
+/**
  * Extract a brief description from tool call args for UI display.
  */
-function extractToolInput(args: Record<string, unknown>): string {
+export function extractToolInput(args: Record<string, unknown>): string {
   if (args.pattern) return `pattern: ${args.pattern}`;
   if (args.file_path) {
     const fp = String(args.file_path);

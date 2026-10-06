@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const mockStreamText = vi.fn();
 
-vi.mock('ai', () => ({
+vi.mock('ai', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('ai')>()),
   streamText: (...args: unknown[]) => mockStreamText(...args),
   stepCountIs: (n: number) => ({ type: 'stepCount', count: n }),
 }));
@@ -59,7 +60,7 @@ vi.mock('../../schema/insight-extractor', () => ({
 // Import after mocking
 // =============================================================================
 
-import { runInsightsQuery } from '../insights';
+import { runInsightsQuery, EMPTY_RESPONSE_ERROR } from '../insights';
 import type { InsightsConfig, InsightsStreamEvent } from '../insights';
 import { parseLLMJson } from '../../schema/structured-output';
 
@@ -87,6 +88,9 @@ function makeStream(parts: Array<Record<string, unknown>>) {
     })(),
   };
 }
+
+/** Final answer text; a query must produce some text to succeed */
+const ANSWER = { type: 'text-delta', text: 'Answer.' };
 
 function baseConfig(overrides: Partial<InsightsConfig> = {}): InsightsConfig {
   return {
@@ -128,13 +132,10 @@ describe('runInsightsQuery', () => {
     expect(result.toolCalls).toEqual([]);
   });
 
-  it('returns empty text and no task suggestion when stream is empty', async () => {
+  it('rejects with an empty-response error when the stream produces no text', async () => {
     mockStreamText.mockReturnValue(makeStream([]));
 
-    const result = await runInsightsQuery(baseConfig());
-
-    expect(result.text).toBe('');
-    expect(result.taskSuggestion).toBeNull();
+    await expect(runInsightsQuery(baseConfig())).rejects.toThrow(EMPTY_RESPONSE_ERROR);
   });
 
   // ---------------------------------------------------------------------------
@@ -187,6 +188,7 @@ describe('runInsightsQuery', () => {
         { type: 'tool-result', toolCallId: 'c1', toolName: 'Read', output: 'file content' },
         { type: 'tool-call', toolName: 'Glob', toolCallId: 'c2', input: { pattern: '**/*.ts' } },
         { type: 'tool-result', toolCallId: 'c2', toolName: 'Glob', output: 'src/auth.ts' },
+        ANSWER,
       ]),
     );
 
@@ -206,6 +208,7 @@ describe('runInsightsQuery', () => {
           toolCallId: 'c1',
           input: { file_path: 'src/auth.ts' },
         },
+        ANSWER,
       ]),
     );
 
@@ -223,6 +226,7 @@ describe('runInsightsQuery', () => {
           toolCallId: 'c1',
           input: { pattern: 'useAuth' },
         },
+        ANSWER,
       ]),
     );
 
@@ -254,6 +258,7 @@ describe('runInsightsQuery', () => {
     mockStreamText.mockReturnValue(
       makeStream([
         { type: 'tool-call', toolName: 'Grep', toolCallId: 'c1', input: { pattern: 'login' } },
+        ANSWER,
       ]),
     );
 
@@ -269,6 +274,7 @@ describe('runInsightsQuery', () => {
     mockStreamText.mockReturnValue(
       makeStream([
         { type: 'tool-result', toolCallId: 'c1', toolName: 'Read', output: 'content' },
+        ANSWER,
       ]),
     );
 
@@ -279,17 +285,27 @@ describe('runInsightsQuery', () => {
     expect(toolEndEvents).toHaveLength(1);
   });
 
-  it('forwards error events for error stream parts', async () => {
+  it('rejects and forwards the error when an error stream part ends the run without text', async () => {
     mockStreamText.mockReturnValue(
-      makeStream([{ type: 'error', error: new Error('tool failed') }]),
+      makeStream([{ type: 'error', error: new Error('invalid x-api-key') }]),
     );
 
     const events: InsightsStreamEvent[] = [];
-    await runInsightsQuery(baseConfig(), (e) => events.push(e));
+    await expect(runInsightsQuery(baseConfig(), (e) => events.push(e))).rejects.toThrow('invalid x-api-key');
 
     const errorEvents = events.filter((e) => e.type === 'error');
     expect(errorEvents).toHaveLength(1);
-    expect((errorEvents[0] as { type: 'error'; error: string }).error).toBe('tool failed');
+    expect((errorEvents[0] as { type: 'error'; error: string }).error).toBe('invalid x-api-key');
+  });
+
+  it('keeps the partial answer when an error part follows streamed text', async () => {
+    mockStreamText.mockReturnValue(
+      makeStream([ANSWER, { type: 'error', error: new Error('connection reset') }]),
+    );
+
+    const result = await runInsightsQuery(baseConfig());
+
+    expect(result.text).toBe('Answer.');
   });
 
   // ---------------------------------------------------------------------------
@@ -326,7 +342,7 @@ describe('runInsightsQuery', () => {
   // ---------------------------------------------------------------------------
 
   it('uses sonnet model and medium thinking level by default', async () => {
-    mockStreamText.mockReturnValue(makeStream([]));
+    mockStreamText.mockReturnValue(makeStream([ANSWER]));
 
     await runInsightsQuery(baseConfig());
 
@@ -336,7 +352,7 @@ describe('runInsightsQuery', () => {
   });
 
   it('accepts custom modelShorthand and thinkingLevel', async () => {
-    mockStreamText.mockReturnValue(makeStream([]));
+    mockStreamText.mockReturnValue(makeStream([ANSWER]));
 
     await runInsightsQuery(baseConfig({ modelShorthand: 'haiku', thinkingLevel: 'low' }));
 
@@ -350,7 +366,7 @@ describe('runInsightsQuery', () => {
   // ---------------------------------------------------------------------------
 
   it('includes conversation history in the prompt when provided', async () => {
-    mockStreamText.mockReturnValue(makeStream([]));
+    mockStreamText.mockReturnValue(makeStream([ANSWER]));
 
     await runInsightsQuery(
       baseConfig({
@@ -370,7 +386,7 @@ describe('runInsightsQuery', () => {
   });
 
   it('uses message directly as prompt when history is empty', async () => {
-    mockStreamText.mockReturnValue(makeStream([]));
+    mockStreamText.mockReturnValue(makeStream([ANSWER]));
 
     await runInsightsQuery(baseConfig({ message: 'What is the entry point?' }));
 

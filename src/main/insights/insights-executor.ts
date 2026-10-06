@@ -10,7 +10,7 @@ import type {
 import type { TaskCategory, TaskComplexity, TaskMetadata } from '../../shared/types/task';
 import { InsightsConfig } from './config';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
-import { runInsightsQuery } from '../ai/runners/insights';
+import { runInsights } from '../ai/runners/insights-claude-code';
 import type { ModelShorthand } from '../ai/config/types';
 
 /**
@@ -96,7 +96,7 @@ export class InsightsExecutor extends EventEmitter {
       }));
 
     try {
-      const result = await runInsightsQuery(
+      const result = await runInsights(
         {
           projectDir: projectPath,
           message,
@@ -104,6 +104,7 @@ export class InsightsExecutor extends EventEmitter {
           modelShorthand,
           thinkingLevel,
           abortSignal: controller.signal,
+          attachments: images,
         },
         (event) => {
           switch (event.type) {

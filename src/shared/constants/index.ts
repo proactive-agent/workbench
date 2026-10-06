@@ -24,6 +24,9 @@ export * from './changelog';
 // Model and agent profile constants
 export * from './models';
 
+// Insights chat constants
+export * from './insights';
+
 // Theme constants
 export * from './themes';
 
