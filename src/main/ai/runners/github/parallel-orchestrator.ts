@@ -18,7 +18,7 @@
  * - Uses createSimpleClient() for lightweight parallel sessions
  */
 
-import { streamText, stepCountIs, Output } from 'ai';
+import { streamText, stepCountIs, Output, NoObjectGeneratedError } from 'ai';
 import type { Tool as AITool } from 'ai';
 import * as crypto from 'node:crypto';
 
@@ -589,8 +589,15 @@ export class ParallelOrchestratorReviewer {
       // Consume the stream (required before accessing output/text)
       for await (const _part of stream.fullStream) { /* consume */ }
 
-      // Use structured output if available, fall back to text parsing
-      const structuredOutput = await stream.output;
+      // Use structured output if available, fall back to text parsing.
+      // stream.output rejects with NoObjectGeneratedError when the final text doesn't match
+      // the schema — parse the text leniently instead of dropping all findings.
+      let structuredOutput: Awaited<typeof stream.output> | undefined;
+      try {
+        structuredOutput = await stream.output;
+      } catch (err) {
+        if (!NoObjectGeneratedError.isInstance(err)) throw err;
+      }
       const findings = structuredOutput
         ? parseSpecialistOutput(config.name, structuredOutput)
         : parseSpecialistOutput(config.name, await stream.text);

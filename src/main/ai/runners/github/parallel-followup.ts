@@ -16,7 +16,7 @@
  * - Uses createSimpleClient() for lightweight parallel sessions
  */
 
-import { generateText, Output } from 'ai';
+import { generateText, NoObjectGeneratedError, Output } from 'ai';
 import * as crypto from 'node:crypto';
 
 import { createSimpleClient } from '../../client/factory';
@@ -614,39 +614,46 @@ export class ParallelFollowupReviewer {
       thinkingLevel,
     });
 
-    // Use Output.object() with the schema appropriate for this specialist type.
-    // ResolutionVerificationOutputSchema returns { verifications: [...] }.
-    // ReviewFindingsOutputSchema returns { findings: [...] }.
-    // Each branch uses the concrete schema type so TypeScript can infer the output type.
-    if (type === 'resolution-verifier') {
+    try {
+      // Use Output.object() with the schema appropriate for this specialist type.
+      // ResolutionVerificationOutputSchema returns { verifications: [...] }.
+      // ReviewFindingsOutputSchema returns { findings: [...] }.
+      // Each branch uses the concrete schema type so TypeScript can infer the output type.
+      if (type === 'resolution-verifier') {
+        const result = await generateText({
+          model: client.model,
+          system: client.systemPrompt,
+          prompt,
+          output: Output.object({ schema: ResolutionVerificationOutputSchema }),
+          abortSignal,
+        });
+        // Use structured output if available; serialize so downstream parsing is unchanged.
+        if (result.output) {
+          return { type, result: JSON.stringify(result.output) };
+        }
+        return { type, result: result.text };
+      }
+
+      // new-code-reviewer and comment-analyzer both return { findings: [...] }
       const result = await generateText({
         model: client.model,
         system: client.systemPrompt,
         prompt,
-        output: Output.object({ schema: ResolutionVerificationOutputSchema }),
+        output: Output.object({ schema: ReviewFindingsOutputSchema }),
         abortSignal,
       });
       // Use structured output if available; serialize so downstream parsing is unchanged.
       if (result.output) {
         return { type, result: JSON.stringify(result.output) };
       }
+      // Fall back to raw text for providers that don't support Output.object()
       return { type, result: result.text };
+    } catch (err) {
+      // Output.object() validation failed — hand back the raw text; the caller re-parses it
+      // leniently (parseJsonResponse + ResolutionVerificationSchema / ReviewFindingsArraySchema).
+      if (NoObjectGeneratedError.isInstance(err) && err.text) return { type, result: err.text };
+      throw err;
     }
-
-    // new-code-reviewer and comment-analyzer both return { findings: [...] }
-    const result = await generateText({
-      model: client.model,
-      system: client.systemPrompt,
-      prompt,
-      output: Output.object({ schema: ReviewFindingsOutputSchema }),
-      abortSignal,
-    });
-    // Use structured output if available; serialize so downstream parsing is unchanged.
-    if (result.output) {
-      return { type, result: JSON.stringify(result.output) };
-    }
-    // Fall back to raw text for providers that don't support Output.object()
-    return { type, result: result.text };
   }
 
   private deduplicateFindings(findings: PRReviewFinding[]): PRReviewFinding[] {
