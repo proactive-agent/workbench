@@ -904,7 +904,7 @@ export interface ElectronAPI {
   github: import('../../preload/api/modules/github-api').GitHubAPI;
 
   // Claude Code CLI operations
-  checkClaudeCodeVersion: () => Promise<IPCResult<import('./cli').ClaudeCodeVersionInfo>>;
+  checkClaudeCodeVersion: (forceRefresh?: boolean) => Promise<IPCResult<import('./cli').ClaudeCodeVersionInfo>>;
   installClaudeCode: () => Promise<IPCResult<{ command: string }>>;
   getClaudeCodeVersions: () => Promise<IPCResult<import('./cli').ClaudeCodeVersionList>>;
   installClaudeCodeVersion: (version: string) => Promise<IPCResult<{ command: string; version: string }>>;

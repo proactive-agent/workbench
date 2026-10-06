@@ -74,14 +74,14 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
   const [showPathChangeWarning, setShowPathChangeWarning] = useState(false);
 
   // Check Claude Code version
-  const checkVersion = useCallback(async () => {
+  const checkVersion = useCallback(async (forceRefresh = false) => {
     try {
       if (!window.electronAPI?.checkClaudeCodeVersion) {
         setStatus("error");
         return;
       }
 
-      const result = await window.electronAPI.checkClaudeCodeVersion();
+      const result = await window.electronAPI.checkClaudeCodeVersion(forceRefresh);
 
       if (result.success && result.data) {
         setVersionInfo(result.data);
@@ -486,7 +486,7 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
               variant="outline"
               size="sm"
               className="gap-1"
-              onClick={() => checkVersion()}
+              onClick={() => checkVersion(true)}
               disabled={status === "loading"}
             >
               <RefreshCw className={cn("h-3 w-3", status === "loading" && "animate-spin")} />

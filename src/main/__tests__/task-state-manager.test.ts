@@ -244,6 +244,13 @@ describe('TaskStateManager', () => {
       expect(result).toBe(true);
     });
 
+    it('moves a backlog task to planning on manual in_progress', () => {
+      const backlogTask = createMockTask({ status: 'backlog' });
+      const result = manager.handleManualStatusChange(backlogTask.id, 'in_progress', backlogTask, mockProject);
+      expect(result).toBe(true);
+      expect(manager.getCurrentState(backlogTask.id)).toBe('planning');
+    });
+
     it('should handle backlog status', () => {
       const result = manager.handleManualStatusChange(mockTask.id, 'backlog', mockTask, mockProject);
       expect(result).toBe(true);

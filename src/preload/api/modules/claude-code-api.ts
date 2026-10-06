@@ -81,7 +81,7 @@ export interface ClaudeCodeAPI {
    * Check Claude Code CLI version status
    * Returns installed version, latest version, and whether update is available
    */
-  checkClaudeCodeVersion: () => Promise<ClaudeCodeVersionResult>;
+  checkClaudeCodeVersion: (forceRefresh?: boolean) => Promise<ClaudeCodeVersionResult>;
 
   /**
    * Install or update Claude Code CLI
@@ -118,8 +118,8 @@ export interface ClaudeCodeAPI {
  * Creates the Claude Code API implementation
  */
 export const createClaudeCodeAPI = (): ClaudeCodeAPI => ({
-  checkClaudeCodeVersion: (): Promise<ClaudeCodeVersionResult> =>
-    invokeIpc(IPC_CHANNELS.CLAUDE_CODE_CHECK_VERSION),
+  checkClaudeCodeVersion: (forceRefresh?: boolean): Promise<ClaudeCodeVersionResult> =>
+    invokeIpc(IPC_CHANNELS.CLAUDE_CODE_CHECK_VERSION, forceRefresh),
 
   installClaudeCode: (): Promise<ClaudeCodeInstallResult> =>
     invokeIpc(IPC_CHANNELS.CLAUDE_CODE_INSTALL),

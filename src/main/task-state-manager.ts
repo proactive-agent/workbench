@@ -128,6 +128,12 @@ export class TaskStateManager {
         } else if (!currentState && task.reviewReason === 'plan_review') {
           // Fallback: No actor exists (e.g., after app restart), use task data
           this.handleUiEvent(taskId, { type: 'PLAN_APPROVED' }, task, project);
+        } else if (
+          currentState === 'backlog' ||
+          (!currentState && (task.status === 'backlog' || (task.status === 'queue' && !task.rateLimitHold)))
+        ) {
+          // Fresh start (drag to In Progress / queue promotion): backlog ignores USER_RESUMED
+          this.handleUiEvent(taskId, { type: 'PLANNING_STARTED' }, task, project);
         } else {
           this.handleUiEvent(taskId, { type: 'USER_RESUMED' }, task, project);
         }

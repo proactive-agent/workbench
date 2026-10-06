@@ -28,7 +28,7 @@ export function ClaudeCodeStep({ onNext, onBack, onSkip }: ClaudeCodeStepProps) 
   const [installSuccess, setInstallSuccess] = useState(false);
 
   // Check Claude Code version on mount
-  const checkVersion = useCallback(async () => {
+  const checkVersion = useCallback(async (forceRefresh = false) => {
     setStatus('loading');
     setError(null);
     setInstallSuccess(false);
@@ -41,7 +41,7 @@ export function ClaudeCodeStep({ onNext, onBack, onSkip }: ClaudeCodeStepProps) 
         return;
       }
 
-      const result = await window.electronAPI.checkClaudeCodeVersion();
+      const result = await window.electronAPI.checkClaudeCodeVersion(forceRefresh);
 
       if (result.success && result.data) {
         setVersionInfo(result.data);
@@ -217,7 +217,7 @@ export function ClaudeCodeStep({ onNext, onBack, onSkip }: ClaudeCodeStepProps) 
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={checkVersion}
+                  onClick={() => checkVersion(true)}
                   disabled={status === 'loading' || isInstalling}
                 >
                   <RefreshCw className={`h-4 w-4 ${status === 'loading' ? 'animate-spin' : ''}`} />
