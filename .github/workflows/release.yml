@@ -1,10 +1,5 @@
 name: Release
 # Triggers on version tags (v*) to build and publish releases
-#
-# IMPORTANT: If branch protection is enabled on 'main', the update-readme job
-# requires a PAT or GitHub App token with bypass permissions to push directly.
-# Currently uses GITHUB_TOKEN which works if "Allow GitHub Actions to create
-# and approve pull requests" is enabled OR branch protection is not configured.
 
 on:
   push:
@@ -523,63 +518,3 @@ jobs:
           prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
         env:
           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN || secrets.GITHUB_TOKEN }}
-
-  # Update README with new version after successful release
-  update-readme:
-    needs: [create-release]
-    runs-on: ubuntu-latest
-    # Only update README on actual releases (tag push), not dry runs
-    if: ${{ github.event_name == 'push' }}
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: main
-          # Use PAT_TOKEN to bypass branch protection rules on main
-          token: ${{ secrets.PAT_TOKEN }}
-
-      - name: Extract version and detect release type
-        id: version
-        run: |
-          # Extract version from tag (v2.7.2 -> 2.7.2)
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-
-          # Detect if this is a prerelease (contains - after version, e.g., 2.7.2-beta.10)
-          if [[ "$VERSION" == *-* ]]; then
-            echo "is_prerelease=true" >> $GITHUB_OUTPUT
-            echo "Detected PRERELEASE: $VERSION"
-          else
-            echo "is_prerelease=false" >> $GITHUB_OUTPUT
-            echo "Detected STABLE release: $VERSION"
-          fi
-
-      - name: Update README.md
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          IS_PRERELEASE="${{ steps.version.outputs.is_prerelease }}"
-
-          if [ "$IS_PRERELEASE" = "true" ]; then
-            node scripts/update-readme.mjs "$VERSION" --prerelease
-          else
-            node scripts/update-readme.mjs "$VERSION"
-          fi
-
-          echo "--- Verifying update ---"
-          grep -E "(stable-|beta-|version-)[0-9]" README.md | head -5
-
-      - name: Commit and push README update
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Check if there are changes to commit
-          if git diff --quiet README.md; then
-            echo "No changes to README.md, skipping commit"
-            exit 0
-          fi
-
-          git add README.md
-          git commit -m "docs: update README to v${{ steps.version.outputs.version }} [skip ci]"
-          git push origin main

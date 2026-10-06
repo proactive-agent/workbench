@@ -246,6 +246,6 @@ jobs:
             echo "The package version is not newer than the latest tag." >> $GITHUB_STEP_SUMMARY
             echo "To trigger a release, bump the version using:" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-            echo "node scripts/bump-version.js patch  # or minor/major" >> $GITHUB_STEP_SUMMARY
+            echo "node .github/scripts/bump-version.js patch  # or minor/major" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           fi

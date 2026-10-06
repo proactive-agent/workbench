@@ -7,13 +7,13 @@
  * GitHub Actions will automatically create the tag and trigger the release.
  *
  * Usage:
- *   node scripts/bump-version.js <major|minor|patch|x.y.z>
+ *   node .github/scripts/bump-version.js <major|minor|patch|x.y.z>
  *
  * Examples:
- *   node scripts/bump-version.js patch   # 2.5.5 -> 2.5.6
- *   node scripts/bump-version.js minor   # 2.5.5 -> 2.6.0
- *   node scripts/bump-version.js major   # 2.5.5 -> 3.0.0
- *   node scripts/bump-version.js 2.6.0   # Set to specific version
+ *   node .github/scripts/bump-version.js patch   # 2.5.5 -> 2.5.6
+ *   node .github/scripts/bump-version.js minor   # 2.5.5 -> 2.6.0
+ *   node .github/scripts/bump-version.js major   # 2.5.5 -> 3.0.0
+ *   node .github/scripts/bump-version.js 2.6.0   # Set to specific version
  *
  * Release Flow:
  *   1. Run this script on develop branch
@@ -112,8 +112,8 @@ function checkGitStatus() {
 
 // Update package.json version
 function updatePackageJson(newVersion) {
-  const frontendPath = path.join(__dirname, '..', 'apps', 'desktop', 'package.json');
-  const rootPath = path.join(__dirname, '..', 'package.json');
+  const frontendPath = path.join(__dirname, '..', '..', 'apps', 'desktop', 'package.json');
+  const rootPath = path.join(__dirname, '..', '..', 'package.json');
 
   // Update frontend package.json — read directly, no pre-existence check (avoids TOCTOU)
   let frontendJson;
@@ -141,7 +141,7 @@ function updatePackageJson(newVersion) {
 
 // Check if CHANGELOG.md has an entry for the version
 function checkChangelogEntry(version) {
-  const changelogPath = path.join(__dirname, '..', 'CHANGELOG.md');
+  const changelogPath = path.join(__dirname, '..', '..', 'CHANGELOG.md');
 
   if (!fs.existsSync(changelogPath)) {
     warning('CHANGELOG.md not found - you will need to create it before releasing');
@@ -175,7 +175,7 @@ function main() {
 
   if (!bumpType) {
     error('Please specify version bump type or version number.\n' +
-          'Usage: node scripts/bump-version.js <major|minor|patch|x.y.z>');
+          'Usage: node .github/scripts/bump-version.js <major|minor|patch|x.y.z>');
   }
 
   log('\n🚀 Auto Claude Version Bump\n', colors.cyan);
@@ -186,7 +186,7 @@ function main() {
   success('Git working directory is clean');
 
   // 2. Read current version
-  const packagePath = path.join(__dirname, '..', 'apps', 'desktop', 'package.json');
+  const packagePath = path.join(__dirname, '..', '..', 'apps', 'desktop', 'package.json');
   const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'));
   const currentVersion = packageJson.version;
   info(`Current version: ${currentVersion}`);
@@ -199,17 +199,11 @@ function main() {
     error('New version is the same as current version');
   }
 
-  // 4. Validate release (check for branch/tag conflicts)
-  info('Validating release...');
-  exec(`node ${path.join(__dirname, 'validate-release.js')} v${newVersion}`);
-  success('Release validation passed');
-
   // 5. Update all version files
   info('Updating package.json files...');
   updatePackageJson(newVersion);
   success('Updated package.json files');
 
-  // Note: README.md is NOT updated here - it gets updated by the release workflow
   // after the GitHub release is successfully published. This prevents version
   // mismatches where README shows a version that doesn't exist yet.
 

@@ -2,9 +2,6 @@
 
 **Autonomous multi-agent coding framework that plans, builds, and validates software for you.**
 
-![Aperant Kanban Board](.github/assets/Auto-Claude-Kanban.png)
-
-[![License](https://img.shields.io/badge/license-AGPL--3.0-green?style=flat-square)](./agpl-3.0.txt)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Community-5865F2?style=flat-square&logo=discord&logoColor=white)](https://discord.gg/KCXaPBr4Dj)
 [![YouTube](https://img.shields.io/badge/YouTube-Subscribe-FF0000?style=flat-square&logo=youtube&logoColor=white)](https://www.youtube.com/@AndreMikalsen)
 [![CI](https://img.shields.io/github/actions/workflow/status/AndyMik90/Aperant/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/AndyMik90/Aperant/actions)
@@ -26,50 +23,6 @@
 > - 💬 **We still want your input.** [Open an issue](https://github.com/AndyMik90/Aperant/issues), [start a discussion](https://github.com/AndyMik90/Aperant/discussions), or [join our Discord](https://discord.gg/KCXaPBr4Dj) to report bugs and help shape what 3.0 becomes.
 >
 > _No public release date yet — ⭐ star and watch the repo (or join Discord) to follow progress._
-
----
-
-## Download
-
-> 🛠️ **These are 2.x maintenance builds.** They're stable and fully usable today, but active development has moved to Aperant 3.0 (see status above). Expect critical fixes here rather than new features.
-
-### Stable Release
-
-<!-- STABLE_VERSION_BADGE -->
-[![Stable](https://img.shields.io/badge/stable-2.7.6-blue?style=flat-square)](https://github.com/AndyMik90/Aperant/releases/tag/v2.7.6)
-<!-- STABLE_VERSION_BADGE_END -->
-
-<!-- STABLE_DOWNLOADS -->
-| Platform | Download |
-|----------|----------|
-| **Windows** | [Auto-Claude-2.7.6-win32-x64.exe](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-win32-x64.exe) |
-| **macOS (Apple Silicon)** | [Auto-Claude-2.7.6-darwin-arm64.dmg](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-darwin-arm64.dmg) |
-| **macOS (Intel)** | [Auto-Claude-2.7.6-darwin-x64.dmg](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-darwin-x64.dmg) |
-| **Linux** | [Auto-Claude-2.7.6-linux-x86_64.AppImage](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-linux-x86_64.AppImage) |
-| **Linux (Debian)** | [Auto-Claude-2.7.6-linux-amd64.deb](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-linux-amd64.deb) |
-| **Linux (Flatpak)** | [Auto-Claude-2.7.6-linux-x86_64.flatpak](https://github.com/AndyMik90/Aperant/releases/download/v2.7.6/Auto-Claude-2.7.6-linux-x86_64.flatpak) |
-<!-- STABLE_DOWNLOADS_END -->
-
-### Beta Release
-
-> ⚠️ Beta releases may contain bugs and breaking changes. [View all releases](https://github.com/AndyMik90/Aperant/releases)
-
-<!-- BETA_VERSION_BADGE -->
-[![Beta](https://img.shields.io/badge/beta-2.8.0--beta.6-orange?style=flat-square)](https://github.com/AndyMik90/Aperant/releases/tag/v2.8.0-beta.6)
-<!-- BETA_VERSION_BADGE_END -->
-
-<!-- BETA_DOWNLOADS -->
-| Platform | Download |
-|----------|----------|
-| **Windows** | [Aperant-2.8.0-beta.5-win32-x64.exe](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-win32-x64.exe) |
-| **macOS (Apple Silicon)** | [Aperant-2.8.0-beta.5-darwin-arm64.dmg](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-darwin-arm64.dmg) |
-| **macOS (Intel)** | [Aperant-2.8.0-beta.5-darwin-x64.dmg](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-darwin-x64.dmg) |
-| **Linux** | [Aperant-2.8.0-beta.5-linux-x86_64.AppImage](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-linux-x86_64.AppImage) |
-| **Linux (Debian)** | [Aperant-2.8.0-beta.5-linux-amd64.deb](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-linux-amd64.deb) |
-| **Linux (Flatpak)** | [Aperant-2.8.0-beta.5-linux-x86_64.flatpak](https://github.com/AndyMik90/Aperant/releases/download/v2.8.0-beta.5/Aperant-2.8.0-beta.5-linux-x86_64.flatpak) |
-<!-- BETA_DOWNLOADS_END -->
-
-> All releases include SHA256 checksums and VirusTotal scan results for security verification.
 
 ---
 
@@ -116,12 +69,8 @@ Visual task management from planning through completion. Create tasks and monito
 ### Agent Terminals
 AI-powered terminals with one-click task context injection. Spawn multiple agents for parallel work.
 
-![Agent Terminals](.github/assets/Auto-Claude-Agents-terminals.png)
-
 ### Roadmap
 AI-assisted feature planning with competitor analysis and audience targeting.
-
-![Roadmap](.github/assets/Auto-Claude-roadmap.png)
 
 ### Additional Features
 - **Insights** - Chat interface for exploring your codebase
@@ -137,7 +86,7 @@ Aperant/
 ├── apps/
 │   └── desktop/     # Electron desktop application (TypeScript AI agent layer + UI)
 ├── guides/          # Additional documentation
-└── scripts/         # Build utilities
+└── .github/scripts/ # Release utilities (bump-version)
 ```
 
 ---
@@ -157,7 +106,6 @@ Aperant uses a three-layer security model:
 3. **Dynamic Command Allowlist** - Only approved commands based on detected project stack
 
 All releases are:
-- Scanned with VirusTotal before publishing
 - Include SHA256 checksums for verification
 - Code-signed where applicable (macOS)
 

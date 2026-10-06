@@ -153,7 +153,7 @@ cd apps/desktop && npm install
 
 ### Releases
 ```bash
-node scripts/bump-version.js patch|minor|major  # Bump version
+node .github/scripts/bump-version.js patch|minor|major  # Bump version
 git push && gh pr create --base main             # PR to main triggers release
 ```
 
