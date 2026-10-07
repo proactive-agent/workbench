@@ -60,14 +60,16 @@ describe('ProjectsPage', () => {
   const cardNames = () =>
     screen.getAllByRole('button').filter((el) => el.hasAttribute('tabindex')).map((el) => el.querySelector('span')?.textContent);
 
-  it('lists projects by most recently updated first', () => {
+  it('lists projects by name (A–Z) by default', () => {
     renderPage();
-    expect(cardNames()).toEqual(['Bravo', 'Charlie', 'Alpha']);
+    expect(cardNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
   });
 
-  it('toggles to alphabetical order', () => {
+  it('toggles between descending and ascending name order', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.name' }));
+    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.nameDesc' }));
+    expect(cardNames()).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.nameAsc' }));
     expect(cardNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
   });
 
@@ -86,7 +88,9 @@ describe('ProjectsPage', () => {
 
   it('marks the active project', () => {
     renderPage();
-    expect(screen.getByText('projectsPage.active')).toBeInTheDocument();
+    const active = screen.getByText('Bravo').closest('[role="button"]');
+    expect(active).toHaveAttribute('aria-current', 'true');
+    expect(screen.getByText('Bravo')).toHaveClass('text-primary');
   });
 
   it('opens the add-project flow from "New project"', () => {

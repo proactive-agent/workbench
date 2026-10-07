@@ -594,16 +594,13 @@
     "searchPlaceholder": "Search projects…",
     "closeSearch": "Close search",
     "sortBy": {
-      "recent": "Sort by last updated",
-      "name": "Sort by name"
+      "nameAsc": "Sort by name (A–Z)",
+      "nameDesc": "Sort by name (Z–A)"
     },
     "newProject": "New project",
-    "active": "Active",
     "notInitialized": "Not initialized yet",
-    "updated": "Updated {{time}}",
     "actions": "Actions for {{name}}",
-    "open": "Open project",
-    "remove": "Remove from Auto Claude",
+    "remove": "Remove project",
     "empty": "No projects yet. Add a project folder to get started.",
     "noResults": "No projects match your search."
   }

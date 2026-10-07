@@ -1,11 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowUpDown, Check, FolderOpen, MoreHorizontal, Search, Trash2, X } from 'lucide-react';
+import { ArrowUpDown, MoreHorizontal, Search, Trash2, X } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger
 } from './ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -13,7 +12,8 @@ import { ScrollArea } from './ui/scroll-area';
 import { cn } from '../lib/utils';
 import type { Project } from '../../shared/types';
 
-type SortMode = 'recent' | 'name';
+// Projects are sorted by name; the sort button toggles A–Z / Z–A
+type SortMode = 'nameAsc' | 'nameDesc';
 
 interface ProjectsPageProps {
   projects: Project[];
@@ -63,7 +63,7 @@ export function ProjectsPage({
   const formatRelative = useRelativeTime();
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>('recent');
+  const [sortMode, setSortMode] = useState<SortMode>('nameAsc');
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -71,13 +71,11 @@ export function ProjectsPage({
       ? projects.filter((p) => p.name.toLowerCase().includes(needle) || p.path.toLowerCase().includes(needle))
       : projects;
     return [...filtered].sort((a, b) =>
-      sortMode === 'name'
-        ? a.name.localeCompare(b.name)
-        : new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      sortMode === 'nameAsc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
     );
   }, [projects, query, sortMode]);
 
-  const nextSortMode: SortMode = sortMode === 'recent' ? 'name' : 'recent';
+  const nextSortMode: SortMode = sortMode === 'nameAsc' ? 'nameDesc' : 'nameAsc';
 
   return (
     <ScrollArea className="h-full">
@@ -175,26 +173,23 @@ export function ProjectsPage({
                   }}
                   aria-current={isActive ? 'true' : undefined}
                   className={cn(
-                    'group relative flex min-h-36 cursor-pointer flex-col rounded-xl border bg-card p-4 text-left transition-colors',
+                    // claude.ai project card: page background, hairline border; the active project is clay
+                    'group relative flex cursor-pointer flex-col rounded-xl border bg-transparent p-5 text-left transition-colors',
                     'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
-                    isActive ? 'border-(--input)' : 'border-border hover:border-(--input)'
+                    isActive ? 'border-primary' : 'border-border hover:border-(--input)'
                   )}
                 >
                   <div className="flex items-center gap-2 pr-8">
-                    <span className="truncate text-sm font-semibold text-foreground">{project.name}</span>
-                    {isActive && (
-                      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-                        <Check className="h-3.5 w-3.5 text-ring" strokeWidth={2.25} />
-                        {t('projectsPage.active')}
-                      </span>
-                    )}
+                    <span className={cn('truncate text-[0.9375rem] font-semibold', isActive ? 'text-primary' : 'text-foreground')}>
+                      {project.name}
+                    </span>
                   </div>
-                  <p className="mt-2 line-clamp-2 break-all text-sm text-muted-foreground">{project.path}</p>
+                  <p className="mt-2 line-clamp-2 break-all text-[0.9375rem] leading-relaxed text-foreground/80">{project.path}</p>
                   {!project.autoBuildPath && (
                     <p className="mt-1 text-xs text-(--nav-label-color)">{t('projectsPage.notInitialized')}</p>
                   )}
-                  <p className="mt-auto pt-4 text-xs text-(--nav-label-color)">
-                    {t('projectsPage.updated', { time: formatRelative(project.updatedAt) })}
+                  <p className="mt-auto pt-7 text-sm text-muted-foreground">
+                    {formatRelative(project.updatedAt)}
                   </p>
 
                   {/* Card actions */}
@@ -210,14 +205,6 @@ export function ProjectsPage({
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-52 rounded-xl p-1.5">
-                        <DropdownMenuItem
-                          onSelect={() => onSelectProject(project.id)}
-                          className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5"
-                        >
-                          <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
-                          {t('projectsPage.open')}
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="mx-2 my-1.5" />
                         <DropdownMenuItem
                           onSelect={() => onRemoveProject(project.id)}
                           className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-destructive focus:text-destructive"
