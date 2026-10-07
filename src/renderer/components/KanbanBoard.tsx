@@ -1139,7 +1139,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
     <div className="flex h-full flex-col">
       {/* Kanban header with refresh button */}
       {onRefresh && (
-        <div className="flex items-center justify-end px-6 pt-4 pb-2">
+        <div className="flex items-center justify-end px-6 pt-2">
           <div className="flex items-center gap-2">
             {onRefresh && (
               <Button
@@ -1164,7 +1164,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto p-6">
+        <div className="flex flex-1 gap-4 overflow-x-auto p-6 pt-2">
           {TASK_STATUS_COLUMNS.map((status) => (
             <DroppableColumn
               key={status}
