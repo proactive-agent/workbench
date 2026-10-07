@@ -2,14 +2,14 @@
  * @vitest-environment jsdom
  */
 /**
- * Tests for UsageIndicator cross-provider mode
+ * Tests for UsageIndicator (sidebar usage badge and breakdown)
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { UsageIndicator } from './UsageIndicator';
-import { useSettingsStore, saveSettings } from '../stores/settings-store';
+import { useSettingsStore } from '../stores/settings-store';
 import type { ProviderAccount } from '../../shared/types/provider-account';
 
 vi.mock('../stores/settings-store', () => ({
@@ -180,148 +180,33 @@ describe('UsageIndicator', () => {
     };
   });
 
-  describe('when cross-provider mode is enabled', () => {
+  describe('usage breakdown', () => {
     beforeEach(() => {
-      vi.mocked(useSettingsStore).mockReturnValue(createStoreMock({
-        customMixedProfileActive: true,
-        customMixedPhaseConfig: {
-          spec: { provider: 'anthropic' },
-          planning: { provider: 'openai' },
-          coding: { provider: 'anthropic' },
-          qa: { provider: 'openai' },
-        },
-      }) as any);
-    });
-
-    it('shows provider rows inside usage breakdown', async () => {
-      render(<UsageIndicator />);
-
-      const usageTrigger = screen.getByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
-      fireEvent.mouseEnter(usageTrigger);
-
-      expect(await screen.findByText('Cross-Provider Usage', {}, { timeout: 12000 }))
-        .toBeInTheDocument();
-      expect(screen.getAllByText('Anthropic').length).toBeGreaterThanOrEqual(2);
-      expect(screen.getAllByText('OpenAI').length).toBeGreaterThanOrEqual(2);
-      expect(screen.getAllByText('70%').length).toBeGreaterThan(0);
-      expect(screen.getAllByText('80%').length).toBeGreaterThan(0);
-    });
-
-    it('does not show swap buttons on individual cross-provider rows and toggles mode via main button', async () => {
-      render(<UsageIndicator />);
-
-      const usageTrigger = screen.getByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
-      fireEvent.click(usageTrigger);
-      await screen.findByText('Cross-Provider Usage');
-
-      // The swap buttons in the cross-provider section should only be the main toggle,
-      // not on individual provider rows
-      const swapButtons = screen.getAllByRole('button', { name: 'Swap' });
-      const crossProviderToggle = swapButtons.find((button) => {
-        const rowText = button.closest('div')?.textContent ?? '';
-        return rowText.includes('Cross-Provider');
-      });
-
-      expect(crossProviderToggle).toBeTruthy();
-      fireEvent.click(crossProviderToggle as HTMLElement);
-
-      await waitFor(() => {
-        expect(vi.mocked(saveSettings)).toHaveBeenCalledWith({ customMixedProfileActive: false });
-      });
-    });
-
-    it('shows cross-provider rows under Other Accounts when regular usage breakdown is shown', async () => {
+      // Active account: Anthropic subscription (usage monitoring available); a second account is queued
       vi.mocked(useSettingsStore).mockReturnValue(createStoreMock({
         providerAccounts: crossProviderMonitoredAccounts,
         globalPriorityOrder: ['account-anthropic-active', 'account-openai-other'],
-        customMixedProfileActive: true,
-        customMixedPhaseConfig: {
-          spec: { provider: 'anthropic' },
-          planning: { provider: 'openai' },
-          coding: { provider: 'anthropic' },
-          qa: { provider: 'openai' },
-        },
       }) as any);
-
-      (window as any).electronAPI.requestUsageUpdate = vi.fn().mockResolvedValue({
-        success: true,
-        data: {
-          profileId: 'account-anthropic-active',
-          profileName: 'Anthropic OAuth',
-          profileEmail: 'anthropic@example.com',
-          sessionPercent: 42,
-          weeklyPercent: 33,
-          sessionResetTimestamp: '2026-03-04T12:00:00.000Z',
-          weeklyResetTimestamp: '2026-03-11T12:00:00.000Z',
-          fetchedAt: new Date(),
-          needsReauthentication: false,
-        },
-      });
-
-      (window as any).electronAPI.requestAllProfilesUsage = vi.fn().mockResolvedValue({
-        success: true,
-        data: {
-          allProfiles: [
-            {
-              profileId: 'account-openai-other',
-              profileName: 'OpenAI OAuth',
-              sessionPercent: 54,
-              weeklyPercent: 48,
-              isAuthenticated: true,
-              isRateLimited: false,
-              availabilityScore: 46,
-              isActive: false,
-            },
-          ],
-          activeProfile: {
-            profileId: 'account-anthropic-active',
-            profileName: 'Anthropic OAuth',
-            profileEmail: 'anthropic@example.com',
-            sessionPercent: 42,
-            weeklyPercent: 33,
-            isActive: true,
-          },
-        },
-      });
-
-      render(<UsageIndicator />);
-
-      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
-      fireEvent.mouseEnter(usageTrigger);
-
-      expect(await screen.findByText('Cross-Provider Usage', {}, { timeout: 12000 })).toBeInTheDocument();
-
-      const otherAccountsHeader = screen.getByText('Other Accounts');
-      const crossProviderUsageHeading = screen.getByText('Cross-Provider Usage');
-      expect(
-        otherAccountsHeader.compareDocumentPosition(crossProviderUsageHeading) & Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeGreaterThan(0);
-
-      const openAiAccount = screen.getByText('OpenAI OAuth');
-      expect(
-        openAiAccount.compareDocumentPosition(crossProviderUsageHeading) & Node.DOCUMENT_POSITION_FOLLOWING
-      ).toBeGreaterThan(0);
     });
 
-    it('does not show cross-provider usage when it is not configured with distinct providers', async () => {
-      vi.mocked(useSettingsStore).mockReturnValue(createStoreMock({
-        customMixedProfileActive: true,
-        customMixedPhaseConfig: {
-          spec: { provider: 'anthropic' },
-          planning: { provider: 'anthropic' },
-          coding: { provider: 'anthropic' },
-          qa: { provider: 'anthropic' },
-        },
-      }) as any);
-
+    it('shows the session and weekly usage in the badge', async () => {
       render(<UsageIndicator />);
+      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
+      await waitFor(() => expect(usageTrigger).toHaveTextContent('45'));
+      expect(usageTrigger).toHaveTextContent('55');
+    });
 
-      const usageTrigger = screen.getByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
-      fireEvent.mouseEnter(usageTrigger);
+    it('lists only the session and weekly windows, without other accounts', async () => {
+      render(<UsageIndicator />);
+      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
+      fireEvent.click(usageTrigger);
 
-      await waitFor(() => {
-        expect(screen.queryByText('Cross-Provider Usage')).not.toBeInTheDocument();
-      });
+      expect(await screen.findByText('Usage Breakdown')).toBeInTheDocument();
+      expect(screen.getByText('45%')).toBeInTheDocument();
+      expect(screen.getByText('55%')).toBeInTheDocument();
+      expect(screen.queryByText('common:usage.otherAccounts')).not.toBeInTheDocument();
+      expect(screen.queryByText('OpenAI OAuth')).not.toBeInTheDocument();
+      expect(screen.queryByText('Cross-Provider Usage')).not.toBeInTheDocument();
     });
   });
 });
