@@ -4,10 +4,8 @@ import {
   Loader2,
   Pencil,
   FileCode,
-  FlaskConical,
   CheckCircle2,
   XCircle,
-  AlertTriangle,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -15,24 +13,20 @@ import {
   FolderSearch,
   Wrench,
   Info,
-  Brain,
-  Cpu
+  Clock,
+  Pause
 } from 'lucide-react';
 import { Badge } from '../ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
 import { cn } from '../../lib/utils';
 import { useSettingsStore } from '../../stores/settings-store';
-import type { Task, TaskLogs, TaskLogPhase, TaskPhaseLog, TaskLogEntry, TaskMetadata } from '../../../shared/types';
-import type { PhaseModelConfig, ThinkingLevel } from '../../../shared/types/settings';
-import type { BuiltinProvider } from '../../../shared/types/provider-account';
-import { getProviderModelLabel } from '@shared/utils/model-display';
+import type { Task, TaskLogs, TaskLogPhase, TaskPhaseLog, TaskLogEntry } from '../../../shared/types';
 
 interface TaskLogsProps {
   task: Task;
   phaseLogs: TaskLogs | null;
   isLoadingLogs: boolean;
   expandedPhases: Set<TaskLogPhase>;
-  isStuck: boolean;
   logsEndRef: React.RefObject<HTMLDivElement | null>;
   logsContainerRef: React.RefObject<HTMLDivElement | null>;
   onLogsScroll: (e: React.UIEvent<HTMLDivElement>) => void;
@@ -45,81 +39,11 @@ const PHASE_LABELS: Record<TaskLogPhase, string> = {
   validation: 'Validation'
 };
 
-const PHASE_ICONS: Record<TaskLogPhase, typeof Pencil> = {
-  planning: Pencil,
-  coding: FileCode,
-  validation: FlaskConical
-};
-
-const PHASE_COLORS: Record<TaskLogPhase, string> = {
-  planning: 'text-amber-500 bg-amber-500/10 border-amber-500/30',
-  coding: 'text-info bg-info/10 border-info/30',
-  validation: 'text-purple-500 bg-purple-500/10 border-purple-500/30'
-};
-
-// Map log phases to config phase keys
-// Note: 'planning' log phase covers both spec creation and implementation planning
-const LOG_PHASE_TO_CONFIG_PHASE: Record<TaskLogPhase, keyof PhaseModelConfig> = {
-  planning: 'spec',  // Planning log phase primarily shows spec creation
-  coding: 'coding',
-  validation: 'qa'
-};
-
-// Short labels for thinking levels
-const THINKING_SHORT_LABELS: Record<ThinkingLevel, string> = {
-  low: 'Low',
-  medium: 'Med',
-  high: 'High',
-  xhigh: 'XHigh'
-};
-
-// Resolve a model shorthand to a display label, using provider context when available
-function resolveModelLabel(model: string, provider?: string): string {
-  if (provider) {
-    return getProviderModelLabel(model, provider as BuiltinProvider);
-  }
-  // No provider stored (legacy tasks) — fall back to raw shorthand
-  return model;
-}
-
-// Helper to get model and thinking info for a log phase
-function getPhaseConfig(
-  metadata: TaskMetadata | undefined,
-  logPhase: TaskLogPhase
-): { model: string; thinking: string } | null {
-  if (!metadata) return null;
-
-  const configPhase = LOG_PHASE_TO_CONFIG_PHASE[logPhase];
-
-  // Auto profile with per-phase config
-  if (metadata.isAutoProfile && metadata.phaseModels && metadata.phaseThinking) {
-    const model = metadata.phaseModels[configPhase];
-    const thinking = metadata.phaseThinking[configPhase];
-    // Use per-phase provider if available (cross-provider mode), otherwise task-level provider
-    const provider = metadata.phaseProviders?.[configPhase] ?? metadata.provider;
-    return {
-      model: resolveModelLabel(model, provider),
-      thinking: THINKING_SHORT_LABELS[thinking] || thinking
-    };
-  }
-
-  // Non-auto profile with single model/thinking
-  if (metadata.model && metadata.thinkingLevel) {
-    return {
-      model: resolveModelLabel(metadata.model, metadata.provider),
-      thinking: THINKING_SHORT_LABELS[metadata.thinkingLevel] || metadata.thinkingLevel
-    };
-  }
-
-  return null;
-}
-
 export function TaskLogs({
   task,
   phaseLogs,
   isLoadingLogs,
   expandedPhases,
-  isStuck,
   logsEndRef,
   logsContainerRef,
   onLogsScroll,
@@ -146,9 +70,7 @@ export function TaskLogs({
                 phaseLog={phaseLogs.phases[phase]}
                 isExpanded={expandedPhases.has(phase)}
                 onToggle={() => onTogglePhase(phase)}
-                isTaskStuck={isStuck}
                 isTaskSettled={task.status === 'human_review' || task.status === 'done' || task.status === 'pr_created' || task.status === 'error'}
-                phaseConfig={getPhaseConfig(task.metadata, phase)}
               />
             ))}
             <div ref={logsEndRef} />
@@ -177,13 +99,24 @@ interface PhaseLogSectionProps {
   phaseLog: TaskPhaseLog | null;
   isExpanded: boolean;
   onToggle: () => void;
-  isTaskStuck?: boolean;
   isTaskSettled?: boolean;
-  phaseConfig?: { model: string; thinking: string } | null;
 }
 
-function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, isTaskSettled, phaseConfig }: PhaseLogSectionProps) {
-  const Icon = PHASE_ICONS[phase];
+// Same status icons as the subtasks list: green/red only for success/failure
+function getPhaseStatusIcon(status: string) {
+  switch (status) {
+    case 'completed':
+      return <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />;
+    case 'failed':
+      return <XCircle className="h-4 w-4 text-[var(--error)]" />;
+    case 'active':
+      return <Clock className="h-4 w-4 text-muted-foreground animate-pulse" />;
+    default:
+      return <Pause className="h-4 w-4 text-muted-foreground" />;
+  }
+}
+
+function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskSettled }: PhaseLogSectionProps) {
   const logOrder = useSettingsStore(s => s.settings.logOrder);
   // If the task is in a settled state (human_review, done, etc.), any "active" phase
   // is actually completed — the log writer may have missed the endPhase() call.
@@ -200,93 +133,26 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskStuck, i
     return logOrder === 'reverse-chronological' ? [...entries].reverse() : entries;
   }, [phaseLog?.entries, logOrder]);
 
-  const getStatusBadge = () => {
-    switch (status) {
-      case 'active':
-        if (isTaskStuck) {
-          return (
-            <Badge variant="outline" className="text-xs bg-warning/10 text-warning border-warning/30 flex items-center gap-1">
-              <AlertTriangle className="h-3 w-3" />
-              Interrupted
-            </Badge>
-          );
-        }
-        return (
-          <Badge variant="outline" className="text-xs bg-info/10 text-info border-info/30 flex items-center gap-1">
-            <Loader2 className="h-3 w-3 animate-spin" />
-            Running
-          </Badge>
-        );
-      case 'completed':
-        return (
-          <Badge variant="outline" className="text-xs bg-success/10 text-success border-success/30 flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3" />
-            Complete
-          </Badge>
-        );
-      case 'failed':
-        return (
-          <Badge variant="outline" className="text-xs bg-destructive/10 text-destructive border-destructive/30 flex items-center gap-1">
-            <XCircle className="h-3 w-3" />
-            Failed
-          </Badge>
-        );
-      default:
-        return (
-          <Badge variant="secondary" className="text-xs text-muted-foreground">
-            Pending
-          </Badge>
-        );
-    }
-  };
-
-  const isInterrupted = isTaskStuck && status === 'active';
-
   return (
     <Collapsible open={isExpanded} onOpenChange={onToggle}>
       <CollapsibleTrigger asChild>
         <button
-          className={cn(
-            'w-full flex items-center justify-between p-3 rounded-lg border transition-colors',
-            'hover:bg-secondary/50',
-            status === 'active' && !isInterrupted && PHASE_COLORS[phase],
-            isInterrupted && 'border-warning/30 bg-warning/5',
-            status === 'completed' && 'border-success/30 bg-success/5',
-            status === 'failed' && 'border-destructive/30 bg-destructive/5',
-            status === 'pending' && 'border-border bg-secondary/30'
-          )}
+          type="button"
+          className="flex w-full items-center gap-2 rounded-xl border border-border p-3 text-left transition-colors hover:bg-nav-hover"
         >
-          <div className="flex items-center gap-2">
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          <span className="shrink-0">{getPhaseStatusIcon(status)}</span>
+          <span className="text-sm font-medium text-foreground">{PHASE_LABELS[phase]}</span>
+          {hasEntries && (
+            <span className="text-xs text-muted-foreground">
+              ({phaseLog?.entries.length} entries)
+            </span>
+          )}
+          <ChevronRight
+            className={cn(
+              'ml-auto h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
+              isExpanded && 'rotate-90'
             )}
-            <Icon className={cn('h-4 w-4', isInterrupted ? 'text-warning' : status === 'active' ? PHASE_COLORS[phase].split(' ')[0] : 'text-muted-foreground')} />
-            <span className="font-medium text-sm">{PHASE_LABELS[phase]}</span>
-            {hasEntries && (
-              <span className="text-xs text-muted-foreground">
-                ({phaseLog?.entries.length} entries)
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Model and thinking level indicator */}
-            {phaseConfig && (
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                <div className="flex items-center gap-0.5" title={`Model: ${phaseConfig.model}`}>
-                  <Cpu className="h-3 w-3" />
-                  <span>{phaseConfig.model}</span>
-                </div>
-                <span className="text-muted-foreground/50">|</span>
-                <div className="flex items-center gap-0.5" title={`Thinking: ${phaseConfig.thinking}`}>
-                  <Brain className="h-3 w-3" />
-                  <span>{phaseConfig.thinking}</span>
-                </div>
-              </div>
-            )}
-            {getStatusBadge()}
-          </div>
+          />
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent>

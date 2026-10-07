@@ -13,7 +13,6 @@ import {
   GitBranch,
   GitPullRequest,
   ListChecks,
-  Clock,
   ExternalLink,
   ChevronDown,
   ChevronUp
@@ -163,10 +162,7 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
 
         {/* Timeline - Right */}
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3" />
-            Created {formatRelativeTime(task.createdAt)}
-          </span>
+          <span>Created {formatRelativeTime(task.createdAt)}</span>
           <span className="text-border">•</span>
           <span>Updated {formatRelativeTime(task.updatedAt)}</span>
         </div>

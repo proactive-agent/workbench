@@ -15,7 +15,7 @@ function getSubtaskStatusIcon(status: string) {
     case 'completed':
       return <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />;
     case 'in_progress':
-      return <Clock className="h-4 w-4 text-[var(--info)] animate-pulse" />;
+      return <Clock className="h-4 w-4 text-muted-foreground animate-pulse" />;
     case 'failed':
       return <XCircle className="h-4 w-4 text-[var(--error)]" />;
     default:
@@ -87,12 +87,7 @@ export function TaskSubtasks({ task }: TaskSubtasksProps) {
             return (
               <div
                 key={subtask.id}
-                className={cn(
-                  'rounded-xl border border-border bg-secondary/30 transition-all duration-200 hover:bg-secondary/50 overflow-hidden',
-                  subtask.status === 'in_progress' && 'border-[var(--info)]/50 bg-[var(--info-light)] ring-1 ring-info/20',
-                  subtask.status === 'completed' && 'border-[var(--success)]/50 bg-[var(--success-light)]',
-                  subtask.status === 'failed' && 'border-[var(--error)]/50 bg-[var(--error-light)]'
-                )}
+                className="overflow-hidden rounded-xl border border-border transition-colors hover:bg-nav-hover"
               >
                 {/* Collapsed header — always visible */}
                 <button
@@ -103,13 +98,7 @@ export function TaskSubtasks({ task }: TaskSubtasksProps) {
                   <div className="shrink-0">
                     {getSubtaskStatusIcon(subtask.status)}
                   </div>
-                  <span className={cn(
-                    'text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0',
-                    subtask.status === 'completed' ? 'bg-success/20 text-success' :
-                    subtask.status === 'in_progress' ? 'bg-info/20 text-info' :
-                    subtask.status === 'failed' ? 'bg-destructive/20 text-destructive' :
-                    'bg-muted text-muted-foreground'
-                  )}>
+                  <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full shrink-0 bg-muted text-muted-foreground">
                     #{index + 1}
                   </span>
                   <span className="text-sm font-medium text-foreground flex-1 min-w-0 line-clamp-2">
@@ -125,7 +114,7 @@ export function TaskSubtasks({ task }: TaskSubtasksProps) {
 
                 {/* Expanded details */}
                 {isExpanded && hasDetails && (
-                  <div className="px-3 pb-3 pt-0 ml-6 border-t border-border/30 mt-0">
+                  <div className="px-3 pb-3 pt-0 ml-6">
                     {subtask.description && subtask.description !== subtask.title && (
                       <p className="mt-2 text-xs text-muted-foreground break-words whitespace-pre-wrap">
                         {subtask.description}

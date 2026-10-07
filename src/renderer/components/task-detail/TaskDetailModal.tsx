@@ -7,8 +7,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipProvider } from '../ui/tooltip';
 import { Badge } from '../ui/badge';
-import { Button } from '../ui/button';
-import { Progress } from '../ui/progress';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,16 +18,11 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 import {
-  Play,
-  Square,
-  CheckCircle2,
-  RotateCcw,
   Trash2,
   Loader2,
   AlertTriangle,
   Pencil,
   X,
-  GitPullRequest,
   ArchiveRestore
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -38,12 +31,10 @@ import {
   DIALOG_CLOSE_BUTTON_CLASS,
   DIALOG_CLOSE_ICON_CLASS,
   DIALOG_CLOSE_ICON_STROKE,
-  DIALOG_FOOTER_BAR_CLASS,
   DIALOG_OVERLAY_CLASS,
   DIALOG_SURFACE_CLASS,
   DIALOG_TITLE_CLASS
 } from '../ui/dialog-styles';
-import { calculateProgress } from '../../lib/utils';
 import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, unarchiveTasks } from '../../stores/task-store';
 import { useProjectStore } from '../../stores/project-store';
 import { TASK_STATUS_LABELS } from '../../../shared/constants';
@@ -53,7 +44,6 @@ import { TaskMetadata } from './TaskMetadata';
 import { TaskWarnings } from './TaskWarnings';
 import { TaskSubtasks } from './TaskSubtasks';
 import { TaskLogs } from './TaskLogs';
-import { TaskFiles } from './TaskFiles';
 import { TaskReview } from './TaskReview';
 import type { Task, WorktreeCreatePROptions } from '../../../shared/types';
 
@@ -82,12 +72,6 @@ export function TaskDetailModal({ open, task, onOpenChange, onSwitchToTerminals,
   );
 }
 
-// Feature flag for Files tab (enabled by default, can be disabled via localStorage)
-const isFilesTabEnabled = () => {
-  const flag = localStorage.getItem('use_files_tab');
-  return flag === null || flag === 'true'; // Enabled by default
-};
-
 // Separate component to use hooks only when task exists
 function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals, onOpenInbuiltTerminal }: { open: boolean; task: Task; onOpenChange: (open: boolean) => void; onSwitchToTerminals?: () => void; onOpenInbuiltTerminal?: (id: string, cwd: string) => void }) {
   const { t } = useTranslation(['tasks']);
@@ -108,8 +92,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
     }
   };
   const activeProject = useProjectStore(s => s.getActiveProject());
-  const showFilesTab = isFilesTabEnabled();
-  const progressPercent = calculateProgress(task.subtasks);
   const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
   const totalSubtasks = task.subtasks.length;
 
@@ -267,107 +249,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
     }
   };
 
-  // Render primary action button based on state
-  const renderPrimaryAction = () => {
-    if (state.isStuck) {
-      return (
-        <Button
-          variant="warning"
-          size="sm"
-          onClick={handleRecover}
-          disabled={state.isRecovering}
-        >
-          {state.isRecovering ? (
-            <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              Recovering...
-            </>
-          ) : (
-            <>
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              Recover Task
-            </>
-          )}
-        </Button>
-      );
-    }
-
-    if (state.isIncomplete) {
-      return (
-        <Button variant="default" size="sm" onClick={handleStartStop} disabled={state.isLoadingPlan}>
-          {state.isLoadingPlan ? (
-            <>
-              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              Loading Plan...
-            </>
-          ) : (
-            <>
-              <Play className="mr-1.5 h-3.5 w-3.5" />
-              Resume Task
-            </>
-          )}
-        </Button>
-      );
-    }
-
-    if (task.status === 'backlog' || task.status === 'in_progress') {
-      return (
-        <Button
-          variant={state.isRunning ? 'destructive' : 'default'}
-          size="sm"
-          onClick={handleStartStop}
-        >
-          {state.isRunning ? (
-            <>
-              <Square className="mr-1.5 h-3.5 w-3.5" />
-              Stop Task
-            </>
-          ) : (
-            <>
-              <Play className="mr-1.5 h-3.5 w-3.5" />
-              Start Task
-            </>
-          )}
-        </Button>
-      );
-    }
-
-    if (task.status === 'done' && task.metadata?.prUrl) {
-      return (
-        <div className="flex items-center gap-4">
-          <div className="completion-state text-sm flex items-center gap-2 text-success">
-            <CheckCircle2 className="h-4 w-4" />
-            <span className="font-medium">{t('tasks:status.complete')}</span>
-          </div>
-           {task.metadata?.prUrl && (
-             <button
-               type="button"
-               onClick={() => {
-                 if (task.metadata?.prUrl) {
-                   window.electronAPI?.openExternal(task.metadata.prUrl);
-                 }
-               }}
-               className="completion-state text-sm flex items-center gap-2 text-info cursor-pointer hover:underline bg-transparent border-none p-0"
-             >
-              <GitPullRequest className="h-4 w-4" />
-              <span className="font-medium">{t(TASK_STATUS_LABELS[task.status])}</span>
-            </button>
-          )}
-        </div>
-      );
-    }
-
-    if (task.status === 'done') {
-      return (
-        <div className="completion-state text-sm flex items-center gap-2 text-success">
-          <CheckCircle2 className="h-4 w-4" />
-          <span className="font-medium">{t('tasks:status.complete')}</span>
-        </div>
-      );
-    }
-
-    return null;
-  };
 
 
   return (
@@ -380,17 +261,17 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
           {/* Full-height centered modal content */}
           <DialogPrimitive.Content
             className={cn(
-              'fixed left-[50%] top-4 z-50',
-              'translate-x-[-50%]',
-              'w-[95vw] max-w-5xl h-[calc(100vh-32px)]',
+              'fixed left-1/2 top-1/2 z-50',
+              '-translate-x-1/2 -translate-y-1/2',
+              'w-[min(760px,calc(100vw-2rem))] h-[min(600px,calc(100vh-2rem))]',
               'overflow-hidden flex flex-col',
               DIALOG_SURFACE_CLASS,
               DIALOG_ANIMATION_CLASS
             )}
           >
             {/* Header */}
-            {/* pr-24 keeps the title clear of the edit and close buttons */}
-            <div className="relative shrink-0 border-b border-border px-6 pb-4 pr-24 pt-6">
+            {/* pr-32 keeps the title clear of the header action buttons */}
+            <div className="relative shrink-0 border-b border-border px-6 pb-4 pr-32 pt-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <DialogPrimitive.Title className={cn(DIALOG_TITLE_CLASS, 'truncate')}>
@@ -449,11 +330,39 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                   )}
                 </div>
                 <div className="absolute right-3 top-3 z-10 flex items-center gap-1 electron-no-drag">
+                  {task.metadata?.archivedAt && (
+                    <button
+                      type="button"
+                      className={cn(DIALOG_CLOSE_BUTTON_CLASS, 'static')}
+                      onClick={handleUnarchive}
+                      disabled={isUnarchiving}
+                      title={t('tasks:actions.unarchive')}
+                      aria-label={t('tasks:actions.unarchive')}
+                    >
+                      {isUnarchiving ? (
+                        <Loader2 className={cn(DIALOG_CLOSE_ICON_CLASS, 'animate-spin')} />
+                      ) : (
+                        <ArchiveRestore className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
+                      )}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={cn(DIALOG_CLOSE_BUTTON_CLASS, 'static hover:bg-destructive/10 hover:text-destructive')}
+                    onClick={() => state.setShowDeleteDialog(true)}
+                    disabled={state.isRunning && !state.isStuck}
+                    title={t('tasks:actions.delete')}
+                    aria-label={t('tasks:actions.delete')}
+                  >
+                    <Trash2 className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
+                  </button>
                   <button
                     type="button"
                     className={cn(DIALOG_CLOSE_BUTTON_CLASS, 'static')}
                     onClick={() => state.setIsEditDialogOpen(true)}
                     disabled={state.isRunning && !state.isStuck}
+                    title={t('tasks:kanban.editTask')}
+                    aria-label={t('tasks:kanban.editTask')}
                   >
                     <Pencil className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
                   </button>
@@ -466,13 +375,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 </div>
               </div>
 
-              {/* Progress bar - only show when running or has progress */}
-              {(state.isRunning || completedSubtasks > 0) && totalSubtasks > 0 && (
-                <div className="mt-3 flex items-center gap-3">
-                  <Progress value={progressPercent} className="h-1.5 flex-1" />
-                  <span className="text-xs text-muted-foreground tabular-nums w-10 text-right">{progressPercent}%</span>
-                </div>
-              )}
 
               {/* Warnings - compact inline */}
               {(state.isStuck || state.isIncomplete) && (
@@ -495,30 +397,22 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-6 h-auto shrink-0">
                   <TabsTrigger
                     value="overview"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
+                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
                   >
                     Overview
                   </TabsTrigger>
                   <TabsTrigger
                     value="subtasks"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
+                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
                   >
                     Subtasks ({task.subtasks.length})
                   </TabsTrigger>
                   <TabsTrigger
                     value="logs"
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
+                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
                   >
                     Logs
                   </TabsTrigger>
-                  {showFilesTab && (
-                    <TabsTrigger
-                      value="files"
-                      className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
-                    >
-                      {t('tasks:files.tab')}
-                    </TabsTrigger>
-                  )}
                 </TabsList>
 
                 {/* Overview Tab */}
@@ -589,7 +483,6 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                     phaseLogs={state.phaseLogs}
                     isLoadingLogs={state.isLoadingLogs}
                     expandedPhases={state.expandedPhases}
-                    isStuck={state.isStuck}
                     logsEndRef={state.logsEndRef}
                     logsContainerRef={state.logsContainerRef}
                     onLogsScroll={state.handleLogsScroll}
@@ -597,43 +490,9 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                   />
                 </TabsContent>
 
-                {/* Files Tab */}
-                {showFilesTab && (
-                  <TabsContent value="files" className="flex-1 min-h-0 overflow-hidden mt-0">
-                    <TaskFiles task={task} />
-                  </TabsContent>
-                )}
               </Tabs>
             </div>
 
-            {/* Footer - Actions */}
-            <div className={cn('flex shrink-0 items-center gap-2', DIALOG_FOOTER_BAR_CLASS)}>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                onClick={() => state.setShowDeleteDialog(true)}
-                disabled={state.isRunning && !state.isStuck}
-              >
-                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                Delete Task
-              </Button>
-              {task.metadata?.archivedAt && (
-                <Button variant="ghost" size="sm" onClick={handleUnarchive} disabled={isUnarchiving}>
-                  {isUnarchiving ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  {t('tasks:actions.unarchive')}
-                </Button>
-              )}
-              <div className="flex-1" />
-              <Button variant="ghost" size="sm" onClick={handleClose}>
-                Close
-              </Button>
-              {renderPrimaryAction()}
-            </div>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
