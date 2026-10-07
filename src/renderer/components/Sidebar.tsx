@@ -5,14 +5,12 @@ import {
   Settings,
   LayoutGrid,
   Terminal,
-  BookOpen,
   AlertCircle,
   Download,
   RefreshCw,
   GitlabIcon,
   GitMerge,
   Sparkles,
-  Wrench,
   PanelLeft,
   PanelLeftClose,
   FolderKanban
@@ -54,7 +52,7 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 import { UsageIndicator } from './UsageIndicator';
 import type { Project, GitStatus } from '../../shared/types';
 
-export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'context' | 'gitlab-issues' | 'gitlab-merge-requests' | 'insights' | 'agent-tools';
+export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'gitlab-issues' | 'gitlab-merge-requests' | 'insights';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -79,8 +77,6 @@ const baseNavItems: NavItem[] = [
   { id: 'kanban', labelKey: 'navigation:items.kanban', icon: LayoutGrid, shortcut: 'K' },
   { id: 'terminals', labelKey: 'navigation:items.terminals', icon: Terminal, shortcut: 'A' },
   { id: 'insights', labelKey: 'navigation:items.insights', icon: Sparkles, shortcut: 'N' },
-  { id: 'context', labelKey: 'navigation:items.context', icon: BookOpen, shortcut: 'C' },
-  { id: 'agent-tools', labelKey: 'navigation:items.agentTools', icon: Wrench, shortcut: 'M' }
 ];
 
 // GitLab nav items shown when GitLab is enabled

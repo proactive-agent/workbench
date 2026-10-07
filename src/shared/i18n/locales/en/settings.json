@@ -401,6 +401,14 @@
       "integrationTitle": "Memory",
       "integrationDescription": "Configure persistent cross-session memory for agents",
       "syncDescription": "Configure persistent memory"
+    },
+    "context": {
+      "title": "Context",
+      "description": "Project index and agent memories"
+    },
+    "mcp": {
+      "title": "MCP Overview",
+      "description": "MCP servers available to each agent"
     }
   },
   "agentProfile": {
@@ -925,6 +933,11 @@
       "autoClaude": {
         "name": "Auto Claude Tools",
         "description": "Build progress tracking"
+      },
+      "memory": {
+        "name": "Memory",
+        "description": "Knowledge from previous sessions",
+        "notConfigured": "Not configured (enable memory in the project's Memory settings)"
       }
     },
     "customServers": "Custom Servers",

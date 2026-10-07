@@ -17,7 +17,9 @@ import {
   Code,
   Bug,
   Terminal,
-  Users
+  Users,
+  BookOpen,
+  Server
 } from 'lucide-react';
 
 // GitLab icon component (lucide-react doesn't have one)
@@ -49,7 +51,10 @@ import { DebugSettings } from './DebugSettings';
 import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSettings';
 import { AccountSettings } from './AccountSettings';
 import { ProjectSelector } from './ProjectSelector';
-import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSettingsContent';
+import { ProjectSettingsContent, ProjectSettingsSection, STANDALONE_PROJECT_SECTIONS } from './ProjectSettingsContent';
+import { Context } from '../Context';
+import { AgentTools } from '../AgentTools';
+import { ErrorBoundary } from '../ui/error-boundary';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 
@@ -85,7 +90,9 @@ const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
   { id: 'general', icon: Settings2 },
   { id: 'github', icon: Github },
   { id: 'gitlab', icon: GitLabIcon },
-  { id: 'memory', icon: Database }
+  { id: 'memory', icon: Database },
+  { id: 'context', icon: BookOpen },
+  { id: 'mcp', icon: Server }
 ];
 
 /**
@@ -203,6 +210,16 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
     if (activeTopLevel === 'app') {
       return renderAppSection();
     }
+    if (projectSection === 'context') {
+      return selectedProject ? (
+        <ErrorBoundary>
+          <Context projectId={selectedProject.id} />
+        </ErrorBoundary>
+      ) : null;
+    }
+    if (projectSection === 'mcp') {
+      return <AgentTools />;
+    }
     return (
       <ProjectSettingsContent
         project={selectedProject}
@@ -240,6 +257,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
   );
 
   const isWideSection = activeTopLevel === 'app' && appSection === 'terminal-fonts';
+  // Context and MCP Overview are full pages with their own scrolling; give them the whole area
+  const isStandaloneSection = activeTopLevel === 'project' && STANDALONE_PROJECT_SECTIONS.has(projectSection);
 
   return (
     <FullScreenDialog open={open} onOpenChange={(newOpen) => {
@@ -394,16 +413,20 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
               <X className="h-4 w-4" strokeWidth={1.75} />
             </DialogPrimitive.Close>
 
-            <ScrollArea className="min-h-0 flex-1">
-              <div
-                className={cn(
-                  'mx-auto w-full px-10 pb-10 pt-12',
-                  isWideSection ? 'max-w-5xl' : 'max-w-[720px]'
-                )}
-              >
-                {renderContent()}
-              </div>
-            </ScrollArea>
+            {isStandaloneSection ? (
+              <div className="min-h-0 flex-1 overflow-hidden pt-10">{renderContent()}</div>
+            ) : (
+              <ScrollArea className="min-h-0 flex-1">
+                <div
+                  className={cn(
+                    'mx-auto w-full px-10 pb-10 pt-12',
+                    isWideSection ? 'max-w-5xl' : 'max-w-[720px]'
+                  )}
+                >
+                  {renderContent()}
+                </div>
+              </ScrollArea>
+            )}
 
             {/* Sticky footer */}
             <div className="shrink-0 border-t border-border px-10 py-3">

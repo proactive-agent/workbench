@@ -10,7 +10,13 @@ import { SectionRouter } from './sections/SectionRouter';
 import { createHookProxy } from './utils/hookProxyFactory';
 import type { Project } from '../../../shared/types';
 
-export type ProjectSettingsSection = 'general' | 'linear' | 'github' | 'gitlab' | 'memory';
+export type ProjectSettingsSection = 'general' | 'linear' | 'github' | 'gitlab' | 'memory' | 'context' | 'mcp';
+
+/**
+ * Project sections that are self-contained pages (they load and persist their own data) rather
+ * than parts of the project settings form; the dialog renders them full-height
+ */
+export const STANDALONE_PROJECT_SECTIONS: ReadonlySet<ProjectSettingsSection> = new Set(['context', 'mcp']);
 
 interface ProjectSettingsContentProps {
   project: Project | undefined;

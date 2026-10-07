@@ -20,12 +20,9 @@ import { TaskCreationWizard } from './components/TaskCreationWizard';
 import { AppSettingsDialog, type AppSection } from './components/settings/AppSettings';
 import type { ProjectSettingsSection } from './components/settings/ProjectSettingsContent';
 import { TerminalGrid } from './components/TerminalGrid';
-import { Context } from './components/Context';
 import { Insights } from './components/Insights';
-import { ErrorBoundary } from './components/ui/error-boundary';
 import { GitLabIssues } from './components/GitLabIssues';
 import { GitLabMergeRequests } from './components/gitlab-merge-requests';
-import { AgentTools } from './components/AgentTools';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ProjectsPage } from './components/ProjectsPage';
 import { RateLimitModal } from './components/RateLimitModal';
@@ -782,11 +779,6 @@ export function App() {
                     isActive={activeView === 'terminals'}
                   />
                 </div>
-                {activeView === 'context' && (activeProjectId || selectedProjectId) && (
-                  <ErrorBoundary>
-                    <Context projectId={activeProjectId || selectedProjectId!} />
-                  </ErrorBoundary>
-                )}
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
                   <Insights projectId={activeProjectId || selectedProjectId!} />
                 )}
@@ -808,7 +800,6 @@ export function App() {
                     }}
                   />
                 )}
-                {activeView === 'agent-tools' && <AgentTools />}
               </>
             ) : (
               <WelcomeScreen

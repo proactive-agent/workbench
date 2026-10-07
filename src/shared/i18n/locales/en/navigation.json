@@ -7,10 +7,8 @@
     "kanban": "Kanban Board",
     "terminals": "Agent Terminals",
     "insights": "Insights",
-    "context": "Context",
     "gitlabIssues": "GitLab Issues",
     "gitlabMRs": "GitLab MRs",
-    "agentTools": "MCP Overview",
     "projects": "Projects"
   },
   "actions": {
