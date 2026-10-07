@@ -18,6 +18,7 @@
  */
 
 import { accessSync, constants as fsConstants } from 'fs';
+import { allowWindowClose } from './app-tray';
 import path from 'path';
 import { autoUpdater } from 'electron-updater';
 import type { UpdateInfo } from 'electron-updater';
@@ -511,6 +512,7 @@ export function quitAndInstall(): boolean {
   }
 
   console.warn('[app-updater] Quitting and installing update');
+  allowWindowClose(); // don't let hide-to-tray block the updater from closing the window
   autoUpdater.quitAndInstall(false, true);
   return true;
 }

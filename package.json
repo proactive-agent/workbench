@@ -193,6 +193,13 @@
       {
         "from": "node_modules/detect-libc",
         "to": "node_modules/detect-libc"
+      },
+      {
+        "from": "resources/tray",
+        "to": "tray",
+        "filter": [
+          "*.png"
+        ]
       }
     ],
     "mac": {

@@ -252,6 +252,28 @@ export function expandHomePath(path: string): string {
  * @param configDir - The profile's config directory (e.g., ~/.claude or ~/.claude-profiles/work)
  * @returns The email address if found, null otherwise
  */
+/**
+ * Claude plan of the account signed in to a profile's config dir, e.g. "max" or "pro".
+ *
+ * Read from `.claude.json` → `oauthAccount.organizationType` ("claude_max", "claude_pro", …), which
+ * Claude Code refreshes from Anthropic's OAuth profile endpoint. The `subscriptionType` stored with
+ * the credentials is only captured at sign-in and goes stale after a plan change, so it isn't used.
+ * Returns null when unknown (not signed in, API-only organization, file missing).
+ */
+export function getPlanFromConfigDir(configDir?: string): string | null {
+  if (!configDir) return null;
+  const claudeJsonPath = join(expandHomePath(configDir), '.claude.json');
+  if (!existsSync(claudeJsonPath)) return null;
+  try {
+    const organizationType = JSON.parse(readFileSync(claudeJsonPath, 'utf-8'))?.oauthAccount?.organizationType;
+    if (typeof organizationType !== 'string') return null;
+    const match = /^claude_([a-z]+)$/i.exec(organizationType.trim());
+    return match ? match[1].toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getEmailFromConfigDir(configDir?: string): string | null {
   if (!configDir) {
     return null;

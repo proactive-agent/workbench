@@ -73,9 +73,10 @@ import { appLog, setupErrorLogging } from './app-logger';
 import { initSentryMain } from './sentry';
 import { preWarmToolCache } from './cli-tool-manager';
 import { initializeClaudeProfileManager, getClaudeProfileManager } from './claude-profile-manager';
-import { isProfileAuthenticated } from './claude-profile/profile-utils';
+import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
+import { AppTray, isWindowCloseAllowed } from './app-tray';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -188,6 +189,19 @@ function getIconPath(): string {
 
 // Keep a global reference of the window object to prevent garbage collection
 let mainWindow: BrowserWindow | null = null;
+// System tray (background mode); while it exists, closing the window only hides it
+let appTray: AppTray | null = null;
+
+/** Bring the main window back from the tray (recreating it if it was destroyed) */
+function showMainWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow();
+    return;
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
 let headerIconRotators: AppIconRotator[] = [];
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
@@ -314,6 +328,17 @@ function createWindow(): void {
       spellcheck: true // Enable spell check for text inputs
     }
   });
+
+  // Background mode: the close button hides the window to the tray; agents and terminals keep
+  // running. Real quits (tray "Quit", OS quit) set isQuitting first and close normally.
+  mainWindow.on('close', (event) => {
+    if (!isQuitting && appTray && !isWindowCloseAllowed()) {
+      event.preventDefault();
+      mainWindow?.hide();
+    }
+  });
+  mainWindow.on('show', () => appTray?.refresh());
+  mainWindow.on('hide', () => appTray?.refresh());
 
   // Show window when ready to avoid visual flash
   mainWindow.on('ready-to-show', () => {
@@ -631,6 +656,33 @@ app.whenReady().then(() => {
   // Create window
   createWindow();
 
+  // Tray icon for background mode (a desktop without a tray just keeps the old close-to-quit behavior)
+  try {
+    appTray = new AppTray({
+      iconsDir: is.dev ? join(__dirname, '../../resources/tray') : join(process.resourcesPath, 'tray'),
+      onShowApp: showMainWindow,
+      onQuit: () => app.quit(),
+      getStatus: () => {
+        // Plan and usage are only shown while a Claude account is signed in
+        try {
+          const profile = getClaudeProfileManager().getActiveProfile();
+          if (!profile || !isProfileAuthenticated(profile)) return { planName: null, sessionPercent: null };
+          return {
+            planName: getPlanFromConfigDir(profile.configDir),
+            sessionPercent: getUsageMonitor().getCurrentUsage()?.sessionPercent ?? null
+          };
+        } catch {
+          // Profile manager not ready yet
+          return { planName: null, sessionPercent: null };
+        }
+      }
+    });
+    getUsageMonitor().on('usage-updated', () => appTray?.refresh());
+  } catch (error) {
+    appLog.warn('[main] System tray unavailable, closing the window will quit the app:', error);
+    appTray = null;
+  }
+
   // Seed <userData>/header-icons/{dark,light} with the icons bundled in resources/
   // (first run only; user icons are never overwritten)
   const bundledResourcesPath = is.dev ? join(__dirname, '../../resources') : process.resourcesPath;
@@ -788,11 +840,9 @@ app.whenReady().then(() => {
     }
   }
 
-  // macOS: re-create window when dock icon is clicked
+  // macOS: clicking the dock icon re-creates the window, or shows it if it was hidden to the tray
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    }
+    showMainWindow();
   });
 });
 
@@ -824,6 +874,9 @@ app.on('before-quit', (event) => {
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();
   console.warn('[main] Usage monitor stopped');
+
+  appTray?.destroy();
+  appTray = null;
 
   // Perform async cleanup, then allow quit to proceed
   (async () => {

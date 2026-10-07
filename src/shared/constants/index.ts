@@ -18,6 +18,9 @@ export * from './models';
 // Insights chat constants
 export * from './insights';
 
+// System tray (background mode)
+export * from './tray';
+
 // Theme constants
 export * from './themes';
 
