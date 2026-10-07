@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useToast } from '../../hooks/use-toast';
@@ -28,7 +29,8 @@ import {
   AlertTriangle,
   Pencil,
   X,
-  GitPullRequest
+  GitPullRequest,
+  ArchiveRestore
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import {
@@ -42,7 +44,7 @@ import {
   DIALOG_TITLE_CLASS
 } from '../ui/dialog-styles';
 import { calculateProgress } from '../../lib/utils';
-import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue } from '../../stores/task-store';
+import { stopTask, submitReview, recoverStuckTask, deleteTask, useTaskStore, startTaskOrQueue, unarchiveTasks } from '../../stores/task-store';
 import { useProjectStore } from '../../stores/project-store';
 import { TASK_STATUS_LABELS } from '../../../shared/constants';
 import { TaskEditDialog } from '../TaskEditDialog';
@@ -91,6 +93,20 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
   const { t } = useTranslation(['tasks']);
   const { toast } = useToast();
   const state = useTaskDetail({ task });
+  const [isUnarchiving, setIsUnarchiving] = useState(false);
+
+  // Archived tasks can be brought back to the board from here
+  const handleUnarchive = async () => {
+    setIsUnarchiving(true);
+    const result = await unarchiveTasks(task.projectId, [task.id]);
+    setIsUnarchiving(false);
+    if (!result.success) {
+      toast({
+        title: t('tasks:actions.unarchiveFailed', { error: result.error ?? '' }),
+        variant: 'destructive'
+      });
+    }
+  };
   const activeProject = useProjectStore(s => s.getActiveProject());
   const showFilesTab = isFilesTabEnabled();
   const progressPercent = calculateProgress(task.subtasks);
@@ -602,6 +618,16 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 <Trash2 className="mr-1.5 h-3.5 w-3.5" />
                 Delete Task
               </Button>
+              {task.metadata?.archivedAt && (
+                <Button variant="ghost" size="sm" onClick={handleUnarchive} disabled={isUnarchiving}>
+                  {isUnarchiving ? (
+                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ArchiveRestore className="mr-1.5 h-3.5 w-3.5" />
+                  )}
+                  {t('tasks:actions.unarchive')}
+                </Button>
+              )}
               <div className="flex-1" />
               <Button variant="ghost" size="sm" onClick={handleClose}>
                 Close

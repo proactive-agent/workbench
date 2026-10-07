@@ -21,7 +21,9 @@
     "viewPR": "View PR",
     "moveTo": "Move to",
     "taskActions": "Task actions",
-    "selectTask": "Select task: {{title}}"
+    "selectTask": "Select task: {{title}}",
+    "unarchive": "Unarchive",
+    "unarchiveFailed": "Failed to unarchive the task: {{error}}"
   },
   "labels": {
     "running": "Running",

@@ -1084,6 +1084,35 @@ export async function archiveTasks(
   }
 }
 
+/**
+ * Unarchive tasks
+ * Removes the archivedAt timestamp so the tasks show up on the board again
+ */
+export async function unarchiveTasks(
+  projectId: string,
+  taskIds: string[]
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const result = await window.electronAPI.unarchiveTasks(projectId, taskIds);
+
+    if (result.success) {
+      await loadTasks(projectId);
+      return { success: true };
+    }
+
+    return {
+      success: false,
+      error: result.error || 'Failed to unarchive tasks'
+    };
+  } catch (error) {
+    console.error('Error unarchiving tasks:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
+}
+
 // ============================================
 // Task Creation Draft Management
 // ============================================
