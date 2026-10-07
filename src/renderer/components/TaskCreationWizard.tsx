@@ -12,14 +12,12 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, ChevronDown, ChevronUp, RotateCcw, FolderTree, GitBranch, Info } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronUp, RotateCcw, GitBranch, Info } from 'lucide-react';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Combobox } from './ui/combobox';
 import { TaskModalLayout } from './task-form/TaskModalLayout';
 import { TaskFormFields } from './task-form/TaskFormFields';
-import { type FileReferenceData } from './task-form/useImageUpload';
-import { TaskFileExplorerDrawer } from './TaskFileExplorerDrawer';
 import { FileAutocomplete } from './FileAutocomplete';
 import { createTask, saveDraft, loadDraft, clearDraft, isDraftEmpty } from '../stores/task-store';
 import { useProjectStore } from '../stores/project-store';
@@ -79,7 +77,6 @@ export function TaskCreationWizard({
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showClassification, setShowClassification] = useState(false);
-  const [showFileExplorer, setShowFileExplorer] = useState(false);
   const [showGitOptions, setShowGitOptions] = useState(false);
 
   // Git options state - using structured GitBranchDetail for type indicators
@@ -158,19 +155,12 @@ export function TaskCreationWizard({
 
   // @ autocomplete state
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
-  // Ref to track latest description value (avoids stale closure in handleFileReferenceDrop)
-  const descriptionValueRef = useRef(description);
   const [autocomplete, setAutocomplete] = useState<{
     show: boolean;
     query: string;
     startPos: number;
     position: { top: number; left: number };
   } | null>(null);
-
-  // Keep description ref in sync for use in callbacks
-  useEffect(() => {
-    descriptionValueRef.current = description;
-  }, [description]);
 
   // Load draft when dialog opens
   useEffect(() => {
@@ -221,7 +211,6 @@ export function TaskCreationWizard({
         setPushNewBranches(projectPushNewBranches);
         setIsDraftRestored(false);
         setShowClassification(false);
-        setShowFileExplorer(false);
         setShowGitOptions(false);
       }
     }
@@ -371,46 +360,6 @@ export function TaskCreationWizard({
   }, [autocomplete, description]);
 
   /**
-   * Handle file reference drop from FileTreeItem drag
-   * Inserts @filename at cursor position or end of description
-   * Uses descriptionValueRef to avoid stale closure issues with rapid consecutive drops
-   */
-  const handleFileReferenceDrop = useCallback((_reference: string, data: FileReferenceData) => {
-    // Construct reference from validated data to avoid using unvalidated text/plain input
-    const reference = `@${data.name}`;
-    // Dismiss any active autocomplete when file is dropped
-    if (autocomplete?.show) {
-      setAutocomplete(null);
-    }
-
-    // Get latest description from ref to avoid stale closure
-    const currentDescription = descriptionValueRef.current;
-
-    // Insert reference at cursor position if textarea is available
-    const textarea = descriptionRef.current;
-    if (textarea) {
-      const start = textarea.selectionStart ?? currentDescription.length;
-      const end = textarea.selectionEnd ?? currentDescription.length;
-      const newDescription =
-        currentDescription.substring(0, start) +
-        reference + ' ' +
-        currentDescription.substring(end);
-      handleDescriptionChange(newDescription);
-      // Focus textarea and set cursor after inserted text
-      // Use queueMicrotask for consistency with handleAutocompleteSelect
-      queueMicrotask(() => {
-        textarea.focus();
-        const newCursorPos = start + reference.length + 1;
-        textarea.setSelectionRange(newCursorPos, newCursorPos);
-      });
-    } else {
-      // Fallback: append to end
-      const separator = currentDescription.endsWith(' ') || currentDescription === '' ? '' : ' ';
-      handleDescriptionChange(currentDescription + separator + reference + ' ');
-    }
-  }, [handleDescriptionChange, autocomplete?.show]);
-
-  /**
    * Parse @mentions from description
    */
   const parseFileMentions = useCallback((text: string, existingFiles: ReferencedFile[]): ReferencedFile[] => {
@@ -544,7 +493,6 @@ export function TaskCreationWizard({
     setPushNewBranches(projectPushNewBranches);
     setError(null);
     setShowClassification(false);
-    setShowFileExplorer(false);
     setShowGitOptions(false);
     setIsDraftRestored(false);
   };
@@ -606,16 +554,6 @@ export function TaskCreationWizard({
       title={t('tasks:wizard.createTitle')}
       description={t('tasks:wizard.createDescription')}
       disabled={isCreating}
-      sidebar={
-        projectPath && (
-          <TaskFileExplorerDrawer
-            isOpen={showFileExplorer}
-            onClose={() => setShowFileExplorer(false)}
-            projectPath={projectPath}
-          />
-        )
-      }
-      sidebarOpen={showFileExplorer}
       footer={
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -635,21 +573,6 @@ export function TaskCreationWizard({
                   {t('tasks:wizard.startFresh')}
                 </Button>
               </div>
-            )}
-
-            {/* File Explorer Toggle */}
-            {projectPath && (
-              <Button
-                type="button"
-                variant={showFileExplorer ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setShowFileExplorer(!showFileExplorer)}
-                disabled={isCreating}
-                className="gap-1.5"
-              >
-                <FolderTree className="h-4 w-4" />
-                {showFileExplorer ? t('tasks:wizard.hideFiles') : t('tasks:wizard.browseFiles')}
-              </Button>
             )}
           </div>
 
@@ -728,7 +651,6 @@ export function TaskCreationWizard({
           disabled={isCreating}
           error={error}
           onError={setError}
-          onFileReferenceDrop={handleFileReferenceDrop}
           idPrefix="create"
         >
           {/* File autocomplete popup - positioned relative to TaskFormFields */}

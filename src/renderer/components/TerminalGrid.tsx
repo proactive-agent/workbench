@@ -16,7 +16,7 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { Plus, Sparkles, Grid2X2, FolderTree, File, Folder, History, ChevronDown, Loader2, TerminalSquare, Settings } from 'lucide-react';
+import { Plus, Sparkles, Grid2X2, History, ChevronDown, Loader2, TerminalSquare, Settings } from 'lucide-react';
 import { SortableTerminalWrapper } from './SortableTerminalWrapper';
 import { Button } from './ui/button';
 import {
@@ -26,12 +26,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from './ui/dropdown-menu';
-import { FileExplorerPanel } from './FileExplorerPanel';
 import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
-import { cn } from '../lib/utils';
 import { useTerminalStore } from '../stores/terminal-store';
 import { useTaskStore } from '../stores/task-store';
-import { useFileExplorerStore } from '../stores/file-explorer-store';
 import { TERMINAL_DOM_UPDATE_DELAY_MS, PANEL_CLEANUP_GRACE_PERIOD_MS } from '../../shared/constants';
 import type { SessionDateInfo } from '../../shared/types';
 
@@ -131,8 +128,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
   const tasks = useTaskStore((state) => state.tasks);
 
   // File explorer state
-  const fileExplorerOpen = useFileExplorerStore((state) => state.isOpen);
-  const toggleFileExplorer = useFileExplorerStore((state) => state.toggle);
 
   // Session history state
   const [sessionDates, setSessionDates] = useState<SessionDateInfo[]>([]);
@@ -268,13 +263,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
     })
   );
 
-  // Track dragging state for file overlay
-  const [activeDragData, setActiveDragData] = React.useState<{
-    path: string;
-    name: string;
-    isDirectory: boolean;
-  } | null>(null);
-
   // Track dragging terminal for overlay
   const [draggingTerminalId, setDraggingTerminalId] = React.useState<string | null>(null);
   const draggingTerminal = terminals.find(t => t.id === draggingTerminalId);
@@ -333,32 +321,19 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
 
   // Handle drag start - store dragged item data
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    const data = event.active.data.current as {
-      type: string;
-      path?: string;
-      name?: string;
-      isDirectory?: boolean;
-      terminalId?: string;
-    } | undefined;
+    const data = event.active.data.current as { type: string } | undefined;
 
-    if (data?.type === 'file' && data.path && data.name !== undefined) {
-      setActiveDragData({
-        path: data.path,
-        name: data.name,
-        isDirectory: data.isDirectory ?? false
-      });
-    } else if (data?.type === 'terminal-panel') {
+    if (data?.type === 'terminal-panel') {
       setDraggingTerminalId(event.active.id.toString());
     }
   }, []);
 
-  // Handle drag end - insert file path into terminal or reorder terminals
+  // Handle drag end - reorder terminals
   const handleDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    const activeData = active.data.current as { type?: string; path?: string } | undefined;
+    const activeData = active.data.current as { type?: string } | undefined;
 
-    // Clear drag states
-    setActiveDragData(null);
+    // Clear drag state
     setDraggingTerminalId(null);
 
     if (!over) return;
@@ -401,24 +376,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
         }, TERMINAL_DOM_UPDATE_DELAY_MS);
       }
       return;
-    }
-
-    // Handle file drop on terminal
-    const overId = over.id.toString();
-    let terminalId: string | null = null;
-
-    if (overId.startsWith('terminal-')) {
-      terminalId = overId.replace('terminal-', '');
-    } else if (terminals.some(t => t.id === overId)) {
-      // closestCenter might return the sortable ID instead of droppable ID
-      terminalId = overId;
-    }
-
-    if (terminalId && activeData?.path) {
-      // Quote the path if it contains spaces
-      const quotedPath = activeData.path.includes(' ') ? `"${activeData.path}"` : activeData.path;
-      // Insert the file path into the terminal with a trailing space
-      window.electronAPI.sendTerminalInput(terminalId, quotedPath + ' ');
     }
   }, [reorderTerminals, terminals, projectPath]);
 
@@ -553,28 +510,13 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
                 {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+T
               </kbd>
             </Button>
-            {/* File explorer toggle button */}
-            {projectPath && (
-              <Button
-                variant={fileExplorerOpen ? 'default' : 'outline'}
-                size="sm"
-                className="h-7 text-xs gap-1.5"
-                onClick={toggleFileExplorer}
-              >
-                <FolderTree className="h-3 w-3" />
-                Files
-              </Button>
-            )}
           </div>
         </div>
 
-        {/* Main content area with terminal grid and file explorer sidebar */}
+        {/* Main content area with the terminal grid */}
         <div className="flex flex-1 overflow-hidden">
           {/* Terminal grid using resizable panels */}
-          <div className={cn(
-            "flex-1 overflow-hidden p-2 transition-all duration-300 ease-out",
-            fileExplorerOpen && "pr-0"
-          )}>
+          <div className="flex-1 overflow-hidden p-2">
             {expandedTerminalId ? (
               // Show only the expanded terminal
               (() => {
@@ -635,22 +577,10 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             )}
           </div>
 
-          {/* File explorer panel (slides from right, pushes content) */}
-          {projectPath && <FileExplorerPanel projectPath={projectPath} />}
         </div>
 
         {/* Drag overlay - shows what's being dragged */}
         <DragOverlay>
-          {activeDragData && (
-            <div className="flex items-center gap-2 bg-card border border-border rounded-md px-3 py-2 shadow-lg">
-              {activeDragData.isDirectory ? (
-                <Folder className="h-4 w-4 text-warning" />
-              ) : (
-                <File className="h-4 w-4 text-muted-foreground" />
-              )}
-              <span className="text-sm">{activeDragData.name}</span>
-            </div>
-          )}
           {draggingTerminal && (
             <div className="flex items-center gap-2 bg-card border border-primary rounded-md px-3 py-2 shadow-lg">
               <TerminalSquare className="h-4 w-4 text-primary" />

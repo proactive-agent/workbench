@@ -20,7 +20,7 @@ import { Switch } from '../ui/switch';
 import { Button } from '../ui/button';
 import { AgentProfileSelector } from '../AgentProfileSelector';
 import { ClassificationFields } from './ClassificationFields';
-import { useImageUpload, type FileReferenceData } from './useImageUpload';
+import { useImageUpload } from './useImageUpload';
 import { createThumbnail } from '../ImageUpload';
 import { ScreenshotCapture } from '../ScreenshotCapture';
 import { ImagePreviewModal } from './ImagePreviewModal';
@@ -102,9 +102,6 @@ interface TaskFormFieldsProps {
 
   /** Optional children to render after description (e.g., @ mention highlight overlay) */
   children?: ReactNode;
-
-  /** Callback when a file reference is dropped (from FileTreeItem drag) */
-  onFileReferenceDrop?: (reference: string, data: FileReferenceData) => void;
 }
 
 export function TaskFormFields({
@@ -148,8 +145,7 @@ export function TaskFormFields({
   error,
   onError,
   idPrefix = '',
-  children,
-  onFileReferenceDrop
+  children
 }: TaskFormFieldsProps) {
   const { t } = useTranslation(['tasks', 'common']);
   // Use external ref if provided (for @ mention autocomplete), otherwise use internal ref
@@ -253,8 +249,7 @@ export function TaskFormFields({
       invalidImageType: t('tasks:form.errors.invalidImageType'),
       processPasteFailed: t('tasks:form.errors.processPasteFailed'),
       processDropFailed: t('tasks:form.errors.processDropFailed')
-    },
-    onFileReferenceDrop
+    }
   });
 
   /**

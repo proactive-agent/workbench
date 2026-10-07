@@ -197,8 +197,6 @@
     "descriptionPlaceholder": "Describe the feature, bug fix, or improvement you want to implement. Be as specific as possible about requirements, constraints, and expected behavior. Type @ to reference files.",
     "draftRestored": "Draft restored",
     "startFresh": "Start Fresh",
-    "hideFiles": "Hide Files",
-    "browseFiles": "Browse Files",
     "creating": "Creating...",
     "createTask": "Create Task",
     "worktreeNotice": {

@@ -29,10 +29,6 @@ interface TaskModalLayoutProps {
   children: ReactNode;
   /** Footer content (action buttons) */
   footer: ReactNode;
-  /** Optional sidebar content (e.g., file explorer) */
-  sidebar?: ReactNode;
-  /** Whether sidebar is visible */
-  sidebarOpen?: boolean;
   /** Whether the modal is in a loading/disabled state */
   disabled?: boolean;
 }
@@ -44,8 +40,6 @@ export function TaskModalLayout({
   description,
   children,
   footer,
-  sidebar,
-  sidebarOpen = false,
   disabled = false
 }: TaskModalLayoutProps) {
   const { t } = useTranslation('common');
@@ -124,13 +118,6 @@ export function TaskModalLayout({
                 {footer}
               </div>
             </div>
-
-            {/* Optional sidebar */}
-            {sidebar && sidebarOpen && (
-              <div className="w-80 border-l border-border flex-shrink-0 overflow-hidden">
-                {sidebar}
-              </div>
-            )}
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>

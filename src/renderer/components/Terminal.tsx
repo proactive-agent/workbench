@@ -1,7 +1,6 @@
 import { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { useDroppable, useDndContext } from '@dnd-kit/core';
+import { useDroppable } from '@dnd-kit/core';
 import '@xterm/xterm/css/xterm.css';
-import { FileDown } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTerminalStore } from '../stores/terminal-store';
 import { useSettingsStore } from '../stores/settings-store';
@@ -14,7 +13,6 @@ import { useXterm } from './terminal/useXterm';
 import { usePtyProcess } from './terminal/usePtyProcess';
 import { useTerminalEvents } from './terminal/useTerminalEvents';
 import { useAutoNaming } from './terminal/useAutoNaming';
-import { useTerminalFileDrop } from './terminal/useTerminalFileDrop';
 import { debugLog } from '../../shared/utils/debug-logger';
 import { isWindows as checkIsWindows } from '../lib/os-detection';
 
@@ -120,23 +118,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     ? tasks.find((t) => t.id === terminal.associatedTaskId)
     : undefined;
 
-  // Setup drop zone for file drag-and-drop
-  const { setNodeRef: setDropRef, isOver } = useDroppable({
+  // Drop zone used when reordering terminals by dragging their headers
+  const { setNodeRef: setDropRef } = useDroppable({
     id: `terminal-${id}`,
     data: { type: 'terminal', terminalId: id }
   });
 
-  // Check if a terminal is being dragged (vs a file)
-  const { active } = useDndContext();
-  const isDraggingTerminal = active?.data.current?.type === 'terminal-panel';
-
-  // Use custom hook for native HTML5 file drop handling from FileTreeItem
-  // This hook is extracted to enable proper unit testing with renderHook()
-  const { isNativeDragOver, handleNativeDragOver, handleNativeDragLeave, handleNativeDrop } =
-    useTerminalFileDrop({ terminalId: id });
-
-  // Only show file drop overlay when dragging files (via @dnd-kit or native), not terminals
-  const showFileDropOverlay = (isOver && !isDraggingTerminal) || isNativeDragOver;
 
   // Auto-naming functionality
   const { handleCommandEnter, cleanup: cleanupAutoNaming } = useAutoNaming({
@@ -776,25 +763,12 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         'flex h-full flex-col rounded-lg border bg-[#0B0B0F] overflow-hidden transition-all relative',
         // Default border states
         isActive ? 'border-primary ring-1 ring-primary/20' : 'border-border',
-        // File drop overlay
-        showFileDropOverlay && 'ring-2 ring-info border-info',
         // Claude busy state indicator (subtle colored border when in Claude mode)
         showClaudeBusyIndicator && isClaudeBusy && 'border-red-500/60 ring-1 ring-red-500/20',
         showClaudeBusyIndicator && !isClaudeBusy && 'border-green-500/60 ring-1 ring-green-500/20'
       )}
       onClick={handleClick}
-      onDragOver={handleNativeDragOver}
-      onDragLeave={handleNativeDragLeave}
-      onDrop={handleNativeDrop}
     >
-      {showFileDropOverlay && (
-        <div className="absolute inset-0 bg-info/10 z-10 flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2 bg-info/90 text-info-foreground px-3 py-2 rounded-md">
-            <FileDown className="h-4 w-4" />
-            <span className="text-sm font-medium">Drop to insert path</span>
-          </div>
-        </div>
-      )}
 
       <TerminalHeader
         terminalId={id}

@@ -19,7 +19,6 @@ interface ReferencedFilesSectionProps {
 
 /**
  * Get appropriate icon based on file extension
- * Matches the pattern from FileTreeItem.tsx
  */
 function getFileIcon(name: string, isDirectory: boolean): React.ReactNode {
   if (isDirectory) {

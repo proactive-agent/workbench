@@ -19,14 +19,6 @@ import {
   ALLOWED_IMAGE_TYPES_DISPLAY
 } from '../../../shared/constants';
 
-/** Data structure for file reference drops from FileTreeItem */
-export interface FileReferenceData {
-  type: 'file-reference';
-  path: string;
-  name: string;
-  isDirectory: boolean;
-}
-
 /** Error messages that can be customized/translated by callers */
 interface ImageUploadErrorMessages {
   maxImagesReached?: string;
@@ -47,8 +39,6 @@ interface UseImageUploadOptions {
   onError?: (error: string | null) => void;
   /** Custom error messages for i18n support */
   errorMessages?: ImageUploadErrorMessages;
-  /** Callback when a file reference is dropped (from FileTreeItem drag) */
-  onFileReferenceDrop?: (reference: string, data: FileReferenceData) => void;
   /** Accept any file type (not just images); non-image files are attached without a thumbnail */
   acceptAllFiles?: boolean;
 }
@@ -91,7 +81,6 @@ export function useImageUpload({
   disabled = false,
   onError,
   errorMessages = {},
-  onFileReferenceDrop,
   acceptAllFiles = false
 }: UseImageUploadOptions): UseImageUploadReturn {
   const [isDragOver, setIsDragOver] = useState(false);
@@ -258,43 +247,7 @@ export function useImageUpload({
   }, []);
 
   /**
-   * Parse file reference data from drag event dataTransfer
-   * Returns the parsed data if valid, null otherwise
-   */
-  const parseFileReferenceData = useCallback((dataTransfer: DataTransfer): FileReferenceData | null => {
-    // Check for application/json data (set by FileTreeItem)
-    const jsonData = dataTransfer.getData('application/json');
-    if (!jsonData) return null;
-
-    try {
-      const data = JSON.parse(jsonData) as Record<string, unknown>;
-      // Validate required fields - path and name must be non-empty strings
-      // isDirectory is optional and defaults to false if missing or not a boolean
-      // This aligns with parseFileReferenceDrop in shell-escape.ts
-      if (
-        data.type === 'file-reference' &&
-        typeof data.path === 'string' &&
-        data.path.length > 0 &&
-        typeof data.name === 'string' &&
-        data.name.length > 0
-      ) {
-        return {
-          type: 'file-reference',
-          path: data.path,
-          name: data.name,
-          isDirectory: typeof data.isDirectory === 'boolean' ? data.isDirectory : false
-        };
-      }
-    } catch {
-      // Invalid JSON, not a file reference
-    }
-    return null;
-  }, []);
-
-  /**
-   * Handle drop on textarea for image files and file references
-   * File references from FileTreeItem (drag from file tree) are detected and handled
-   * via the onFileReferenceDrop callback. Image files are processed as attachments.
+   * Handle drop of image files (or any files in acceptAllFiles mode) as attachments
    */
   const handleDrop = useCallback(
     async (e: DragEvent<HTMLElement>) => {
@@ -306,23 +259,6 @@ export function useImageUpload({
       }
 
       setIsDragOver(false);
-
-      // First, check for file reference drops from FileTreeItem
-      // These have 'application/json' with type: 'file-reference' and 'text/plain' with @filename
-      const fileRefData = parseFileReferenceData(e.dataTransfer);
-      if (fileRefData) {
-        e.preventDefault();
-        e.stopPropagation();
-
-        // Get the @filename reference text
-        const reference = e.dataTransfer.getData('text/plain') || `@${fileRefData.name}`;
-
-        // Call the callback if provided
-        if (onFileReferenceDrop) {
-          onFileReferenceDrop(reference, fileRefData);
-        }
-        return;
-      }
 
       const files = e.dataTransfer?.files;
 
@@ -346,7 +282,7 @@ export function useImageUpload({
 
       await processImageItems(imageFiles, { isFromPaste: false });
     },
-    [disabled, processImageItems, parseFileReferenceData, onFileReferenceDrop, acceptAllFiles]
+    [disabled, processImageItems, acceptAllFiles]
   );
 
   const addFiles = useCallback(
