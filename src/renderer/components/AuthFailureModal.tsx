@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Settings } from 'lucide-react';
+import { AlertTriangle } from 'lucide-react';
+import { SettingsIcon as Settings } from './icons/app-icons';
 import {
   Dialog,
   DialogContent,

@@ -8,7 +8,6 @@ import {
   Search,
   FileText,
   FolderSearch,
-  PanelLeftClose,
   PanelLeft,
   SquarePen,
   ArrowUp,
@@ -575,11 +574,7 @@ export function Insights({ projectId }: InsightsProps) {
                 onClick={() => setShowSidebar(!showSidebar)}
                 aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
               >
-                {showSidebar ? (
-                  <PanelLeftClose className="h-4 w-4" />
-                ) : (
-                  <PanelLeft className="h-4 w-4" />
-                )}
+                <PanelLeft className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>

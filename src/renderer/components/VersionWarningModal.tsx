@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, Settings, ChevronRight } from 'lucide-react';
+import { AlertTriangle, ChevronRight } from 'lucide-react';
+import { SettingsIcon as Settings } from './icons/app-icons';
 import {
   Dialog,
   DialogContent,

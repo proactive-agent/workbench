@@ -4,8 +4,8 @@
     "tools": "Tools"
   },
   "items": {
-    "kanban": "Kanban Board",
-    "terminals": "Agent Terminals",
+    "kanban": "Kanban",
+    "terminals": "Agents",
     "insights": "Insights",
     "gitlabIssues": "GitLab Issues",
     "gitlabMRs": "GitLab MRs",

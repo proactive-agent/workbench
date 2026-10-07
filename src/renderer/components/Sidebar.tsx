@@ -2,19 +2,14 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
-  Settings,
-  LayoutGrid,
-  Terminal,
   AlertCircle,
   Download,
   RefreshCw,
   GitlabIcon,
   GitMerge,
-  Sparkles,
-  PanelLeft,
-  PanelLeftClose,
-  FolderKanban
+  PanelLeft
 } from 'lucide-react';
+import { AgentsIcon, InsightsIcon, KanbanIcon, ProjectIcon, SettingsIcon as Settings } from './icons/app-icons';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import {
@@ -72,9 +67,9 @@ interface NavItem {
 
 // Base nav items always shown
 const baseNavItems: NavItem[] = [
-  { id: 'kanban', labelKey: 'navigation:items.kanban', icon: LayoutGrid, shortcut: 'K' },
-  { id: 'terminals', labelKey: 'navigation:items.terminals', icon: Terminal, shortcut: 'A' },
-  { id: 'insights', labelKey: 'navigation:items.insights', icon: Sparkles, shortcut: 'N' },
+  { id: 'kanban', labelKey: 'navigation:items.kanban', icon: KanbanIcon, shortcut: 'K' },
+  { id: 'terminals', labelKey: 'navigation:items.terminals', icon: AgentsIcon, shortcut: 'A' },
+  { id: 'insights', labelKey: 'navigation:items.insights', icon: InsightsIcon, shortcut: 'N' },
 ];
 
 // GitLab nav items shown when GitLab is enabled
@@ -332,7 +327,7 @@ export function Sidebar({
 
   const renderRowIcon = (Icon: React.ElementType) => (
     <span className="flex h-7 w-7 shrink-0 items-center justify-center">
-      <Icon className="h-4 w-4" strokeWidth={1.75} />
+      <Icon className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
     </span>
   );
 
@@ -407,11 +402,7 @@ export function Sidebar({
                 onClick={toggleSidebar}
                 aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
               >
-                {isCollapsed ? (
-                  <PanelLeft className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                ) : (
-                  <PanelLeftClose className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                )}
+                <PanelLeft className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
               </Button>
             </TooltipTrigger>
             <TooltipContent side="right">
@@ -441,7 +432,7 @@ export function Sidebar({
               aria-current={activeView === 'projects' ? 'page' : undefined}
               className={rowClass(activeView === 'projects')}
             >
-              {renderRowIcon(FolderKanban)}
+              {renderRowIcon(ProjectIcon)}
               {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{projectsLabel}</span>}
             </button>
           ))}

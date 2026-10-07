@@ -2,10 +2,10 @@ import {
   CheckCircle2,
   Rocket,
   FileText,
-  Settings,
   BookOpen,
   ArrowRight
 } from 'lucide-react';
+import { SettingsIcon as Settings } from '../icons/app-icons';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';

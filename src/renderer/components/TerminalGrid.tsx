@@ -16,7 +16,8 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { Plus, Sparkles, Grid2X2, History, ChevronDown, Loader2, TerminalSquare, Settings } from 'lucide-react';
+import { Plus, Sparkles, Grid2X2, History, ChevronDown, Loader2, TerminalSquare } from 'lucide-react';
+import { SettingsIcon as Settings } from './icons/app-icons';
 import { SortableTerminalWrapper } from './SortableTerminalWrapper';
 import { Button } from './ui/button';
 import {
