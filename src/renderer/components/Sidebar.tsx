@@ -510,7 +510,7 @@ export function Sidebar({
               {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{t('actions.settings')}</span>}
             </button>
           ))}
-          <UsageIndicator />
+          {!isCollapsed && <UsageIndicator />}
         </div>
       </aside>
 
