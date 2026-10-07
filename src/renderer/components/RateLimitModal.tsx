@@ -168,8 +168,8 @@ export function RateLimitModal() {
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && hideRateLimitModal()}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-warning">
-            <AlertCircle className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-warning" />
             {t('rateLimit.modalTitle')}
           </DialogTitle>
           <DialogDescription>
@@ -180,11 +180,11 @@ export function RateLimitModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 space-y-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           {/* Auto-switch notification */}
           {autoSwitchHappened && (
-            <div className="flex items-center gap-3 rounded-lg border border-green-500/30 bg-green-500/10 p-4">
-              <Zap className="h-5 w-5 text-green-500 shrink-0" />
+            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+              <Zap className="h-4 w-4 text-success shrink-0" />
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t('rateLimit.autoSwitching', { name: suggestedProfile?.name })}
@@ -198,8 +198,8 @@ export function RateLimitModal() {
 
           {/* Reset time info */}
           {rateLimitInfo?.resetTime && !autoSwitchHappened && (
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 p-4">
-              <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+              <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t('rateLimit.resetsTime', { time: rateLimitInfo.resetTime })}
@@ -213,7 +213,7 @@ export function RateLimitModal() {
 
           {/* Profile switching / Add account section - show unless auto-switch happened */}
           {!autoSwitchHappened && (
-            <div className="rounded-lg border border-accent/50 bg-accent/10 p-4">
+            <div className="rounded-lg border border-border px-4 py-3 text-sm">
               <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
                 <User className="h-4 w-4" />
                 {hasMultipleProfiles ? t('rateLimit.switchAccount') : t('rateLimit.useAnotherAccount')}
@@ -363,7 +363,7 @@ export function RateLimitModal() {
           )}
 
           {/* Upgrade prompt */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <div className="rounded-lg border border-border px-4 py-3 text-sm">
             <h4 className="text-sm font-medium text-foreground mb-2">
               {t('rateLimit.upgradeTitle')}
             </h4>
@@ -385,7 +385,7 @@ export function RateLimitModal() {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={hideRateLimitModal}>
+          <Button size="sm" onClick={hideRateLimitModal}>
             {autoSwitchHappened ? t('buttons.continue') : hasMultipleProfiles ? t('buttons.close') : t('buttons.gotIt')}
           </Button>
         </DialogFooter>

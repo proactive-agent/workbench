@@ -96,8 +96,7 @@ export function InvestigationDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-info" />
+          <DialogTitle>
             {t('investigation.title')}
           </DialogTitle>
           <DialogDescription>
@@ -110,7 +109,7 @@ export function InvestigationDialog({
         </DialogHeader>
 
         {investigationStatus.phase === 'idle' ? (
-          <div className="space-y-4 flex-1 min-h-0 flex flex-col">
+          <div className="mt-4 space-y-4 flex-1 min-h-0 flex flex-col">
             <p className="text-sm text-muted-foreground">
               {t('investigation.description')}
             </p>
@@ -121,7 +120,7 @@ export function InvestigationDialog({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : fetchNotesError ? (
-              <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-4">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
                 <p className="text-sm text-destructive font-medium">{t('investigation.failedToLoadNotes')}</p>
                 <p className="text-xs text-destructive/80 mt-1">{fetchNotesError}</p>
               </div>
@@ -142,7 +141,7 @@ export function InvestigationDialog({
                   </Button>
                 </div>
                 <ScrollArea
-                  className="flex min-h-0 border rounded-md"
+                  className="flex min-h-0 rounded-lg border border-border"
                   viewportClassName="h-auto"
                 >
                   <div className="p-2 space-y-2">
@@ -150,7 +149,7 @@ export function InvestigationDialog({
                       <button
                         type="button"
                         key={note.id}
-                        className="flex gap-3 p-3 rounded-lg border border-border bg-card hover:bg-accent/50 transition-colors cursor-pointer w-full text-left"
+                        className="flex gap-3 p-3 rounded-lg border border-border hover:bg-nav-hover transition-colors cursor-pointer w-full text-left"
                         onClick={() => toggleNote(note.id)}
                       >
                         <Checkbox
@@ -174,7 +173,7 @@ export function InvestigationDialog({
                 </ScrollArea>
               </div>
             ) : (
-              <div className="rounded-lg border border-border bg-muted/30 p-4">
+              <div className="rounded-lg border border-border px-4 py-3 text-sm">
                 <h4 className="text-sm font-medium mb-2">{t('investigation.willInclude')}</h4>
                 <ul className="text-sm text-muted-foreground space-y-1">
                   <li>• {t('investigation.includeTitle')}</li>
@@ -186,7 +185,7 @@ export function InvestigationDialog({
             )}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="mt-4 space-y-4">
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">{investigationStatus.message}</span>
@@ -196,14 +195,14 @@ export function InvestigationDialog({
             </div>
 
             {investigationStatus.phase === 'error' && (
-              <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 {investigationStatus.error}
               </div>
             )}
 
             {investigationStatus.phase === 'complete' && (
-              <div className="rounded-lg bg-success/10 border border-success/30 p-3 flex items-center gap-2 text-sm text-success">
-                <CheckCircle2 className="h-4 w-4" />
+              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                 {t('investigation.taskCreated')}
               </div>
             )}
@@ -213,28 +212,28 @@ export function InvestigationDialog({
         <DialogFooter>
           {investigationStatus.phase === 'idle' && (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
                 {t('investigation.cancel')}
               </Button>
-              <Button onClick={handleStartInvestigation}>
-                <Sparkles className="h-4 w-4 mr-2" />
+              <Button size="sm" onClick={handleStartInvestigation}>
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
                 {t('detail.createTask')}
               </Button>
             </>
           )}
           {investigationStatus.phase !== 'idle' && investigationStatus.phase !== 'complete' && investigationStatus.phase !== 'error' && (
-            <Button variant="outline" disabled>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Button size="sm" disabled>
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
               {t('investigation.creating')}
             </Button>
           )}
           {investigationStatus.phase === 'error' && (
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="ghost" size="sm" onClick={onClose}>
               {t('investigation.close')}
             </Button>
           )}
           {investigationStatus.phase === 'complete' && (
-            <Button onClick={onClose}>
+            <Button size="sm" onClick={onClose}>
               {t('investigation.done')}
             </Button>
           )}

@@ -1,7 +1,19 @@
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
+import {
+  DIALOG_ANIMATION_CLASS,
+  DIALOG_CLOSE_BUTTON_CLASS,
+  DIALOG_CLOSE_ICON_CLASS,
+  DIALOG_CLOSE_ICON_STROKE,
+  DIALOG_DESCRIPTION_CLASS,
+  DIALOG_FOOTER_BAR_CLASS,
+  DIALOG_OVERLAY_CLASS,
+  DIALOG_SURFACE_CLASS,
+  DIALOG_TITLE_CLASS
+} from './dialog-styles';
 
 const FullScreenDialog = DialogPrimitive.Root;
 
@@ -17,12 +29,7 @@ const FullScreenDialogOverlay = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Overlay
     ref={ref}
-    className={cn(
-      'fixed inset-0 z-50 bg-background/95 backdrop-blur-sm',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out',
-      'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-      className
-    )}
+    className={cn(DIALOG_OVERLAY_CLASS, className)}
     {...props}
   />
 ));
@@ -31,39 +38,29 @@ FullScreenDialogOverlay.displayName = 'FullScreenDialogOverlay';
 const FullScreenDialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, ...props }, ref) => {
+  const { t } = useTranslation('common');
+  return (
   <FullScreenDialogPortal>
     <FullScreenDialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed inset-4 z-50 flex flex-col',
-        'surface-border bg-card border border-border rounded-2xl',
-        'shadow-2xl overflow-hidden',
-        'data-[state=open]:animate-in data-[state=closed]:animate-out',
-        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-        'data-[state=closed]:zoom-out-98 data-[state=open]:zoom-in-98',
-        'duration-200',
+        'fixed inset-4 z-50 flex flex-col overflow-hidden',
+        DIALOG_SURFACE_CLASS,
+        DIALOG_ANIMATION_CLASS,
         className
       )}
       {...props}
     >
       {children}
-      <DialogPrimitive.Close
-        className={cn(
-          'absolute right-4 top-4 rounded-lg p-2',
-          'text-muted-foreground hover:text-foreground',
-          'hover:bg-accent transition-colors',
-          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background',
-          'disabled:pointer-events-none z-10'
-        )}
-      >
-        <X className="h-5 w-5" />
-        <span className="sr-only">Close</span>
+      <DialogPrimitive.Close className={DIALOG_CLOSE_BUTTON_CLASS} aria-label={t('close')}>
+        <X className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
       </DialogPrimitive.Close>
     </DialogPrimitive.Content>
   </FullScreenDialogPortal>
-));
+  );
+});
 FullScreenDialogContent.displayName = 'FullScreenDialogContent';
 
 const FullScreenDialogHeader = ({
@@ -71,10 +68,8 @@ const FullScreenDialogHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      'flex flex-col space-y-1.5 p-6 pb-4 border-b border-border',
-      className
-    )}
+    // pr-14 keeps the title clear of the close button
+    className={cn('flex flex-col gap-1 border-b border-border px-6 pb-4 pr-14 pt-6', className)}
     {...props}
   />
 );
@@ -93,10 +88,7 @@ const FullScreenDialogFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      'flex items-center justify-end gap-3 p-6 pt-4 border-t border-border',
-      className
-    )}
+    className={cn('flex items-center justify-end gap-2', DIALOG_FOOTER_BAR_CLASS, className)}
     {...props}
   />
 );
@@ -108,10 +100,7 @@ const FullScreenDialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Title
     ref={ref}
-    className={cn(
-      'text-xl font-semibold leading-none tracking-tight text-foreground',
-      className
-    )}
+    className={cn(DIALOG_TITLE_CLASS, className)}
     {...props}
   />
 ));
@@ -123,7 +112,7 @@ const FullScreenDialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-muted-foreground', className)}
+    className={cn(DIALOG_DESCRIPTION_CLASS, className)}
     {...props}
   />
 ));

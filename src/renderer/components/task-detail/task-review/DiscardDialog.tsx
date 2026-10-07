@@ -35,8 +35,7 @@ export function DiscardDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <FolderX className="h-5 w-5 text-destructive" />
+          <AlertDialogTitle>
             Discard Build
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
@@ -49,7 +48,7 @@ export function DiscardDialog({
                 The task will be moved back to Planning status.
               </p>
               {worktreeStatus?.exists && (
-                <div className="bg-muted/50 rounded-lg p-3 text-sm">
+                <div className="rounded-lg border border-border px-4 py-3 text-sm">
                   <div className="flex justify-between mb-1">
                     <span className="text-muted-foreground">Files changed:</span>
                     <span>{worktreeStatus.filesChanged || 0}</span>
@@ -76,12 +75,12 @@ export function DiscardDialog({
           >
             {isDiscarding ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Discarding...
               </>
             ) : (
               <>
-                <FolderX className="mr-2 h-4 w-4" />
+                <FolderX className="mr-1.5 h-3.5 w-3.5" />
                 Discard Build
               </>
             )}

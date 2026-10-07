@@ -2,6 +2,15 @@ import * as React from 'react';
 import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 import { cn } from '../../lib/utils';
 import { buttonVariants } from './button';
+import {
+  DIALOG_ANIMATION_CLASS,
+  DIALOG_DESCRIPTION_CLASS,
+  DIALOG_FOOTER_ACTIONS_CLASS,
+  DIALOG_FOOTER_BAR_CLASS,
+  DIALOG_OVERLAY_CLASS,
+  DIALOG_SURFACE_CLASS,
+  DIALOG_TITLE_CLASS
+} from './dialog-styles';
 
 const AlertDialog = AlertDialogPrimitive.Root;
 
@@ -14,12 +23,7 @@ const AlertDialogOverlay = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Overlay
-    className={cn(
-      'fixed inset-0 z-50 bg-black/80 backdrop-blur-sm',
-      'data-[state=open]:animate-in data-[state=closed]:animate-out',
-      'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-      className
-    )}
+    className={cn(DIALOG_OVERLAY_CLASS, className)}
     {...props}
     ref={ref}
   />
@@ -35,16 +39,9 @@ const AlertDialogContent = React.forwardRef<
     <AlertDialogPrimitive.Content
       ref={ref}
       className={cn(
-        'fixed left-[50%] top-[50%] z-50 w-full max-w-lg max-h-[90vh]',
-        'translate-x-[-50%] translate-y-[-50%]',
-        'surface-border bg-card border border-border rounded-2xl p-6',
-        'shadow-xl',
-        'data-[state=open]:animate-in data-[state=closed]:animate-out',
-        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-        'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-        'data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%]',
-        'data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%]',
-        'duration-200',
+        'fixed left-1/2 top-1/2 z-50 w-full max-w-lg max-h-[90vh] -translate-x-1/2 -translate-y-1/2 overflow-hidden p-6',
+        DIALOG_SURFACE_CLASS,
+        DIALOG_ANIMATION_CLASS,
         className
       )}
       {...props}
@@ -58,10 +55,7 @@ const AlertDialogHeader = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      'flex flex-col space-y-2 text-center sm:text-left',
-      className
-    )}
+    className={cn('flex flex-col gap-1 text-left', className)}
     {...props}
   />
 );
@@ -72,10 +66,8 @@ const AlertDialogFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn(
-      'flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-3 mt-6',
-      className
-    )}
+    // Full-width bar: the negative margins reach the edges of the p-6 dialog panel
+    className={cn('-mx-6 -mb-6 mt-6', DIALOG_FOOTER_BAR_CLASS, DIALOG_FOOTER_ACTIONS_CLASS, className)}
     {...props}
   />
 );
@@ -87,7 +79,7 @@ const AlertDialogTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Title
     ref={ref}
-    className={cn('text-lg font-semibold text-foreground', className)}
+    className={cn(DIALOG_TITLE_CLASS, className)}
     {...props}
   />
 ));
@@ -99,7 +91,7 @@ const AlertDialogDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Description
     ref={ref}
-    className={cn('text-sm text-muted-foreground', className)}
+    className={cn(DIALOG_DESCRIPTION_CLASS, className)}
     {...props}
   />
 ));
@@ -112,7 +104,7 @@ const AlertDialogAction = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Action
     ref={ref}
-    className={cn(buttonVariants(), className)}
+    className={cn(buttonVariants({ size: 'sm' }), className)}
     {...props}
   />
 ));
@@ -124,11 +116,7 @@ const AlertDialogCancel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <AlertDialogPrimitive.Cancel
     ref={ref}
-    className={cn(
-      buttonVariants({ variant: 'outline' }),
-      'mt-2 sm:mt-0',
-      className
-    )}
+    className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), className)}
     {...props}
   />
 ));

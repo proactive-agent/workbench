@@ -548,7 +548,7 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
             <DialogTitle>{t('mcp.addMcpTo', { agent: config.label })}</DialogTitle>
             <DialogDescription>{t('mcp.addMcpDescription')}</DialogDescription>
           </DialogHeader>
-          <div className="space-y-2 py-4">
+          <div className="-mx-6 min-h-0 space-y-2 overflow-y-auto px-6 py-4">
             {availableMcps.length > 0 ? (
               availableMcps.map((mcpId) => {
                 const server = allMcpServers[mcpId];

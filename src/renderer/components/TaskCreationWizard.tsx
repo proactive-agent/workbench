@@ -576,14 +576,14 @@ export function TaskCreationWizard({
             )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <Button variant="outline" onClick={handleClose} disabled={isCreating}>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={handleClose} disabled={isCreating}>
               {t('common:buttons.cancel')}
             </Button>
-            <Button onClick={handleCreate} disabled={isCreating || !description.trim()}>
+            <Button size="sm" onClick={handleCreate} disabled={isCreating || !description.trim()}>
               {isCreating ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   {t('tasks:wizard.creating')}
                 </>
               ) : (
@@ -596,8 +596,8 @@ export function TaskCreationWizard({
     >
       <div className="space-y-6">
         {/* Worktree isolation info banner */}
-        <div className="flex items-start gap-3 p-4 bg-info/10 border border-info/30 rounded-lg">
-          <Info className="h-5 w-5 text-info flex-shrink-0 mt-0.5" />
+        <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+          <Info className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
           <div className="flex-1 min-w-0">
             <h4 className="text-sm font-medium text-foreground mb-1">
               {t('tasks:wizard.worktreeNotice.title')}
@@ -695,7 +695,7 @@ export function TaskCreationWizard({
 
         {/* Git Options */}
         {showGitOptions && (
-          <div id="git-options-section" className="space-y-4 p-4 rounded-lg border border-border bg-muted/30">
+          <div id="git-options-section" className="space-y-4 rounded-lg border border-border px-4 py-3">
             <div className="space-y-2">
               <Label htmlFor="base-branch" className="text-sm font-medium text-foreground">
                 {t('tasks:wizard.gitOptions.baseBranchLabel')}

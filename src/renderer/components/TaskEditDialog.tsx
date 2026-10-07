@@ -274,14 +274,14 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       description={t('tasks:edit.description')}
       disabled={isSaving}
       footer={
-        <div className="flex items-center justify-end gap-3">
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSaving}>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={isSaving}>
             {t('common:buttons.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={isSaving || !isValid}>
+          <Button size="sm" onClick={handleSave} disabled={isSaving || !isValid}>
             {isSaving ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 {t('common:buttons.saving')}
               </>
             ) : (

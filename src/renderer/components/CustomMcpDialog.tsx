@@ -242,10 +242,10 @@ export function CustomMcpDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           {/* Error message */}
           {error && (
-            <div className="text-sm text-destructive bg-destructive/10 px-3 py-2 rounded">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
@@ -459,10 +459,10 @@ export function CustomMcpDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            {t('common:cancel')}
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
+            {t('common:buttons.cancel')}
           </Button>
-          <Button onClick={handleSave} disabled={!isValid}>
+          <Button size="sm" onClick={handleSave} disabled={!isValid}>
             {isEditing ? t('common:save') : t('mcp.addServer')}
           </Button>
         </DialogFooter>

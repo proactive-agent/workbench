@@ -491,7 +491,7 @@ export function AddAccountDialog({
         </DialogHeader>
 
         {isOAuthOnly ? (
-          <div className="space-y-4">
+          <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
             {/* Account Name */}
             <div className="space-y-2">
               <Label htmlFor="oauth-account-name">{t('providers.dialog.fields.name')}</Label>
@@ -518,29 +518,29 @@ export function AddAccountDialog({
 
             {/* Progress States */}
             {oauthStatus === 'authenticating' && (
-              <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border p-3 text-sm">
+              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexAuthenticating') : t('providers.dialog.oauthAuthenticating')}</span>
               </div>
             )}
 
             {oauthStatus === 'waiting' && (
-              <div className="flex items-center gap-2 rounded-lg bg-muted/50 border border-border p-3 text-sm">
+              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexWaiting') : t('providers.dialog.oauthWaiting')}</span>
               </div>
             )}
 
             {oauthStatus === 'success' && (
-              <div className="flex items-center gap-2 rounded-lg bg-green-500/10 border border-green-500/30 p-3 text-sm text-green-600 dark:text-green-400">
-                <CheckCircle2 className="h-4 w-4" />
+              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
+                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexSuccess') : t('providers.dialog.oauthSuccess', { email: oauthEmail ?? 'Unknown' })}</span>
               </div>
             )}
 
             {oauthStatus === 'error' && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   <AlertCircle className="h-4 w-4 flex-shrink-0" />
                   <span>{isCodexOAuth ? t('providers.dialog.codexError', { error: oauthError ?? 'Unknown' }) : t('providers.dialog.oauthError', { error: oauthError ?? 'Unknown' })}</span>
                 </div>
@@ -580,7 +580,7 @@ export function AddAccountDialog({
             )}
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
             {/* Name */}
             <div className="space-y-2">
               <Label htmlFor="account-name">{t('providers.dialog.fields.name')}</Label>
@@ -748,17 +748,17 @@ export function AddAccountDialog({
 
         <DialogFooter>
           {accountSaved ? (
-            <Button onClick={() => onOpenChange(false)}>
+            <Button size="sm" onClick={() => onOpenChange(false)}>
               {t('providers.dialog.close')}
             </Button>
           ) : (
             <>
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving || isAuthInProgress}>
+              <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={isSaving || isAuthInProgress}>
                 {t('providers.dialog.cancel')}
               </Button>
               {(isOAuthOnly ? (isEditing || oauthStatus === 'success') : true) && (
-                <Button onClick={handleSave} disabled={!canSave() || isSaving}>
-                  {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                <Button size="sm" onClick={handleSave} disabled={!canSave() || isSaving}>
+                  {isSaving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                   {isEditing ? t('providers.dialog.save') : t('providers.dialog.add')}
                 </Button>
               )}

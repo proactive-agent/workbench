@@ -103,10 +103,10 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
+          <Button variant="ghost" size="sm" onClick={onClose}>
             {t('customModel.cancel')}
           </Button>
-          <Button onClick={handleSave}>
+          <Button size="sm" onClick={handleSave}>
             {t('customModel.apply')}
           </Button>
         </DialogFooter>

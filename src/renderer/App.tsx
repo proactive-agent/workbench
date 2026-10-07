@@ -820,8 +820,7 @@ export function App() {
         }}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Download className="h-5 w-5" />
+              <DialogTitle>
                 {t('initialize.title')}
               </DialogTitle>
               <DialogDescription>
@@ -829,7 +828,7 @@ export function App() {
               </DialogDescription>
             </DialogHeader>
             <div className="py-4">
-              <div className="rounded-lg bg-muted p-4 text-sm">
+              <div className="rounded-lg border border-border px-4 py-3 text-sm">
                 <p className="font-medium mb-2">{t('initialize.willDo')}</p>
                 <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                   <li>{t('initialize.createFolder')}</li>
@@ -838,11 +837,11 @@ export function App() {
                 </ul>
               </div>
               {!settings.autoBuildPath && (
-                <div className="mt-4 rounded-lg border border-warning/50 bg-warning/10 p-4 text-sm">
+                <div className="mt-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                     <div>
-                      <p className="font-medium text-warning">{t('initialize.sourcePathNotConfigured')}</p>
+                      <p className="font-medium text-foreground">{t('initialize.sourcePathNotConfigured')}</p>
                       <p className="text-muted-foreground mt-1">
                         {t('initialize.sourcePathNotConfiguredDescription')}
                       </p>
@@ -851,7 +850,7 @@ export function App() {
                 </div>
               )}
               {initError && (
-                <div className="mt-4 rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-sm">
+                <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
                   <div className="flex items-start gap-2">
                     <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
                     <div>
@@ -865,21 +864,22 @@ export function App() {
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={handleSkipInit} disabled={isInitializing}>
+              <Button variant="ghost" size="sm" onClick={handleSkipInit} disabled={isInitializing}>
                 {t('common:buttons.skip', { ns: 'common' })}
               </Button>
               <Button
+                size="sm"
                 onClick={handleInitialize}
                 disabled={isInitializing || !settings.autoBuildPath}
               >
                 {isInitializing ? (
                   <>
-                    <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                     {t('common:labels.initializing', { ns: 'common' })}
                   </>
                 ) : (
                   <>
-                    <Download className="mr-2 h-4 w-4" />
+                    <Download className="mr-1.5 h-3.5 w-3.5" />
                     {t('common:buttons.initialize', { ns: 'common' })}
                   </>
                 )}
@@ -911,16 +911,16 @@ export function App() {
               </DialogDescription>
             </DialogHeader>
             {removeProjectError && (
-              <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 rounded-md">
+              <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                 <AlertCircle className="h-4 w-4 flex-shrink-0" />
                 <span>{removeProjectError}</span>
               </div>
             )}
             <DialogFooter>
-              <Button variant="outline" onClick={handleCancelRemoveProject}>
+              <Button variant="ghost" size="sm" onClick={handleCancelRemoveProject}>
                 {t('removeProject.cancel')}
               </Button>
-              <Button variant="destructive" onClick={handleConfirmRemoveProject}>
+              <Button variant="destructive" size="sm" onClick={handleConfirmRemoveProject}>
                 {t('removeProject.remove')}
               </Button>
             </DialogFooter>

@@ -1247,8 +1247,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
       <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
         <AlertDialogContent className="sm:max-w-[500px]">
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-              <Trash2 className="h-5 w-5" />
+            <AlertDialogTitle>
               {t('kanban.deleteConfirmTitle')}
             </AlertDialogTitle>
             <AlertDialogDescription>
@@ -1257,7 +1256,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
           </AlertDialogHeader>
 
           {/* Task List Preview */}
-          <div className="space-y-2">
+          <div className="mt-4 space-y-2">
             <label className="text-sm font-medium">{t('kanban.tasksToDelete')}</label>
             <ScrollArea className="h-32 rounded-md border border-border p-2">
               <div className="space-y-1">
@@ -1275,7 +1274,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
           </div>
 
           {/* Warning message */}
-          <p className="text-sm text-destructive">
+          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {t('kanban.deleteWarning')}
           </p>
 
@@ -1290,7 +1289,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
             >
               {isDeleting ? (
                 <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                   {t('common:buttons.deleting')}
                 </>
               ) : (

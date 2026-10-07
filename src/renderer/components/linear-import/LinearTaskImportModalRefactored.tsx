@@ -70,8 +70,7 @@ export function LinearTaskImportModalRefactored({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[85vh] flex flex-col">
         <DialogHeader className="shrink-0">
-          <DialogTitle className="flex items-center gap-2 text-foreground">
-            <Download className="h-5 w-5" />
+          <DialogTitle>
             Import Linear Tasks
           </DialogTitle>
           <DialogDescription>
@@ -142,22 +141,27 @@ export function LinearTaskImportModalRefactored({
         )}
 
         <DialogFooter className="shrink-0">
-          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+          <Button
+            variant={importResult?.success ? 'default' : 'ghost'}
+            size="sm"
+            onClick={() => handleOpenChange(false)}
+          >
             {importResult?.success ? 'Done' : 'Cancel'}
           </Button>
           {!importResult?.success && (
             <Button
+              size="sm"
               onClick={handleImport}
               disabled={selectedIssueIds.size === 0 || isImporting}
             >
               {isImporting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   Importing...
                 </>
               ) : (
                 <>
-                  <Download className="mr-2 h-4 w-4" />
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
                   Import {selectedIssueIds.size} Task
                   {selectedIssueIds.size !== 1 ? 's' : ''}
                 </>

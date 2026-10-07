@@ -230,8 +230,8 @@ export function SDKRateLimitModal() {
     <Dialog open={isSDKModalOpen} onOpenChange={(open) => !open && hideSDKRateLimitModal()}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-warning">
-            <AlertCircle className="h-5 w-5" />
+          <DialogTitle className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-warning" />
             {t('rateLimit.sdk.title')}
           </DialogTitle>
           <DialogDescription className="flex items-center gap-2">
@@ -243,9 +243,9 @@ export function SDKRateLimitModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="py-4 space-y-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           {/* Swap notification info */}
-          <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+          <div className="rounded-lg border border-border px-4 py-3 text-xs text-muted-foreground">
             {swapInfo?.wasAutoSwapped ? (
               <>
                 <p className="font-medium mb-1">
@@ -287,8 +287,8 @@ export function SDKRateLimitModal() {
 
           {/* Reset time info */}
           {sdkRateLimitInfo.resetTime && (
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-muted/50 p-4">
-              <Clock className="h-5 w-5 text-muted-foreground shrink-0" />
+            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+              <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {t('rateLimit.sdk.resetsLabel', { time: sdkRateLimitInfo.resetTime })}
@@ -303,7 +303,7 @@ export function SDKRateLimitModal() {
           )}
 
           {/* Profile switching / Add account section */}
-          <div className="rounded-lg border border-accent/50 bg-accent/10 p-4">
+          <div className="rounded-lg border border-border px-4 py-3 text-sm">
             <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
               <User className="h-4 w-4" />
               {hasMultipleProfiles ? t('rateLimit.sdk.switchAccountRetry') : t('rateLimit.useAnotherAccount')}
@@ -452,7 +452,7 @@ export function SDKRateLimitModal() {
           </div>
 
           {/* Upgrade prompt */}
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <div className="rounded-lg border border-border px-4 py-3 text-sm">
             <h4 className="text-sm font-medium text-foreground mb-2">
               Upgrade for more usage
             </h4>
@@ -471,7 +471,7 @@ export function SDKRateLimitModal() {
           </div>
 
           {/* Info about what was interrupted */}
-          <div className="text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+          <div className="rounded-lg border border-border px-4 py-3 text-xs text-muted-foreground">
             <p className="font-medium mb-1">{t('rateLimit.sdk.whatHappened')}</p>
             <p>
               {t('rateLimit.sdk.whatHappenedDesc', { source: sourceName.toLowerCase(), account: currentProfile?.name || 'Default' })}
@@ -483,7 +483,7 @@ export function SDKRateLimitModal() {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={hideSDKRateLimitModal}>
+          <Button size="sm" onClick={hideSDKRateLimitModal}>
             {t('rateLimit.sdk.close')}
           </Button>
         </DialogFooter>

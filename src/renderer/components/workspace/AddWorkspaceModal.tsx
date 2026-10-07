@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Layers } from 'lucide-react';
+import { X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -181,8 +181,7 @@ export function AddWorkspaceModal({
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Layers className="h-5 w-5" />
+          <DialogTitle>
             Create Workspace
           </DialogTitle>
           <DialogDescription>
@@ -287,10 +286,10 @@ export function AddWorkspaceModal({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={handleClose}>
+          <Button variant="ghost" size="sm" onClick={handleClose}>
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={isCreating || !name.trim()}>
+          <Button size="sm" onClick={handleCreate} disabled={isCreating || !name.trim()}>
             {isCreating ? 'Creating...' : 'Create Workspace'}
           </Button>
         </DialogFooter>

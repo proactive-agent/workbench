@@ -447,8 +447,7 @@ export function Sidebar({
       }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Download className="h-5 w-5" />
+            <DialogTitle>
               {t('dialogs:initialize.title')}
             </DialogTitle>
             <DialogDescription>
@@ -456,7 +455,7 @@ export function Sidebar({
             </DialogDescription>
           </DialogHeader>
           <div className="py-4">
-            <div className="rounded-lg bg-muted p-4 text-sm">
+            <div className="rounded-lg border border-border px-4 py-3 text-sm">
               <p className="font-medium mb-2">{t('dialogs:initialize.willDo')}</p>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                 <li>{t('dialogs:initialize.createFolder')}</li>
@@ -465,11 +464,11 @@ export function Sidebar({
               </ul>
             </div>
             {!settings.autoBuildPath && (
-              <div className="mt-4 rounded-lg border border-warning/50 bg-warning/10 p-4 text-sm">
+              <div className="mt-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
                 <div className="flex items-start gap-2">
                   <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
                   <div>
-                    <p className="font-medium text-warning">{t('dialogs:initialize.sourcePathNotConfigured')}</p>
+                    <p className="font-medium text-foreground">{t('dialogs:initialize.sourcePathNotConfigured')}</p>
                     <p className="text-muted-foreground mt-1">
                       {t('dialogs:initialize.sourcePathNotConfiguredDescription')}
                     </p>
@@ -479,21 +478,22 @@ export function Sidebar({
             )}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={handleSkipInit} disabled={isInitializing}>
+            <Button variant="ghost" size="sm" onClick={handleSkipInit} disabled={isInitializing}>
               {t('common:buttons.skip')}
             </Button>
             <Button
+              size="sm"
               onClick={handleInitialize}
               disabled={isInitializing || !settings.autoBuildPath}
             >
               {isInitializing ? (
                 <>
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   {t('common:labels.initializing')}
                 </>
               ) : (
                 <>
-                  <Download className="mr-2 h-4 w-4" />
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
                   {t('common:buttons.initialize')}
                 </>
               )}

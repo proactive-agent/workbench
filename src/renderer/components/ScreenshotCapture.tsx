@@ -18,6 +18,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle
 } from './ui/dialog';
@@ -128,19 +129,19 @@ export function ScreenshotCapture({ open, onOpenChange, onCapture }: ScreenshotC
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-y-auto">
+        <div className="-mx-6 min-h-0 flex-1 overflow-y-auto px-6 pt-4">
           {/* Dev Mode Info State */}
           {isDevMode && (
-            <div className="flex items-start gap-3 p-4 bg-amber-500/10 border border-amber-500/30 rounded-lg mb-4">
-              <Info className="h-5 w-5 text-amber-600 dark:text-amber-500 flex-shrink-0 mt-0.5" />
+            <div className="mb-4 flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
+              <Info className="h-4 w-4 text-warning flex-shrink-0 mt-0.5" />
               <div className="flex-1 space-y-2">
-                <p className="text-sm font-medium text-amber-700 dark:text-amber-400">
+                <p className="font-medium text-foreground">
                   {t('tasks:screenshot.devMode.title')}
                 </p>
-                <p className="text-sm text-amber-600 dark:text-amber-500">
+                <p className="text-muted-foreground">
                   {t('tasks:screenshot.devMode.description')}
                 </p>
-                <p className="text-sm text-amber-600 dark:text-amber-500">
+                <p className="text-muted-foreground">
                   {t('tasks:screenshot.devMode.hint', { shortcut: getPasteShortcut() })}
                 </p>
               </div>
@@ -149,8 +150,8 @@ export function ScreenshotCapture({ open, onOpenChange, onCapture }: ScreenshotC
 
           {/* Error State */}
           {error && !isDevMode && (
-            <div className="flex items-center gap-3 p-4 bg-destructive/10 border border-destructive/30 rounded-lg mb-4">
-              <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+              <AlertCircle className="h-4 w-4 text-destructive flex-shrink-0" />
               <div className="flex-1">
                 <p className="text-sm text-destructive">{error}</p>
               </div>
@@ -290,9 +291,10 @@ export function ScreenshotCapture({ open, onOpenChange, onCapture }: ScreenshotC
         </div>
 
         {/* Footer Actions */}
-        <div className="flex items-center justify-between pt-4 border-t">
+        <DialogFooter className="sm:justify-between">
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={isCapturing}
           >
@@ -300,25 +302,27 @@ export function ScreenshotCapture({ open, onOpenChange, onCapture }: ScreenshotC
           </Button>
           <div className="flex items-center gap-2">
             <Button
-              variant="outline"
+              variant="ghost"
               size="icon"
+              className="h-8 w-8"
               onClick={fetchSources}
               disabled={isLoading || isCapturing || isDevMode}
               title={t('common:buttons.refresh')}
             >
               {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
               ) : (
-                <RefreshCw className="h-4 w-4" />
+                <RefreshCw className="h-3.5 w-3.5" />
               )}
             </Button>
             <Button
+              size="sm"
               onClick={handleCapture}
               disabled={!selectedSource || isCapturing || isDevMode}
             >
               {isCapturing ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   {t('tasks:screenshot.capturing')}
                 </>
               ) : (
@@ -326,7 +330,7 @@ export function ScreenshotCapture({ open, onOpenChange, onCapture }: ScreenshotC
               )}
             </Button>
           </div>
-        </div>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

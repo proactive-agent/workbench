@@ -37,19 +37,13 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md" hideCloseButton>
         <DialogHeader>
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-amber-100 dark:bg-amber-900/30 p-2">
-              <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />
-            </div>
-            <div>
-              <DialogTitle className="text-lg">
-                {t('versionWarning.title')}
-              </DialogTitle>
-              <DialogDescription className="text-sm text-muted-foreground">
-                {t('versionWarning.subtitle')}
-              </DialogDescription>
-            </div>
-          </div>
+          <DialogTitle className="flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            {t('versionWarning.title')}
+          </DialogTitle>
+          <DialogDescription>
+            {t('versionWarning.subtitle')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -57,7 +51,7 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
             {t('versionWarning.description')}
           </p>
 
-          <div className="rounded-md bg-muted p-4">
+          <div className="rounded-lg border border-border px-4 py-3 text-sm">
             <p className="text-sm font-medium mb-3">
               {t('versionWarning.instructions')}
             </p>
@@ -78,14 +72,14 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
           </div>
         </div>
 
-        <DialogFooter className="flex-col sm:flex-row gap-2">
-          <Button variant="outline" onClick={handleDismiss} className="sm:mr-auto">
+        <DialogFooter>
+          <Button variant="ghost" size="sm" onClick={handleDismiss}>
             {t('versionWarning.gotIt')}
           </Button>
-          <Button onClick={handleGoToSettings} className="gap-2">
-            <Settings className="h-4 w-4" />
+          <Button size="sm" onClick={handleGoToSettings} className="gap-1.5">
+            <Settings className="h-3.5 w-3.5" />
             {t('versionWarning.goToSettings')}
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </DialogFooter>
       </DialogContent>

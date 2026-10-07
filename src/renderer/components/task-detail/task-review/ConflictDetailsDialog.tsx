@@ -37,7 +37,7 @@ export function ConflictDetailsDialog({
       <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <AlertDialogHeader>
           <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-warning" />
+            <AlertTriangle className="h-4 w-4 text-warning" />
             Merge Conflicts Preview
           </AlertDialogTitle>
           <AlertDialogDescription>
@@ -49,19 +49,19 @@ export function ConflictDetailsDialog({
             )}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex-1 overflow-auto min-h-0 -mx-6 px-6">
+        <div className="mt-4 flex-1 overflow-auto min-h-0 -mx-6 px-6">
           {mergePreview?.conflicts && mergePreview.conflicts.length > 0 ? (
             <div className="space-y-3">
               {mergePreview.conflicts.map((conflict, idx) => (
                 <div
                   key={idx}
                   className={cn(
-                    "p-3 rounded-lg border",
+                    "rounded-lg border px-4 py-3 text-sm",
                     conflict.canAutoMerge
-                      ? "bg-secondary/30 border-border"
+                      ? "border-border"
                       : conflict.severity === 'high' || conflict.severity === 'critical'
-                        ? "bg-destructive/10 border-destructive/30"
-                        : "bg-warning/10 border-warning/30"
+                        ? "border-destructive/30 bg-destructive/5"
+                        : "border-warning/30 bg-warning/5"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
@@ -103,7 +103,7 @@ export function ConflictDetailsDialog({
             </div>
           )}
         </div>
-        <AlertDialogFooter className="mt-4">
+        <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
@@ -111,9 +111,8 @@ export function ConflictDetailsDialog({
               onOpenChange(false);
               onMerge();
             }}
-            className="bg-warning text-warning-foreground hover:bg-warning/90"
           >
-            <GitMerge className="mr-2 h-4 w-4" />
+            <GitMerge className="mr-1.5 h-3.5 w-3.5" />
             {stageOnly ? 'Stage with AI Merge' : 'Merge with AI'}
           </AlertDialogAction>
         </AlertDialogFooter>

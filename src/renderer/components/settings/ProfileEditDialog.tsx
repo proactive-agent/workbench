@@ -301,7 +301,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="w-[min(92vw,720px)] max-h-[90vh] overflow-y-auto"
+        className="w-[min(92vw,720px)] max-h-[90vh]"
         data-testid="profile-edit-dialog"
       >
         <DialogHeader>
@@ -315,7 +315,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           <div className="grid gap-4 md:grid-cols-2">
             {/* Name field (required) */}
             <div className={`space-y-2 ${isEditMode ? 'md:col-span-2' : ''}`}>
@@ -548,7 +548,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
 
           {/* General error display */}
           {profilesError && (
-            <div className="p-3 bg-destructive/10 border border-destructive/20 rounded-lg">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
               <p className="text-sm text-destructive">{profilesError}</p>
             </div>
           )}
@@ -557,7 +557,8 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
         <DialogFooter>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
+            size="sm"
             onClick={() => onOpenChange(false)}
             disabled={profilesLoading}
           >
@@ -565,12 +566,13 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
           </Button>
           <Button
             type="button"
+            size="sm"
             onClick={handleSave}
             disabled={profilesLoading}
           >
             {profilesLoading ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 {t('settings:apiProfiles.actions.saving')}
               </>
             ) : (

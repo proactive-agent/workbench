@@ -3,6 +3,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X, ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
+import { DIALOG_ANIMATION_CLASS, DIALOG_OVERLAY_CLASS } from '../ui/dialog-styles';
 import type { ImageAttachment } from '../../../shared/types';
 
 interface ImagePreviewModalProps {
@@ -23,28 +24,19 @@ export function ImagePreviewModal({ open, onOpenChange, image }: ImagePreviewMod
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <DialogPrimitive.Portal>
-        {/* Overlay with dark background and backdrop blur */}
-        <DialogPrimitive.Overlay
-          className={cn(
-            'fixed inset-0 z-50 bg-black/80 backdrop-blur-sm',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0'
-          )}
-        />
+        {/* Shared dialog backdrop (frameless lightbox, like AttachmentPreviewDialog) */}
+        <DialogPrimitive.Overlay className={DIALOG_OVERLAY_CLASS} />
 
         {/* Content container */}
         <DialogPrimitive.Content
           className={cn(
             'fixed inset-8 z-50 flex flex-col items-center justify-center',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-            'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-            'duration-200'
+            DIALOG_ANIMATION_CLASS
           )}
         >
           {/* Header with title and close button */}
           <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4">
-            <DialogPrimitive.Title className="text-lg font-medium text-white truncate max-w-[calc(100%-60px)]">
+            <DialogPrimitive.Title className="text-[1.0625rem] font-semibold text-white truncate max-w-[calc(100%-60px)]">
               {image.filename}
             </DialogPrimitive.Title>
             <DialogPrimitive.Close

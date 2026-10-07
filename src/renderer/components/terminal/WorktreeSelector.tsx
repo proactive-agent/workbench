@@ -526,7 +526,7 @@ export function WorktreeSelector({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>{t('common:cancel')}</AlertDialogCancel>
+          <AlertDialogCancel disabled={isDeleting}>{t('common:buttons.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={handleDeleteWorktree}
             disabled={isDeleting}
@@ -534,12 +534,12 @@ export function WorktreeSelector({
           >
             {isDeleting ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 {t('common:deleting', 'Deleting...')}
               </>
             ) : (
               <>
-                <Trash2 className="h-4 w-4 mr-2" />
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                 {t('common:delete')}
               </>
             )}

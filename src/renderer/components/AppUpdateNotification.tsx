@@ -193,8 +193,7 @@ export function AppUpdateNotification() {
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Download className="h-5 w-5" />
+          <DialogTitle>
             {t("dialogs:appUpdate.title", "App Update Available")}
           </DialogTitle>
           <DialogDescription>
@@ -205,9 +204,9 @@ export function AppUpdateNotification() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
           {/* Version Info */}
-          <div className="rounded-lg border border-border bg-muted/50 p-4">
+          <div className="rounded-lg border border-border px-4 py-3 text-sm">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">
@@ -222,18 +221,18 @@ export function AppUpdateNotification() {
                 )}
               </div>
               {isDownloaded ? (
-                <CheckCircle2 className="h-6 w-6 text-success" />
+                <CheckCircle2 className="h-5 w-5 text-success" />
               ) : isDownloading ? (
-                <RefreshCw className="h-6 w-6 animate-spin text-info" />
+                <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
               ) : (
-                <Download className="h-6 w-6 text-info" />
+                <Download className="h-5 w-5 text-muted-foreground" />
               )}
             </div>
           </div>
 
           {/* Release Notes */}
           {updateInfo.releaseNotes && (
-            <div className="bg-background rounded-lg p-4 max-h-64 overflow-y-auto border border-border/50">
+            <div className="max-h-64 overflow-y-auto rounded-lg border border-border px-4 py-3 text-sm">
               <div className="prose prose-sm dark:prose-invert max-w-none">
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm]}
@@ -282,18 +281,18 @@ export function AppUpdateNotification() {
 
           {/* Download Error */}
           {downloadError && (
-            <div className="flex items-center gap-3 text-sm text-destructive bg-destructive/10 border border-destructive/30 rounded-lg p-3">
-              <AlertCircle className="h-5 w-5 shrink-0" />
+            <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <AlertCircle className="h-4 w-4 shrink-0" />
               <span>{downloadError}</span>
             </div>
           )}
 
           {/* Read-Only Volume Warning (DMG install on macOS) */}
           {showReadOnlyWarning && (
-            <div className="flex items-start gap-3 text-sm text-warning bg-warning/10 border border-warning/30 rounded-lg p-3">
-              <AlertTriangle className="h-5 w-5 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-warning" />
               <div className="space-y-1">
-                <p className="font-medium">
+                <p className="font-medium text-foreground">
                   {t("dialogs:appUpdate.readOnlyVolumeTitle", "Cannot install from disk image")}
                 </p>
                 <p className="text-muted-foreground">
@@ -305,8 +304,8 @@ export function AppUpdateNotification() {
 
           {/* Downloaded Success */}
           {isDownloaded && !showReadOnlyWarning && (
-            <div className="flex items-center gap-3 text-sm text-success bg-success/10 border border-success/30 rounded-lg p-3">
-              <CheckCircle2 className="h-5 w-5 shrink-0" />
+            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
+              <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
               <span>
                 {t(
                   "dialogs:appUpdate.updateDownloaded",
@@ -317,33 +316,33 @@ export function AppUpdateNotification() {
           )}
         </div>
 
-        <DialogFooter className="flex flex-col sm:flex-row gap-3">
+        <DialogFooter>
           {!isDownloading && (
-            <Button variant="ghost" onClick={handleSkipVersion} className="text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={handleSkipVersion} className="text-muted-foreground sm:mr-auto">
               {t("dialogs:appUpdate.skipThisVersion", "Skip This Version")}
             </Button>
           )}
-          <Button variant="outline" onClick={isDownloaded ? handleDismiss : handleRemindLater} disabled={isDownloading}>
+          <Button variant="ghost" size="sm" onClick={isDownloaded ? handleDismiss : handleRemindLater} disabled={isDownloading}>
             {isDownloaded
               ? t("dialogs:appUpdate.installLater", "Install Later")
               : t("dialogs:appUpdate.remindMeLater", "Remind Me Later")}
           </Button>
 
           {isDownloaded ? (
-            <Button onClick={handleInstall} disabled={showReadOnlyWarning}>
-              <RefreshCw className="mr-2 h-4 w-4" />
+            <Button size="sm" onClick={handleInstall} disabled={showReadOnlyWarning}>
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
               {t("dialogs:appUpdate.installAndRestart", "Install and Restart")}
             </Button>
           ) : (
-            <Button onClick={handleDownload} disabled={isDownloading}>
+            <Button size="sm" onClick={handleDownload} disabled={isDownloading}>
               {isDownloading ? (
                 <>
-                  <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                  <RefreshCw className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                   {t("dialogs:appUpdate.downloading", "Downloading...")}
                 </>
               ) : (
                 <>
-                  <Download className="mr-2 h-4 w-4" />
+                  <Download className="mr-1.5 h-3.5 w-3.5" />
                   {t("dialogs:appUpdate.downloadUpdate", "Download Update")}
                 </>
               )}

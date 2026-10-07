@@ -11,7 +11,17 @@
 import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
-import { Button } from '../ui/button';
+import {
+  DIALOG_ANIMATION_CLASS,
+  DIALOG_CLOSE_BUTTON_CLASS,
+  DIALOG_CLOSE_ICON_CLASS,
+  DIALOG_CLOSE_ICON_STROKE,
+  DIALOG_DESCRIPTION_CLASS,
+  DIALOG_FOOTER_BAR_CLASS,
+  DIALOG_OVERLAY_CLASS,
+  DIALOG_SURFACE_CLASS,
+  DIALOG_TITLE_CLASS
+} from '../ui/dialog-styles';
 import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '../../lib/utils';
 import type { ReactNode } from 'react';
@@ -54,13 +64,7 @@ export function TaskModalLayout({
     <DialogPrimitive.Root open={open} onOpenChange={handleClose}>
       <DialogPrimitive.Portal>
         {/* Semi-transparent overlay */}
-        <DialogPrimitive.Overlay
-          className={cn(
-            'fixed inset-0 z-50 bg-black/60',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0'
-          )}
-        />
+        <DialogPrimitive.Overlay className={DIALOG_OVERLAY_CLASS} />
 
         {/* Full-height modal content - matches TaskDetailModal exactly */}
         <DialogPrimitive.Content
@@ -68,42 +72,31 @@ export function TaskModalLayout({
             'fixed left-[50%] top-4 z-50',
             'translate-x-[-50%]',
             'w-[95vw] max-w-5xl h-[calc(100vh-32px)]',
-            'bg-card border border-border rounded-xl',
-            'shadow-2xl overflow-hidden flex flex-col',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-            'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-            'duration-200'
+            'overflow-hidden flex flex-col',
+            DIALOG_SURFACE_CLASS,
+            DIALOG_ANIMATION_CLASS
           )}
         >
           <div className="flex h-full min-h-0 overflow-hidden">
             {/* Main content area */}
             <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
               {/* Header */}
-              <div className="px-6 py-5 border-b border-border shrink-0">
-                <div className="flex items-start justify-between gap-4">
-                  <div className="flex-1 min-w-0">
-                    <DialogPrimitive.Title className="text-xl font-semibold leading-tight text-foreground">
-                      {title}
-                    </DialogPrimitive.Title>
-                    {description && (
-                      <DialogPrimitive.Description className="mt-1.5 text-sm text-muted-foreground">
-                        {description}
-                      </DialogPrimitive.Description>
-                    )}
-                  </div>
-                  <DialogPrimitive.Close asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="hover:bg-muted transition-colors shrink-0"
-                      disabled={disabled}
-                    >
-                      <X className="h-5 w-5" />
-                      <span className="sr-only">{t('buttons.close')}</span>
-                    </Button>
-                  </DialogPrimitive.Close>
-                </div>
+              <div className="relative shrink-0 border-b border-border px-6 pb-4 pr-14 pt-6">
+                <DialogPrimitive.Title className={DIALOG_TITLE_CLASS}>
+                  {title}
+                </DialogPrimitive.Title>
+                {description && (
+                  <DialogPrimitive.Description className={cn('mt-1', DIALOG_DESCRIPTION_CLASS)}>
+                    {description}
+                  </DialogPrimitive.Description>
+                )}
+                <DialogPrimitive.Close
+                  className={DIALOG_CLOSE_BUTTON_CLASS}
+                  disabled={disabled}
+                  aria-label={t('buttons.close')}
+                >
+                  <X className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
+                </DialogPrimitive.Close>
               </div>
 
               {/* Scrollable body */}
@@ -114,7 +107,7 @@ export function TaskModalLayout({
               </ScrollArea>
 
               {/* Footer */}
-              <div className="px-6 py-4 border-t border-border shrink-0 bg-muted/30">
+              <div className={cn('shrink-0', DIALOG_FOOTER_BAR_CLASS)}>
                 {footer}
               </div>
             </div>

@@ -163,49 +163,49 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
         <button
           onClick={handleOpenExisting}
           className={cn(
-            'w-full flex items-center gap-4 p-4 rounded-xl border border-border',
-            'bg-card hover:bg-accent hover:border-accent transition-all duration-200',
+            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border',
+            'hover:bg-nav-hover transition-colors',
             'text-left group'
           )}
           aria-label={t('addProject.openExistingAriaLabel')}
         >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <FolderOpen className="h-6 w-6 text-primary" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border">
+            <FolderOpen className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-foreground">{t('addProject.openExisting')}</h3>
+            <h3 className="text-sm font-medium text-foreground">{t('addProject.openExisting')}</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
               {t('addProject.openExistingDescription')}
             </p>
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
         </button>
 
         {/* Create New Option */}
         <button
           onClick={() => setStep('create-form')}
           className={cn(
-            'w-full flex items-center gap-4 p-4 rounded-xl border border-border',
-            'bg-card hover:bg-accent hover:border-accent transition-all duration-200',
+            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border',
+            'hover:bg-nav-hover transition-colors',
             'text-left group'
           )}
           aria-label={t('addProject.createNewAriaLabel')}
         >
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg bg-success/10">
-            <FolderPlus className="h-6 w-6 text-success" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border">
+            <FolderPlus className="h-4 w-4 text-muted-foreground" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="font-medium text-foreground">{t('addProject.createNew')}</h3>
+            <h3 className="text-sm font-medium text-foreground">{t('addProject.createNew')}</h3>
             <p className="text-sm text-muted-foreground mt-0.5">
               {t('addProject.createNewDescription')}
             </p>
           </div>
-          <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
         </button>
       </div>
 
       {error && (
-        <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3 mt-2" role="alert">
+        <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
           {error}
         </div>
       )}
@@ -274,17 +274,17 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
         </div>
 
         {error && (
-          <div className="text-sm text-destructive bg-destructive/10 rounded-lg p-3" role="alert">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
             {error}
           </div>
         )}
       </div>
 
       <DialogFooter>
-        <Button variant="outline" onClick={() => setStep('choose')} disabled={isCreating}>
+        <Button variant="ghost" size="sm" onClick={() => setStep('choose')} disabled={isCreating}>
           {t('addProject.back')}
         </Button>
-        <Button onClick={handleCreateProject} disabled={isCreating}>
+        <Button size="sm" onClick={handleCreateProject} disabled={isCreating}>
           {isCreating ? t('addProject.creating') : t('addProject.createProject')}
         </Button>
       </DialogFooter>

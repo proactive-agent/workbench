@@ -1,4 +1,4 @@
-import { Eye, FileCode } from 'lucide-react';
+import { FileCode } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -30,15 +30,14 @@ export function DiffViewDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Eye className="h-5 w-5 text-purple-400" />
+          <AlertDialogTitle>
             Changed Files
           </AlertDialogTitle>
           <AlertDialogDescription>
             {worktreeDiff?.summary || 'No changes found'}
           </AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="flex-1 overflow-auto min-h-0 -mx-6 px-6">
+        <div className="mt-4 flex-1 overflow-auto min-h-0 -mx-6 px-6">
           {worktreeDiff?.files && worktreeDiff.files.length > 0 ? (
             <div className="space-y-2">
               {worktreeDiff.files.map((file, idx) => (
@@ -81,7 +80,7 @@ export function DiffViewDialog({
             </div>
           )}
         </div>
-        <AlertDialogFooter className="mt-4">
+        <AlertDialogFooter>
           <AlertDialogCancel>Close</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>

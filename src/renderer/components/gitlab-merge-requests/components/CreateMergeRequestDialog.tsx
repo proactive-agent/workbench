@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Loader2, GitPullRequest } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
@@ -76,8 +76,7 @@ export function CreateMergeRequestDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitPullRequest className="h-5 w-5" />
+          <DialogTitle>
             Create Merge Request
           </DialogTitle>
           <DialogDescription>
@@ -129,20 +128,20 @@ export function CreateMergeRequestDialog({
           </div>
 
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleCreate} disabled={isCreating}>
+          <Button size="sm" onClick={handleCreate} disabled={isCreating}>
             {isCreating ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 Creating...
               </>
             ) : (

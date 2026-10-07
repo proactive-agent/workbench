@@ -299,7 +299,7 @@ export function ChatHistorySidebar({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete}>{t('actions.delete')}</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t('actions.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -314,7 +314,7 @@ export function ChatHistorySidebar({
             </AlertDialogDescription>
           </AlertDialogHeader>
           {sessionsToDelete.length > 0 && (
-            <div className="max-h-32 overflow-y-auto rounded border border-border p-2">
+            <div className="mt-4 max-h-32 overflow-y-auto rounded-lg border border-border px-4 py-3">
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 {t('insights.conversationsToDelete')}:
               </p>
@@ -329,7 +329,7 @@ export function ChatHistorySidebar({
           )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleBulkDelete}>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {t('insights.bulkDeleteConfirm', { count: selectedIds.size })}
             </AlertDialogAction>
           </AlertDialogFooter>

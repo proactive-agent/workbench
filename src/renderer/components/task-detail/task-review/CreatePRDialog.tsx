@@ -126,8 +126,7 @@ export function CreatePRDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitPullRequest className="h-5 w-5 text-primary" />
+          <DialogTitle>
             {t('taskReview:pr.title')}
           </DialogTitle>
           <DialogDescription>
@@ -137,8 +136,8 @@ export function CreatePRDialog({
 
         {/* Success State */}
         {result?.success && (
-          <div className="space-y-4">
-            <div className="bg-success/10 border border-success/30 rounded-lg p-4">
+          <>
+            <div className="mt-4 rounded-lg border border-border px-4 py-3 text-sm">
               <p className="text-sm text-success font-medium mb-2">
                 {result.alreadyExists
                   ? t('taskReview:pr.success.alreadyExists')
@@ -157,35 +156,36 @@ export function CreatePRDialog({
               )}
             </div>
             <DialogFooter>
-              <Button onClick={handleClose}>
+              <Button size="sm" onClick={handleClose}>
                 {t('common:buttons.close')}
               </Button>
             </DialogFooter>
-          </div>
+          </>
         )}
 
         {/* Error State */}
         {error && !result?.success && (
-          <div className="space-y-4">
-            <div className="bg-destructive/10 border border-destructive/30 rounded-lg p-4">
+          <>
+            <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
               <p className="text-sm text-destructive">{error}</p>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={handleClose}>
+              <Button variant="ghost" size="sm" onClick={handleClose}>
                 {t('common:buttons.cancel')}
               </Button>
-              <Button onClick={handleCreatePR} disabled={isCreating}>
+              <Button size="sm" onClick={handleCreatePR} disabled={isCreating}>
                 {t('taskReview:pr.actions.retry')}
               </Button>
             </DialogFooter>
-          </div>
+          </>
         )}
 
         {/* Form State */}
         {!result?.success && !error && (
-          <div className="space-y-4">
+          <>
+          <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
             {/* Branch Info */}
-            <div className="bg-muted/50 rounded-lg p-3 text-sm" data-testid="pr-stats-container">
+            <div className="rounded-lg border border-border px-4 py-3 text-sm" data-testid="pr-stats-container">
               <div className="flex justify-between mb-1">
                 <span className="text-muted-foreground">{t('taskReview:pr.labels.sourceBranch')}:</span>
                 <span className="font-mono">{worktreeStatus?.branch || t('taskReview:pr.labels.unknown')}</span>
@@ -247,26 +247,27 @@ export function CreatePRDialog({
                 {t('taskReview:pr.labels.draftPR')}
               </label>
             </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={handleClose} disabled={isCreating}>
-                {t('common:buttons.cancel')}
-              </Button>
-              <Button onClick={handleCreatePR} disabled={isCreating}>
-                {isCreating ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    {t('taskReview:pr.actions.creating')}
-                  </>
-                ) : (
-                  <>
-                    <GitPullRequest className="mr-2 h-4 w-4" />
-                    {t('taskReview:pr.actions.create')}
-                  </>
-                )}
-              </Button>
-            </DialogFooter>
           </div>
+
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={handleClose} disabled={isCreating}>
+              {t('common:buttons.cancel')}
+            </Button>
+            <Button size="sm" onClick={handleCreatePR} disabled={isCreating}>
+              {isCreating ? (
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  {t('taskReview:pr.actions.creating')}
+                </>
+              ) : (
+                <>
+                  <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+                  {t('taskReview:pr.actions.create')}
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+          </>
         )}
       </DialogContent>
     </Dialog>

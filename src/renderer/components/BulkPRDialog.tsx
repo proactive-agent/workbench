@@ -222,8 +222,7 @@ export function BulkPRDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <GitPullRequest className="h-5 w-5 text-primary" />
+          <DialogTitle>
             {t('taskReview:bulkPR.title')}
           </DialogTitle>
           <DialogDescription>
@@ -238,11 +237,12 @@ export function BulkPRDialog({
 
         {/* Options Step */}
         {step === 'options' && (
-          <div className="space-y-4">
+          <>
+          <div className="mt-4 space-y-4">
             {/* Task List Preview */}
             <div className="space-y-2">
               <Label>{t('taskReview:bulkPR.tasksToProcess')}</Label>
-              <ScrollArea className="h-32 rounded-md border border-border p-2">
+              <ScrollArea className="h-32 rounded-lg border border-border p-2">
                 <div className="space-y-1">
                   {tasks.map((task, idx) => (
                     <div
@@ -283,22 +283,23 @@ export function BulkPRDialog({
                 </label>
               </div>
             </div>
-
-            <DialogFooter>
-              <Button variant="outline" onClick={handleClose}>
-                {t('common:buttons.cancel')}
-              </Button>
-              <Button onClick={handleCreatePRs} disabled={tasks.length === 0 || step !== 'options'}>
-                <GitPullRequest className="mr-2 h-4 w-4" />
-                {t('taskReview:bulkPR.createAll', { count: tasks.length })}
-              </Button>
-            </DialogFooter>
           </div>
+
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={handleClose}>
+              {t('common:buttons.cancel')}
+            </Button>
+            <Button size="sm" onClick={handleCreatePRs} disabled={tasks.length === 0 || step !== 'options'}>
+              <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+              {t('taskReview:bulkPR.createAll', { count: tasks.length })}
+            </Button>
+          </DialogFooter>
+          </>
         )}
 
         {/* Creating Step */}
         {step === 'creating' && (
-          <div className="space-y-4">
+          <div className="mt-4 space-y-4">
             <div className="flex flex-col items-center justify-center py-4 space-y-4">
               <Loader2 className="h-10 w-10 text-primary animate-spin" />
               <div className="text-center space-y-1">
@@ -319,7 +320,7 @@ export function BulkPRDialog({
             </div>
 
             {/* Task Status List */}
-            <ScrollArea className="h-40 rounded-md border border-border">
+            <ScrollArea className="h-40 rounded-lg border border-border">
               <div className="p-2 space-y-1">
                 {taskResults.map((result, idx) => (
                   <TaskResultRow key={result.taskId} result={result} index={idx} />
@@ -331,7 +332,8 @@ export function BulkPRDialog({
 
         {/* Results Step */}
         {step === 'results' && (
-          <div className="space-y-4">
+          <>
+          <div className="mt-4 space-y-4">
             {/* Summary */}
             <div className="flex items-center justify-center gap-6 py-4">
               {successCount > 0 && (
@@ -355,7 +357,7 @@ export function BulkPRDialog({
             </div>
 
             {/* Results List */}
-            <ScrollArea className="h-56 rounded-md border border-border">
+            <ScrollArea className="h-56 rounded-lg border border-border">
               <div className="p-2 space-y-2">
                 {taskResults.map((result, idx) => (
                   <TaskResultRow
@@ -368,13 +370,14 @@ export function BulkPRDialog({
                 ))}
               </div>
             </ScrollArea>
-
-            <DialogFooter>
-              <Button onClick={handleClose}>
-                {t('common:buttons.close')}
-              </Button>
-            </DialogFooter>
           </div>
+
+          <DialogFooter>
+            <Button size="sm" onClick={handleClose}>
+              {t('common:buttons.close')}
+            </Button>
+          </DialogFooter>
+          </>
         )}
       </DialogContent>
     </Dialog>

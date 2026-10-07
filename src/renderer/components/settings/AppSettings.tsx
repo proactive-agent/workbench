@@ -57,6 +57,13 @@ import { AgentTools } from '../AgentTools';
 import { ErrorBoundary } from '../ui/error-boundary';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
+import {
+  DIALOG_ANIMATION_CLASS,
+  DIALOG_CLOSE_BUTTON_CLASS,
+  DIALOG_CLOSE_ICON_CLASS,
+  DIALOG_CLOSE_ICON_STROKE,
+  DIALOG_SURFACE_CLASS
+} from '../ui/dialog-styles';
 
 interface AppSettingsDialogProps {
   open: boolean;
@@ -270,16 +277,13 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
       onOpenChange(newOpen);
     }}>
       <FullScreenDialogPortal>
-        <FullScreenDialogOverlay className="bg-black/40 backdrop-blur-none" />
+        <FullScreenDialogOverlay />
         <DialogPrimitive.Content
           className={cn(
             'fixed left-1/2 top-1/2 z-50 flex -translate-x-1/2 -translate-y-1/2',
-            'h-[min(820px,calc(100vh-2rem))] w-[min(1120px,calc(100vw-2rem))]',
-            'overflow-hidden rounded-xl border border-border bg-background text-foreground shadow-2xl',
-            'data-[state=open]:animate-in data-[state=closed]:animate-out',
-            'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-            'data-[state=closed]:zoom-out-98 data-[state=open]:zoom-in-98',
-            'duration-200 focus:outline-none'
+            'h-[min(820px,calc(100vh-2rem))] w-[min(1120px,calc(100vw-2rem))] overflow-hidden',
+            DIALOG_SURFACE_CLASS,
+            DIALOG_ANIMATION_CLASS
           )}
         >
           <FullScreenDialogTitle className="sr-only">{t('title')}</FullScreenDialogTitle>
@@ -402,15 +406,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
 
           {/* Main content */}
           <div className="relative flex min-w-0 flex-1 flex-col">
-            <DialogPrimitive.Close
-              aria-label={t('actions.close')}
-              className={cn(
-                'absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-lg',
-                'text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground',
-                'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)'
-              )}
-            >
-              <X className="h-4 w-4" strokeWidth={1.75} />
+            <DialogPrimitive.Close aria-label={t('actions.close')} className={DIALOG_CLOSE_BUTTON_CLASS}>
+              <X className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
             </DialogPrimitive.Close>
 
             {isStandaloneSection ? (

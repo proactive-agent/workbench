@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GitBranch, Loader2, FolderGit, ListTodo } from 'lucide-react';
+import { GitBranch, Loader2, ListTodo } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -273,8 +273,7 @@ export function CreateWorktreeDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <FolderGit className="h-5 w-5" />
+          <DialogTitle>
             {t('terminal:worktree.createTitle')}
           </DialogTitle>
           <DialogDescription>
@@ -282,7 +281,7 @@ export function CreateWorktreeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           {/* Worktree Name */}
           <div className="space-y-2">
             <Label htmlFor="worktree-name">{t('terminal:worktree.name')}</Label>
@@ -322,7 +321,7 @@ export function CreateWorktreeDialog({
           </div>
 
           {/* Git Branch Toggle */}
-          <div className="flex items-center justify-between space-x-2 rounded-lg border p-3">
+          <div className="flex items-center justify-between space-x-2 rounded-lg border border-border px-4 py-3">
             <div className="space-y-0.5">
               <Label htmlFor="create-branch" className="flex items-center gap-2 cursor-pointer">
                 <GitBranch className="h-4 w-4" />
@@ -367,13 +366,13 @@ export function CreateWorktreeDialog({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isCreating}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={isCreating}>
             {t('common:buttons.cancel')}
           </Button>
-          <Button onClick={handleCreate} disabled={isCreating || !sanitizedName}>
+          <Button size="sm" onClick={handleCreate} disabled={isCreating || !sanitizedName}>
             {isCreating ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                 {t('common:labels.creating')}
               </>
             ) : (

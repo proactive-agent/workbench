@@ -133,10 +133,10 @@ export function QueueSettingsModal({
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             {t('common:buttons.cancel')}
           </Button>
-          <Button onClick={handleSave}>
+          <Button size="sm" onClick={handleSave}>
             {t('common:buttons.save')}
           </Button>
         </DialogFooter>

@@ -2,8 +2,6 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Github,
-  GitBranch,
-  Cpu,
   Loader2,
   CheckCircle2,
   AlertCircle,
@@ -369,8 +367,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Github className="h-5 w-5" />
+              <DialogTitle>
                 {t('githubSetup.connectTitle')}
               </DialogTitle>
               <DialogDescription>
@@ -391,8 +388,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Cpu className="h-5 w-5" />
+              <DialogTitle>
                 {t('githubSetup.aiProviderTitle')}
               </DialogTitle>
               <DialogDescription>
@@ -400,13 +396,13 @@ export function GitHubSetupModal({
               </DialogDescription>
             </DialogHeader>
 
-            <div className="py-4 space-y-4 max-h-[60vh] overflow-y-auto">
+            <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
               <ProviderAccountsList />
 
               {getProviderAccounts().length > 0 && (
-                <div className="flex items-center gap-2 rounded-lg bg-success/10 border border-success/30 p-3">
+                <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
                   <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
-                  <p className="text-sm text-success">
+                  <p className="text-sm text-foreground">
                     {t('githubSetup.aiProviderReady')}
                   </p>
                 </div>
@@ -420,10 +416,11 @@ export function GitHubSetupModal({
                 </Button>
               )}
               <Button
+                size="sm"
                 onClick={handleAIAuthContinue}
                 disabled={getProviderAccounts().length === 0}
               >
-                <ChevronRight className="mr-2 h-4 w-4" />
+                <ChevronRight className="mr-1.5 h-3.5 w-3.5" />
                 {t('githubSetup.continue')}
               </Button>
             </DialogFooter>
@@ -434,8 +431,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Github className="h-5 w-5" />
+              <DialogTitle>
                 Confirm Repository
               </DialogTitle>
               <DialogDescription>
@@ -444,9 +440,9 @@ export function GitHubSetupModal({
             </DialogHeader>
 
             <div className="py-4 space-y-4">
-              <div className="rounded-lg border bg-muted/50 p-4">
+              <div className="rounded-lg border border-border px-4 py-3 text-sm">
                 <div className="flex items-center gap-3">
-                  <CheckCircle2 className="h-6 w-6 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                   <div>
                     <p className="font-medium">Repository Detected</p>
                     <p className="text-sm text-muted-foreground font-mono">
@@ -461,18 +457,18 @@ export function GitHubSetupModal({
               </p>
 
               {error && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={handleChangeRepo}>
+              <Button variant="ghost" size="sm" onClick={handleChangeRepo}>
                 Use Different Repository
               </Button>
-              <Button onClick={handleConfirmRepo}>
-                <CheckCircle2 className="mr-2 h-4 w-4" />
+              <Button size="sm" onClick={handleConfirmRepo}>
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                 Confirm & Continue
               </Button>
             </DialogFooter>
@@ -483,8 +479,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Github className="h-5 w-5" />
+              <DialogTitle>
                 Connect to GitHub
               </DialogTitle>
               <DialogDescription>
@@ -677,7 +672,7 @@ export function GitHubSetupModal({
               )}
 
               {error && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
@@ -685,45 +680,45 @@ export function GitHubSetupModal({
 
             <DialogFooter>
               {onSkip && (
-                <Button variant="outline" onClick={onSkip} disabled={isCreatingRepo}>
+                <Button variant="ghost" size="sm" onClick={onSkip} disabled={isCreatingRepo}>
                   Skip for now
                 </Button>
               )}
               {repoAction === 'create' && (
-                <Button onClick={handleCreateRepo} disabled={isCreatingRepo || !newRepoName.trim()}>
+                <Button size="sm" onClick={handleCreateRepo} disabled={isCreatingRepo || !newRepoName.trim()}>
                   {isCreatingRepo ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                       Creating...
                     </>
                   ) : (
                     <>
-                      <Plus className="mr-2 h-4 w-4" />
+                      <Plus className="mr-1.5 h-3.5 w-3.5" />
                       Create Repository
                     </>
                   )}
                 </Button>
               )}
               {repoAction === 'link' && (
-                <Button onClick={handleLinkRepo} disabled={isCreatingRepo || !existingRepoName.trim()}>
+                <Button size="sm" onClick={handleLinkRepo} disabled={isCreatingRepo || !existingRepoName.trim()}>
                   {isCreatingRepo ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                       Linking...
                     </>
                   ) : (
                     <>
-                      <Link className="mr-2 h-4 w-4" />
+                      <Link className="mr-1.5 h-3.5 w-3.5" />
                       Link Repository
                     </>
                   )}
                 </Button>
               )}
               {!repoAction && (
-                <Button variant="outline" onClick={detectRepository} disabled={isLoadingRepo}>
+                <Button size="sm" onClick={detectRepository} disabled={isLoadingRepo}>
                   {isLoadingRepo ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                       Checking...
                     </>
                   ) : (
@@ -739,8 +734,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <GitBranch className="h-5 w-5" />
+              <DialogTitle>
                 Select Base Branch
               </DialogTitle>
               <DialogDescription>
@@ -805,9 +799,9 @@ export function GitHubSetupModal({
               </div>
 
               {/* Info about branch selection */}
-              <div className="rounded-lg border border-info/30 bg-info/5 p-3">
+              <div className="rounded-lg border border-border px-4 py-3 text-sm">
                 <div className="flex items-start gap-2">
-                  <Sparkles className="h-4 w-4 text-info mt-0.5" />
+                  <Sparkles className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
                   <div className="text-xs text-muted-foreground">
                     <p className="font-medium text-foreground">Why select a branch?</p>
                     <p className="mt-1">
@@ -819,7 +813,7 @@ export function GitHubSetupModal({
               </div>
 
               {error && (
-                <div className="rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
                   {error}
                 </div>
               )}
@@ -827,15 +821,16 @@ export function GitHubSetupModal({
 
             <DialogFooter>
               {onSkip && (
-                <Button variant="outline" onClick={onSkip}>
+                <Button variant="ghost" size="sm" onClick={onSkip}>
                   Skip for now
                 </Button>
               )}
               <Button
+                size="sm"
                 onClick={handleComplete}
                 disabled={!selectedBranch || isLoadingBranches}
               >
-                <CheckCircle2 className="mr-2 h-4 w-4" />
+                <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" />
                 Complete Setup
               </Button>
             </DialogFooter>
@@ -846,8 +841,7 @@ export function GitHubSetupModal({
         return (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-success" />
+              <DialogTitle>
                 Setup Complete
               </DialogTitle>
             </DialogHeader>

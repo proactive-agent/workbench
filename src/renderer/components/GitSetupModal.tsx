@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GitBranch, Terminal, CheckCircle2, AlertCircle, Loader2, FolderGit2 } from 'lucide-react';
+import { GitBranch, Terminal, CheckCircle2, AlertCircle } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -76,8 +76,7 @@ export function GitSetupModal({
   const renderInfoStep = () => (
     <>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <FolderGit2 className="h-5 w-5 text-primary" />
+        <DialogTitle>
           {t('gitSetup.title')}
         </DialogTitle>
         <DialogDescription>
@@ -87,9 +86,9 @@ export function GitSetupModal({
 
       <div className="py-4 space-y-4">
         {/* Status indicator */}
-        <div className="rounded-lg bg-muted p-4">
+        <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
           <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
+            <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
             <div className="space-y-1">
               <p className="font-medium text-sm">
                 {needsGitInit
@@ -106,7 +105,7 @@ export function GitSetupModal({
         </div>
 
         {/* What will happen */}
-        <div className="rounded-lg border border-border p-4">
+        <div className="rounded-lg border border-border px-4 py-3 text-sm">
           <p className="font-medium text-sm mb-3">{t('gitSetup.willSetup')}</p>
           <ul className="space-y-2">
             {needsGitInit && (
@@ -127,7 +126,7 @@ export function GitSetupModal({
           <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
             {t('gitSetup.manual')}
           </summary>
-          <div className="mt-3 rounded-lg bg-muted/50 p-3 font-mono text-xs space-y-1">
+          <div className="mt-3 rounded-lg border border-border px-4 py-3 font-mono text-xs space-y-1">
             <p className="text-muted-foreground">Open a terminal in your project folder and run:</p>
             {needsGitInit && <p>git init</p>}
             <p>git add .</p>
@@ -136,18 +135,18 @@ export function GitSetupModal({
         </details>
 
         {error && (
-          <div className="rounded-lg bg-destructive/10 border border-destructive/20 p-3 text-sm text-destructive">
+          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
             {error}
           </div>
         )}
       </div>
 
       <DialogFooter>
-        <Button variant="outline" onClick={handleSkip}>
+        <Button variant="ghost" size="sm" onClick={handleSkip}>
           Skip for now
         </Button>
-        <Button onClick={handleInitializeGit} disabled={isInitializing}>
-          <GitBranch className="mr-2 h-4 w-4" />
+        <Button size="sm" onClick={handleInitializeGit} disabled={isInitializing}>
+          <GitBranch className="mr-1.5 h-3.5 w-3.5" />
           Initialize Git
         </Button>
       </DialogFooter>
@@ -157,8 +156,7 @@ export function GitSetupModal({
   const renderInitializingStep = () => (
     <>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Loader2 className="h-5 w-5 animate-spin text-primary" />
+        <DialogTitle>
           {t('gitSetup.settingUp')}
         </DialogTitle>
       </DialogHeader>
@@ -177,8 +175,7 @@ export function GitSetupModal({
   const renderSuccessStep = () => (
     <>
       <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <CheckCircle2 className="h-5 w-5 text-success" />
+        <DialogTitle>
           {t('gitSetup.success')}
         </DialogTitle>
       </DialogHeader>
