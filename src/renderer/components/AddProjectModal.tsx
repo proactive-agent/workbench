@@ -16,15 +16,41 @@ import { cn } from '../lib/utils';
 import { addProject } from '../stores/project-store';
 import type { Project } from '../../shared/types';
 
-type ModalStep = 'choose' | 'create-form';
+export type AddProjectModalStep = 'choose' | 'create-form';
+type ModalStep = AddProjectModalStep;
+
+/**
+ * Let the user pick an existing folder and add it as a project (auto-detecting its main branch).
+ * Returns the added project, or null when the picker is cancelled.
+ */
+export async function pickAndAddExistingProject(): Promise<Project | null> {
+  const path = await window.electronAPI.selectDirectory();
+  if (!path) return null;
+  const project = await addProject(path);
+  if (!project) return null;
+  // Auto-detect and save the main branch for the project
+  try {
+    const mainBranchResult = await window.electronAPI.detectMainBranch(path);
+    if (mainBranchResult.success && mainBranchResult.data) {
+      await window.electronAPI.updateProjectSettings(project.id, {
+        mainBranch: mainBranchResult.data
+      });
+    }
+  } catch {
+    // Non-fatal - main branch can be set later in settings
+  }
+  return project;
+}
 
 interface AddProjectModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onProjectAdded?: (project: Project, needsInit: boolean) => void;
+  /** Step to open on; 'create-form' skips the choice (its back button then cancels) */
+  initialStep?: AddProjectModalStep;
 }
 
-export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProjectModalProps) {
+export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialStep = 'choose' }: AddProjectModalProps) {
   const { t } = useTranslation('dialogs');
   const [step, setStep] = useState<ModalStep>('choose');
   const [projectName, setProjectName] = useState('');
@@ -36,13 +62,13 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
   // Reset state when modal opens
   useEffect(() => {
     if (open) {
-      setStep('choose');
+      setStep(initialStep);
       setProjectName('');
       setProjectLocation('');
       setInitGit(true);
       setError(null);
     }
-  }, [open]);
+  }, [open, initialStep]);
 
   // Load default location on mount
   useEffect(() => {
@@ -61,24 +87,10 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
 
   const handleOpenExisting = async () => {
     try {
-      const path = await window.electronAPI.selectDirectory();
-      if (path) {
-        const project = await addProject(path);
-        if (project) {
-          // Auto-detect and save the main branch for the project
-          try {
-            const mainBranchResult = await window.electronAPI.detectMainBranch(path);
-            if (mainBranchResult.success && mainBranchResult.data) {
-              await window.electronAPI.updateProjectSettings(project.id, {
-                mainBranch: mainBranchResult.data
-              });
-            }
-          } catch {
-            // Non-fatal - main branch can be set later in settings
-          }
-          onProjectAdded?.(project, !project.autoBuildPath);
-          onOpenChange(false);
-        }
+      const project = await pickAndAddExistingProject();
+      if (project) {
+        onProjectAdded?.(project, !project.autoBuildPath);
+        onOpenChange(false);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t('addProject.failedToOpen'));
@@ -281,9 +293,15 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded }: AddProje
       </div>
 
       <DialogFooter>
-        <Button variant="ghost" size="sm" onClick={() => setStep('choose')} disabled={isCreating}>
-          {t('addProject.back')}
-        </Button>
+        {initialStep === 'create-form' ? (
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={isCreating}>
+            {t('common:buttons.cancel')}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={() => setStep('choose')} disabled={isCreating}>
+            {t('addProject.back')}
+          </Button>
+        )}
         <Button size="sm" onClick={handleCreateProject} disabled={isCreating}>
           {isCreating ? t('addProject.creating') : t('addProject.createProject')}
         </Button>

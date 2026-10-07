@@ -47,7 +47,7 @@ import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
 import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
 import { TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import type { Task, Project } from '../shared/types';
-import { AddProjectModal } from './components/AddProjectModal';
+import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
 
 // Version constant for version-specific warnings (e.g., reauthentication notices)
@@ -99,6 +99,13 @@ export function App() {
   const [settingsInitialSection, setSettingsInitialSection] = useState<AppSection | undefined>(undefined);
   const [settingsInitialProjectSection, setSettingsInitialProjectSection] = useState<ProjectSettingsSection | undefined>(undefined);
   const [activeView, setActiveView] = useState<SidebarView>('kanban');
+
+  // Without projects the Projects page is unavailable; Kanban shows the welcome page instead
+  useEffect(() => {
+    if (projects.length === 0 && activeView === 'projects') {
+      setActiveView('kanban');
+    }
+  }, [projects.length, activeView]);
   const [isOnboardingWizardOpen, setIsOnboardingWizardOpen] = useState(false);
   const [isVersionWarningModalOpen, setIsVersionWarningModalOpen] = useState(false);
   const [isRefreshingTasks, setIsRefreshingTasks] = useState(false);
@@ -525,8 +532,28 @@ export function App() {
     }
   };
 
+  const [addProjectInitialStep, setAddProjectInitialStep] = useState<AddProjectModalStep>('choose');
+
   const handleAddProject = () => {
+    setAddProjectInitialStep('choose');
     setShowAddProjectModal(true);
+  };
+
+  // Welcome page actions go straight to their flow instead of the "Add Project" choice
+  const handleNewProject = () => {
+    setAddProjectInitialStep('create-form');
+    setShowAddProjectModal(true);
+  };
+
+  const handleOpenExistingProject = async () => {
+    try {
+      const project = await pickAndAddExistingProject();
+      if (project) {
+        handleProjectAdded(project, !project.autoBuildPath);
+      }
+    } catch (err) {
+      console.error('Failed to open project:', err);
+    }
   };
 
   const handleProjectAdded = (project: Project, needsInit: boolean) => {
@@ -767,8 +794,8 @@ export function App() {
             ) : (
               <WelcomeScreen
                 projects={projects}
-                onNewProject={handleAddProject}
-                onOpenProject={handleAddProject}
+                onNewProject={handleNewProject}
+                onOpenProject={handleOpenExistingProject}
                 onSelectProject={(projectId) => {
                   openProjectTab(projectId);
                 }}
@@ -814,6 +841,7 @@ export function App() {
           open={showAddProjectModal}
           onOpenChange={setShowAddProjectModal}
           onProjectAdded={handleProjectAdded}
+          initialStep={addProjectInitialStep}
         />
 
         {/* Initialize Auto Claude Dialog */}

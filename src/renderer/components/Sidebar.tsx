@@ -311,7 +311,8 @@ export function Sidebar({
         key={item.id}
         type="button"
         onClick={() => handleNavClick(item.id)}
-        disabled={!selectedProjectId}
+        // Kanban stays available without a project: it hosts the welcome page
+        disabled={!selectedProjectId && item.id !== 'kanban'}
         aria-current={isActive ? 'page' : undefined}
         className={rowClass(isActive)}
       >
@@ -376,6 +377,8 @@ export function Sidebar({
             <button
               type="button"
               onClick={() => handleNavClick('projects')}
+              // Nothing to pick until a project has been added (the welcome page lives under Kanban)
+              disabled={projects.length === 0}
               aria-current={activeView === 'projects' ? 'page' : undefined}
               className={rowClass(activeView === 'projects')}
             >

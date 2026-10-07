@@ -124,18 +124,6 @@ export function WelcomeScreen({
           </Card>
         )}
 
-        {/* Empty State for No Projects */}
-        {projects.length === 0 && (
-          <Card className="border border-dashed border-border bg-card/30 p-8 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/20 mx-auto mb-4">
-              <Folder className="h-6 w-6 text-accent-foreground" />
-            </div>
-            <h3 className="font-medium text-foreground mb-1">{t('welcome:recentProjects.empty')}</h3>
-            <p className="text-sm text-muted-foreground mb-4">
-              {t('welcome:recentProjects.emptyDescription')}
-            </p>
-          </Card>
-        )}
       </div>
     </div>
   );
