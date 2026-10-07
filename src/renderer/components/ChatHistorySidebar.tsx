@@ -411,26 +411,31 @@ function SessionItem({
           value={editTitle}
           onChange={(e) => onEditTitleChange(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="h-7 px-2 text-sm"
+          // Same field look as the dialogs: hairline border, stronger on focus, no ring
+          className={cn(
+            'h-8 rounded-(--nav-item-radius) border-(--field-border-color) px-2 text-sm shadow-none placeholder:text-(--field-placeholder)',
+            'focus-visible:border-(--field-border-focus) focus-visible:ring-0'
+          )}
           autoFocus
         />
+        {/* Same icon buttons as the page header (toggle history, new chat) */}
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-nav-hover hover:text-foreground"
           onClick={onSaveEdit}
           aria-label={t('accessibility.saveEditAriaLabel')}
         >
-          <Check className="h-3.5 w-3.5 text-success" />
+          <Check className="h-4 w-4" />
         </Button>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 shrink-0"
+          className="h-8 w-8 shrink-0 text-muted-foreground hover:bg-nav-hover hover:text-foreground"
           onClick={onCancelEdit}
           aria-label={t('accessibility.cancelEditAriaLabel')}
         >
-          <X className="h-3.5 w-3.5 text-muted-foreground" />
+          <X className="h-4 w-4" />
         </Button>
       </div>
     );
