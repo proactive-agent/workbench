@@ -53,6 +53,7 @@ export const settingsMock = {
   snoozeAppUpdate: async () => ({ success: true }),
   isAppUpdateSuppressed: async (_version: string) => ({ success: true, data: false }),
   getAppIcon: async () => ({ dark: null, light: null }),
+  setTitleBarColors: () => {},
   onAppIconChanged: () => () => {},
 
   // App Update Event Listeners (no-op in browser mode)

@@ -65,7 +65,7 @@ import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
 import { initializeUsageMonitorForwarding } from './ipc-handlers/terminal-handlers';
 import { initializeAppUpdater, stopPeriodicUpdates } from './app-updater';
-import { DEFAULT_APP_SETTINGS, IPC_CHANNELS, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, ADD_TO_DICTIONARY_LABELS } from '../shared/constants';
+import { DEFAULT_APP_SETTINGS, IPC_CHANNELS, TITLE_BAR_OVERLAY_HEIGHT, SPELL_CHECK_LANGUAGE_MAP, DEFAULT_SPELL_CHECK_LANGUAGE, ADD_TO_DICTIONARY_LABELS } from '../shared/constants';
 import { getAppLanguage, initAppLanguage } from './app-language';
 import { readSettingsFile } from './settings-utils';
 import { registerSettingsAccessor } from './ai/auth/resolver';
@@ -296,8 +296,14 @@ function createWindow(): void {
     minHeight,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 15, y: 10 },
+    // No OS title bar: macOS keeps its inset traffic lights; Windows/Linux get Electron-drawn
+    // window controls over the top-right corner, recolored by the renderer to match the theme
+    ...(isMacOS()
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 15, y: 10 } }
+      : {
+          titleBarStyle: 'hidden' as const,
+          titleBarOverlay: { color: '#151515', symbolColor: '#F0EFEC', height: TITLE_BAR_OVERLAY_HEIGHT }
+        }),
     icon: getIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.mjs'),
@@ -645,6 +651,15 @@ app.whenReady().then(() => {
     mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, mode, dataUrl);
   };
   ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrls);
+
+  // Recolor the Windows/Linux window controls to match the active theme
+  const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+  ipcMain.on(IPC_CHANNELS.WINDOW_SET_TITLE_BAR_COLORS, (event, colors: { color?: unknown; symbolColor?: unknown }) => {
+    if (isMacOS()) return;
+    const { color, symbolColor } = colors ?? {};
+    if (typeof color !== 'string' || typeof symbolColor !== 'string' || !HEX_COLOR.test(color) || !HEX_COLOR.test(symbolColor)) return;
+    BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({ color, symbolColor, height: TITLE_BAR_OVERLAY_HEIGHT });
+  });
   headerIconRotators = HEADER_ICON_MODES.map(
     (mode) =>
       new AppIconRotator({

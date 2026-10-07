@@ -1,3 +1,4 @@
+import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
   AppUpdateInfo,
@@ -25,6 +26,8 @@ export interface AppUpdateAPI {
   snoozeAppUpdate: () => Promise<IPCResult>;
   isAppUpdateSuppressed: (version: string) => Promise<IPCResult<boolean>>;
   getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
+  /** Match the Windows/Linux window controls to the theme (hex colors) */
+  setTitleBarColors: (colors: { color: string; symbolColor: string }) => void;
 
   // Event Listeners
   onAppIconChanged: (callback: (mode: 'dark' | 'light', dataUrl: string | null) => void) => IpcListenerCleanup;
@@ -85,6 +88,9 @@ export const createAppUpdateAPI = (): AppUpdateAPI => ({
 
   getAppIcon: (): Promise<Record<'dark' | 'light', string | null>> =>
     invokeIpc(IPC_CHANNELS.APP_ICON_GET),
+
+  setTitleBarColors: (colors: { color: string; symbolColor: string }): void =>
+    ipcRenderer.send(IPC_CHANNELS.WINDOW_SET_TITLE_BAR_COLORS, colors),
 
   // Event Listeners
   onAppIconChanged: (

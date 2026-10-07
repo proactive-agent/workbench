@@ -19,6 +19,12 @@ export const PANEL_CLEANUP_GRACE_PERIOD_MS = 150;
 // UI Scale Constants
 // ============================================
 
+/**
+ * Height (px) of the window-controls strip on Windows/Linux, where the OS title bar is hidden
+ * and Electron draws minimize/maximize/close over the top-right corner of the app
+ */
+export const TITLE_BAR_OVERLAY_HEIGHT = 40;
+
 export const UI_SCALE_MIN = 75;
 export const UI_SCALE_MAX = 200;
 export const UI_SCALE_DEFAULT = 100;
