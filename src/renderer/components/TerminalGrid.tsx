@@ -16,22 +16,13 @@ import {
   rectSortingStrategy,
   sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable';
-import { Plus, Sparkles, Grid2X2, History, ChevronDown, Loader2, TerminalSquare } from 'lucide-react';
-import { SettingsIcon as Settings } from './icons/app-icons';
+import { TerminalSquare } from 'lucide-react';
+import { AgentsIcon, SettingsIcon as Settings, TerminalPromptIcon } from './icons/app-icons';
 import { SortableTerminalWrapper } from './SortableTerminalWrapper';
 import { Button } from './ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from './ui/dropdown-menu';
-import { ClaudeCodeStatusBadge } from './ClaudeCodeStatusBadge';
 import { useTerminalStore } from '../stores/terminal-store';
 import { useTaskStore } from '../stores/task-store';
 import { TERMINAL_DOM_UPDATE_DELAY_MS, PANEL_CLEANUP_GRACE_PERIOD_MS } from '../../shared/constants';
-import type { SessionDateInfo } from '../../shared/types';
 
 interface TerminalGridProps {
   projectPath?: string;
@@ -39,7 +30,7 @@ interface TerminalGridProps {
 }
 
 export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'terminal']);
   const allTerminals = useTerminalStore((state) => state.terminals);
 
   // Track terminals that are in the grace period before being filtered out
@@ -121,18 +112,11 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
   const removeTerminal = useTerminalStore((state) => state.removeTerminal);
   const setActiveTerminal = useTerminalStore((state) => state.setActiveTerminal);
   const canAddTerminal = useTerminalStore((state) => state.canAddTerminal);
-  const setCLIMode = useTerminalStore((state) => state.setCLIMode);
+  const maxTerminals = useTerminalStore((state) => state.maxTerminals);
   const reorderTerminals = useTerminalStore((state) => state.reorderTerminals);
 
   // Get tasks from task store for task selection dropdown in terminals
   const tasks = useTaskStore((state) => state.tasks);
-
-  // File explorer state
-
-  // Session history state
-  const [sessionDates, setSessionDates] = useState<SessionDateInfo[]>([]);
-  const [isLoadingDates, setIsLoadingDates] = useState(false);
-  const [isRestoring, setIsRestoring] = useState(false);
 
   // Expanded terminal state - when set, this terminal takes up the full grid space
   const [expandedTerminalId, setExpandedTerminalId] = useState<string | null>(null);
@@ -143,113 +127,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
     setPendingCleanup(new Map());
     clearAllCleanupTimers();
   }, [projectPath, clearAllCleanupTimers]);
-
-  // Fetch available session dates when project changes
-  useEffect(() => {
-    if (!projectPath) {
-      setSessionDates([]);
-      return;
-    }
-
-    const fetchSessionDates = async () => {
-      setIsLoadingDates(true);
-      try {
-        const result = await window.electronAPI.getTerminalSessionDates(projectPath);
-        if (result.success && result.data) {
-          setSessionDates(result.data);
-        }
-      } catch (error) {
-        console.error('Failed to fetch session dates:', error);
-      } finally {
-        setIsLoadingDates(false);
-      }
-    };
-
-    fetchSessionDates();
-  }, [projectPath]);
-
-  // Get addRestoredTerminal from store
-  const addRestoredTerminal = useTerminalStore((state) => state.addRestoredTerminal);
-
-  // Handle restoring sessions from a specific date
-  const handleRestoreFromDate = useCallback(async (date: string) => {
-    if (!projectPath || isRestoring) return;
-
-    setIsRestoring(true);
-    try {
-      // First get the session data for this date (we need it after restore)
-      const sessionsResult = await window.electronAPI.getTerminalSessionsForDate(date, projectPath);
-      const sessionsToRestore = sessionsResult.success ? sessionsResult.data || [] : [];
-
-      console.warn(`[TerminalGrid] Found ${sessionsToRestore.length} sessions to restore from ${date}`);
-
-      if (sessionsToRestore.length === 0) {
-        console.warn('[TerminalGrid] No sessions found for this date');
-        setIsRestoring(false);
-        return;
-      }
-
-      // Close all existing terminals
-      for (const terminal of terminals) {
-        await window.electronAPI.destroyTerminal(terminal.id);
-        removeTerminal(terminal.id);
-      }
-
-      // Small delay to ensure cleanup
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      // Restore sessions from the selected date (creates PTYs in main process)
-      const result = await window.electronAPI.restoreTerminalSessionsFromDate(
-        date,
-        projectPath,
-        80,
-        24
-      );
-
-      if (result.success && result.data) {
-        console.warn(`[TerminalGrid] Main process restored ${result.data.restored} sessions from ${date}`);
-
-        // Sort sessions by displayOrder before restoring to preserve user's tab ordering
-        const sortedSessions = [...sessionsToRestore].sort((a, b) => {
-          const orderA = a.displayOrder ?? Number.MAX_SAFE_INTEGER;
-          const orderB = b.displayOrder ?? Number.MAX_SAFE_INTEGER;
-          return orderA - orderB;
-        });
-
-        // Add each successfully restored session to the renderer's terminal store
-        // Use staggered initialization to prevent race conditions when multiple terminals
-        // try to initialize and measure dimensions simultaneously
-        const TERMINAL_INIT_STAGGER_MS = 75; // Small delay between each terminal
-
-        for (const sessionResult of result.data.sessions) {
-          if (sessionResult.success) {
-            const fullSession = sortedSessions.find(s => s.id === sessionResult.id);
-            if (fullSession) {
-              console.warn(`[TerminalGrid] Adding restored terminal to store: ${fullSession.id}`);
-              addRestoredTerminal(fullSession);
-              // Stagger terminal initialization to prevent race conditions
-              await new Promise(resolve => setTimeout(resolve, TERMINAL_INIT_STAGGER_MS));
-            }
-          }
-        }
-
-        // Trigger terminal refit after grid layout stabilizes to ensure correct dimensions
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('terminal-refit-all'));
-        }, TERMINAL_DOM_UPDATE_DELAY_MS);
-
-        // Refresh session dates to update counts
-        const datesResult = await window.electronAPI.getTerminalSessionDates(projectPath);
-        if (datesResult.success && datesResult.data) {
-          setSessionDates(datesResult.data);
-        }
-      }
-    } catch (error) {
-      console.error('Failed to restore sessions:', error);
-    } finally {
-      setIsRestoring(false);
-    }
-  }, [projectPath, terminals, removeTerminal, addRestoredTerminal, isRestoring]);
 
   // Setup drag sensors for both file and terminal drag operations
   const sensors = useSensors(
@@ -282,19 +159,18 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
     }
   }, [addTerminal, canAddTerminal, projectPath]);
 
+  // A terminal that starts Claude Code as soon as its shell is ready
+  const handleAddAgent = useCallback(() => {
+    if (canAddTerminal(projectPath)) {
+      addTerminal(projectPath, projectPath, { launchCLI: true });
+    }
+  }, [addTerminal, canAddTerminal, projectPath]);
+
   // Toggle terminal expand state
   const handleToggleExpand = useCallback((terminalId: string) => {
     setExpandedTerminalId(prev => prev === terminalId ? null : terminalId);
   }, []);
 
-  const handleInvokeClaudeAll = useCallback(() => {
-    terminals.forEach((terminal) => {
-      if (terminal.status === 'running' && !terminal.isCLIMode) {
-        setCLIMode(terminal.id, true);
-        window.electronAPI.invokeCLIInTerminal(terminal.id, terminal.cwd || projectPath);
-      }
-    });
-  }, [terminals, setCLIMode, projectPath]);
 
   // Handle drag start - store dragged item data
   const handleDragStart = useCallback((event: DragStartEvent) => {
@@ -360,12 +236,10 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
   const gridLayout = useMemo(() => {
     const count = terminals.length;
     if (count === 0) return { rows: 0, cols: 0 };
-    if (count === 1) return { rows: 1, cols: 1 };
     if (count === 2) return { rows: 1, cols: 2 };
-    if (count <= 4) return { rows: 2, cols: 2 };
-    if (count <= 6) return { rows: 2, cols: 3 };
-    if (count <= 9) return { rows: 3, cols: 3 };
-    return { rows: 3, cols: 4 }; // Max 12 terminals = 3x4
+    // Near-square grid: 1x1, 2x2, 3x2, 3x3, 4x3, 4x4, 5x4, 5x5 (up to MAX_TERMINALS_LIMIT)
+    const cols = Math.ceil(Math.sqrt(count));
+    return { rows: Math.ceil(count / cols), cols };
   }, [terminals.length]);
 
   // Terminal IDs for SortableContext
@@ -374,22 +248,26 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
   // Empty state
   if (terminals.length === 0) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-6 p-8">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="rounded-full bg-card p-4">
-            <Grid2X2 className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Agent Terminals</h2>
-            <p className="mt-1 text-sm text-muted-foreground max-w-md">
-              Spawn multiple terminals to run Claude agents in parallel.
-            </p>
+      <div className="flex h-full flex-col items-center justify-center px-4 pb-[12vh]">
+        <div className="flex max-w-[672px] flex-col items-center text-center">
+          <h1 className="flex items-center justify-center gap-3 font-heading text-[2.125rem] font-normal! leading-tight tracking-tight text-foreground">
+            <AgentsIcon className="h-9 w-9 shrink-0 text-primary" />
+            <span>{t('terminal:grid.emptyTitle')}</span>
+          </h1>
+          <p className="mt-3 max-w-md text-[0.9375rem] leading-relaxed text-muted-foreground">
+            {t('terminal:grid.emptyDescription')}
+          </p>
+          <div className="mt-8 flex items-center gap-2">
+            <Button onClick={handleAddAgent} className="gap-2">
+              <AgentsIcon className="h-4 w-4" />
+              {t('terminal:grid.newAgent')}
+            </Button>
+            <Button variant="ghost" onClick={handleAddTerminal} className="gap-2 hover:bg-nav-hover">
+              <TerminalPromptIcon className="h-4 w-4" />
+              {t('terminal:grid.newTerminal')}
+            </Button>
           </div>
         </div>
-        <Button onClick={handleAddTerminal} className="gap-2">
-          <Plus className="h-4 w-4" />
-          New Terminal
-        </Button>
       </div>
     );
   }
@@ -403,85 +281,43 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
     >
       <div className="flex h-full flex-col">
         {/* Toolbar */}
-        <div className="flex h-10 items-center justify-between border-b border-border bg-card/30 px-3">
+        <div className="flex h-12 shrink-0 items-center justify-between px-3">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-medium text-muted-foreground">
-              {terminals.length} / 12 terminals
+            <span className="px-1 text-[0.8125rem] text-muted-foreground">
+              {t('terminal:grid.count', { count: terminals.length, max: maxTerminals })}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Claude Code CLI status */}
-            <ClaudeCodeStatusBadge />
-            {/* Session history dropdown */}
-            {projectPath && sessionDates.length > 0 && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 text-xs gap-1.5"
-                    disabled={isRestoring || isLoadingDates}
-                  >
-                    {isRestoring ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <History className="h-3 w-3" />
-                    )}
-                    History
-                    <ChevronDown className="h-3 w-3" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
-                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                    Restore sessions from...
-                  </div>
-                  <DropdownMenuSeparator />
-                  {sessionDates.map((dateInfo) => (
-                    <DropdownMenuItem
-                      key={dateInfo.date}
-                      onClick={() => handleRestoreFromDate(dateInfo.date)}
-                      className="flex items-center justify-between"
-                    >
-                      <span>{dateInfo.label}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {dateInfo.sessionCount} session{dateInfo.sessionCount !== 1 ? 's' : ''}
-                      </span>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+          <div className="flex items-center gap-0.5">
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-7 text-xs gap-1.5"
+              className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
               onClick={() => {
                 window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'terminal-fonts' }));
               }}
             >
-              <Settings className="h-3 w-3" />
+              <Settings className="h-3.5 w-3.5" />
               {t('actions.settings')}
             </Button>
-            {terminals.some((t) => t.status === 'running' && !t.isCLIMode) && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1.5"
-                onClick={handleInvokeClaudeAll}
-              >
-                <Sparkles className="h-3 w-3" />
-                Invoke Claude All
-              </Button>
-            )}
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
-              className="h-7 text-xs gap-1.5"
+              className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
+              onClick={handleAddAgent}
+              disabled={!canAddTerminal(projectPath)}
+            >
+              <AgentsIcon className="h-3.5 w-3.5" />
+              {t('terminal:grid.newAgent')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
               onClick={handleAddTerminal}
               disabled={!canAddTerminal(projectPath)}
             >
-              <Plus className="h-3 w-3" />
-              New Terminal
+              <TerminalPromptIcon className="h-3.5 w-3.5" />
+              {t('terminal:grid.newTerminal')}
             </Button>
           </div>
         </div>
@@ -489,7 +325,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
         {/* Main content area with the terminal grid */}
         <div className="flex flex-1 overflow-hidden">
           {/* Terminal grid using resizable panels */}
-          <div className="flex-1 overflow-hidden p-2">
+          <div className="flex-1 overflow-hidden px-2 pb-2">
             {expandedTerminalId ? (
               // Show only the expanded terminal
               (() => {

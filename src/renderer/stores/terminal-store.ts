@@ -7,6 +7,7 @@ import type { TerminalSession, TerminalWorktreeConfig } from '../../shared/types
 import { terminalMachine, type TerminalEvent } from '@shared/state-machines';
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
+import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT } from '../../shared/constants';
 
 type TerminalActor = ActorRefFrom<typeof terminalMachine>;
 
@@ -133,6 +134,7 @@ export interface Terminal {
   worktreeConfig?: TerminalWorktreeConfig;  // Associated worktree for isolated development
   isClaudeBusy?: boolean;  // Whether Claude Code is actively processing (for visual indicator)
   pendingCLIResume?: boolean;  // Whether this terminal has a pending Claude resume (deferred until tab activated)
+  launchCLIOnCreate?: boolean;  // Start Claude Code as soon as the PTY is ready ("New agent")
   displayOrder?: number;  // Display order for tab persistence (lower = further left)
   cliNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
 }
@@ -153,11 +155,12 @@ interface TerminalState {
   hasRestoredSessions: boolean;  // Track if we've restored sessions for this project
 
   // Actions
-  addTerminal: (cwd?: string, projectPath?: string) => Terminal | null;
+  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean }) => Terminal | null;
   addRestoredTerminal: (session: TerminalSession) => Terminal;
   // Add a terminal with a specific ID (for terminals created in main process, like OAuth login terminals)
   addExternalTerminal: (id: string, title: string, cwd?: string, projectPath?: string) => Terminal | null;
   removeTerminal: (id: string) => void;
+  setMaxTerminals: (max: number) => void;
   updateTerminal: (id: string, updates: Partial<Terminal>) => void;
   setActiveTerminal: (id: string | null) => void;
   setTerminalStatus: (id: string, status: TerminalStatus) => void;
@@ -197,13 +200,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: [],
   layouts: [],
   activeTerminalId: null,
-  // Maximum terminals per project - limited to 12 to prevent excessive memory usage
-  // from terminal buffers (~1MB each) and PTY process resource exhaustion.
-  // Each terminal maintains a scrollback buffer and associated xterm.js state.
-  maxTerminals: 12,
+  // Maximum terminals per project, synced from the "Maximum terminals" app setting.
+  // Capped to prevent excessive memory usage from terminal buffers (~1MB each)
+  // and PTY process resource exhaustion.
+  maxTerminals: DEFAULT_MAX_TERMINALS,
   hasRestoredSessions: false,
 
-  addTerminal: (cwd?: string, projectPath?: string) => {
+  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean }) => {
     const state = get();
     const activeCount = getActiveProjectTerminalCount(state.terminals, projectPath);
     if (activeCount >= state.maxTerminals) {
@@ -221,6 +224,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       // outputBuffer removed - managed by terminalBufferManager
       projectPath,
       displayOrder: state.terminals.length,  // New terminals appear at the end
+      launchCLIOnCreate: options?.launchCLI,
     };
 
     set((state) => ({
@@ -338,6 +342,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }));
 
     return newTerminal;
+  },
+
+  setMaxTerminals: (max: number) => {
+    set({ maxTerminals: Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(max))) });
   },
 
   removeTerminal: (id: string) => {

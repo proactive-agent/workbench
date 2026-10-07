@@ -54,5 +54,25 @@
     "detached": "(detached)",
     "remotePushFailed": "Remote Tracking Not Set Up",
     "remotePushFailedDescription": "Worktree created but the branch could not be pushed to remote. You may need to run git push -u manually."
+  },
+  "grid": {
+    "emptyTitle": "Agents",
+    "emptyDescription": "Run Claude agents side by side, each in its own terminal.",
+    "newTerminal": "New terminal",
+    "count": "{{count}} / {{max}} terminals",
+    "newAgent": "New agent"
+  },
+  "taskSelector": {
+    "clearTask": "Clear task",
+    "selectTask": "Task",
+    "availableTasks": "Available tasks",
+    "noTasks": "No tasks available",
+    "newTask": "New task",
+    "searchPlaceholder": "Search tasks...",
+    "noResults": "No matching tasks"
+  },
+  "header": {
+    "agent": "Agent",
+    "terminal": "Terminal"
   }
 }

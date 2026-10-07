@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Terminal,
   Check,
   AlertTriangle,
   X,
@@ -9,11 +8,8 @@ import {
   Download,
   RefreshCw,
   ExternalLink,
-  FolderOpen,
 } from "lucide-react";
-import { Button } from "./ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import { Button } from "../ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,20 +19,18 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "./ui/alert-dialog";
+} from "../ui/alert-dialog";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "./ui/select";
-import { cn } from "../lib/utils";
-import type { ClaudeCodeVersionInfo, ClaudeInstallationInfo } from "../../shared/types/cli";
-
-interface ClaudeCodeStatusBadgeProps {
-  className?: string;
-}
+} from "../ui/select";
+import { cn } from "../../lib/utils";
+import { SettingsSection } from "./SettingsSection";
+import { SettingsRow, SettingsRows } from "./SettingsRow";
+import type { ClaudeCodeVersionInfo, ClaudeInstallationInfo } from "../../../shared/types/cli";
 
 type StatusType = "loading" | "installed" | "outdated" | "not-found" | "error";
 
@@ -46,16 +40,15 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const VERSION_RECHECK_DELAY_MS = 5000;
 
 /**
- * Claude Code CLI status badge for the terminal toolbar.
- * Shows installation status and provides quick access to install/update.
+ * Claude Code CLI settings: installation status, install/update, version switching
+ * and choosing between multiple CLI installations.
  */
-export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps) {
+export function ClaudeCodeSettings() {
   const { t } = useTranslation(["common", "navigation"]);
   const [status, setStatus] = useState<StatusType>("loading");
   const [versionInfo, setVersionInfo] = useState<ClaudeCodeVersionInfo | null>(null);
   const [isInstalling, setIsInstalling] = useState(false);
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
   const [showUpdateWarning, setShowUpdateWarning] = useState(false);
 
   // Version rollback state
@@ -163,19 +156,17 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
     return () => clearInterval(interval);
   }, [checkVersion]);
 
-  // Fetch versions when popover opens and Claude is installed
+  // Load the version list once Claude Code is known to be installed
   useEffect(() => {
-    if (isOpen && versionInfo?.installed && availableVersions.length === 0) {
+    if (versionInfo?.installed && availableVersions.length === 0) {
       fetchVersions();
     }
-  }, [isOpen, versionInfo?.installed, availableVersions.length, fetchVersions]);
+  }, [versionInfo?.installed, availableVersions.length, fetchVersions]);
 
-  // Fetch installations when popover opens
+  // Load the detected CLI installations
   useEffect(() => {
-    if (isOpen && installations.length === 0) {
-      fetchInstallations();
-    }
-  }, [isOpen, installations.length, fetchInstallations]);
+    fetchInstallations();
+  }, [fetchInstallations]);
 
   // Perform the actual install/update
   const performInstall = async () => {
@@ -313,308 +304,197 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
     setShowRollbackWarning(true);
   };
 
-  // Get status indicator color
-  const getStatusColor = () => {
-    switch (status) {
-      case "installed":
-        return "bg-green-500";
-      case "outdated":
-        return "bg-yellow-500";
-      case "not-found":
-      case "error":
-        return "bg-destructive";
-      default:
-        return "bg-muted-foreground";
-    }
-  };
-
-  // Get status icon
+  // Status icon: green/red only for success/failure, neutral otherwise
   const getStatusIcon = () => {
     switch (status) {
       case "loading":
-        return <Loader2 className="h-3 w-3 animate-spin" />;
+        return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
       case "installed":
-        return <Check className="h-3 w-3" />;
+        return <Check className="h-3.5 w-3.5 text-[var(--success)]" />;
       case "outdated":
-        return <AlertTriangle className="h-3 w-3" />;
+        return <AlertTriangle className="h-3.5 w-3.5" />;
       case "not-found":
-        return <X className="h-3 w-3" />;
+        return <X className="h-3.5 w-3.5 text-[var(--error)]" />;
       case "error":
-        return <AlertTriangle className="h-3 w-3" />;
+        return <AlertTriangle className="h-3.5 w-3.5 text-[var(--error)]" />;
     }
   };
 
-  // Get tooltip text
-  const getTooltipText = () => {
-    switch (status) {
-      case "loading":
-        return t("navigation:claudeCode.checking", "Checking Claude Code...");
-      case "installed":
-        return t("navigation:claudeCode.upToDate", "Claude Code is up to date");
-      case "outdated":
-        return t("navigation:claudeCode.updateAvailable", "Claude Code update available");
-      case "not-found":
-        return t("navigation:claudeCode.notInstalled", "Claude Code not installed");
-      case "error":
-        return t("navigation:claudeCode.error", "Error checking Claude Code");
-    }
-  };
+  const statusText = {
+    loading: t("navigation:claudeCode.checking"),
+    installed: t("navigation:claudeCode.upToDate"),
+    outdated: t("navigation:claudeCode.updateAvailable"),
+    "not-found": t("navigation:claudeCode.notInstalled"),
+    error: t("navigation:claudeCode.error"),
+  }[status];
 
   return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              variant="outline"
-              size="sm"
-              className={cn(
-                "h-7 text-xs gap-1.5",
-                status === "not-found" || status === "error" ? "text-destructive" : "",
-                status === "outdated" ? "text-yellow-600 dark:text-yellow-500" : "",
-                className
+    <SettingsSection
+      title={t("navigation:claudeCode.title")}
+      description={t("navigation:claudeCode.description")}
+    >
+      <SettingsRows>
+        {/* Status + install/update/refresh */}
+        <SettingsRow
+          label={t("navigation:claudeCode.status")}
+          description={
+            <span className="flex items-center gap-1.5">
+              {getStatusIcon()}
+              {statusText}
+            </span>
+          }
+        >
+          {(status === "not-found" || status === "outdated") && (
+            <Button size="sm" className="gap-1.5" onClick={handleInstall} disabled={isInstalling}>
+              {isInstalling ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
               )}
-            >
-              <div className="relative">
-                <Terminal className="h-4 w-4" />
-                <span
-                  className={cn(
-                    "absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full",
-                    getStatusColor()
-                  )}
-                />
-              </div>
-              <span className="truncate">Claude Code</span>
-              {status === "outdated" && (
-                <span className="ml-auto text-[10px] bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 px-1.5 py-0.5 rounded">
-                  {t("common:update", "Update")}
-                </span>
-              )}
-              {status === "not-found" && (
-                <span className="ml-auto text-[10px] bg-destructive/20 text-destructive px-1.5 py-0.5 rounded">
-                  {t("common:install", "Install")}
-                </span>
-              )}
+              {status === "outdated" ? t("navigation:claudeCode.update") : t("navigation:claudeCode.install")}
             </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{getTooltipText()}</TooltipContent>
-      </Tooltip>
-
-      <PopoverContent side="bottom" align="end" className="w-72">
-        <div className="space-y-3">
-          {/* Header */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/10">
-              <Terminal className="h-4 w-4 text-primary" />
-            </div>
-            <div>
-              <h4 className="text-sm font-medium">Claude Code CLI</h4>
-              <p className="text-xs text-muted-foreground flex items-center gap-1">
-                {getStatusIcon()}
-                {status === "installed" && t("navigation:claudeCode.installed", "Installed")}
-                {status === "outdated" && t("navigation:claudeCode.outdated", "Update available")}
-                {status === "not-found" && t("navigation:claudeCode.missing", "Not installed")}
-                {status === "loading" && t("navigation:claudeCode.checking", "Checking...")}
-                {status === "error" && t("navigation:claudeCode.error", "Error")}
-              </p>
-            </div>
-          </div>
-
-          {/* Version info */}
-          {versionInfo && status !== "loading" && (
-            <div className="text-xs space-y-1 p-2 bg-muted rounded-md">
-              {versionInfo.installed && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    {t("navigation:claudeCode.current", "Current")}:
-                  </span>
-                  <span className="font-mono">{versionInfo.installed}</span>
-                </div>
-              )}
-              {versionInfo.latest && versionInfo.latest !== "unknown" && (
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">
-                    {t("navigation:claudeCode.latest", "Latest")}:
-                  </span>
-                  <span className="font-mono">{versionInfo.latest}</span>
-                </div>
-              )}
-              {versionInfo.path && (
-                <div className="flex justify-between items-center gap-2">
-                  <span className="text-muted-foreground flex items-center gap-1">
-                    <FolderOpen className="h-3 w-3" />
-                    {t("navigation:claudeCode.path", "Path")}:
-                  </span>
-                  <span
-                    className="font-mono text-[10px] truncate max-w-[140px]"
-                    title={versionInfo.path}
-                  >
-                    {versionInfo.path}
-                  </span>
-                </div>
-              )}
-              {lastChecked && (
-                <div className="flex justify-between text-muted-foreground">
-                  <span>{t("navigation:claudeCode.lastChecked", "Last checked")}:</span>
-                  <span>{lastChecked.toLocaleTimeString()}</span>
-                </div>
-              )}
-            </div>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => checkVersion(true)}
+            disabled={status === "loading"}
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", status === "loading" && "animate-spin")} />
+            {t("navigation:claudeCode.refresh")}
+          </Button>
+        </SettingsRow>
 
-          {/* Actions */}
-          <div className="flex gap-2">
-            {(status === "not-found" || status === "outdated") && (
-              <Button
-                size="sm"
-                className="flex-1 gap-1"
-                onClick={handleInstall}
-                disabled={isInstalling}
-              >
-                {isInstalling ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Download className="h-3 w-3" />
+        {/* Installed version + switching */}
+        {versionInfo?.installed && (
+          <SettingsRow
+            label={t("navigation:claudeCode.version")}
+            description={
+              <span className="font-mono text-[0.8125rem]">
+                {versionInfo.installed}
+                {versionInfo.latest && versionInfo.latest !== "unknown" && (
+                  <span className="font-sans">
+                    {" · "}
+                    {t("navigation:claudeCode.latest")} {versionInfo.latest}
+                  </span>
                 )}
-                {status === "outdated"
-                  ? t("common:update", "Update")
-                  : t("common:install", "Install")}
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={() => checkVersion(true)}
-              disabled={status === "loading"}
+                {lastChecked && (
+                  <span className="font-sans">
+                    {" · "}
+                    {t("navigation:claudeCode.lastChecked")} {lastChecked.toLocaleTimeString()}
+                  </span>
+                )}
+              </span>
+            }
+          >
+            <Select
+              value={selectedVersion || ""}
+              onValueChange={handleVersionSelect}
+              disabled={isLoadingVersions || isInstalling}
             >
-              <RefreshCw className={cn("h-3 w-3", status === "loading" && "animate-spin")} />
-              {t("common:refresh", "Refresh")}
-            </Button>
-          </div>
+              <SelectTrigger className="w-48" aria-label={t("navigation:claudeCode.switchVersion")}>
+                <SelectValue
+                  placeholder={
+                    isLoadingVersions
+                      ? t("navigation:claudeCode.loadingVersions")
+                      : versionsError
+                        ? t("navigation:claudeCode.failedToLoadVersions")
+                        : t("navigation:claudeCode.switchVersion")
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {availableVersions.map((version) => {
+                  const isCurrentVersion = normalizeVersion(version) === normalizeVersion(versionInfo.installed || "");
+                  return (
+                    <SelectItem key={version} value={version} disabled={isCurrentVersion}>
+                      <span className="font-mono">{version}</span>
+                      {isCurrentVersion && (
+                        <span className="ml-2 text-muted-foreground">
+                          ({t("navigation:claudeCode.currentVersion")})
+                        </span>
+                      )}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+        )}
 
-          {/* Install/Update error display */}
-          {installError && (
-            <div className="text-xs p-2 bg-destructive/10 text-destructive rounded-md flex items-center gap-2">
-              <AlertTriangle className="h-3 w-3 shrink-0" />
-              <span>{installError}</span>
-            </div>
-          )}
-
-          {/* Version selector - only show when Claude is installed */}
-          {versionInfo?.installed && (
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">
-                {t("navigation:claudeCode.switchVersion", "Switch Version")}
-              </label>
-              <Select
-                value={selectedVersion || ""}
-                onValueChange={handleVersionSelect}
-                disabled={isLoadingVersions || isInstalling}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue
-                    placeholder={
-                      isLoadingVersions
-                        ? t("navigation:claudeCode.loadingVersions", "Loading versions...")
-                        : versionsError
-                          ? t("navigation:claudeCode.failedToLoadVersions", "Failed to load versions")
-                          : t("navigation:claudeCode.selectVersion", "Select version")
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableVersions.map((version) => {
-                    const isCurrentVersion = normalizeVersion(version) === normalizeVersion(versionInfo.installed || '');
-                    return (
-                      <SelectItem
-                        key={version}
-                        value={version}
-                        className="text-xs"
-                        disabled={isCurrentVersion}
-                      >
-                        <span className="font-mono">{version}</span>
-                        {isCurrentVersion && (
-                          <span className="ml-2 text-muted-foreground">
-                            ({t("navigation:claudeCode.currentVersion", "Current")})
-                          </span>
-                        )}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {/* CLI Installation selector - show when multiple installations are found */}
-          {installations.length > 1 && (
-            <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">
-                {t("navigation:claudeCode.switchInstallation", "Switch Installation")}
-              </label>
+        {/* Active installation path + switching between detected installations */}
+        {versionInfo?.path && (
+          <SettingsRow
+            label={t("navigation:claudeCode.path")}
+            description={
+              <span className="block truncate font-mono text-[0.8125rem]" title={versionInfo.path}>
+                {versionInfo.path}
+              </span>
+            }
+          >
+            {installations.length > 1 && (
               <Select
                 value={selectedInstallation || ""}
                 onValueChange={handleInstallationSelect}
                 disabled={isLoadingInstallations || isInstalling}
               >
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="w-48" aria-label={t("navigation:claudeCode.switchInstallation")}>
                   <SelectValue
                     placeholder={
                       isLoadingInstallations
-                        ? t("navigation:claudeCode.loadingInstallations", "Loading installations...")
+                        ? t("navigation:claudeCode.loadingInstallations")
                         : installationsError
-                          ? t("navigation:claudeCode.failedToLoadInstallations", "Failed to load installations")
-                          : t("navigation:claudeCode.selectInstallation", "Select installation")
+                          ? t("navigation:claudeCode.failedToLoadInstallations")
+                          : t("navigation:claudeCode.switchInstallation")
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
                   {installations.map((installation) => (
-                    <SelectItem
-                      key={installation.path}
-                      value={installation.path}
-                      className="text-xs"
-                      disabled={installation.isActive}
-                    >
+                    <SelectItem key={installation.path} value={installation.path} disabled={installation.isActive}>
                       <div className="flex flex-col">
-                        <span className="font-mono text-[10px] truncate max-w-[180px]" title={installation.path}>
+                        <span className="max-w-[260px] truncate font-mono text-xs" title={installation.path}>
                           {/* Split on both path separators for cross-platform compatibility */}
-                          {installation.path.split(/[/\\]/).slice(-2).join('/') || installation.path}
+                          {installation.path.split(/[/\\]/).slice(-2).join("/") || installation.path}
                         </span>
-                        <span className="text-muted-foreground text-[9px]">
-                          {installation.version ? `v${installation.version}` : t("navigation:claudeCode.versionUnknown", "version unknown")} ({installation.source})
-                          {installation.isActive && ` - ${t("navigation:claudeCode.activeInstallation", "Active")}`}
+                        <span className="text-[11px] text-muted-foreground">
+                          {installation.version ? `v${installation.version}` : t("navigation:claudeCode.versionUnknown")} ({installation.source})
+                          {installation.isActive && ` - ${t("navigation:claudeCode.activeInstallation")}`}
                         </span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-          )}
-
-          {/* Changelog link */}
-          <Button
-            variant="link"
-            size="sm"
-            className="w-full text-xs text-muted-foreground gap-1"
-            onClick={() =>
-              window.electronAPI?.openExternal?.(
-                "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md"
-              )
-            }
-            aria-label={t(
-              "navigation:claudeCode.viewChangelogAriaLabel",
-              "View Claude Code Changelog (opens in new window)"
             )}
+          </SettingsRow>
+        )}
+
+        {/* Changelog */}
+        <SettingsRow label={t("navigation:claudeCode.changelog")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5"
+            onClick={() =>
+              window.electronAPI?.openExternal?.("https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md")
+            }
+            aria-label={t("navigation:claudeCode.viewChangelogAriaLabel")}
           >
-            {t("navigation:claudeCode.viewChangelog", "View Claude Code Changelog")}
-            <ExternalLink className="h-3 w-3" aria-hidden="true" />
+            {t("navigation:claudeCode.viewChangelog")}
+            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
           </Button>
+        </SettingsRow>
+      </SettingsRows>
+
+      {/* Install/Update error display */}
+      {installError && (
+        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          <span>{installError}</span>
         </div>
-      </PopoverContent>
+      )}
 
       {/* Update warning dialog */}
       <AlertDialog open={showUpdateWarning} onOpenChange={setShowUpdateWarning}>
@@ -637,7 +517,7 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>{t("common:cancel", "Cancel")}</AlertDialogCancel>
+            <AlertDialogCancel>{t("common:buttons.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={performInstall}>
               {t("navigation:claudeCode.updateAnyway", "Open Terminal & Update")}
             </AlertDialogAction>
@@ -669,7 +549,7 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setSelectedVersion(null)}>
-              {t("common:cancel", "Cancel")}
+              {t("common:buttons.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={performVersionSwitch}>
               {t("navigation:claudeCode.switchAnyway", "Open Terminal & Switch")}
@@ -697,7 +577,7 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setSelectedInstallation(null)}>
-              {t("common:cancel", "Cancel")}
+              {t("common:buttons.cancel")}
             </AlertDialogCancel>
             <AlertDialogAction onClick={performPathSwitch}>
               {t("navigation:claudeCode.switchInstallationConfirm", "Switch")}
@@ -705,6 +585,6 @@ export function ClaudeCodeStatusBadge({ className }: ClaudeCodeStatusBadgeProps)
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </Popover>
+    </SettingsSection>
   );
 }

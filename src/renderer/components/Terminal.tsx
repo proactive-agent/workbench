@@ -1,10 +1,7 @@
 import { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import '@xterm/xterm/css/xterm.css';
-import { cn } from '../lib/utils';
 import { useTerminalStore } from '../stores/terminal-store';
-import { useSettingsStore } from '../stores/settings-store';
-import { useToast } from '../hooks/use-toast';
 import type { TerminalProps } from './terminal/types';
 import type { TerminalWorktreeConfig } from '../../shared/types';
 import { TerminalHeader } from './terminal/TerminalHeader';
@@ -107,12 +104,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   // Use cwd from store if available (for worktree), otherwise use prop
   const effectiveCwd = terminal?.cwd || cwd;
-
-  // Settings store for IDE preferences
-  const { settings } = useSettingsStore();
-
-  // Toast for user feedback
-  const { toast } = useToast();
 
   const associatedTask = terminal?.associatedTaskId
     ? tasks.find((t) => t.id === terminal.associatedTaskId)
@@ -327,6 +318,14 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     isRecreatingRef,
     onCreated: () => {
       isCreatedRef.current = true;
+      // "New agent" terminals (and agents moved to another worktree) start Claude Code as soon as
+      // the shell is ready; the store holds the current cwd (the worktree path after a switch)
+      const created = useTerminalStore.getState().getTerminal(id);
+      if (created?.launchCLIOnCreate) {
+        useTerminalStore.getState().updateTerminal(id, { launchCLIOnCreate: false });
+        setCLIMode(id, true);
+        window.electronAPI.invokeCLIInTerminal(id, created.cwd || effectiveCwd);
+      }
       // ALWAYS force PTY resize on creation/remount
       // This ensures PTY matches xterm even if PTY existed before remount (expand/minimize)
       // The root cause of text alignment issues is that when terminal remounts:
@@ -607,21 +606,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     };
   }, [id, dispose, cleanupAutoNaming]);
 
-  const handleInvokeClaude = useCallback(() => {
-    setCLIMode(id, true);
-    window.electronAPI.invokeCLIInTerminal(id, effectiveCwd);
-  }, [id, effectiveCwd, setCLIMode]);
+
 
   const handleClick = useCallback(() => {
     onActivate();
     focus();
   }, [onActivate, focus]);
-
-  const handleTitleChange = useCallback((newTitle: string) => {
-    updateTerminal(id, { title: newTitle });
-    // Sync to main process so title persists across hot reloads
-    window.electronAPI.setTerminalTitle(id, newTitle);
-  }, [id, updateTerminal]);
 
   const handleTaskSelect = useCallback((taskId: string) => {
     const selectedTask = tasks.find((t) => t.id === taskId);
@@ -655,6 +645,12 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
   }, []);
 
   const applyWorktreeConfig = useCallback(async (config: TerminalWorktreeConfig) => {
+    // Recreating the PTY ends Claude Code, so an agent window relaunches it in the new worktree
+    // as soon as the new shell is ready (same flag as "New agent", handled in onCreated)
+    if (useTerminalStore.getState().getTerminal(id)?.isCLIMode) {
+      updateTerminal(id, { launchCLIOnCreate: true });
+    }
+
     // IMPORTANT: Set isRecreatingRef BEFORE destruction to signal deliberate recreation
     // This prevents exit handlers from triggering auto-removal during controlled recreation
     isRecreatingRef.current = true;
@@ -700,60 +696,25 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
     await applyWorktreeConfig(config);
   }, [applyWorktreeConfig]);
 
-  const handleOpenInIDE = useCallback(async () => {
-    const worktreePath = terminal?.worktreeConfig?.worktreePath;
-    if (!worktreePath) return;
-
-    const preferredIDE = settings.preferredIDE || 'vscode';
-    try {
-      await window.electronAPI.worktreeOpenInIDE(
-        worktreePath,
-        preferredIDE,
-        settings.customIDEPath
-      );
-    } catch (err) {
-      console.error('Failed to open in IDE:', err);
-      toast({
-        title: 'Failed to open IDE',
-        description: err instanceof Error ? err.message : 'Could not launch IDE',
-        variant: 'destructive',
-      });
-    }
-  }, [terminal?.worktreeConfig?.worktreePath, settings.preferredIDE, settings.customIDEPath, toast]);
 
   // Get backlog tasks for worktree dialog
   const backlogTasks = tasks.filter((t) => t.status === 'backlog');
 
-  // Determine border color based on Claude busy state
-  // Red (busy) = Claude is actively processing
-  // Green (idle) = Claude is ready for input
-  const isClaudeBusy = terminal?.isClaudeBusy;
-  const showClaudeBusyIndicator = terminal?.isCLIMode && isClaudeBusy !== undefined;
-
   return (
     <div
       ref={setDropRef}
-      className={cn(
-        'flex h-full flex-col rounded-lg border bg-[#0B0B0F] overflow-hidden transition-all relative',
-        // Default border states
-        isActive ? 'border-primary ring-1 ring-primary/20' : 'border-border',
-        // Claude busy state indicator (subtle colored border when in Claude mode)
-        showClaudeBusyIndicator && isClaudeBusy && 'border-red-500/60 ring-1 ring-red-500/20',
-        showClaudeBusyIndicator && !isClaudeBusy && 'border-green-500/60 ring-1 ring-green-500/20'
-      )}
+      // Same surface as the xterm theme background (DEFAULT_TERMINAL_THEME) and the same
+      // background and border as the sidebar
+      className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-[#111111]"
       onClick={handleClick}
     >
 
       <TerminalHeader
         terminalId={id}
-        title={terminal?.title || 'Terminal'}
-        status={terminal?.status || 'idle'}
         isCLIMode={terminal?.isCLIMode || false}
         tasks={tasks}
         associatedTask={associatedTask}
         onClose={onClose}
-        onInvokeClaude={handleInvokeClaude}
-        onTitleChange={handleTitleChange}
         onTaskSelect={handleTaskSelect}
         onClearTask={handleClearTask}
         onNewTaskClick={onNewTaskClick}
@@ -762,7 +723,6 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
         projectPath={projectPath}
         onCreateWorktree={handleCreateWorktree}
         onSelectWorktree={handleSelectWorktree}
-        onOpenInIDE={handleOpenInIDE}
         dragHandleListeners={dragHandleListeners}
         isExpanded={isExpanded}
         onToggleExpand={onToggleExpand}
@@ -771,7 +731,7 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
 
       <div
         ref={terminalRef}
-        className="flex-1 p-1"
+        className="flex-1 px-2 py-1.5"
         style={{ minHeight: 0 }}
       />
 

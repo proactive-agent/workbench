@@ -213,6 +213,8 @@
     "agentFrameworkAutoClaude": "Auto Claude",
     "aiTerminalNaming": "AI Terminal Naming",
     "aiTerminalNamingDescription": "Automatically name terminals based on commands (uses AI Naming model)",
+    "maxTerminals": "Maximum terminals",
+    "maxTerminalsDescription": "How many agent terminals each project can run at once ({{min}}–{{max}})",
     "featureModelSettings": "Feature Model Settings",
     "featureModelSettingsDescription": "Model and thinking level for Insights, MR review, and utility agents",
     "model": "Model",

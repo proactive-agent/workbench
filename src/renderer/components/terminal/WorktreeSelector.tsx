@@ -1,5 +1,5 @@
 import { useId, useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { FolderGit, Plus, ChevronDown, Loader2, Trash2, ListTodo, GitFork, Search } from 'lucide-react';
+import { Plus, ChevronDown, Loader2, Trash2, Search } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { TerminalWorktreeConfig, WorktreeListItem, OtherWorktreeInfo } from '../../../shared/types';
 import {
@@ -17,6 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
+import { WorktreeIcon } from '../icons/app-icons';
 import { cn } from '../../lib/utils';
 import { useProjectStore } from '../../stores/project-store';
 
@@ -30,6 +31,8 @@ interface WorktreeSelectorProps {
   projectPath: string;
   /** Currently attached worktree config, if any */
   currentWorktree?: TerminalWorktreeConfig;
+  /** Width cap for the trigger label (the active worktree name is truncated to it) */
+  labelClassName?: string;
   /** Callback to create a new worktree */
   onCreateWorktree: () => void;
   /** Callback when an existing worktree is selected */
@@ -58,12 +61,6 @@ function getItemBranch(item: NavigableItem): string {
   }
 }
 
-const ITEM_ICONS = {
-  terminal: <FolderGit className="h-3 w-3 mr-2 text-amber-500/70 shrink-0" />,
-  task: <ListTodo className="h-3 w-3 mr-2 text-cyan-500/70 shrink-0" />,
-  other: <GitFork className="h-3 w-3 mr-2 text-purple-500/70 shrink-0" />,
-};
-
 function getItemKey(item: NavigableItem): string {
   switch (item.type) {
     case 'terminal':
@@ -79,6 +76,7 @@ export function WorktreeSelector({
   terminalId,
   projectPath,
   currentWorktree,
+  labelClassName,
   onCreateWorktree,
   onSelectWorktree,
 }: WorktreeSelectorProps) {
@@ -362,7 +360,6 @@ export function WorktreeSelector({
         }}
         onMouseEnter={() => setFocusedIndex(index)}
       >
-        {ITEM_ICONS[item.type]}
         <div className="flex flex-col min-w-0 flex-1">
           <span className="truncate font-medium">{name}</span>
           {branchLabel && (
@@ -401,12 +398,14 @@ export function WorktreeSelector({
           type="button"
           className={cn(
             'flex items-center gap-1 h-6 px-2 rounded text-xs font-medium transition-colors',
-            'hover:bg-amber-500/10 hover:text-amber-500 text-muted-foreground'
+            'hover:bg-nav-hover hover:text-foreground text-muted-foreground'
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <FolderGit className="h-3 w-3" />
-          <span>{t('terminal:worktree.create')}</span>
+          <WorktreeIcon className="h-3 w-3 shrink-0" />
+          <span className={cn('truncate', labelClassName)} title={currentWorktree?.name}>
+            {currentWorktree?.name ?? t('terminal:worktree.create')}
+          </span>
           <ChevronDown className="h-2.5 w-2.5 opacity-60" />
         </button>
       </PopoverTrigger>
@@ -421,7 +420,7 @@ export function WorktreeSelector({
         {/* Pinned: Create new worktree */}
         <button
           type="button"
-          className="flex items-center text-xs px-2 py-1.5 m-1 rounded-sm cursor-pointer text-amber-500 hover:bg-accent/50 w-[calc(100%-0.5rem)] text-left"
+          className="flex items-center text-xs px-2 py-1.5 m-1 rounded-sm cursor-pointer text-foreground hover:bg-nav-hover w-[calc(100%-0.5rem)] text-left"
           onClick={(e) => {
             e.stopPropagation();
             setIsOpen(false);

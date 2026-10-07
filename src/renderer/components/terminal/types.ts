@@ -1,6 +1,5 @@
 import type { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities';
 import type { Task, ExecutionPhase } from '../../../shared/types';
-import type { TerminalStatus } from '../../stores/terminal-store';
 import { Circle, Search, Code2, Wrench, CheckCircle2, AlertCircle, PauseCircle, KeyRound } from 'lucide-react';
 
 export interface TerminalProps {
@@ -34,13 +33,6 @@ export function getTitleMaxWidthClass(terminalCount: number): string {
   if (terminalCount <= 9) return 'max-w-40'; // 160px - compact
   return 'max-w-36'; // 144px - compact for 10-12 terminals
 }
-
-export const STATUS_COLORS: Record<TerminalStatus, string> = {
-  idle: 'bg-warning',
-  running: 'bg-success',
-  'claude-active': 'bg-primary',
-  exited: 'bg-destructive',
-};
 
 export const PHASE_CONFIG: Record<ExecutionPhase, { label: string; color: string; icon: React.ElementType }> = {
   idle: { label: 'Ready', color: 'bg-muted text-muted-foreground', icon: Circle },

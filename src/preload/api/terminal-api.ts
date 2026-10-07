@@ -1,10 +1,10 @@
 import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 
-// Increase max listeners to accommodate 12 terminals with multiple event types
+// Increase max listeners to accommodate up to 24 terminals (MAX_TERMINALS_LIMIT) with multiple event types
 // Each terminal can have listeners for: output, exit, titleChange, claudeSession, etc.
-// Default is 10, but with 12 terminals we need more headroom
-ipcRenderer.setMaxListeners(50);
+// Default is 10, so we need more headroom
+ipcRenderer.setMaxListeners(100);
 
 import type {
   IPCResult,

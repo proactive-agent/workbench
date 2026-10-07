@@ -5,15 +5,15 @@
  * - useXterm.ts (actual agent terminals)
  * - LivePreviewTerminal.tsx (settings preview terminal)
  *
- * The theme uses a dark color scheme with muted pastel colors
- * that match the Auto Claude application design.
+ * Dark scheme on the dark sidebar color (#111111) with Claude's terracotta cursor;
+ * ANSI colors stay muted pastels.
  */
 export const DEFAULT_TERMINAL_THEME = {
-  background: '#0B0B0F',
-  foreground: '#E8E6E3',
-  cursor: '#D6D876',
-  selectionBackground: '#D6D87640',
-  selectionForeground: '#E8E6E3',
+  background: '#111111',
+  foreground: '#F0EFEC',
+  cursor: '#D97757',
+  selectionBackground: '#D9775740',
+  selectionForeground: '#F0EFEC',
   black: '#1A1A1F',
   red: '#FF6B6B',
   green: '#87D687',

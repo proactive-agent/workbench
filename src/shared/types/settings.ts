@@ -264,6 +264,8 @@ export interface AppSettings {
   autoBuildPath?: string;
   autoUpdateAutoBuild: boolean;
   autoNameTerminals: boolean;
+  // Maximum agent terminals per project (MIN_TERMINALS..MAX_TERMINALS_LIMIT)
+  maxTerminals?: number;
   notifications: NotificationSettings;
   // Global API keys (used as defaults for all projects)
   globalOpenAIApiKey?: string;

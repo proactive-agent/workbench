@@ -79,6 +79,13 @@ export function App() {
   const settings = useSettingsStore((state) => state.settings);
   const settingsLoading = useSettingsStore((state) => state.isLoading);
 
+  // Keep the terminal limit in sync with the "Maximum terminals" setting
+  useEffect(() => {
+    if (settings.maxTerminals !== undefined) {
+      useTerminalStore.getState().setMaxTerminals(settings.maxTerminals);
+    }
+  }, [settings.maxTerminals]);
+
   // API Profile state
   const profiles = useSettingsStore((state) => state.profiles);
 

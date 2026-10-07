@@ -6,6 +6,8 @@ import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ProviderAgentTabs } from './ProviderAgentTabs';
+import { ClaudeCodeSettings } from './ClaudeCodeSettings';
+import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT } from '../../../shared/constants';
 import type {
   AppSettings,
   ToolDetectionResult
@@ -116,6 +118,9 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
         {/* Provider-tabbed agent settings (profiles, features, model overrides) */}
         <ProviderAgentTabs />
 
+        {/* Claude Code CLI (status, install/update, version and installation switching) */}
+        <ClaudeCodeSettings />
+
         {/* Other Agent Settings */}
         <SettingsSection
           title={t('general.otherAgentSettings')}
@@ -148,6 +153,26 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
                 id="autoNameTerminals"
                 checked={settings.autoNameTerminals}
                 onCheckedChange={(checked) => onSettingsChange({ ...settings, autoNameTerminals: checked })}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={t('general.maxTerminals')}
+              description={t('general.maxTerminalsDescription', { min: MIN_TERMINALS, max: MAX_TERMINALS_LIMIT })}
+              htmlFor="maxTerminals"
+            >
+              <Input
+                id="maxTerminals"
+                type="number"
+                min={MIN_TERMINALS}
+                max={MAX_TERMINALS_LIMIT}
+                className="w-20"
+                value={settings.maxTerminals ?? DEFAULT_MAX_TERMINALS}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (e.target.value === '' || !Number.isFinite(value)) return;
+                  const clamped = Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(value)));
+                  onSettingsChange({ ...settings, maxTerminals: clamped });
+                }}
               />
             </SettingsRow>
           </SettingsRows>

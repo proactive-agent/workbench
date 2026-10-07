@@ -1,12 +1,9 @@
-import { ListTodo, Plus, X, ChevronDown, Loader2 } from 'lucide-react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Plus, X, ChevronDown, Loader2, Search } from 'lucide-react';
 import type { Task } from '../../../shared/types';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '../ui/dropdown-menu';
+import { TaskListIcon } from '../icons/app-icons';
+import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 import { cn } from '../../lib/utils';
 import { PHASE_CONFIG } from './types';
 
@@ -19,6 +16,10 @@ interface TaskSelectorProps {
   onNewTaskClick?: () => void;
 }
 
+/**
+ * Task picker for Claude terminals, laid out like the worktree selector:
+ * a pinned "New task" action, a search box, and the matching tasks below it.
+ */
 export function TaskSelector({
   terminalId: _terminalId,
   backlogTasks,
@@ -27,142 +28,201 @@ export function TaskSelector({
   onClearTask,
   onNewTaskClick,
 }: TaskSelectorProps) {
+  const { t } = useTranslation('terminal');
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [focusedIndex, setFocusedIndex] = useState(-1);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const itemRefs = useRef(new Map<number, HTMLDivElement>());
+  const listboxId = useId();
+
   const executionPhase = associatedTask?.executionProgress?.phase || 'idle';
   const phaseConfig = PHASE_CONFIG[executionPhase];
   const PhaseIcon = phaseConfig.icon;
+  const isPhaseActive =
+    executionPhase === 'planning' ||
+    executionPhase === 'coding' ||
+    executionPhase === 'qa_review' ||
+    executionPhase === 'qa_fixing';
 
-  if (associatedTask) {
-    return (
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <button
-            className={cn(
-              'flex items-center gap-1.5 h-6 px-2 rounded text-[10px] font-medium transition-colors',
-              phaseConfig.color,
-              'hover:opacity-80 cursor-pointer'
-            )}
-            onClick={(e) => e.stopPropagation()}
-          >
-            {executionPhase === 'planning' || executionPhase === 'coding' || executionPhase === 'qa_review' || executionPhase === 'qa_fixing' ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <PhaseIcon className="h-3 w-3" />
-            )}
-            <span>{phaseConfig.label}</span>
-            <ChevronDown className="h-2.5 w-2.5 opacity-60" />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
-          <div className="px-2 py-1.5 text-xs text-muted-foreground">
-            Current task
-          </div>
-          <div className="px-2 py-1 text-sm font-medium truncate">
-            {associatedTask.title}
-          </div>
-          {associatedTask.executionProgress?.message && (
-            <div className="px-2 py-1 text-xs text-muted-foreground truncate">
-              {associatedTask.executionProgress.message}
-            </div>
-          )}
-          <DropdownMenuSeparator />
-          {backlogTasks.length > 0 && (
-            <>
-              <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                Switch to...
-              </div>
-              {backlogTasks.filter(t => t.id !== associatedTask.id).slice(0, 5).map((task) => (
-                <DropdownMenuItem
-                  key={task.id}
-                  onClick={() => onTaskSelect(task.id)}
-                  className="text-xs"
-                >
-                  <ListTodo className="h-3 w-3 mr-2 text-muted-foreground" />
-                  <span className="truncate">{task.title}</span>
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-            </>
-          )}
-          <DropdownMenuItem
-            onClick={onClearTask}
-            className="text-xs text-muted-foreground"
-          >
-            <X className="h-3 w-3 mr-2" />
-            Clear task
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    );
-  }
+  // Available tasks (the linked one is not listed), filtered by the search query
+  const filteredTasks = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return backlogTasks
+      .filter((task) => task.id !== associatedTask?.id)
+      .filter((task) => !query || task.title.toLowerCase().includes(query));
+  }, [backlogTasks, associatedTask?.id, searchQuery]);
+
+  // Reset search and keyboard focus whenever the list opens
+  useEffect(() => {
+    if (isOpen) {
+      setSearchQuery('');
+      setFocusedIndex(-1);
+    }
+  }, [isOpen]);
+
+  // Keep the focused option in view while navigating with the keyboard
+  useEffect(() => {
+    if (focusedIndex >= 0) {
+      itemRefs.current.get(focusedIndex)?.scrollIntoView({ block: 'nearest' });
+    }
+  }, [focusedIndex]);
+
+  const selectTask = (taskId: string) => {
+    setIsOpen(false);
+    onTaskSelect(taskId);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setFocusedIndex((i) => Math.min(i + 1, filteredTasks.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setFocusedIndex((i) => Math.max(i - 1, 0));
+    } else if (e.key === 'Enter' && focusedIndex >= 0 && filteredTasks[focusedIndex]) {
+      e.preventDefault();
+      selectTask(filteredTasks[focusedIndex].id);
+    }
+  };
+
+  const getOptionId = (index: number) => `${listboxId}-option-${index}`;
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
+    <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <PopoverTrigger asChild>
+        {/* Same neutral trigger as the worktree selector */}
         <button
-          className="flex items-center gap-1.5 h-6 px-2 rounded text-[10px] font-medium transition-colors border border-border/50 bg-card/50 hover:bg-card hover:border-border text-muted-foreground hover:text-foreground"
+          type="button"
+          className="flex h-6 items-center gap-1 rounded px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
+          title={associatedTask?.title}
         >
-          <ListTodo className="h-3 w-3" />
-          <span>Select task...</span>
+          {associatedTask ? (
+            <>
+              {isPhaseActive ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <PhaseIcon className="h-3 w-3" />
+              )}
+              <span>{phaseConfig.label}</span>
+            </>
+          ) : (
+            <>
+              <TaskListIcon className="h-3 w-3 shrink-0" />
+              <span>{t('taskSelector.selectTask')}</span>
+            </>
+          )}
           <ChevronDown className="h-2.5 w-2.5 opacity-60" />
         </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-56">
-        {backlogTasks.length > 0 ? (
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-56 p-0"
+        onOpenAutoFocus={(e) => {
+          e.preventDefault();
+          searchInputRef.current?.focus();
+        }}
+      >
+        {/* Pinned actions: new task, and clearing the linked task */}
+        {(onNewTaskClick || associatedTask) && (
           <>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              Available tasks
-            </div>
-            {backlogTasks.slice(0, 8).map((task) => (
-              <DropdownMenuItem
-                key={task.id}
-                onClick={() => onTaskSelect(task.id)}
-                className="text-xs"
-              >
-                <ListTodo className="h-3 w-3 mr-2 text-muted-foreground" />
-                <span className="truncate">{task.title}</span>
-              </DropdownMenuItem>
-            ))}
-            {onNewTaskClick && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
+            <div className="p-1">
+              {onNewTaskClick && (
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-nav-hover"
                   onClick={(e) => {
                     e.stopPropagation();
+                    setIsOpen(false);
                     onNewTaskClick();
                   }}
-                  className="text-xs text-primary"
                 >
-                  <Plus className="h-3 w-3 mr-2" />
-                  Add new task
-                </DropdownMenuItem>
-              </>
-            )}
-          </>
-        ) : (
-          <>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              No tasks available
+                  <Plus className="mr-2 h-3 w-3" />
+                  {t('taskSelector.newTask')}
+                </button>
+              )}
+              {associatedTask && (
+                <button
+                  type="button"
+                  className="flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-nav-hover"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsOpen(false);
+                    onClearTask();
+                  }}
+                  title={associatedTask.title}
+                >
+                  <X className="mr-2 h-3 w-3 shrink-0" />
+                  <span className="truncate">{t('taskSelector.clearTask')}</span>
+                </button>
+              )}
             </div>
-            {onNewTaskClick ? (
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onNewTaskClick();
-                }}
-                className="text-xs text-primary"
-              >
-                <Plus className="h-3 w-3 mr-2" />
-                Add new task
-              </DropdownMenuItem>
-            ) : (
-              <div className="px-2 py-1.5 text-xs text-muted-foreground italic">
-                Create tasks in the Kanban board
-              </div>
-            )}
+            <div className="border-t border-border" />
           </>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+
+        {/* Search input */}
+        <div className="flex items-center px-2 py-1.5">
+          <Search className="mr-2 h-3 w-3 shrink-0 text-muted-foreground" />
+          <input
+            ref={searchInputRef}
+            type="search"
+            role="combobox"
+            aria-expanded={isOpen}
+            aria-haspopup="listbox"
+            aria-controls={listboxId}
+            aria-activedescendant={focusedIndex >= 0 ? getOptionId(focusedIndex) : undefined}
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setFocusedIndex(-1);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={t('taskSelector.searchPlaceholder')}
+            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+          />
+        </div>
+
+        <div className="border-t border-border" />
+
+        {/* Matching tasks */}
+        <div className="max-h-[min(500px,60vh)] overflow-y-auto">
+          <div id={listboxId} role="listbox" aria-label={t('taskSelector.availableTasks')} className="p-1">
+            {filteredTasks.length === 0 ? (
+              <div className="py-2 text-center text-xs text-muted-foreground">
+                {backlogTasks.length === 0 ? t('taskSelector.noTasks') : t('taskSelector.noResults')}
+              </div>
+            ) : (
+              filteredTasks.map((task, index) => (
+                <div
+                  key={task.id}
+                  id={getOptionId(index)}
+                  ref={(el) => {
+                    if (el) itemRefs.current.set(index, el);
+                    else itemRefs.current.delete(index);
+                  }}
+                  role="option"
+                  tabIndex={-1}
+                  aria-selected={focusedIndex === index}
+                  className={cn(
+                    'cursor-pointer truncate rounded-sm px-2 py-1.5 text-xs',
+                    focusedIndex === index ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectTask(task.id);
+                  }}
+                  onMouseEnter={() => setFocusedIndex(index)}
+                  title={task.title}
+                >
+                  {task.title}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

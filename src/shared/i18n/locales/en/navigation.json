@@ -6,7 +6,7 @@
   "items": {
     "kanban": "Kanban",
     "terminals": "Agents",
-    "insights": "Insights",
+    "insights": "Claude",
     "gitlabIssues": "GitLab Issues",
     "gitlabMRs": "GitLab MRs",
     "projects": "Projects"
@@ -34,6 +34,14 @@
     "readOnlyVolumeWarning": "Move to Applications folder to update"
   },
   "claudeCode": {
+    "title": "Claude Code CLI",
+    "description": "The Claude Code CLI used by agent terminals: status, version and installation.",
+    "status": "Status",
+    "version": "Version",
+    "changelog": "Changelog",
+    "install": "Install",
+    "update": "Update",
+    "refresh": "Refresh",
     "checking": "Checking Claude Code...",
     "upToDate": "Claude Code is up to date",
     "updateAvailable": "Claude Code update available",

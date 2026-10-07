@@ -34,6 +34,12 @@ export const UI_SCALE_STEP = 5;
 // Default App Settings
 // ============================================
 
+// Agent terminals per project. The cap guards against excessive memory use from terminal
+// buffers (~1MB each) and PTY process resource exhaustion.
+export const DEFAULT_MAX_TERMINALS = 12;
+export const MIN_TERMINALS = 1;
+export const MAX_TERMINALS_LIMIT = 24;
+
 export const DEFAULT_APP_SETTINGS = {
   theme: 'dark' as const,
   colorTheme: 'default' as const,
@@ -46,6 +52,7 @@ export const DEFAULT_APP_SETTINGS = {
   autoBuildPath: undefined as string | undefined,
   autoUpdateAutoBuild: true,
   autoNameTerminals: true,
+  maxTerminals: DEFAULT_MAX_TERMINALS,
   onboardingCompleted: false,
   notifications: {
     onTaskComplete: true,
