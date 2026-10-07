@@ -48,7 +48,7 @@ import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 
 import { UpdateBanner } from './UpdateBanner';
-import { ProjectSwitcher } from './ProjectSwitcher';
+import { useProjectShortcuts } from '../hooks/useProjectShortcuts';
 import { UsageIndicator } from './UsageIndicator';
 import type { Project, GitStatus } from '../../shared/types';
 
@@ -57,10 +57,8 @@ export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'gitlab-issues' 
 interface SidebarProps {
   onSettingsClick: () => void;
   onNewTaskClick: () => void;
-  /** Make a project the active one (from the project switcher) */
+  /** Make a project the active one (Cmd/Ctrl+1-9 and Cmd/Ctrl+Tab shortcuts) */
   onSelectProject: (projectId: string) => void;
-  /** Open the "add project" flow */
-  onAddProjectClick: () => void;
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
 }
@@ -92,7 +90,6 @@ export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
   onSelectProject,
-  onAddProjectClick,
   activeView = 'kanban',
   onViewChange
 }: SidebarProps) {
@@ -384,6 +381,10 @@ export function Sidebar({
   };
 
   const newTaskDisabled = !selectedProjectId || !selectedProject?.autoBuildPath;
+  // The Projects row shows the active project's name (falls back to "Projects")
+  const projectsLabel = selectedProject?.name ?? t('items.projects');
+
+  useProjectShortcuts(projects, selectedProjectId, onSelectProject);
 
   return (
     <TooltipProvider>
@@ -431,8 +432,21 @@ export function Sidebar({
           )}
         </div>
 
-        {/* Primary action - styled as the first row, like claude.ai's "New" */}
         <div className="shrink-0 px-2 pt-3">
+          {/* Projects page, labelled with the active project's name */}
+          {withCollapsedTooltip('projects', projectsLabel, undefined, (
+            <button
+              type="button"
+              onClick={() => handleNavClick('projects')}
+              aria-current={activeView === 'projects' ? 'page' : undefined}
+              className={rowClass(activeView === 'projects')}
+            >
+              {renderRowIcon(FolderKanban)}
+              {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{projectsLabel}</span>}
+            </button>
+          ))}
+
+          {/* Primary action, like claude.ai's "New" */}
           {withCollapsedTooltip('new-task', t('actions.newTask'), undefined, (
             <button
               type="button"
@@ -449,30 +463,6 @@ export function Sidebar({
               {t('messages.initializeToCreateTasks')}
             </p>
           )}
-
-          {/* Active project switcher */}
-          <ProjectSwitcher
-            projects={projects}
-            activeProjectId={selectedProjectId}
-            onSelectProject={onSelectProject}
-            onShowAllProjects={() => handleNavClick('projects')}
-            onAddProject={onAddProjectClick}
-            isCollapsed={isCollapsed}
-            rowClassName={rowClass()}
-          />
-
-          {/* All projects page */}
-          {withCollapsedTooltip('projects', t('items.projects'), undefined, (
-            <button
-              type="button"
-              onClick={() => handleNavClick('projects')}
-              aria-current={activeView === 'projects' ? 'page' : undefined}
-              className={rowClass(activeView === 'projects')}
-            >
-              {renderRowIcon(FolderKanban)}
-              {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{t('items.projects')}</span>}
-            </button>
-          ))}
         </div>
 
         {/* Navigation */}

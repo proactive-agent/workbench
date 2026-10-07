@@ -3,14 +3,14 @@
  */
 /**
  * Tests for the project navigation that replaced the project tab bar:
- * ProjectSwitcher keyboard shortcuts and the ProjectsPage overview.
+ * project switching shortcuts and the ProjectsPage overview.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, renderHook, screen, fireEvent } from '@testing-library/react';
 import type { Project } from '../../../shared/types';
 import { TooltipProvider } from '../ui/tooltip';
-import { ProjectSwitcher } from '../ProjectSwitcher';
+import { useProjectShortcuts } from '../../hooks/useProjectShortcuts';
 import { ProjectsPage } from '../ProjectsPage';
 
 // Return keys (with interpolated values) so assertions don't depend on English copy
@@ -45,51 +45,28 @@ const projects = [
   project('c', 'Charlie', '2026-10-03T00:00:00Z')
 ];
 
-describe('ProjectSwitcher', () => {
+describe('useProjectShortcuts', () => {
   const onSelectProject = vi.fn();
 
   beforeEach(() => vi.clearAllMocks());
 
-  function renderSwitcher(activeProjectId: string | null) {
-    return render(
-      <TooltipProvider>
-        <ProjectSwitcher
-          projects={projects}
-          activeProjectId={activeProjectId}
-          onSelectProject={onSelectProject}
-          onShowAllProjects={vi.fn()}
-          onAddProject={vi.fn()}
-          isCollapsed={false}
-          rowClassName=""
-        />
-      </TooltipProvider>
-    );
-  }
-
-  it('shows the active project name', () => {
-    renderSwitcher('b');
-    expect(screen.getByText('Bravo')).toBeInTheDocument();
-  });
-
-  it('shows a placeholder when no project is active', () => {
-    renderSwitcher(null);
-    expect(screen.getByText('projectSwitcher.noProject')).toBeInTheDocument();
-  });
+  const mount = (activeProjectId: string | null) =>
+    renderHook(() => useProjectShortcuts(projects, activeProjectId, onSelectProject));
 
   it('jumps to the Nth project with Ctrl+N', () => {
-    renderSwitcher('a');
+    mount('a');
     fireEvent.keyDown(window, { key: '3', ctrlKey: true });
     expect(onSelectProject).toHaveBeenCalledWith('c');
   });
 
   it('ignores Ctrl+N beyond the number of projects', () => {
-    renderSwitcher('a');
+    mount('a');
     fireEvent.keyDown(window, { key: '7', ctrlKey: true });
     expect(onSelectProject).not.toHaveBeenCalled();
   });
 
   it('cycles forward and backward with Ctrl+Tab / Ctrl+Shift+Tab', () => {
-    renderSwitcher('c');
+    mount('c');
     fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true });
     expect(onSelectProject).toHaveBeenLastCalledWith('a');
     fireEvent.keyDown(window, { key: 'Tab', ctrlKey: true, shiftKey: true });
@@ -97,12 +74,18 @@ describe('ProjectSwitcher', () => {
   });
 
   it('does not switch projects while typing in an input', () => {
-    renderSwitcher('a');
+    mount('a');
     const input = document.createElement('input');
     document.body.appendChild(input);
     fireEvent.keyDown(input, { key: '2', ctrlKey: true });
     expect(onSelectProject).not.toHaveBeenCalled();
     input.remove();
+  });
+
+  it('ignores the digits without a modifier', () => {
+    mount('a');
+    fireEvent.keyDown(window, { key: '2' });
+    expect(onSelectProject).not.toHaveBeenCalled();
   });
 });
 

@@ -735,7 +735,6 @@ export function App() {
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           onSelectProject={handleSelectProject}
-          onAddProjectClick={handleAddProject}
           activeView={activeView}
           onViewChange={setActiveView}
         />
