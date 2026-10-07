@@ -25,10 +25,13 @@ export const PANEL_CLEANUP_GRACE_PERIOD_MS = 150;
  */
 export const TITLE_BAR_OVERLAY_HEIGHT = 40;
 
-export const UI_SCALE_MIN = 75;
-export const UI_SCALE_MAX = 200;
 export const UI_SCALE_DEFAULT = 100;
-export const UI_SCALE_STEP = 5;
+export const UI_SCALE_PRESETS = [100, 125, 150] as const;
+
+/** The UI scale to apply: one of the presets, otherwise the 100% default */
+export function normalizeUiScale(scale: number | undefined): number {
+  return UI_SCALE_PRESETS.some((preset) => preset === scale) ? (scale as number) : UI_SCALE_DEFAULT;
+}
 
 // ============================================
 // Default App Settings

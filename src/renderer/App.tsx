@@ -44,7 +44,7 @@ import { useIpcListeners } from './hooks/useIpc';
 import { useTitleBarColors } from './hooks/useTitleBarColors';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
+import { sanitizeColorTheme, normalizeUiScale } from '../shared/constants';
 import { TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
@@ -416,9 +416,7 @@ export function App() {
   // Apply UI scale
   useEffect(() => {
     const root = document.documentElement;
-    const scale = settings.uiScale ?? UI_SCALE_DEFAULT;
-    const clampedScale = Math.max(UI_SCALE_MIN, Math.min(UI_SCALE_MAX, scale));
-    root.setAttribute('data-ui-scale', clampedScale.toString());
+    root.setAttribute('data-ui-scale', normalizeUiScale(settings.uiScale).toString());
   }, [settings.uiScale]);
 
   // Update selected task when tasks change (for real-time updates)

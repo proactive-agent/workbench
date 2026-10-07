@@ -173,14 +173,17 @@ export function ProjectsPage({
                   }}
                   aria-current={isActive ? 'true' : undefined}
                   className={cn(
-                    // claude.ai project card: page background, hairline border; the active project is clay
-                    'group relative flex cursor-pointer flex-col rounded-xl border bg-transparent p-5 text-left transition-colors',
+                    // claude.ai project card: page background, hairline border; the active project gets the
+                    // Kanban empty-column hover look (faint accent border and tint)
+                    'group relative flex cursor-pointer flex-col rounded-xl border p-5 text-left transition-colors',
                     'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
-                    isActive ? 'border-primary' : 'border-border hover:border-(--input)'
+                    isActive
+                      ? 'border-[rgba(var(--accent-glow-rgb),0.4)] bg-[rgba(var(--accent-glow-rgb),0.05)]'
+                      : 'border-border bg-transparent hover:border-(--input)'
                   )}
                 >
                   <div className="flex items-center gap-2 pr-8">
-                    <span className={cn('truncate text-[0.9375rem] font-semibold', isActive ? 'text-primary' : 'text-foreground')}>
+                    <span className="truncate text-[0.9375rem] font-semibold text-foreground">
                       {project.name}
                     </span>
                   </div>
@@ -188,7 +191,7 @@ export function ProjectsPage({
                   {!project.autoBuildPath && (
                     <p className="mt-1 text-xs text-(--nav-label-color)">{t('projectsPage.notInitialized')}</p>
                   )}
-                  <p className="mt-auto pt-7 text-sm text-muted-foreground">
+                  <p className="mt-auto pt-5 text-sm text-muted-foreground">
                     {formatRelative(project.updatedAt)}
                   </p>
 

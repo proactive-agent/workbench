@@ -291,7 +291,7 @@
     }
   },
   "subtasks": {
-    "untitled": "Untitled subtask",
+    "untitled": "Subtask #{{number}}",
     "expandAll": "Expand all",
     "collapseAll": "Collapse all",
     "empty": "No subtasks defined",

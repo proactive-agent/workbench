@@ -240,7 +240,7 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
   const emptyState = getEmptyStateContent(status, t);
 
   return (
-    <div className="relative flex min-w-[250px] flex-1 basis-0">
+    <div className="kanban-compact relative flex min-w-[250px] flex-1 basis-0">
       <div
         ref={setNodeRef}
         className={cn(
@@ -963,7 +963,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         {/* Drag overlay - enhanced visual feedback */}
         <DragOverlay>
           {activeTask ? (
-            <div className="drag-overlay-card">
+            <div className="drag-overlay-card kanban-compact">
               <TaskCard task={activeTask} onClick={() => {}} />
             </div>
           ) : null}

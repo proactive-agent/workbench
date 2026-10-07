@@ -895,6 +895,26 @@ body {
   background-color: rgba(var(--accent-glow-rgb), 0.08) !important;
 }
 
+/* Kanban columns and cards at 80% of the regular size (the page header buttons keep the
+   regular size): scales Tailwind's rem-based spacing and type, like a 0.8 root font size */
+.kanban-compact {
+  --spacing: 0.2rem;
+  --text-xs: 0.6rem;
+  --text-sm: 0.7rem;
+  --text-base: 0.8rem;
+  --text-lg: 0.9rem;
+  --text-xl: 1rem;
+  --text-2xl: 1.2rem;
+  font-size: 0.8rem;
+}
+
+.kanban-compact .column-count-badge {
+  min-width: 1.2rem;
+  height: 1.2rem;
+  padding: 0 0.3rem;
+  font-size: 0.6rem;
+}
+
 /* Column count badge styling */
 .column-count-badge {
   display: inline-flex;
