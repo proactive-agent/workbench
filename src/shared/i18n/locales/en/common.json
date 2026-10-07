@@ -217,7 +217,6 @@
     "messageCount": "{{count}} message",
     "messageCount_other": "{{count}} messages",
     "images": {
-      "pasteHint": "Paste or drop files",
       "removeImage": "Remove attachment",
       "maxImagesReached": "Maximum number of attachments reached",
       "invalidType": "Invalid file type. Please use PNG, JPEG, GIF, or WebP.",
@@ -238,7 +237,7 @@
     "send": "Send message",
     "sending": "Sending…",
     "thinking": "Thinking…",
-    "sendHint": "Enter to send · Shift+Enter for new line",
+    "disclaimer": "Claude is AI and can make mistakes.",
     "tools": {
       "readingFile": "Reading file",
       "searchingFiles": "Searching files",

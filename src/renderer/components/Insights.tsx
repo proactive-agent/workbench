@@ -11,6 +11,7 @@ import {
   PanelLeft,
   SquarePen,
   ArrowUp,
+  CornerDownLeft,
   ChevronDown,
   Paperclip,
   X
@@ -403,6 +404,39 @@ export function Insights({ projectId }: InsightsProps) {
     />
   );
 
+  // Attach-files button: inside the composer for a new chat, under it in a conversation
+  const attachButton = (
+    <>
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        className="hidden"
+        tabIndex={-1}
+        aria-hidden="true"
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length > 0) void addFiles(files);
+        }}
+      />
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isLoading || !canAddMore}
+            aria-label={t('insights.attachments.add')}
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t('insights.attachments.add')}</TooltipContent>
+      </Tooltip>
+    </>
+  );
+
   const composer = (
     <div className="space-y-2">
       <div
@@ -462,60 +496,44 @@ export function Insights({ projectId }: InsightsProps) {
           spellCheck
           lang={i18n.language}
           className={cn(
-            'block max-h-96 min-h-[3rem] w-full resize-none overflow-y-auto border-0 bg-transparent px-4 pt-4 pb-1',
+            'block max-h-96 w-full resize-none overflow-y-auto border-0 bg-transparent',
+            isEmpty ? 'min-h-[3rem] px-4 pt-4 pb-1' : 'min-h-[3rem] py-3 pl-4 pr-12',
             'text-[0.9375rem] leading-relaxed text-foreground placeholder:text-muted-foreground',
             'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60'
           )}
           disabled={isLoading}
         />
 
-        {/* Toolbar */}
-        <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
-          <div className="flex items-center gap-0.5">
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="hidden"
-              tabIndex={-1}
-              aria-hidden="true"
-              onChange={(e) => {
-                const files = Array.from(e.target.files ?? []);
-                e.target.value = '';
-                if (files.length > 0) void addFiles(files);
-              }}
-            />
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-                  onClick={() => fileInputRef.current?.click()}
-                  disabled={isLoading || !canAddMore}
-                  aria-label={t('insights.attachments.add')}
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent>{t('insights.attachments.add')}</TooltipContent>
-            </Tooltip>
+        {isEmpty ? (
+          /* Toolbar (new chat): attach on the left, send on the right */
+          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            <div className="flex items-center gap-0.5">{attachButton}</div>
+            {/* Send button only appears once there is something to send */}
+            {canSend && (
+              <button
+                type="button"
+                onClick={handleSend}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+                aria-label={t('insights.send')}
+                title={t('insights.send')}
+              >
+                <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
+              </button>
+            )}
           </div>
-
+        ) : (
+          /* Reply: send sits inside the single-line field, always visible (disabled until there is something to send) */
           <button
             type="button"
             onClick={handleSend}
             disabled={!canSend}
-            className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
-            aria-label={isLoading ? t('insights.sending') : t('insights.send')}
-            title={isLoading ? t('insights.sending') : t('insights.send')}
+            className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            aria-label={t('insights.send')}
+            title={t('insights.send')}
           >
-            {isLoading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <ArrowUp className="h-4 w-4" strokeWidth={2.25} />
-            )}
+            <CornerDownLeft className="h-4 w-4" />
           </button>
-        </div>
+        )}
 
         {/* Drag-over overlay */}
         {isDragOver && (
@@ -667,11 +685,11 @@ export function Insights({ projectId }: InsightsProps) {
               <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-t from-background to-transparent" />
               <div className="mx-auto max-w-3xl">
                 {composer}
-                <div className="mt-1 flex items-center justify-between gap-2 pl-4 text-sm">
-                  <span className="truncate text-[0.6875rem] text-muted-foreground">
-                    {t('insights.images.pasteHint')} · {t('insights.sendHint')}
-                  </span>
-                  {modelSelector}
+                {/* Under the field: attach, disclaimer, model */}
+                <div className="mt-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
+                  <div className="flex items-center gap-0.5">{attachButton}</div>
+                  <span className="truncate text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
+                  <div className="flex justify-end">{modelSelector}</div>
                 </div>
               </div>
             </div>
@@ -765,7 +783,7 @@ function MessageBubble({
           </div>
         )}
         {message.content && (
-          <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-4 py-2.5 text-[0.9375rem] leading-relaxed text-foreground">
+          <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-4 py-2.5 text-[0.9375rem] [.dark_&]:bg-[#202020] leading-relaxed text-foreground">
             {message.content}
           </div>
         )}
