@@ -52,14 +52,6 @@ import { accessSync, readFileSync, writeFileSync, rmSync, cpSync } from 'fs';
 import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { setupIpcHandlers } from './ipc-setup';
 import { rateLimitResumeScheduler } from './services/rate-limit-resume-scheduler';
-import {
-  AppIconRotator,
-  HEADER_ICON_MODES,
-  HEADER_ICON_ROTATION_INTERVAL_MS,
-  HEADER_ICONS_DIR_NAME,
-  seedRotationIcons,
-  type HeaderIconMode,
-} from './services/app-icon-rotator';
 import { AgentManager } from './agent';
 import { TerminalManager } from './terminal-manager';
 import { getUsageMonitor } from './claude-profile/usage-monitor';
@@ -202,7 +194,6 @@ function showMainWindow(): void {
   mainWindow.show();
   mainWindow.focus();
 }
-let headerIconRotators: AppIconRotator[] = [];
 let agentManager: AgentManager | null = null;
 let terminalManager: TerminalManager | null = null;
 
@@ -683,27 +674,6 @@ app.whenReady().then(() => {
     appTray = null;
   }
 
-  // Seed <userData>/header-icons/{dark,light} with the icons bundled in resources/
-  // (first run only; user icons are never overwritten)
-  const bundledResourcesPath = is.dev ? join(__dirname, '../../resources') : process.resourcesPath;
-  for (const dirName of HEADER_ICON_MODES.map((mode) => join(HEADER_ICONS_DIR_NAME, mode))) {
-    try {
-      seedRotationIcons(join(bundledResourcesPath, dirName), join(app.getPath('userData'), dirName));
-    } catch (error) {
-      console.warn(`[main] Failed to seed ${dirName}:`, error);
-    }
-  }
-
-  // Rotate the sidebar header icons through <userData>/header-icons/{dark,light}/1.png … n.png.
-  // Both sets rotate in step; the renderer shows the one matching the appearance mode
-  // (null = no icons in that set)
-  const headerIconDataUrls: Record<HeaderIconMode, string | null> = { dark: null, light: null };
-  const sendHeaderIcon = (mode: HeaderIconMode, dataUrl: string | null): void => {
-    headerIconDataUrls[mode] = dataUrl;
-    mainWindow?.webContents.send(IPC_CHANNELS.APP_ICON_CHANGED, mode, dataUrl);
-  };
-  ipcMain.handle(IPC_CHANNELS.APP_ICON_GET, () => headerIconDataUrls);
-
   // Recolor the Windows/Linux window controls to match the active theme
   const HEX_COLOR = /^#[0-9a-f]{6}$/i;
   ipcMain.on(IPC_CHANNELS.WINDOW_SET_TITLE_BAR_COLORS, (event, colors: { color?: unknown; symbolColor?: unknown }) => {
@@ -712,21 +682,6 @@ app.whenReady().then(() => {
     if (typeof color !== 'string' || typeof symbolColor !== 'string' || !HEX_COLOR.test(color) || !HEX_COLOR.test(symbolColor)) return;
     BrowserWindow.fromWebContents(event.sender)?.setTitleBarOverlay({ color, symbolColor, height: TITLE_BAR_OVERLAY_HEIGHT });
   });
-  headerIconRotators = HEADER_ICON_MODES.map(
-    (mode) =>
-      new AppIconRotator({
-        iconsDir: join(app.getPath('userData'), HEADER_ICONS_DIR_NAME, mode),
-        applyIcon: (iconPath) => {
-          const icon = nativeImage.createFromPath(iconPath);
-          if (icon.isEmpty()) return false;
-          sendHeaderIcon(mode, icon.resize({ height: 96 }).toDataURL());
-          return true;
-        },
-        restoreDefaultIcon: () => sendHeaderIcon(mode, null),
-        intervalMs: HEADER_ICON_ROTATION_INTERVAL_MS,
-      })
-  );
-  for (const rotator of headerIconRotators) rotator.start();
 
 
   // Pre-warm CLI tool cache in background (non-blocking)
@@ -869,7 +824,6 @@ app.on('before-quit', (event) => {
   // Stop synchronous services immediately
   stopPeriodicUpdates();
   rateLimitResumeScheduler.dispose();
-  for (const rotator of headerIconRotators) rotator.stop();
 
   const usageMonitor = getUsageMonitor();
   usageMonitor.stop();

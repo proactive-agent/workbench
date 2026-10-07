@@ -190,6 +190,8 @@
   --ring: #2A78D6;
 
   --sidebar: #FBFBF9;
+  --header-sticker: var(--sidebar);
+  --header-sticker-shadow: rgb(130 130 130 / 0.4);
   --sidebar-foreground: #0B0B0B;
 
   --popover: #FFFFFF;
@@ -331,6 +333,8 @@
   --ring: #2A78D6;
 
   --sidebar: #111111;
+  --header-sticker: var(--sidebar);
+  --header-sticker-shadow: rgb(130 130 130 / 0.4);
   --sidebar-foreground: #F0EFEC;
 
   --popover: #20201F;
@@ -913,6 +917,45 @@ body {
   height: 1.2rem;
   padding: 0 0.3rem;
   font-size: 0.6rem;
+}
+
+/* Sidebar header sticker (HeaderStatus): a bordered copy of the text in the sticker color
+   sits behind the primary-colored text; the drop shadow wraps the whole sticker */
+.header-status {
+  /* System monospace fonts with round dots: Windows, macOS, Linux (DejaVu Sans Mono and
+     Menlo are left out: their periods are squares) */
+  font-family: Consolas, 'SF Mono', 'Noto Sans Mono', 'Ubuntu Mono', monospace;
+  filter: drop-shadow(0 1px 2px var(--header-sticker-shadow));
+}
+
+.header-status-outline {
+  color: var(--header-sticker);
+  /* A ring of shadows gives the text a round 0.28em + 0.5px border (text-stroke has miter spikes) */
+  text-shadow:
+    calc(0.14em + 0.25px) 0 0 var(--header-sticker),
+    calc(0.099em + 0.177px) calc(0.099em + 0.177px) 0 var(--header-sticker),
+    0 calc(0.14em + 0.25px) 0 var(--header-sticker),
+    calc(-0.099em - 0.177px) calc(0.099em + 0.177px) 0 var(--header-sticker),
+    calc(-0.14em - 0.25px) 0 0 var(--header-sticker),
+    calc(-0.099em - 0.177px) calc(-0.099em - 0.177px) 0 var(--header-sticker),
+    0 calc(-0.14em - 0.25px) 0 var(--header-sticker),
+    calc(0.099em + 0.177px) calc(-0.099em - 0.177px) 0 var(--header-sticker),
+    calc(0.28em + 0.5px) 0 0 var(--header-sticker),
+    calc(0.259em + 0.462px) calc(0.107em + 0.191px) 0 var(--header-sticker),
+    calc(0.198em + 0.354px) calc(0.198em + 0.354px) 0 var(--header-sticker),
+    calc(0.107em + 0.191px) calc(0.259em + 0.462px) 0 var(--header-sticker),
+    0 calc(0.28em + 0.5px) 0 var(--header-sticker),
+    calc(-0.107em - 0.191px) calc(0.259em + 0.462px) 0 var(--header-sticker),
+    calc(-0.198em - 0.354px) calc(0.198em + 0.354px) 0 var(--header-sticker),
+    calc(-0.259em - 0.462px) calc(0.107em + 0.191px) 0 var(--header-sticker),
+    calc(-0.28em - 0.5px) 0 0 var(--header-sticker),
+    calc(-0.259em - 0.462px) calc(-0.107em - 0.191px) 0 var(--header-sticker),
+    calc(-0.198em - 0.354px) calc(-0.198em - 0.354px) 0 var(--header-sticker),
+    calc(-0.107em - 0.191px) calc(-0.259em - 0.462px) 0 var(--header-sticker),
+    0 calc(-0.28em - 0.5px) 0 var(--header-sticker),
+    calc(0.107em + 0.191px) calc(-0.259em - 0.462px) 0 var(--header-sticker),
+    calc(0.198em + 0.354px) calc(-0.198em - 0.354px) 0 var(--header-sticker),
+    calc(0.259em + 0.462px) calc(-0.107em - 0.191px) 0 var(--header-sticker);
 }
 
 /* Column count badge styling */

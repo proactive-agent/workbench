@@ -90,7 +90,8 @@ describe('ProjectsPage', () => {
     renderPage();
     const active = screen.getByText('Bravo').closest('[role="button"]');
     expect(active).toHaveAttribute('aria-current', 'true');
-    expect(screen.getByText('Bravo')).toHaveClass('text-primary');
+    expect(active).toHaveClass('bg-[rgba(var(--accent-glow-rgb),0.05)]');
+    expect(screen.getByText('Bravo')).toHaveClass('text-foreground');
   });
 
   it('opens the add-project flow from "New project"', () => {

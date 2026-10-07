@@ -560,10 +560,7 @@ export interface ElectronAPI {
   snoozeAppUpdate: () => Promise<IPCResult>;
   isAppUpdateSuppressed: (version: string) => Promise<IPCResult<boolean>>;
 
-  // Rotating sidebar header icons (<userData>/header-icons/{dark,light}); null when a set is empty
-  getAppIcon: () => Promise<Record<'dark' | 'light', string | null>>;
   setTitleBarColors: (colors: { color: string; symbolColor: string }) => void;
-  onAppIconChanged: (callback: (mode: 'dark' | 'light', dataUrl: string | null) => void) => () => void;
 
   // Electron app update event listeners
   onAppUpdateAvailable: (

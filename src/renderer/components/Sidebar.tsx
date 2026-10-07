@@ -42,6 +42,7 @@ import { RateLimitIndicator } from './RateLimitIndicator';
 
 import { UpdateBanner } from './UpdateBanner';
 import { UsageIndicator } from './UsageIndicator';
+import { HeaderStatus } from './HeaderStatus';
 import type { Project, GitStatus } from '../../shared/types';
 
 export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'gitlab-issues' | 'gitlab-merge-requests' | 'insights';
@@ -72,8 +73,6 @@ const gitlabNavItems: NavItem[] = [
   { id: 'gitlab-merge-requests', labelKey: 'navigation:items.gitlabMRs', icon: GitMerge }
 ];
 
-/** Half of the 1.5s header icon fade (fade-out, then fade-in). */
-const HEADER_ICON_FADE_HALF_MS = 750;
 
 export function Sidebar({
   onSettingsClick,
@@ -83,51 +82,6 @@ export function Sidebar({
 }: SidebarProps) {
   const { t } = useTranslation(['navigation', 'dialogs', 'common']);
 
-  // Rotating header icons from <userData>/header-icons/{dark,light} (null = show the wordmark)
-  const [headerIcons, setHeaderIcons] = useState<Record<'dark' | 'light', string | null>>({ dark: null, light: null });
-  useEffect(() => {
-    let active = true;
-    window.electronAPI
-      .getAppIcon()
-      .then((icons) => {
-        if (active) setHeaderIcons(icons);
-      })
-      .catch(() => {
-        // Keep the wordmark if the icons can't be fetched
-      });
-    const unsubscribe = window.electronAPI.onAppIconChanged((mode, dataUrl) => {
-      setHeaderIcons((icons) => ({ ...icons, [mode]: dataUrl }));
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
-
-  // Follow the resolved appearance mode (App.tsx toggles the `dark` class on <html>,
-  // including for the System setting)
-  const [isDarkMode, setIsDarkMode] = useState(() => document.documentElement.classList.contains('dark'));
-  useEffect(() => {
-    const root = document.documentElement;
-    const observer = new MutationObserver(() => setIsDarkMode(root.classList.contains('dark')));
-    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, []);
-  const headerIcon = isDarkMode ? headerIcons.dark : headerIcons.light;
-
-  // 1.5s fade-out/fade-in between header icons: fade the shown icon out,
-  // swap it at the midpoint, then fade the new one in
-  const [shownHeaderIcon, setShownHeaderIcon] = useState<string | null>(null);
-  const [headerIconVisible, setHeaderIconVisible] = useState(true);
-  useEffect(() => {
-    if (headerIcon === shownHeaderIcon) return;
-    setHeaderIconVisible(false);
-    const timer = setTimeout(() => {
-      setShownHeaderIcon(headerIcon);
-      setHeaderIconVisible(true);
-    }, HEADER_ICON_FADE_HALF_MS);
-    return () => clearTimeout(timer);
-  }, [headerIcon, shownHeaderIcon]);
   const projects = useProjectStore((state) => state.projects);
   const activeProjectId = useProjectStore((state) => state.activeProjectId);
   const storeSelectedProjectId = useProjectStore((state) => state.selectedProjectId);
@@ -350,15 +304,8 @@ export function Sidebar({
             <PanelLeft className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
           </Button>
           {!isCollapsed && (
-            <span
-              className={cn(
-                'electron-no-drag flex min-w-0 items-center transition-opacity duration-[750ms] ease-in-out motion-reduce:transition-none',
-                headerIconVisible ? 'opacity-100' : 'opacity-0'
-              )}
-            >
-              {shownHeaderIcon && (
-                <img src={shownHeaderIcon} alt="Auto Claude" className="h-7 w-auto object-contain" />
-              )}
+            <span className="electron-no-drag ml-1.5 flex min-w-0 items-center">
+              <HeaderStatus />
             </span>
           )}
         </div>
