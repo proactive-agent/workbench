@@ -43,7 +43,6 @@ import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
 
 import { UpdateBanner } from './UpdateBanner';
-import { useProjectShortcuts } from '../hooks/useProjectShortcuts';
 import { UsageIndicator } from './UsageIndicator';
 import type { Project, GitStatus } from '../../shared/types';
 
@@ -52,8 +51,6 @@ export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'gitlab-issues' 
 interface SidebarProps {
   onSettingsClick: () => void;
   onNewTaskClick: () => void;
-  /** Make a project the active one (Cmd/Ctrl+1-9 and Cmd/Ctrl+Tab shortcuts) */
-  onSelectProject: (projectId: string) => void;
   activeView?: SidebarView;
   onViewChange?: (view: SidebarView) => void;
 }
@@ -62,20 +59,19 @@ interface NavItem {
   id: SidebarView;
   labelKey: string;
   icon: React.ElementType;
-  shortcut?: string;
 }
 
 // Base nav items always shown
 const baseNavItems: NavItem[] = [
-  { id: 'kanban', labelKey: 'navigation:items.kanban', icon: KanbanIcon, shortcut: 'K' },
-  { id: 'terminals', labelKey: 'navigation:items.terminals', icon: AgentsIcon, shortcut: 'A' },
-  { id: 'insights', labelKey: 'navigation:items.insights', icon: InsightsIcon, shortcut: 'N' },
+  { id: 'kanban', labelKey: 'navigation:items.kanban', icon: KanbanIcon },
+  { id: 'terminals', labelKey: 'navigation:items.terminals', icon: AgentsIcon },
+  { id: 'insights', labelKey: 'navigation:items.insights', icon: InsightsIcon },
 ];
 
 // GitLab nav items shown when GitLab is enabled
 const gitlabNavItems: NavItem[] = [
-  { id: 'gitlab-issues', labelKey: 'navigation:items.gitlabIssues', icon: GitlabIcon, shortcut: 'B' },
-  { id: 'gitlab-merge-requests', labelKey: 'navigation:items.gitlabMRs', icon: GitMerge, shortcut: 'R' }
+  { id: 'gitlab-issues', labelKey: 'navigation:items.gitlabIssues', icon: GitlabIcon },
+  { id: 'gitlab-merge-requests', labelKey: 'navigation:items.gitlabMRs', icon: GitMerge }
 ];
 
 /** Half of the 1.5s header icon fade (fade-out, then fade-in). */
@@ -84,7 +80,6 @@ const HEADER_ICON_FADE_HALF_MS = 750;
 export function Sidebar({
   onSettingsClick,
   onNewTaskClick,
-  onSelectProject,
   activeView = 'kanban',
   onViewChange
 }: SidebarProps) {
@@ -202,40 +197,6 @@ export function Sidebar({
     };
   }, [selectedProject?.id, selectedProject?.autoBuildPath]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger shortcuts when typing in inputs
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        e.target instanceof HTMLSelectElement ||
-        (e.target as HTMLElement)?.isContentEditable
-      ) {
-        return;
-      }
-
-      // Only handle shortcuts when a project is selected
-      if (!selectedProjectId) return;
-
-      // Check for modifier keys - we want plain key presses only
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-
-      const key = e.key.toUpperCase();
-
-      // Find matching nav item from visible items only
-      const matchedItem = visibleNavItems.find((item) => item.shortcut === key);
-
-      if (matchedItem) {
-        e.preventDefault();
-        onViewChange?.(matchedItem.id);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedProjectId, onViewChange, visibleNavItems]);
-
   // Check git status when project changes
   useEffect(() => {
     const checkGit = async () => {
@@ -331,15 +292,12 @@ export function Sidebar({
     </span>
   );
 
-  const withCollapsedTooltip = (key: string, label: string, shortcut: string | undefined, node: React.ReactElement) => {
+  const withCollapsedTooltip = (key: string, label: string, node: React.ReactElement) => {
     if (!isCollapsed) return node;
     return (
       <Tooltip key={key}>
         <TooltipTrigger asChild>{node}</TooltipTrigger>
-        <TooltipContent side="right">
-          <span>{label}</span>
-          {shortcut && <span className="ml-2 text-muted-foreground">{shortcut}</span>}
-        </TooltipContent>
+        <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
     );
   };
@@ -355,31 +313,20 @@ export function Sidebar({
         onClick={() => handleNavClick(item.id)}
         disabled={!selectedProjectId}
         aria-current={isActive ? 'page' : undefined}
-        aria-keyshortcuts={item.shortcut}
         className={rowClass(isActive)}
       >
         {renderRowIcon(item.icon)}
-        {!isCollapsed && (
-          <>
-            <span className="min-w-0 flex-1 truncate text-left">{label}</span>
-            {item.shortcut && (
-              <kbd className="pointer-events-none mr-2 font-sans text-xs text-(--nav-label-color) opacity-0 transition-opacity group-hover:opacity-100">
-                {item.shortcut}
-              </kbd>
-            )}
-          </>
-        )}
+        {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{label}</span>}
       </button>
     );
 
-    return withCollapsedTooltip(item.id, label, item.shortcut, button);
+    return withCollapsedTooltip(item.id, label, button);
   };
 
   const newTaskDisabled = !selectedProjectId || !selectedProject?.autoBuildPath;
   // The Projects row shows the active project's name (falls back to "Projects")
   const projectsLabel = selectedProject?.name ?? t('items.projects');
 
-  useProjectShortcuts(projects, selectedProjectId, onSelectProject);
 
   return (
     <TooltipProvider>
@@ -425,7 +372,7 @@ export function Sidebar({
 
         <div className="shrink-0 px-2 pt-3">
           {/* Projects page, labelled with the active project's name */}
-          {withCollapsedTooltip('projects', projectsLabel, undefined, (
+          {withCollapsedTooltip('projects', projectsLabel, (
             <button
               type="button"
               onClick={() => handleNavClick('projects')}
@@ -438,7 +385,7 @@ export function Sidebar({
           ))}
 
           {/* Primary action, like claude.ai's "New" */}
-          {withCollapsedTooltip('new-task', t('actions.newTask'), undefined, (
+          {withCollapsedTooltip('new-task', t('actions.newTask'), (
             <button
               type="button"
               onClick={onNewTaskClick}
@@ -481,7 +428,7 @@ export function Sidebar({
           'flex shrink-0 border-t border-border px-2 py-2',
           isCollapsed ? 'flex-col items-center gap-1' : 'items-center gap-1'
         )}>
-          {withCollapsedTooltip('settings', t('tooltips.settings'), undefined, (
+          {withCollapsedTooltip('settings', t('tooltips.settings'), (
             <button type="button" onClick={onSettingsClick} className={cn(rowClass(), !isCollapsed && 'min-w-0 flex-1')}>
               {renderRowIcon(Settings)}
               {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{t('actions.settings')}</span>}

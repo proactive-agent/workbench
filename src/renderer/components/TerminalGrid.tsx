@@ -36,10 +36,9 @@ import type { SessionDateInfo } from '../../shared/types';
 interface TerminalGridProps {
   projectPath?: string;
   onNewTaskClick?: () => void;
-  isActive?: boolean;
 }
 
-export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: TerminalGridProps) {
+export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps) {
   const { t } = useTranslation('common');
   const allTerminals = useTerminalStore((state) => state.terminals);
 
@@ -277,29 +276,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
     }
   }, [removeTerminal, expandedTerminalId]);
 
-  // Handle keyboard shortcut for new terminal (only when this view is active)
-  useEffect(() => {
-    if (!isActive) return;
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl+T or Cmd+T for new terminal
-      if ((e.ctrlKey || e.metaKey) && e.key === 't') {
-        e.preventDefault();
-        if (canAddTerminal(projectPath)) {
-          addTerminal(projectPath, projectPath);
-        }
-      }
-      // Ctrl+W or Cmd+W to close active terminal
-      if ((e.ctrlKey || e.metaKey) && e.key === 'w' && activeTerminalId) {
-        e.preventDefault();
-        handleCloseTerminal(activeTerminalId);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isActive, addTerminal, canAddTerminal, projectPath, activeTerminalId, handleCloseTerminal]);
-
   const handleAddTerminal = useCallback(() => {
     if (canAddTerminal(projectPath)) {
       addTerminal(projectPath, projectPath);
@@ -407,7 +383,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             <h2 className="text-lg font-semibold text-foreground">Agent Terminals</h2>
             <p className="mt-1 text-sm text-muted-foreground max-w-md">
               Spawn multiple terminals to run Claude agents in parallel.
-              Use <kbd className="px-1.5 py-0.5 text-xs bg-card border border-border rounded">Ctrl+T</kbd> to create a new terminal.
             </p>
           </div>
         </div>
@@ -507,9 +482,6 @@ export function TerminalGrid({ projectPath, onNewTaskClick, isActive = false }: 
             >
               <Plus className="h-3 w-3" />
               New Terminal
-              <kbd className="ml-1 text-[10px] text-muted-foreground">
-                {navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+T
-              </kbd>
             </Button>
           </div>
         </div>

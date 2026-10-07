@@ -585,32 +585,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     }
   }, [isActive, id, terminal?.pendingCLIResume]);
 
-  // Handle keyboard shortcuts for this terminal
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Only handle if this terminal is active
-      if (!isActive) return;
-
-      // Cmd/Ctrl+W to close terminal
-      if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      }
-
-      // Cmd/Ctrl+Shift+E to toggle expand/collapse
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'e') {
-        e.preventDefault();
-        e.stopPropagation();
-        onToggleExpand?.();
-      }
-    };
-
-    // Use capture phase to get the event before xterm
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [isActive, onClose, onToggleExpand]);
-
   // Cleanup on unmount
   useEffect(() => {
     isMountedRef.current = true;

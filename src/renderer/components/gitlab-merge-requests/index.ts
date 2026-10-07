@@ -2,7 +2,7 @@
  * GitLab Merge Requests UI Components
  *
  * Integrated into sidebar and App.tsx.
- * Accessible via 'gitlab-merge-requests' view with shortcut 'M'.
+ * Accessible via the 'gitlab-merge-requests' view.
  */
 
 // Main export for the gitlab-merge-requests module

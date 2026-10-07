@@ -33,7 +33,7 @@ import { OnboardingWizard } from './components/onboarding';
 import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { GitHubSetupModal } from './components/GitHubSetupModal';
-import { useProjectStore, loadProjects, addProject, initializeProject, removeProject } from './stores/project-store';
+import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings, loadProfiles, saveSettings } from './stores/settings-store';
 import { useClaudeProfileStore, loadClaudeProfiles } from './stores/claude-profile-store';
@@ -316,45 +316,6 @@ export function App() {
       setShowInitDialog(true);
     }
   }, [selectedProject, skippedInitProjectId, isInitializing, initSuccess]);
-
-  // Global keyboard shortcut: Cmd/Ctrl+T to add project (when not on terminals view)
-  useEffect(() => {
-    const handleKeyDown = async (e: KeyboardEvent) => {
-      // Skip if in input fields
-      if (
-        e.target instanceof HTMLInputElement ||
-        e.target instanceof HTMLTextAreaElement ||
-        (e.target as HTMLElement)?.isContentEditable
-      ) {
-        return;
-      }
-
-      // Cmd/Ctrl+T: Add new project (only when not on terminals view)
-      if ((e.ctrlKey || e.metaKey) && e.key === 't' && activeView !== 'terminals') {
-        e.preventDefault();
-        try {
-          const path = await window.electronAPI.selectDirectory();
-          if (path) {
-            const project = await addProject(path);
-            if (project) {
-              openProjectTab(project.id);
-              if (!project.autoBuildPath) {
-                setPendingProject(project);
-                setInitError(null);
-                setInitSuccess(false);
-                setShowInitDialog(true);
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Failed to add project:', error);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeView, openProjectTab]);
 
   // Load tasks when project changes
   useEffect(() => {
@@ -734,7 +695,6 @@ export function App() {
         <Sidebar
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
-          onSelectProject={handleSelectProject}
           activeView={activeView}
           onViewChange={setActiveView}
         />
@@ -773,7 +733,6 @@ export function App() {
                   <TerminalGrid
                     projectPath={selectedProject?.path}
                     onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
-                    isActive={activeView === 'terminals'}
                   />
                 </div>
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (

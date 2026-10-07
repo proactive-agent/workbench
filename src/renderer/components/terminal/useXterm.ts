@@ -206,22 +206,6 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
         return false;
       }
 
-      // Let Cmd/Ctrl + number keys pass through for project tab switching
-      if (isMod && event.key >= '1' && event.key <= '9') {
-        return false; // Don't handle in xterm, let it bubble up
-      }
-
-      // Let Cmd/Ctrl + Tab pass through for tab navigation
-      if (isMod && event.key === 'Tab') {
-        return false;
-      }
-
-      // Let Cmd/Ctrl + T pass through for new terminal shortcut
-      // Let Cmd/Ctrl + W pass through for close terminal shortcut
-      if (isMod && (event.key === 't' || event.key === 'T' || event.key === 'w' || event.key === 'W')) {
-        return false;
-      }
-
       // Handle CTRL+SHIFT+C copy (Linux only - alternative to CTRL+C)
       // NOTE: Check Linux-specific shortcuts BEFORE regular shortcuts to prevent unreachable code
       const platformIsLinuxCopyShortcut = event.ctrlKey && event.shiftKey && (event.key === 'C' || event.key === 'c') && event.type === 'keydown';

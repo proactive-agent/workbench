@@ -793,49 +793,26 @@ describe('useXterm keyboard handlers', () => {
       expect(mockInput).toHaveBeenCalledWith('\x15');
     });
 
-    it('should let Ctrl+1-9 pass through for project tab switching', async () => {
+    it('sends Ctrl+1-9 to the terminal (no app shortcut claims them)', async () => {
       const { keyEventHandler } = await setupMockXterm();
 
-      // Test all number keys 1-9
       for (let i = 1; i <= 9; i++) {
         act(() => {
-          const event = new KeyboardEvent('keydown', {
-            key: i.toString(),
-            ctrlKey: true
-          });
-
-          if (keyEventHandler) {
-            const handled = keyEventHandler?.(event);
-            expect(handled).toBe(false); // Should bubble to window handler
-          }
+          const event = new KeyboardEvent('keydown', { key: i.toString(), ctrlKey: true });
+          expect(keyEventHandler(event)).toBe(true);
         });
       }
     });
 
-    it('should let Ctrl+T and Ctrl+W pass through', async () => {
+    it('sends Ctrl+T and Ctrl+W to the terminal (e.g. transpose / delete word)', async () => {
       const { keyEventHandler } = await setupMockXterm();
 
-      // Test Ctrl+T
-      act(() => {
-        const event = new KeyboardEvent('keydown', {
-          key: 't',
-          ctrlKey: true
+      for (const key of ['t', 'w']) {
+        act(() => {
+          const event = new KeyboardEvent('keydown', { key, ctrlKey: true });
+          expect(keyEventHandler(event)).toBe(true);
         });
-
-        const handled = keyEventHandler(event);
-        expect(handled).toBe(false);
-      });
-
-      // Test Ctrl+W
-      act(() => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'w',
-          ctrlKey: true
-        });
-
-        const handled = keyEventHandler(event);
-        expect(handled).toBe(false);
-      });
+      }
     });
   });
 

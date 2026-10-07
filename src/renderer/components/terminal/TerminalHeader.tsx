@@ -228,7 +228,7 @@ export function TerminalHeader({
               e.stopPropagation();
               onToggleExpand();
             }}
-            title={`${isExpanded ? t('terminal:expand.collapse') : t('terminal:expand.expand')} (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Shift+E)`}
+            title={isExpanded ? t('terminal:expand.collapse') : t('terminal:expand.expand')}
           >
             {isExpanded ? (
               <Minimize2 className="h-3.5 w-3.5" />
@@ -245,7 +245,7 @@ export function TerminalHeader({
             e.stopPropagation();
             onClose();
           }}
-          title={`${t('common:close')} (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+W)`}
+          title={t('common:close')}
         >
           <X className="h-3.5 w-3.5" />
         </Button>

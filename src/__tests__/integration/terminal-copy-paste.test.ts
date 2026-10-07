@@ -609,7 +609,7 @@ describe('Terminal copy/paste integration', () => {
       });
     });
 
-    it('should maintain correct handler ordering for existing shortcuts', async () => {
+    it('sends former app shortcut keys to the terminal and keeps copy/paste handling', async () => {
       const { useXterm } = await import('../../renderer/components/terminal/useXterm');
 
       let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
@@ -689,14 +689,14 @@ describe('Terminal copy/paste integration', () => {
       };
 
       await act(async () => {
-        // Test existing shortcuts (should return false to bubble up)
+        // No app shortcuts claim these anymore: they go to the terminal (e.g. ^W deletes a word)
         testKey('1', true, false, false); // Ctrl+1
         testKey('Tab', true, false, false); // Ctrl+Tab
         testKey('t', true, false, false); // Ctrl+T
         testKey('w', true, false, false); // Ctrl+W
 
-        // Verify these return false (bubble to window handler)
-        expect(handlerResults.filter(r => !r.handled)).toHaveLength(4);
+        // Verify the terminal handles all of them
+        expect(handlerResults.filter(r => r.handled)).toHaveLength(4);
 
         // Test copy/paste WITHOUT selection (should pass through to send ^C)
         handlerResults = [];
