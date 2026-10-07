@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Play, Square, Clock, Zap, Target, Shield, Gauge, Palette, FileCode, Bug, Wrench, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical, PauseCircle } from 'lucide-react';
+import { Play, Square, Clock, Zap, Loader2, AlertTriangle, RotateCcw, Archive, GitPullRequest, MoreVertical, PauseCircle } from 'lucide-react';
 import { Card, CardContent } from './ui/card';
 import { Badge } from './ui/badge';
 import { Button } from './ui/button';
-import { Checkbox } from './ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,14 +15,6 @@ import {
 import { cn, formatRelativeTime, sanitizeMarkdownForDisplay } from '../lib/utils';
 import { PhaseProgressIndicator } from './PhaseProgressIndicator';
 import {
-  TASK_CATEGORY_LABELS,
-  TASK_CATEGORY_COLORS,
-  TASK_COMPLEXITY_COLORS,
-  TASK_COMPLEXITY_LABELS,
-  TASK_IMPACT_COLORS,
-  TASK_IMPACT_LABELS,
-  TASK_PRIORITY_COLORS,
-  TASK_PRIORITY_LABELS,
   EXECUTION_PHASE_LABELS,
   EXECUTION_PHASE_BADGE_COLORS,
   TASK_STATUS_COLUMNS,
@@ -33,21 +24,8 @@ import {
 } from '../../shared/constants';
 import { stopTask, checkTaskRunning, recoverStuckTask, isIncompleteHumanReview, archiveTasks, hasRecentActivity, startTaskOrQueue } from '../stores/task-store';
 import { useToast } from '../hooks/use-toast';
-import type { Task, TaskCategory, ReviewReason, TaskStatus } from '../../shared/types';
+import type { Task, ReviewReason, TaskStatus } from '../../shared/types';
 import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
-
-// Category icon mapping
-const CategoryIcon: Record<TaskCategory, typeof Zap> = {
-  feature: Target,
-  bug_fix: Bug,
-  refactoring: Wrench,
-  documentation: FileCode,
-  security: Shield,
-  performance: Gauge,
-  ui_ux: Palette,
-  infrastructure: Wrench,
-  testing: FileCode
-};
 
 // Catastrophic stuck detection interval (ms).
 // XState handles all normal process-exit transitions via PROCESS_EXITED events.
@@ -59,10 +37,6 @@ interface TaskCardProps {
   task: Task;
   onClick: () => void;
   onStatusChange?: (newStatus: TaskStatus) => unknown;
-  // Optional selectable mode props for multi-selection
-  isSelectable?: boolean;
-  isSelected?: boolean;
-  onToggleSelect?: () => void;
 }
 
 // Custom comparator for React.memo - only re-render when relevant task data changes
@@ -70,24 +44,13 @@ function taskCardPropsAreEqual(prevProps: TaskCardProps, nextProps: TaskCardProp
   const prevTask = prevProps.task;
   const nextTask = nextProps.task;
 
-  // Fast path: same reference (include selectable props)
+  // Fast path: same reference
   if (
     prevTask === nextTask &&
     prevProps.onClick === nextProps.onClick &&
-    prevProps.onStatusChange === nextProps.onStatusChange &&
-    prevProps.isSelectable === nextProps.isSelectable &&
-    prevProps.isSelected === nextProps.isSelected &&
-    prevProps.onToggleSelect === nextProps.onToggleSelect
+    prevProps.onStatusChange === nextProps.onStatusChange
   ) {
     return true;
-  }
-
-  // Check selectable props first (cheap comparison)
-  if (
-    prevProps.isSelectable !== nextProps.isSelectable ||
-    prevProps.isSelected !== nextProps.isSelected
-  ) {
-    return false;
   }
 
   // Compare only the fields that affect rendering
@@ -130,10 +93,7 @@ function taskCardPropsAreEqual(prevProps: TaskCardProps, nextProps: TaskCardProp
 export const TaskCard = memo(function TaskCard({
   task,
   onClick,
-  onStatusChange,
-  isSelectable,
-  isSelected,
-  onToggleSelect
+  onStatusChange
 }: TaskCardProps) {
   const { t, i18n } = useTranslation(['tasks', 'errors']);
   const { toast } = useToast();
@@ -349,26 +309,13 @@ export const TaskCard = memo(function TaskCard({
         'card-surface task-card-enhanced cursor-pointer',
         isRunning && !isStuck && 'ring-2 ring-primary border-primary task-running-pulse',
         isStuck && 'ring-2 ring-warning border-warning task-stuck-pulse',
-        isArchived && 'opacity-60 hover:opacity-80',
-        isSelectable && isSelected && 'ring-2 ring-ring border-ring bg-accent/10'
+        isArchived && 'opacity-60 hover:opacity-80'
       )}
       onClick={onClick}
     >
       <CardContent className="p-4">
-        <div className={isSelectable ? 'flex gap-3' : undefined}>
-          {/* Checkbox for selectable mode - stops event propagation */}
-          {isSelectable && (
-            <div className="flex-shrink-0 pt-0.5">
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={onToggleSelect}
-                onClick={(e) => e.stopPropagation()}
-                aria-label={t('tasks:actions.selectTask', { title: displayTitle })}
-              />
-            </div>
-          )}
-
-          <div className={isSelectable ? 'flex-1 min-w-0' : undefined}>
+        <div>
+          <div>
             {/* Title - full width, no wrapper */}
             <h3
               className="font-semibold text-sm text-foreground line-clamp-2 leading-snug"
@@ -379,14 +326,14 @@ export const TaskCard = memo(function TaskCard({
 
         {/* Description - sanitized to handle markdown content (memoized) */}
         {sanitizedDescription && (
-          <p className="mt-2 text-xs text-muted-foreground line-clamp-2">
+          <p className="mt-3 text-xs text-muted-foreground line-clamp-2">
             {sanitizedDescription}
           </p>
         )}
 
         {/* Metadata badges */}
         {(task.metadata || isStuck || isIncomplete || hasActiveExecution || reviewReasonInfo || isOnHold) && (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
+          <div className="mt-3 flex flex-wrap gap-1.5 empty:hidden">
             {/* Rate-limit hold indicator - task resumes automatically at reset time */}
             {isOnHold && holdResumeLabel && (
               <Badge
@@ -441,24 +388,15 @@ export const TaskCard = memo(function TaskCard({
                 {EXECUTION_PHASE_LABELS[executionPhase]}
               </Badge>
             )}
-             {/* Status badge - hide when execution phase badge is showing */}
-             {!hasActiveExecution && (
-               task.status === 'done' ? (
-                    <Badge
-                      variant={getStatusBadgeVariant(task.status)}
-                      className="text-[10px] px-1.5 py-0.5"
-                    >
-                      {getStatusLabel(task.status)}
-                    </Badge>
-                  ) : (
-                   <Badge
-                     variant={isStuck ? 'warning' : isIncomplete ? 'warning' : getStatusBadgeVariant(task.status)}
-                     className="text-[10px] px-1.5 py-0.5"
-                   >
-                     {isStuck ? t('labels.needsRecovery') : isIncomplete ? t('labels.needsResume') : getStatusLabel(task.status)}
-                   </Badge>
-                 )
-             )}
+            {/* Status badge - hidden while the execution phase badge shows, and for done tasks */}
+            {!hasActiveExecution && task.status !== 'done' && (
+              <Badge
+                variant={isStuck ? 'warning' : isIncomplete ? 'warning' : getStatusBadgeVariant(task.status)}
+                className="text-[10px] px-1.5 py-0.5"
+              >
+                {isStuck ? t('labels.needsRecovery') : isIncomplete ? t('labels.needsResume') : getStatusLabel(task.status)}
+              </Badge>
+            )}
             {/* Review reason badge - explains why task needs human review */}
             {reviewReasonInfo && !isStuck && !isIncomplete && (
               <Badge
@@ -478,67 +416,15 @@ export const TaskCard = memo(function TaskCard({
                 {t('metadata.fastMode')}
               </Badge>
             )}
-            {/* Category badge with icon */}
-            {task.metadata?.category && (
-              <Badge
-                variant="outline"
-                className={cn('text-[10px] px-1.5 py-0', TASK_CATEGORY_COLORS[task.metadata.category])}
-              >
-                {CategoryIcon[task.metadata.category] && (
-                  (() => {
-                    const Icon = CategoryIcon[task.metadata.category!];
-                    return <Icon className="h-2.5 w-2.5 mr-0.5" />;
-                  })()
-                )}
-                {TASK_CATEGORY_LABELS[task.metadata.category]}
-              </Badge>
-            )}
-            {/* Impact badge - high visibility for important tasks */}
-            {task.metadata?.impact && (task.metadata.impact === 'high' || task.metadata.impact === 'critical') && (
-              <Badge
-                variant="outline"
-                className={cn('text-[10px] px-1.5 py-0', TASK_IMPACT_COLORS[task.metadata.impact])}
-              >
-                {TASK_IMPACT_LABELS[task.metadata.impact]}
-              </Badge>
-            )}
-            {/* Complexity badge */}
-            {task.metadata?.complexity && (
-              <Badge
-                variant="outline"
-                className={cn('text-[10px] px-1.5 py-0', TASK_COMPLEXITY_COLORS[task.metadata.complexity])}
-              >
-                {TASK_COMPLEXITY_LABELS[task.metadata.complexity]}
-              </Badge>
-            )}
-            {/* Priority badge - only show urgent/high */}
-            {task.metadata?.priority && (task.metadata.priority === 'urgent' || task.metadata.priority === 'high') && (
-              <Badge
-                variant="outline"
-                className={cn('text-[10px] px-1.5 py-0', TASK_PRIORITY_COLORS[task.metadata.priority])}
-              >
-                {TASK_PRIORITY_LABELS[task.metadata.priority]}
-              </Badge>
-            )}
-            {/* Security severity - always show */}
-            {task.metadata?.securitySeverity && (
-              <Badge
-                variant="outline"
-                className={cn('text-[10px] px-1.5 py-0', TASK_IMPACT_COLORS[task.metadata.securitySeverity])}
-              >
-                {task.metadata.securitySeverity} {t('metadata.severity')}
-              </Badge>
-            )}
           </div>
         )}
 
         {/* Progress section - Phase-aware with animations */}
         {(task.subtasks.length > 0 || hasActiveExecution || isRunning || isStuck) && (
-          <div className="mt-4">
+          <div className="mt-3">
             <PhaseProgressIndicator
               phase={executionPhase}
               subtasks={task.subtasks}
-              phaseProgress={task.executionProgress?.phaseProgress}
               isStuck={isStuck}
               isRunning={isRunning}
             />
@@ -546,7 +432,7 @@ export const TaskCard = memo(function TaskCard({
         )}
 
         {/* Footer */}
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-3 flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <Clock className="h-3 w-3" />
             <span>{relativeTime}</span>

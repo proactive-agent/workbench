@@ -19,9 +19,8 @@ import {
   sortableKeyboardCoordinates,
   verticalListSortingStrategy
 } from '@dnd-kit/sortable';
-import { Plus, Inbox, Loader2, Eye, CheckCircle2, Archive, RefreshCw, GitPullRequest, X, ListPlus, Trash2 } from 'lucide-react';
+import { Plus, Inbox, Loader2, Eye, CheckCircle2, Archive, RefreshCw, ListPlus } from 'lucide-react';
 import { SettingsIcon as Settings } from './icons/app-icons';
-import { Checkbox } from './ui/checkbox';
 import { ScrollArea } from './ui/scroll-area';
 import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -30,22 +29,11 @@ import { SortableTaskCard } from './SortableTaskCard';
 import { QueueSettingsModal } from './QueueSettingsModal';
 import { TASK_STATUS_COLUMNS, TASK_STATUS_LABELS } from '../../shared/constants';
 import { cn } from '../lib/utils';
-import { persistTaskStatus, forceCompleteTask, archiveTasks, deleteTasks, useTaskStore, isQueueAtCapacity, DEFAULT_MAX_PARALLEL_TASKS } from '../stores/task-store';
+import { persistTaskStatus, forceCompleteTask, archiveTasks, useTaskStore, isQueueAtCapacity, DEFAULT_MAX_PARALLEL_TASKS } from '../stores/task-store';
 import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
 import { updateProjectSettings, useProjectStore } from '../stores/project-store';
 import { useToast } from '../hooks/use-toast';
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog';
-import { BulkPRDialog } from './BulkPRDialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from './ui/alert-dialog';
 import type { Task, TaskStatus, TaskOrderState } from '../../shared/types';
 
 // Type guard for valid drop column targets - preserves literal type from TASK_STATUS_COLUMNS
@@ -88,11 +76,6 @@ interface DroppableColumnProps {
   archivedCount?: number;
   showArchived?: boolean;
   onToggleArchived?: () => void;
-  // Selection props for human_review column
-  selectedTaskIds?: Set<string>;
-  onSelectAll?: () => void;
-  onDeselectAll?: () => void;
-  onToggleSelect?: (taskId: string) => void;
 }
 
 /**
@@ -139,20 +122,6 @@ function droppableColumnPropsAreEqual(
   if (prevProps.archivedCount !== nextProps.archivedCount) return false;
   if (prevProps.showArchived !== nextProps.showArchived) return false;
   if (prevProps.onToggleArchived !== nextProps.onToggleArchived) return false;
-  if (prevProps.onSelectAll !== nextProps.onSelectAll) return false;
-  if (prevProps.onDeselectAll !== nextProps.onDeselectAll) return false;
-  if (prevProps.onToggleSelect !== nextProps.onToggleSelect) return false;
-
-  // Compare selection props
-  const prevSelected = prevProps.selectedTaskIds;
-  const nextSelected = nextProps.selectedTaskIds;
-  if (prevSelected !== nextSelected) {
-    if (!prevSelected || !nextSelected) return false;
-    if (prevSelected.size !== nextSelected.size) return false;
-    for (const id of prevSelected) {
-      if (!nextSelected.has(id)) return false;
-    }
-  }
 
   // Deep compare tasks
   const tasksEqual = tasksAreEquivalent(prevProps.tasks, nextProps.tasks);
@@ -212,33 +181,11 @@ const getEmptyStateContent = (status: TaskStatus, t: (key: string) => string): {
   }
 };
 
-const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskClick, onStatusChange, isOver, onAddClick, onArchiveAll, onQueueSettings, onQueueAll, maxParallelTasks, archivedCount, showArchived, onToggleArchived, selectedTaskIds, onSelectAll, onDeselectAll, onToggleSelect }: DroppableColumnProps) {
+const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskClick, onStatusChange, isOver, onAddClick, onArchiveAll, onQueueSettings, onQueueAll, maxParallelTasks, archivedCount, showArchived, onToggleArchived }: DroppableColumnProps) {
   const { t } = useTranslation(['tasks', 'common']);
   const { setNodeRef } = useDroppable({
     id: status
   });
-
-  // Calculate selection state for this column
-  const taskCount = tasks.length;
-  const columnSelectedCount = tasks.filter(t => selectedTaskIds?.has(t.id)).length;
-  const isAllSelected = taskCount > 0 && columnSelectedCount === taskCount;
-  const isSomeSelected = columnSelectedCount > 0 && columnSelectedCount < taskCount;
-
-  // Determine checkbox checked state: true (all), 'indeterminate' (some), false (none)
-  const selectAllCheckedState: boolean | 'indeterminate' = isAllSelected
-    ? true
-    : isSomeSelected
-      ? 'indeterminate'
-      : false;
-
-  // Handle select all checkbox change
-  const handleSelectAllChange = useCallback(() => {
-    if (isAllSelected) {
-      onDeselectAll?.();
-    } else {
-      onSelectAll?.();
-    }
-  }, [isAllSelected, onSelectAll, onDeselectAll]);
 
   // Memoize taskIds to prevent SortableContext from re-rendering unnecessarily
   const taskIds = useMemo(() => tasks.map((t) => t.id), [tasks]);
@@ -261,32 +208,18 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
     return handlers;
   }, [tasks, onStatusChange]);
 
-  // Create stable onToggleSelect handlers for each task (for bulk selection)
-  const onToggleSelectHandlers = useMemo(() => {
-    if (!onToggleSelect) return null;
-    const handlers = new Map<string, () => void>();
-    tasks.forEach((task) => {
-      handlers.set(task.id, () => onToggleSelect(task.id));
-    });
-    return handlers;
-  }, [tasks, onToggleSelect]);
-
   // Memoize task card elements to prevent recreation on every render
   const taskCards = useMemo(() => {
     if (tasks.length === 0) return null;
-    const isSelectable = !!onToggleSelectHandlers;
     return tasks.map((task) => (
       <SortableTaskCard
         key={task.id}
         task={task}
         onClick={onClickHandlers.get(task.id)!}
         onStatusChange={onStatusChangeHandlers.get(task.id)}
-        isSelectable={isSelectable}
-        isSelected={isSelectable ? selectedTaskIds?.has(task.id) : undefined}
-        onToggleSelect={onToggleSelectHandlers?.get(task.id)}
       />
     ));
-  }, [tasks, onClickHandlers, onStatusChangeHandlers, onToggleSelectHandlers, selectedTaskIds]);
+  }, [tasks, onClickHandlers, onStatusChangeHandlers]);
 
   const getColumnBorderColor = (): string => {
     switch (status) {
@@ -323,25 +256,6 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
         {/* Column header - enhanced styling */}
         <div className="flex items-center justify-between p-4 border-b border-white/5">
         <div className="flex items-center gap-2.5">
-          {/* Select All checkbox for column */}
-          {onSelectAll && onDeselectAll && (
-            <Tooltip delayDuration={200}>
-              <TooltipTrigger asChild>
-                <div className="flex items-center">
-                  <Checkbox
-                    checked={selectAllCheckedState}
-                    onCheckedChange={handleSelectAllChange}
-                    disabled={taskCount === 0}
-                    aria-label={isAllSelected ? t('kanban.deselectAll') : t('kanban.selectAll')}
-                    className="h-4 w-4"
-                  />
-                </div>
-              </TooltipTrigger>
-              <TooltipContent>
-                {isAllSelected ? t('kanban.deselectAll') : t('kanban.selectAll')}
-              </TooltipContent>
-            </Tooltip>
-          )}
           <h2 className="font-semibold text-sm text-foreground">
             {t(TASK_STATUS_LABELS[status])}
           </h2>
@@ -509,15 +423,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   // Queue processing lock to prevent race conditions
   const isProcessingQueueRef = useRef(false);
 
-  // Selection state for bulk actions (Human Review column)
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-
-  // Bulk PR dialog state
-  const [bulkPRDialogOpen, setBulkPRDialogOpen] = useState(false);
-
-  // Delete confirmation dialog state
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
 
   // Worktree cleanup dialog state
   const [worktreeCleanupDialog, setWorktreeCleanupDialog] = useState<{
@@ -629,99 +534,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
 
     return grouped;
   }, [filteredTasks, taskOrder]);
-
-  // Prune stale IDs when tasks are deleted or filtered out
-  useEffect(() => {
-    const allTaskIds = new Set(filteredTasks.map(t => t.id));
-    setSelectedTaskIds(prev => {
-      const filtered = new Set([...prev].filter(id => allTaskIds.has(id)));
-      return filtered.size === prev.size ? prev : filtered;
-    });
-  }, [filteredTasks]);
-
-  // Selection callbacks for bulk actions (all columns)
-  const toggleTaskSelection = useCallback((taskId: string) => {
-    setSelectedTaskIds(prev => {
-      const next = new Set(prev);
-      if (next.has(taskId)) {
-        next.delete(taskId);
-      } else {
-        next.add(taskId);
-      }
-      return next;
-    });
-  }, []);
-
-  const selectAllTasks = useCallback((columnStatus?: typeof TASK_STATUS_COLUMNS[number]) => {
-    if (columnStatus) {
-      // Select all in specific column
-      const columnTasks = tasksByStatus[columnStatus] || [];
-      const columnIds = new Set(columnTasks.map((t: Task) => t.id));
-      setSelectedTaskIds(prev => new Set<string>([...prev, ...columnIds]));
-    } else {
-      // Select all across all columns
-      const allIds = new Set(filteredTasks.map(t => t.id));
-      setSelectedTaskIds(allIds);
-    }
-  }, [tasksByStatus, filteredTasks]);
-
-  const deselectAllTasks = useCallback(() => {
-    setSelectedTaskIds(new Set());
-  }, []);
-
-  // Get selected task objects for bulk actions
-  const selectedTasks = useMemo(() => {
-    return filteredTasks.filter(task => selectedTaskIds.has(task.id));
-  }, [filteredTasks, selectedTaskIds]);
-
-  // Handle opening the bulk PR dialog
-  const handleOpenBulkPRDialog = useCallback(() => {
-    if (selectedTaskIds.size > 0) {
-      setBulkPRDialogOpen(true);
-    }
-  }, [selectedTaskIds.size]);
-
-  // Handle bulk PR dialog completion - clear selection
-  const handleBulkPRComplete = useCallback(() => {
-    deselectAllTasks();
-  }, [deselectAllTasks]);
-
-  // Handle opening delete confirmation dialog
-  const handleOpenDeleteConfirm = useCallback(() => {
-    if (selectedTaskIds.size > 0) {
-      setDeleteConfirmOpen(true);
-    }
-  }, [selectedTaskIds.size]);
-
-  // Handle confirmed bulk delete
-  const handleConfirmDelete = useCallback(async () => {
-    if (selectedTaskIds.size === 0) return;
-
-    setIsDeleting(true);
-    const taskIdsToDelete = Array.from(selectedTaskIds);
-    const result = await deleteTasks(taskIdsToDelete);
-
-    setIsDeleting(false);
-    setDeleteConfirmOpen(false);
-
-    if (result.success) {
-      toast({
-        title: t('kanban.deleteSuccess', { count: taskIdsToDelete.length }),
-      });
-      deselectAllTasks();
-    } else {
-      toast({
-        title: t('kanban.deleteError'),
-        description: result.error,
-        variant: 'destructive',
-      });
-      // Still clear selection for successfully deleted tasks
-      if (result.failedIds) {
-        const remainingIds = new Set(result.failedIds);
-        setSelectedTaskIds(remainingIds);
-      }
-    }
-  }, [selectedTaskIds, deselectAllTasks, toast, t]);
 
   const handleArchiveAll = async () => {
     // Get projectId from the first task (all tasks should have the same projectId)
@@ -1187,10 +999,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
               archivedCount={status === 'done' ? archivedCount : undefined}
               showArchived={status === 'done' ? showArchived : undefined}
               onToggleArchived={status === 'done' ? toggleShowArchived : undefined}
-              selectedTaskIds={selectedTaskIds}
-              onSelectAll={() => selectAllTasks(status)}
-              onDeselectAll={deselectAllTasks}
-              onToggleSelect={toggleTaskSelection}
             />
           ))}
         </div>
@@ -1204,101 +1012,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
           ) : null}
         </DragOverlay>
       </DndContext>
-
-      {selectedTaskIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
-          <div className="flex items-center gap-3 px-4 py-3 rounded-2xl border border-border bg-card shadow-lg backdrop-blur-sm">
-            <span className="text-sm font-medium text-foreground">
-              {t('kanban.selectedCountOther', { count: selectedTaskIds.size })}
-            </span>
-            <div className="w-px h-5 bg-border" />
-            <Button
-              variant="default"
-              size="sm"
-              className="gap-2"
-              onClick={handleOpenBulkPRDialog}
-            >
-              <GitPullRequest className="h-4 w-4" />
-              {t('kanban.createPRs')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-              onClick={handleOpenDeleteConfirm}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('kanban.deleteSelected')}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2 text-muted-foreground hover:text-foreground"
-              onClick={deselectAllTasks}
-            >
-              <X className="h-4 w-4" />
-              {t('kanban.clearSelection')}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* Delete confirmation dialog */}
-      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <AlertDialogContent className="sm:max-w-[500px]">
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {t('kanban.deleteConfirmTitle')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t('kanban.deleteConfirmDescription')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {/* Task List Preview */}
-          <div className="mt-4 space-y-2">
-            <label className="text-sm font-medium">{t('kanban.tasksToDelete')}</label>
-            <ScrollArea className="h-32 rounded-md border border-border p-2">
-              <div className="space-y-1">
-                {selectedTasks.map((task, idx) => (
-                  <div
-                    key={task.id}
-                    className="flex items-center gap-2 text-sm py-1 px-2 rounded hover:bg-muted/50"
-                  >
-                    <span className="text-muted-foreground">{idx + 1}.</span>
-                    <span className="truncate">{task.title}</span>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
-          </div>
-
-          {/* Warning message */}
-          <p className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-            {t('kanban.deleteWarning')}
-          </p>
-
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>
-              {t('common:buttons.cancel')}
-            </AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleConfirmDelete}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-                  {t('common:buttons.deleting')}
-                </>
-              ) : (
-                t('kanban.deleteConfirmButton', { count: selectedTaskIds.size })
-              )}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* Worktree cleanup confirmation dialog */}
       <WorktreeCleanupDialog
@@ -1331,13 +1044,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         />
       )}
 
-      {/* Bulk PR creation dialog */}
-      <BulkPRDialog
-        open={bulkPRDialogOpen}
-        tasks={selectedTasks}
-        onOpenChange={setBulkPRDialogOpen}
-        onComplete={handleBulkPRComplete}
-      />
     </div>
   );
 }

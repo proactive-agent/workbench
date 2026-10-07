@@ -149,16 +149,19 @@ export const TASK_CATEGORY_LABELS: Record<string, string> = {
   testing: 'Testing'
 };
 
+// Classification tags all share the theme's neutral tag style (no per-value colors)
+const TASK_TAG_CLASS = 'bg-muted text-muted-foreground border-border';
+
 export const TASK_CATEGORY_COLORS: Record<string, string> = {
-  feature: 'bg-primary/10 text-primary border-primary/30',
-  bug_fix: 'bg-destructive/10 text-destructive border-destructive/30',
-  refactoring: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  documentation: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
-  security: 'bg-red-500/10 text-red-400 border-red-500/30',
-  performance: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-  ui_ux: 'bg-info/10 text-info border-info/30',
-  infrastructure: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
-  testing: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
+  feature: TASK_TAG_CLASS,
+  bug_fix: TASK_TAG_CLASS,
+  refactoring: TASK_TAG_CLASS,
+  documentation: TASK_TAG_CLASS,
+  security: TASK_TAG_CLASS,
+  performance: TASK_TAG_CLASS,
+  ui_ux: TASK_TAG_CLASS,
+  infrastructure: TASK_TAG_CLASS,
+  testing: TASK_TAG_CLASS
 };
 
 // ============================================
@@ -174,11 +177,11 @@ export const TASK_COMPLEXITY_LABELS: Record<string, string> = {
 };
 
 export const TASK_COMPLEXITY_COLORS: Record<string, string> = {
-  trivial: 'bg-success/10 text-success',
-  small: 'bg-info/10 text-info',
-  medium: 'bg-warning/10 text-warning',
-  large: 'bg-orange-500/10 text-orange-400',
-  complex: 'bg-destructive/10 text-destructive'
+  trivial: TASK_TAG_CLASS,
+  small: TASK_TAG_CLASS,
+  medium: TASK_TAG_CLASS,
+  large: TASK_TAG_CLASS,
+  complex: TASK_TAG_CLASS
 };
 
 // ============================================
@@ -193,10 +196,10 @@ export const TASK_IMPACT_LABELS: Record<string, string> = {
 };
 
 export const TASK_IMPACT_COLORS: Record<string, string> = {
-  low: 'bg-muted text-muted-foreground',
-  medium: 'bg-info/10 text-info',
-  high: 'bg-warning/10 text-warning',
-  critical: 'bg-destructive/10 text-destructive'
+  low: TASK_TAG_CLASS,
+  medium: TASK_TAG_CLASS,
+  high: TASK_TAG_CLASS,
+  critical: TASK_TAG_CLASS
 };
 
 // ============================================
@@ -211,10 +214,10 @@ export const TASK_PRIORITY_LABELS: Record<string, string> = {
 };
 
 export const TASK_PRIORITY_COLORS: Record<string, string> = {
-  low: 'bg-muted text-muted-foreground',
-  medium: 'bg-info/10 text-info',
-  high: 'bg-warning/10 text-warning',
-  urgent: 'bg-destructive/10 text-destructive'
+  low: TASK_TAG_CLASS,
+  medium: TASK_TAG_CLASS,
+  high: TASK_TAG_CLASS,
+  urgent: TASK_TAG_CLASS
 };
 
 // ============================================
