@@ -279,9 +279,9 @@
   --card: #20201F;
   --card-foreground: #F0EFEC;
 
-  /* Accent - Claude terracotta; near-black text has better contrast than white */
+  /* Accent - Claude terracotta; text and icons on it use the default text color */
   --primary: #D97757;
-  --primary-foreground: #141413;
+  --primary-foreground: var(--foreground);
 
   --secondary: #262625;
   --secondary-foreground: #F0EFEC;
