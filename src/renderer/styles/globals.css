@@ -187,7 +187,8 @@
 
   --border: rgba(11, 11, 11, 0.1);
   --input: rgba(11, 11, 11, 0.2);
-  --ring: #2A78D6;
+  /* Neutral focus indicators: the same hairline as a focused field */
+  --ring: var(--field-border-focus);
 
   --sidebar: #FBFBF9;
   --header-sticker: var(--sidebar);
@@ -219,7 +220,7 @@
   --shadow-md: 0 0 #0000;
   --shadow-lg: 0 4px 16px -4px rgba(20, 20, 19, 0.08);
   --shadow-xl: 0 8px 24px -8px rgba(20, 20, 19, 0.12);
-  --shadow-focus: 0 0 0 1px #2A78D6, 0 0 6px 0 rgba(42, 120, 214, 0.2);
+  --shadow-focus: 0 0 0 1px var(--field-border-focus);
 
   /* Border radius */
   --radius: 8px;
@@ -334,7 +335,8 @@
   /* Hairline dividers */
   --border: rgba(255, 255, 255, 0.1);
   --input: rgba(255, 255, 255, 0.2);
-  --ring: #2A78D6;
+  /* Neutral focus indicators: the same hairline as a focused field */
+  --ring: var(--field-border-focus);
 
   --sidebar: #111111;
   --header-sticker: var(--sidebar);
@@ -365,7 +367,7 @@
   --shadow-md: 0 0 #0000;
   --shadow-lg: 0 4px 16px -4px rgba(0, 0, 0, 0.4);
   --shadow-xl: 0 8px 24px -8px rgba(0, 0, 0, 0.5);
-  --shadow-focus: 0 0 0 1px #2A78D6, 0 0 6px 0 rgba(42, 120, 214, 0.2);
+  --shadow-focus: 0 0 0 1px var(--field-border-focus);
 
   /* Border radius */
   --radius: 8px;
