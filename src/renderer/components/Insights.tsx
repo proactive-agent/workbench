@@ -563,14 +563,15 @@ export function Insights({ projectId }: InsightsProps) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Minimal top bar */}
-        <div className="flex h-12 shrink-0 items-center justify-between px-3">
+        {/* Top bar: the history toggle sits level with the app sidebar's header row and "New chat"
+            below it, level with the sidebar's "New Task" row; the bar doubles as the window drag area */}
+        <div className="electron-drag flex shrink-0 flex-col items-start gap-3 px-3 pt-6">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground"
+                className="electron-no-drag h-8 w-8 text-muted-foreground"
                 onClick={() => setShowSidebar(!showSidebar)}
                 aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
               >
@@ -581,7 +582,7 @@ export function Insights({ projectId }: InsightsProps) {
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
+            <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
           </Tooltip>
           <h2 className="sr-only">{t('insights.title')}</h2>
           <Tooltip>
@@ -589,14 +590,14 @@ export function Insights({ projectId }: InsightsProps) {
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 text-muted-foreground"
+                className="electron-no-drag h-8 w-8 text-muted-foreground"
                 onClick={handleNewSession}
                 aria-label={t('insights.newChat')}
               >
                 <SquarePen className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>{t('insights.newChat')}</TooltipContent>
+            <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
           </Tooltip>
         </div>
 

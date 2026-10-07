@@ -193,7 +193,9 @@ export function ChatHistorySidebar({
   const sessionsToDelete = sessions.filter((s) => selectedIds.has(s.id));
 
   return (
-    <div className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <div className="relative flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+      {/* Window drag band over the top padding; the first row below sits level with the app sidebar's header row */}
+      <div className="electron-drag absolute inset-x-0 top-0 z-10 h-6" />
       {/* Select All / Clear links */}
       {isSelectionMode && sessions.length > 0 && (
         <div className="flex items-center justify-between px-4 pb-1.5">
@@ -217,18 +219,18 @@ export function ChatHistorySidebar({
       {/* Session list */}
       <ScrollArea className="flex-1">
         {isLoading ? (
-          <div className="flex items-center justify-center py-8">
+          <div className="flex h-14 items-center justify-center pt-6">
             <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           </div>
         ) : sessions.length === 0 ? (
-          <div className="px-3 py-8 text-center text-sm text-muted-foreground">
+          <div className="flex h-14 items-center justify-center px-3 pt-6 text-sm text-muted-foreground">
             {t('insights.noConversations')}
           </div>
         ) : (
-          <div className="px-2 pb-2">
+          <div className="px-2 pb-2 pt-6">
             {Object.entries(groupedSessions).map(([dateLabel, dateSessions]) => (
               <div key={dateLabel} className="mb-3 space-y-px">
-                <div className="nav-section-label px-2 pb-1 pt-2 text-[0.8125rem]">
+                <div className="nav-section-label flex h-8 items-center px-2 text-[0.8125rem]">
                   {dateLabel}
                 </div>
                 {dateSessions.map((session) => (

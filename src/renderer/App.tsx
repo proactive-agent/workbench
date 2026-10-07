@@ -44,13 +44,8 @@ import { useIpcListeners } from './hooks/useIpc';
 import { useTitleBarColors } from './hooks/useTitleBarColors';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, TITLE_BAR_OVERLAY_HEIGHT } from '../shared/constants';
-
-// macOS draws its own traffic lights (the sidebar header leaves room for them); on Windows/Linux
-// the window controls overlay the top-right corner, so the content area starts below them.
-// The renderer can't reach the platform module, so detect macOS like the shortcut hints do.
-const IS_MAC = typeof navigator !== 'undefined' && navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-const TITLE_BAR_STRIP_HEIGHT = IS_MAC ? 0 : TITLE_BAR_OVERLAY_HEIGHT;
+import { sanitizeColorTheme, UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT } from '../shared/constants';
+import { TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import type { Task, Project } from '../shared/types';
 import { AddProjectModal } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
@@ -747,8 +742,11 @@ export function App() {
 
         {/* Main content */}
         <div className="flex flex-1 flex-col overflow-hidden">
-          {/* Window drag strip; on Windows/Linux it also reserves the row the window controls sit in */}
-          <div className="electron-drag shrink-0" style={{ height: TITLE_BAR_STRIP_HEIGHT }} />
+          {/* Window drag strip; on Windows/Linux it also reserves the row the window controls sit in.
+              Insights draws its own so its chat history column can run the full height */}
+          {!(activeView === 'insights' && selectedProject) && (
+            <div className="electron-drag shrink-0" style={{ height: TITLE_BAR_STRIP_HEIGHT }} />
+          )}
 
           {/* Main content area */}
           <main className="flex-1 overflow-hidden">
