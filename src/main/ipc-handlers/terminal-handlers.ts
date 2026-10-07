@@ -499,23 +499,10 @@ export function registerTerminalHandlers(
 
         // Retry based on the source
         switch (request.source) {
-          case 'changelog':
-            // The changelog UI will handle retrying by re-submitting the form
-            // We just need to confirm the profile switch was successful
-            return { success: true };
-
           case 'task':
             // For tasks, we would need to restart the task
             // This is complex and would need task state restoration
             return { success: true, data: { message: 'Please restart the task manually' } };
-
-          case 'roadmap':
-            // For roadmap, the UI can trigger a refresh
-            return { success: true };
-
-          case 'ideation':
-            // For ideation, the UI can trigger a refresh
-            return { success: true };
 
           default:
             return { success: true };

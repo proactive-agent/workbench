@@ -54,16 +54,6 @@ export const integrationMock = {
     data: []
   }),
 
-  getGitHubIssues: async () => ({
-    success: true,
-    data: { issues: [], hasMore: false }
-  }),
-
-  getGitHubIssue: async () => ({
-    success: false,
-    error: 'Not available in browser mock'
-  }),
-
   checkGitHubConnection: async () => ({
     success: true,
     data: {
@@ -71,31 +61,6 @@ export const integrationMock = {
       error: 'Not available in browser mock'
     }
   }),
-
-  investigateGitHubIssue: () => {
-    console.warn('[Browser Mock] investigateGitHubIssue called');
-  },
-
-  getIssueComments: async () => ({
-    success: true,
-    data: []
-  }),
-
-  importGitHubIssues: async () => ({
-    success: false,
-    error: 'Not available in browser mock'
-  }),
-
-  createGitHubRelease: async () => ({
-    success: true,
-    data: {
-      url: 'https://github.com/example/repo/releases/tag/v1.0.0'
-    }
-  }),
-
-  onGitHubInvestigationProgress: () => () => {},
-  onGitHubInvestigationComplete: () => () => {},
-  onGitHubInvestigationError: () => () => {},
 
   // GitHub OAuth Operations (gh CLI)
   checkGitHubCli: async () => ({

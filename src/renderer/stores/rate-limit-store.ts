@@ -6,7 +6,7 @@ interface RateLimitState {
   isModalOpen: boolean;
   rateLimitInfo: RateLimitInfo | null;
 
-  // SDK rate limit modal (for changelog, tasks, etc.)
+  // SDK rate limit modal (for tasks, title generation, etc.)
   isSDKModalOpen: boolean;
   sdkRateLimitInfo: SDKRateLimitInfo | null;
 

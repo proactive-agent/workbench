@@ -13,7 +13,6 @@ import {
   Code,
   Search,
   FileCheck,
-  Lightbulb,
   ChevronDown,
   ChevronRight,
   CheckCircle2,
@@ -187,14 +186,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
   },
 
   // Utility Phases - use feature settings
-  pr_reviewer: {
-    label: 'PR Reviewer',
-    description: 'Reviews GitHub pull requests',
-    category: 'utility',
-    tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
-    settingsSource: { type: 'feature', feature: 'githubPrs' },
-  },
   commit_message: {
     label: 'Commit Message',
     description: 'Generates commit messages',
@@ -227,33 +218,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     mcp_servers: ['context7'],
     // Analysis uses same as insights
     settingsSource: { type: 'feature', feature: 'insights' },
-  },
-  batch_analysis: {
-    label: 'Batch Analysis',
-    description: 'Batch processing of issues or items',
-    category: 'utility',
-    tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
-    // Batch uses same as GitHub Issues
-    settingsSource: { type: 'feature', feature: 'githubIssues' },
-  },
-
-  // Ideation & Roadmap - use feature settings
-  ideation: {
-    label: 'Ideation',
-    description: 'Generates feature ideas',
-    category: 'ideation',
-    tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: [],
-    settingsSource: { type: 'feature', feature: 'ideation' },
-  },
-  roadmap_discovery: {
-    label: 'Roadmap Discovery',
-    description: 'Discovers roadmap items',
-    category: 'ideation',
-    tools: ['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch'],
-    mcp_servers: ['context7'],
-    settingsSource: { type: 'feature', feature: 'roadmap' },
   },
   pr_template_filler: {
     label: 'PR Template Filler',
@@ -356,7 +320,6 @@ const CATEGORIES = {
   build: { label: 'Build', icon: Code },
   qa: { label: 'QA', icon: CheckCircle2 },
   utility: { label: 'Utility', icon: Wrench },
-  ideation: { label: 'Ideation', icon: Lightbulb },
 };
 
 interface AgentCardProps {

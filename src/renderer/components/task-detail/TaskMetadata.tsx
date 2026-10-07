@@ -33,7 +33,6 @@ import {
   TASK_IMPACT_COLORS,
   TASK_PRIORITY_LABELS,
   TASK_PRIORITY_COLORS,
-  IDEATION_TYPE_LABELS,
   JSON_ERROR_PREFIX
 } from '../../../shared/constants';
 import type { Task, TaskCategory } from '../../../shared/types';
@@ -156,9 +155,7 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
             {/* Source Type */}
             {task.metadata?.sourceType && (
               <Badge variant="secondary" className="text-xs">
-                {task.metadata.sourceType === 'ideation' && task.metadata.ideationType
-                  ? IDEATION_TYPE_LABELS[task.metadata.ideationType] || task.metadata.ideationType
-                  : task.metadata.sourceType}
+                {task.metadata.sourceType}
               </Badge>
             )}
           </div>

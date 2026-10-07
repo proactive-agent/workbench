@@ -59,7 +59,6 @@ You may see absolute paths like `/e/projects/myapp/prod/src/file.ts` in:
 pwd
 # Should show: .../.auto-claude/worktrees/tasks/{spec-name}/
 # Or (legacy): .../.worktrees/{spec-name}/
-# Or (PR review): .../.auto-claude/github/pr/worktrees/{pr-number}/
 # NOT: /path/to/main/project
 ```
 

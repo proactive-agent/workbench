@@ -181,21 +181,6 @@ export function GitHubIntegrationSection({
             />
           )}
 
-          {/* Info about accessing issues */}
-          {gitHubConnectionStatus?.connected && (
-            <div className="rounded-lg border border-info/30 bg-info/5 p-3">
-              <div className="flex items-start gap-3">
-                <Github className="h-5 w-5 text-info mt-0.5" />
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-foreground">Issues Available</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Access GitHub Issues from the sidebar to view, investigate, and create tasks from issues.
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           <Separator />
 
           {/* Auto-sync Toggle */}

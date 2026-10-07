@@ -16,14 +16,11 @@ import { registerTerminalHandlers } from './terminal-handlers';
 import { registerAgenteventsHandlers } from './agent-events-handlers';
 import { registerSettingsHandlers } from './settings-handlers';
 import { registerFileHandlers } from './file-handlers';
-import { registerRoadmapHandlers } from './roadmap-handlers';
 import { registerContextHandlers } from './context-handlers';
 import { registerEnvHandlers } from './env-handlers';
 import { registerLinearHandlers } from './linear-handlers';
 import { registerGithubHandlers } from './github-handlers';
 import { registerGitlabHandlers } from './gitlab-handlers';
-import { registerIdeationHandlers } from './ideation-handlers';
-import { registerChangelogHandlers } from './changelog-handlers';
 import { registerInsightsHandlers } from './insights-handlers';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
@@ -76,9 +73,6 @@ export function setupIpcHandlers(
   // File explorer handlers
   registerFileHandlers();
 
-  // Roadmap handlers
-  registerRoadmapHandlers(agentManager, getMainWindow);
-
   // Context and memory handlers
   registerContextHandlers(getMainWindow);
 
@@ -89,16 +83,10 @@ export function setupIpcHandlers(
   registerLinearHandlers(agentManager, getMainWindow);
 
   // GitHub integration handlers
-  registerGithubHandlers(agentManager, getMainWindow);
+  registerGithubHandlers();
 
   // GitLab integration handlers
   registerGitlabHandlers(agentManager, getMainWindow);
-
-  // Ideation handlers
-  registerIdeationHandlers(agentManager, getMainWindow);
-
-  // Changelog handlers
-  registerChangelogHandlers(getMainWindow);
 
   // Insights handlers
   registerInsightsHandlers(getMainWindow);
@@ -139,14 +127,11 @@ export {
   registerAgenteventsHandlers,
   registerSettingsHandlers,
   registerFileHandlers,
-  registerRoadmapHandlers,
   registerContextHandlers,
   registerEnvHandlers,
   registerLinearHandlers,
   registerGithubHandlers,
   registerGitlabHandlers,
-  registerIdeationHandlers,
-  registerChangelogHandlers,
   registerInsightsHandlers,
   registerMemoryHandlers,
   registerAppUpdateHandlers,

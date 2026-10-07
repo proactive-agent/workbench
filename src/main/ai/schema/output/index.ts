@@ -29,32 +29,6 @@ export {
 } from './qa-signoff.output';
 
 export {
-  ScanResultOutputSchema,
-  type ScanResultOutput,
-  ReviewFindingsOutputSchema,
-  type ReviewFindingsOutput,
-  StructuralIssuesOutputSchema,
-  type StructuralIssuesOutput,
-  AICommentTriagesOutputSchema,
-  type AICommentTriagesOutput,
-  SpecialistOutputOutputSchema,
-  type SpecialistOutputOutput,
-  SynthesisResultOutputSchema,
-  type SynthesisResultOutput,
-  FindingValidationsOutputSchema,
-  type FindingValidationsOutput,
-  type FindingValidationItemOutput,
-  ResolutionVerificationOutputSchema,
-  type ResolutionVerificationOutput,
-  type VerificationItemOutput,
-} from './pr-review.output';
-
-export {
-  TriageResultOutputSchema,
-  type TriageResultOutput,
-} from './triage.output';
-
-export {
   ExtractedInsightsOutputSchema,
   type ExtractedInsightsOutput,
 } from './insight-extractor.output';

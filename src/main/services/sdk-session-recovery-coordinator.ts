@@ -41,7 +41,7 @@ import type { ProfileAssignmentReason } from '../../shared/types';
 /**
  * Types of SDK operations that can be registered
  */
-export type SDKOperationType = 'task' | 'roadmap' | 'ideation' | 'changelog' | 'title-generation' | 'other';
+export type SDKOperationType = 'task' | 'title-generation' | 'other';
 
 /**
  * Registered SDK operation
@@ -121,7 +121,6 @@ interface PendingNotification {
  *
  * This singleton coordinates all SDK operations across the application:
  * - Tasks (via AgentManager)
- * - Background operations (roadmap, ideation, changelog)
  * - Title generation
  *
  * Provides unified rate limit handling and profile selection.
@@ -513,9 +512,6 @@ export class SDKSessionRecoveryCoordinator extends EventEmitter {
   } {
     const operationsByType: Record<SDKOperationType, number> = {
       task: 0,
-      roadmap: 0,
-      ideation: 0,
-      changelog: 0,
       'title-generation': 0,
       other: 0,
     };

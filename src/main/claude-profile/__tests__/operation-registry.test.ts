@@ -96,7 +96,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation(
         'op1',
-        'pr-review',
+        'mr-review',
         'profile1',
         'Profile 1',
         mockRestart,
@@ -114,7 +114,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation(
         'op1',
-        'pr-review',
+        'mr-review',
         'profile1',
         'Profile 1',
         mockRestart,
@@ -155,7 +155,7 @@ describe('OperationRegistry', () => {
       registry.registerOperation('op1', 'insights', 'profile1', 'Profile 1', mockRestart);
       expect(registry.getOperationCount()).toBe(1);
 
-      registry.registerOperation('op2', 'roadmap', 'profile1', 'Profile 1', mockRestart);
+      registry.registerOperation('op2', 'triage', 'profile1', 'Profile 1', mockRestart);
       expect(registry.getOperationCount()).toBe(2);
     });
 
@@ -166,12 +166,8 @@ describe('OperationRegistry', () => {
       const types: OperationType[] = [
         'spec-creation',
         'task-execution',
-        'pr-review',
         'mr-review',
         'insights',
-        'roadmap',
-        'changelog',
-        'ideation',
         'triage',
         'other',
       ];
@@ -240,7 +236,7 @@ describe('OperationRegistry', () => {
       const mockRestart = vi.fn().mockReturnValue(true);
 
       registry.registerOperation('op1', 'insights', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op2', 'roadmap', 'profile1', 'Profile 1', mockRestart);
+      registry.registerOperation('op2', 'triage', 'profile1', 'Profile 1', mockRestart);
       expect(registry.getOperationCount()).toBe(2);
 
       registry.unregisterOperation('op1');
@@ -256,7 +252,7 @@ describe('OperationRegistry', () => {
       const registry = getOperationRegistry();
       const mockRestart = vi.fn().mockReturnValue(true);
 
-      registry.registerOperation('op1', 'pr-review', 'profile1', 'Profile 1', mockRestart);
+      registry.registerOperation('op1', 'mr-review', 'profile1', 'Profile 1', mockRestart);
 
       const operation = registry.getOperation('op1');
       expect(operation).toBeDefined();
@@ -278,7 +274,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile2', 'Profile 2', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile2', 'Profile 2', mockRestart);
 
       const profile1Ops = registry.getOperationsByProfile('profile1');
       expect(profile1Ops).toHaveLength(2);
@@ -307,8 +303,8 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile2', 'Profile 2', mockRestart);
-      registry.registerOperation('op4', 'roadmap', 'profile3', 'Profile 3', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile2', 'Profile 2', mockRestart);
+      registry.registerOperation('op4', 'triage', 'profile3', 'Profile 3', mockRestart);
 
       const allOps = registry.getAllOperationsByProfile();
 
@@ -342,7 +338,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile2', 'Profile 2', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile2', 'Profile 2', mockRestart);
 
       const summary = registry.getSummary();
 
@@ -357,13 +353,13 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile1', 'Profile 1', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op4', 'insights', 'profile2', 'Profile 2', mockRestart);
 
       const summary = registry.getSummary();
 
       expect(summary.byType['spec-creation']).toBe(2);
-      expect(summary.byType['pr-review']).toBe(1);
+      expect(summary.byType['mr-review']).toBe(1);
       expect(summary.byType['insights']).toBe(1);
     });
 
@@ -373,9 +369,9 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile2', 'Profile 2', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile2', 'Profile 2', mockRestart);
       registry.registerOperation('op4', 'insights', 'profile2', 'Profile 2', mockRestart);
-      registry.registerOperation('op5', 'roadmap', 'profile3', 'Profile 3', mockRestart);
+      registry.registerOperation('op5', 'triage', 'profile3', 'Profile 3', mockRestart);
 
       const summary = registry.getSummary();
 
@@ -420,7 +416,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation(
         'op1',
-        'pr-review',
+        'mr-review',
         'profile1',
         'Profile 1',
         mockRestart,
@@ -461,7 +457,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart1);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart2);
-      registry.registerOperation('op3', 'pr-review', 'profile1', 'Profile 1', mockRestart3);
+      registry.registerOperation('op3', 'mr-review', 'profile1', 'Profile 1', mockRestart3);
 
       const count = await registry.restartOperationsOnProfile(
         'profile1',
@@ -583,7 +579,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation('op1', 'spec-creation', 'profile1', 'Profile 1', mockRestart);
       registry.registerOperation('op2', 'task-execution', 'profile1', 'Profile 1', mockRestart);
-      registry.registerOperation('op3', 'pr-review', 'profile2', 'Profile 2', mockRestart);
+      registry.registerOperation('op3', 'mr-review', 'profile2', 'Profile 2', mockRestart);
 
       expect(registry.getOperationCount()).toBe(3);
 
@@ -642,7 +638,7 @@ describe('OperationRegistry', () => {
 
       registry.registerOperation(
         'op1',
-        'pr-review',
+        'mr-review',
         'profile1',
         'Profile 1',
         mockRestart,

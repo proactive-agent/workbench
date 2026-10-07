@@ -76,7 +76,7 @@ describe('tool constants', () => {
 
 describe('AGENT_CONFIGS (registry)', () => {
   it('should have all expected agent types', () => {
-    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(26);
+    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(19);
   });
 
   it('should match tool assignments between config and registry', () => {

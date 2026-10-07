@@ -17,10 +17,8 @@ resolves issues → User reviews and merges.
 - **Kanban Board** — Visual task management from planning through completion
 - **Agent Terminals** — Up to 12 parallel AI-powered terminals with task context injection
 - **Insights** — AI chat interface for exploring and understanding a codebase
-- **Roadmap** — AI-assisted feature planning
-- **Ideation** — Discover improvements, performance issues, and security vulnerabilities
-- **GitHub/GitLab Integration** — Import issues, AI-powered investigation, PR/MR review and creation
-- **Changelog** — Generate release notes from completed tasks
+- **GitHub Integration** — Repository connection and pull request creation from a task's worktree
+- **GitLab Integration** — Import issues, AI-powered investigation, MR review and creation
 - **Memory** — Local knowledge store that retains insights across sessions
 - **Isolated Workspaces** — Git worktree isolation for every build; AI-powered semantic merge
 - **Flexible Authentication** — Claude Code subscription (OAuth) or API profiles with any Anthropic-compatible endpoint
@@ -133,16 +131,16 @@ auto-claude/
 │   │   │   ├── security/        # Bash validator, command parser, path containment
 │   │   │   ├── config/          # Agent configs, phase config, model resolution
 │   │   │   ├── prompts/         # Prompt loading and assembly
-│   │   │   ├── runners/         # Insights, roadmap, ideation, PR review, etc.
+│   │   │   ├── runners/         # Insights, MR review, PR creation, commit messages, etc.
 │   │   │   ├── memory/          # Local memory store (libSQL)
 │   │   │   ├── mcp/             # MCP client integration
 │   │   │   └── auth/            # Token resolution (reuses claude-profile/)
-│   │   ├── agent/           # Agent queue, process, state, events
+│   │   ├── agent/           # Agent manager, process, state, events
 │   │   ├── claude-profile/  # Multi-profile credentials, token refresh, usage
 │   │   ├── terminal/        # PTY daemon, lifecycle, CLI integration
 │   │   ├── platform/        # Cross-platform abstraction
 │   │   ├── ipc-handlers/    # IPC handler modules by domain
-│   │   └── services/        # App services (session recovery, rate-limit resume, header icon rotation, PR status)
+│   │   └── services/        # App services (session recovery, rate-limit resume, header icon rotation)
 │   ├── preload/             # Preload scripts (electronAPI bridge)
 │   ├── renderer/            # React UI (components, stores, contexts, hooks, styles)
 │   └── shared/              # Shared types, i18n, constants, utils
@@ -196,8 +194,6 @@ const readTool = tool({
 | `complexity_assessor.md`                              | Complexity assessment                           |
 | `planner.md`, `coder.md`                              | Implementation plan / subtask implementation    |
 | `qa_reviewer.md`, `qa_fixer.md`                       | Acceptance validation / issue fixes             |
-| `roadmap_*.md`, `ideation_*.md`                       | Roadmap and ideation runners                    |
-| `github/pr_*_agent.md`, `github/pr_finding_validator.md` | Parallel PR review specialists and validator |
 | `mcp_tools/*.md`                                      | Tool guidance injected for MCP-enabled projects |
 
 In dev, prompts load from `prompts/`; packaged builds load them from `process.resourcesPath/prompts` (extraResources).
@@ -221,8 +217,8 @@ xterm.js 6, electron-vite 5 (Vite 7), Vitest 4 + React Testing Library + jsdom, 
 **Path aliases:** `@/*` → `src/renderer/*`, `@shared/*` → `src/shared/*`, `@preload/*` → `src/preload/*`.
 
 **State (Zustand)** — Renderer stores live in `src/renderer/stores/` (`project-store.ts`, `task-store.ts`,
-`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `roadmap-store.ts`, `kanban-settings-store.ts`,
-`github/issues-store.ts`, `github/pr-review-store.ts`). Main-process stores: `src/main/project-store.ts`,
+`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `kanban-settings-store.ts`,
+`github/sync-status-store.ts`, `gitlab-store.ts`). Main-process stores: `src/main/project-store.ts`,
 `src/main/terminal-session-store.ts`.
 
 **Styling** — Tailwind CSS v4 via `@tailwindcss/postcss`; `clsx` + `tailwind-merge` through `cn()`; variants with
@@ -232,7 +228,7 @@ light/dark variants via CSS custom properties in `src/renderer/styles/globals.cs
 **IPC** — Handlers in `src/main/ipc-handlers/` (by domain), safe APIs exposed in `src/preload/`, renderer calls
 `window.electronAPI.*`.
 
-**Agent management** (`src/main/agent/`) — `agent-queue.ts` (routing, prioritization, spec number locking),
+**Agent management** (`src/main/agent/`) — `agent-manager.ts` (task lifecycle facade),
 `agent-process.ts` (spawns workers via `WorkerBridge`), `agent-state.ts`, `agent-events.ts`.
 
 **Claude profiles** (`src/main/claude-profile/`) — `credential-utils.ts` (OS keychain), `token-refresh.ts` (OAuth
@@ -253,8 +249,8 @@ import { useTranslation } from 'react-i18next';
 
 const { t } = useTranslation(['navigation', 'common']);
 
-<span>{t('navigation:items.githubPRs')}</span>       // CORRECT
-<span>GitHub PRs</span>                               // WRONG
+<span>{t('navigation:items.gitlabMRs')}</span>       // CORRECT
+<span>GitLab MRs</span>                               // WRONG
 <span>{t('errors:task.parseError', { error })}</span> // With interpolation
 ```
 
@@ -275,11 +271,3 @@ Supports Windows, macOS, and Linux; CI runs tests on all three. Use `src/main/pl
 **Electron path resolution** — Paths often differ between dev and packaged builds (`app.isPackaged`,
 `process.resourcesPath`). In dev, `__dirname` is `out/main`; in production, bundled assets live under
 `process.resourcesPath`. Verify both contexts.
-
-**Resetting PR review state** — To make PR reviews run fresh, in the project's `.auto-claude/github/`:
-
-1. `rm pr/logs_*.json` — review logs
-2. `rm pr/review_*.json` — review results
-3. Reset `pr/index.json` to `{"reviews": [], "last_updated": null}`
-4. Reset `bot_detection_state.json` to `{"reviewed_commits": {}}` — without this, the bot detector skips already-seen
-   commits

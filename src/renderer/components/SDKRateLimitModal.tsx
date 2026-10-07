@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ExternalLink, Clock, RefreshCw, User, ChevronDown, Check, Star, Zap, FileText, ListTodo, Map, Lightbulb, Plus } from 'lucide-react';
+import { AlertCircle, ExternalLink, Clock, RefreshCw, User, ChevronDown, Check, Star, Zap, ListTodo, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -33,10 +33,7 @@ const CLAUDE_UPGRADE_URL = 'https://claude.ai/upgrade';
  */
 function getSourceName(source: SDKRateLimitInfo['source']): string {
   switch (source) {
-    case 'changelog': return 'Changelog Generation';
     case 'task': return 'Task Execution';
-    case 'roadmap': return 'Roadmap Generation';
-    case 'ideation': return 'Ideation';
     case 'title-generator': return 'Title Generation';
     default: return 'Claude Operation';
   }
@@ -47,10 +44,7 @@ function getSourceName(source: SDKRateLimitInfo['source']): string {
  */
 function getSourceIcon(source: SDKRateLimitInfo['source']) {
   switch (source) {
-    case 'changelog': return FileText;
     case 'task': return ListTodo;
-    case 'roadmap': return Map;
-    case 'ideation': return Lightbulb;
     default: return AlertCircle;
   }
 }

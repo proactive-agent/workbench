@@ -13,9 +13,6 @@ type FeatureKey = keyof FeatureModelConfig;
 
 const FEATURE_KEYS: readonly FeatureKey[] = [
   'insights',
-  'ideation',
-  'roadmap',
-  'githubIssues',
   'githubPrs',
   'utility',
 ] as const;
@@ -25,9 +22,6 @@ const FEATURE_KEYS: readonly FeatureKey[] = [
  */
 const DEFAULT_MIXED_FEATURE_CONFIG: MixedFeatureConfig = {
   insights: { provider: 'anthropic', modelId: 'sonnet', thinkingLevel: 'medium' },
-  ideation: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'high' },
-  roadmap: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'high' },
-  githubIssues: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'medium' },
   githubPrs: { provider: 'anthropic', modelId: 'opus', thinkingLevel: 'medium' },
   utility: { provider: 'anthropic', modelId: 'haiku', thinkingLevel: 'low' },
   naming: { provider: 'anthropic', modelId: 'haiku', thinkingLevel: 'low' },
@@ -63,7 +57,7 @@ function ProviderBadge({ provider }: { provider: BuiltinProvider }) {
 /**
  * MixedFeatureEditor — shown in the Cross-Provider tab for feature model configuration.
  *
- * Renders one row per feature (insights, ideation, roadmap, githubIssues, githubPrs, utility).
+ * Renders one row per feature (insights, githubPrs, utility).
  * Each row lets the user pick a model from any provider, a thinking level
  * adapted to that provider, and displays a provider badge.
  */

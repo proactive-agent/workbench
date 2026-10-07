@@ -20,17 +20,11 @@ import { TaskCreationWizard } from './components/TaskCreationWizard';
 import { AppSettingsDialog, type AppSection } from './components/settings/AppSettings';
 import type { ProjectSettingsSection } from './components/settings/ProjectSettingsContent';
 import { TerminalGrid } from './components/TerminalGrid';
-import { Roadmap } from './components/Roadmap';
 import { Context } from './components/Context';
-import { Ideation } from './components/Ideation';
 import { Insights } from './components/Insights';
 import { ErrorBoundary } from './components/ui/error-boundary';
-import { GitHubIssues } from './components/GitHubIssues';
 import { GitLabIssues } from './components/GitLabIssues';
-import { GitHubPRs } from './components/github-prs';
 import { GitLabMergeRequests } from './components/gitlab-merge-requests';
-import { Changelog } from './components/Changelog';
-import { Worktrees } from './components/Worktrees';
 import { AgentTools } from './components/AgentTools';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ProjectsPage } from './components/ProjectsPage';
@@ -47,7 +41,6 @@ import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings, loadProfiles, saveSettings } from './stores/settings-store';
 import { useClaudeProfileStore, loadClaudeProfiles } from './stores/claude-profile-store';
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
-import { initializeGitHubListeners, cleanupGitHubListeners } from './stores/github';
 import { initDownloadProgressListener } from './stores/download-store';
 import { GlobalDownloadIndicator } from './components/GlobalDownloadIndicator';
 import { useIpcListeners } from './hooks/useIpc';
@@ -129,14 +122,11 @@ export function App() {
     loadSettings();
     loadProfiles();
     loadClaudeProfiles();
-    // Initialize global GitHub listeners (PR reviews, etc.) so they persist across navigation
-    initializeGitHubListeners();
     // Initialize global download progress listener for Ollama model downloads
     const cleanupDownloadListener = initDownloadProgressListener();
 
     return () => {
       cleanupDownloadListener();
-      cleanupGitHubListeners();
     };
   }, []);
 
@@ -681,7 +671,7 @@ export function App() {
       // NOTE: settings.githubToken is a GitHub access token (from gh CLI),
       // NOT a Claude Code OAuth token. They are different things:
       // - GitHub token: for GitHub API access (repo operations)
-      // - Claude token: for Claude AI access (run.py, roadmap, etc.)
+      // - Claude token: for Claude AI access (agents, insights, etc.)
       // The user needs to separately authenticate with Claude using 'claude setup-token'
 
       // Update project env config with GitHub settings
@@ -779,28 +769,13 @@ export function App() {
                     isActive={activeView === 'terminals'}
                   />
                 </div>
-                {activeView === 'roadmap' && (activeProjectId || selectedProjectId) && (
-                  <Roadmap projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
-                )}
                 {activeView === 'context' && (activeProjectId || selectedProjectId) && (
                   <ErrorBoundary>
                     <Context projectId={activeProjectId || selectedProjectId!} />
                   </ErrorBoundary>
                 )}
-                {activeView === 'ideation' && (activeProjectId || selectedProjectId) && (
-                  <Ideation projectId={activeProjectId || selectedProjectId!} onGoToTask={handleGoToTask} />
-                )}
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
                   <Insights projectId={activeProjectId || selectedProjectId!} />
-                )}
-                {activeView === 'github-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitHubIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('github');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
                 )}
                 {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
                   <GitLabIssues
@@ -811,18 +786,6 @@ export function App() {
                     onNavigateToTask={handleGoToTask}
                   />
                 )}
-                {/* GitHubPRs is always mounted but hidden when not active to preserve review state */}
-                {(activeProjectId || selectedProjectId) && (
-                  <div className={activeView === 'github-prs' ? 'h-full' : 'hidden'}>
-                    <GitHubPRs
-                      onOpenSettings={() => {
-                        setSettingsInitialProjectSection('github');
-                        setIsSettingsDialogOpen(true);
-                      }}
-                      isActive={activeView === 'github-prs'}
-                    />
-                  </div>
-                )}
                 {activeView === 'gitlab-merge-requests' && (activeProjectId || selectedProjectId) && (
                   <GitLabMergeRequests
                     projectId={activeProjectId || selectedProjectId!}
@@ -831,12 +794,6 @@ export function App() {
                       setIsSettingsDialogOpen(true);
                     }}
                   />
-                )}
-                {activeView === 'changelog' && (activeProjectId || selectedProjectId) && (
-                  <Changelog />
-                )}
-                {activeView === 'worktrees' && (activeProjectId || selectedProjectId) && (
-                  <Worktrees projectId={activeProjectId || selectedProjectId!} />
                 )}
                 {activeView === 'agent-tools' && <AgentTools />}
               </>
@@ -1013,7 +970,7 @@ export function App() {
         {/* Rate Limit Modal - shows when Claude Code hits usage limits (terminal) */}
         <RateLimitModal />
 
-        {/* SDK Rate Limit Modal - shows when SDK/CLI operations hit limits (changelog, tasks, etc.) */}
+        {/* SDK Rate Limit Modal - shows when SDK/CLI operations hit limits (tasks, etc.) */}
         <SDKRateLimitModal />
 
         {/* Auth Failure Modal - shows when Claude CLI encounters 401/auth errors */}

@@ -15,7 +15,7 @@ import {
 } from '../agent-configs';
 
 // =============================================================================
-// All Agent Types (26 total)
+// All Agent Types (19 total)
 // =============================================================================
 
 const ALL_AGENT_TYPES: AgentType[] = [
@@ -35,22 +35,12 @@ const ALL_AGENT_TYPES: AgentType[] = [
   'merge_resolver',
   'commit_message',
   'pr_template_filler',
-  'pr_reviewer',
-  'pr_orchestrator_parallel',
-  'pr_followup_parallel',
-  'pr_followup_extraction',
-  'pr_finding_validator',
   'analysis',
-  'batch_analysis',
-  'batch_validation',
-  'roadmap_discovery',
-  'competitor_analysis',
-  'ideation',
 ];
 
 describe('AGENT_CONFIGS', () => {
   it('should have all expected agent types configured', () => {
-    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(26);
+    expect(Object.keys(AGENT_CONFIGS).length).toBeGreaterThanOrEqual(19);
   });
 
   it('should contain all expected agent types', () => {
@@ -181,7 +171,6 @@ describe('getDefaultThinkingLevel', () => {
     ['qa_reviewer', 'high'],
     ['qa_fixer', 'medium'],
     ['spec_gatherer', 'medium'],
-    ['ideation', 'high'],
     ['insights', 'low'],
   ] as [AgentType, string][])(
     'should return %s thinking level for %s',

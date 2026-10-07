@@ -15,8 +15,7 @@ export {
   AgentManager,
   AgentState,
   AgentEvents,
-  AgentProcessManager,
-  AgentQueueManager
+  AgentProcessManager
 } from './agent';
 
 export type {
@@ -24,9 +23,6 @@ export type {
   ExecutionProgressData,
   ProcessType,
   AgentManagerEvents,
-  IdeationConfig,
   TaskExecutionOptions,
-  SpecCreationMetadata,
-  IdeationProgressData,
-  RoadmapProgressData
+  SpecCreationMetadata
 } from './agent';

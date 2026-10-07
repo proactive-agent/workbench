@@ -280,8 +280,7 @@ export class AgentProcessManager {
       );
       if (wasHandled) return true;
 
-      const source = processType === 'spec-creation' ? 'roadmap' : 'task';
-      const rateLimitInfo = createSDKRateLimitInfo(source, rateLimitDetection, { taskId });
+      const rateLimitInfo = createSDKRateLimitInfo('task', rateLimitDetection, { taskId });
       console.log('[AgentProcess] Emitting sdk-rate-limit event (manual):', rateLimitInfo);
       this.emitter.emit('sdk-rate-limit', rateLimitInfo);
       return true;
@@ -329,8 +328,7 @@ export class AgentProcessManager {
     console.log('[AgentProcess] AUTO-SWAP: Switching from', currentProfileId, 'to', bestProfile.id);
     profileManager.setActiveProfile(bestProfile.id);
 
-    const source = processType === 'spec-creation' ? 'roadmap' : 'task';
-    const rateLimitInfo = createSDKRateLimitInfo(source, rateLimitDetection, { taskId });
+    const rateLimitInfo = createSDKRateLimitInfo('task', rateLimitDetection, { taskId });
     rateLimitInfo.wasAutoSwapped = true;
     rateLimitInfo.swappedToProfile = { id: bestProfile.id, name: bestProfile.name };
     rateLimitInfo.swapReason = 'reactive';

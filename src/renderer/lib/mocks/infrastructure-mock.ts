@@ -106,47 +106,6 @@ export const infrastructureMock = {
      };
    },
 
-  // Ideation Operations
-  getIdeation: async () => ({
-    success: true,
-    data: null
-  }),
-
-  generateIdeation: () => {
-    console.warn('[Browser Mock] generateIdeation called');
-  },
-
-  refreshIdeation: () => {
-    console.warn('[Browser Mock] refreshIdeation called');
-  },
-
-  stopIdeation: async () => ({ success: true }),
-
-  updateIdeaStatus: async () => ({ success: true }),
-
-  convertIdeaToTask: async () => ({
-    success: false,
-    error: 'Not available in browser mock'
-  }),
-
-  dismissIdea: async () => ({ success: true }),
-
-  dismissAllIdeas: async () => ({ success: true }),
-
-  archiveIdea: async () => ({ success: true }),
-
-  deleteIdea: async () => ({ success: true }),
-
-  deleteMultipleIdeas: async () => ({ success: true }),
-
-  onIdeationProgress: () => () => {},
-  onIdeationLog: () => () => {},
-  onIdeationComplete: () => () => {},
-  onIdeationError: () => () => {},
-  onIdeationStopped: () => () => {},
-  onIdeationTypeComplete: () => () => {},
-  onIdeationTypeFailed: () => () => {},
-
   // Shell Operations
   openExternal: async (url: string) => {
     console.warn('[Browser Mock] openExternal:', url);

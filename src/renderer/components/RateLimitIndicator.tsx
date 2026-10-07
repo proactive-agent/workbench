@@ -80,10 +80,7 @@ export function RateLimitIndicator() {
 
 function getSourceLabel(source: string, t: (key: string) => string): string {
   switch (source) {
-    case 'changelog': return t('rateLimit.sources.changelog');
     case 'task': return t('rateLimit.sources.task');
-    case 'roadmap': return t('rateLimit.sources.roadmap');
-    case 'ideation': return t('rateLimit.sources.ideation');
     case 'title-generator': return t('rateLimit.sources.titleGenerator');
     default: return t('rateLimit.sources.claude');
   }

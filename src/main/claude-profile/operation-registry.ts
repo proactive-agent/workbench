@@ -9,11 +9,8 @@
  *
  * Operations include:
  * - Autonomous tasks (spec creation, task execution)
- * - GitHub PR reviews
  * - GitLab MR reviews
  * - Insights analysis
- * - Roadmap generation
- * - Changelog generation
  * - Any other Claude SDK subprocess
  */
 
@@ -25,12 +22,8 @@ import { EventEmitter } from 'events';
 export type OperationType =
   | 'spec-creation'
   | 'task-execution'
-  | 'pr-review'
   | 'mr-review'
   | 'insights'
-  | 'roadmap'
-  | 'changelog'
-  | 'ideation'
   | 'triage'
   | 'other';
 

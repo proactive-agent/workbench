@@ -223,9 +223,7 @@ function ensureGitignoreEntries(projectPath: string, entries: string[]): void {
  */
 const DATA_DIRECTORIES = [
   'specs',
-  'ideation',
-  'insights',
-  'roadmap'
+  'insights'
 ];
 
 /**
@@ -267,7 +265,7 @@ export function isInitialized(projectPath: string): boolean {
 /**
  * Initialize auto-claude data directory in a project.
  *
- * Creates .auto-claude/ with data directories (specs, ideation, insights, roadmap).
+ * Creates .auto-claude/ with data directories (specs, insights).
  * The framework code runs from the source repo - only data is stored here.
  *
  * Requires:

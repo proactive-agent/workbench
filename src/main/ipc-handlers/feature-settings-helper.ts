@@ -2,7 +2,7 @@
  * Feature Settings Helper
  *
  * Reads per-provider feature settings (model + thinking level) for feature runners
- * like Insights, Ideation, and Roadmap.
+ * like Insights.
  *
  * Resolution order:
  * 1. providerAgentConfig[activeProvider].featureModels[featureKey]

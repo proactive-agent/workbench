@@ -20,7 +20,7 @@ interface FeatureModelSettingsProps {
  * Per-provider feature model configuration component.
  *
  * Renders a model selector and a thinking-level selector for each feature
- * (Insights, Ideation, Roadmap, GitHub Issues, GitHub PRs, Utility).
+ * (Insights, PR/MR review, Utility, Naming).
  *
  * Reads from `settings.providerAgentConfig[provider].featureModels` with
  * fallback to `settings.featureModels` then `DEFAULT_FEATURE_MODELS`.
@@ -32,10 +32,10 @@ export function FeatureModelSettings({ provider }: FeatureModelSettingsProps) {
 
   // For Ollama, default to empty strings — Anthropic model shorthands are meaningless
   const providerFeatureDefaults: FeatureModelConfig = provider === 'ollama'
-    ? { insights: '', ideation: '', roadmap: '', githubIssues: '', githubPrs: '', utility: '', naming: '' }
+    ? { insights: '', githubPrs: '', utility: '', naming: '' }
     : DEFAULT_FEATURE_MODELS;
   const providerThinkingDefaults = provider === 'ollama'
-    ? { insights: 'low' as ThinkingLevel, ideation: 'low' as ThinkingLevel, roadmap: 'low' as ThinkingLevel, githubIssues: 'low' as ThinkingLevel, githubPrs: 'low' as ThinkingLevel, utility: 'low' as ThinkingLevel, naming: 'low' as ThinkingLevel }
+    ? { insights: 'low' as ThinkingLevel, githubPrs: 'low' as ThinkingLevel, utility: 'low' as ThinkingLevel, naming: 'low' as ThinkingLevel }
     : DEFAULT_FEATURE_THINKING;
 
   const featureModels: FeatureModelConfig =

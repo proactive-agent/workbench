@@ -217,30 +217,6 @@ describe('AgentTools - Agent Profile Resolution', () => {
       expect(insightsAgent.model).toBe('sonnet');
       expect(insightsAgent.thinking).toBe('medium');
 
-      // Ideation feature agent (defaults to opus)
-      const ideationAgent = resolveAgentSettings(
-        { type: 'feature', feature: 'ideation' },
-        resolvedSettings
-      );
-      expect(ideationAgent.model).toBe('opus');
-      expect(ideationAgent.thinking).toBe('high');
-
-      // Roadmap feature agent (defaults to opus)
-      const roadmapAgent = resolveAgentSettings(
-        { type: 'feature', feature: 'roadmap' },
-        resolvedSettings
-      );
-      expect(roadmapAgent.model).toBe('opus');
-      expect(roadmapAgent.thinking).toBe('high');
-
-      // GitHub Issues feature agent (defaults to opus)
-      const githubIssuesAgent = resolveAgentSettings(
-        { type: 'feature', feature: 'githubIssues' },
-        resolvedSettings
-      );
-      expect(githubIssuesAgent.model).toBe('opus');
-      expect(githubIssuesAgent.thinking).toBe('medium');
-
       // GitHub PRs feature agent (defaults to opus)
       const githubPrsAgent = resolveAgentSettings(
         { type: 'feature', feature: 'githubPrs' },

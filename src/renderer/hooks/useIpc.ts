@@ -1,12 +1,11 @@
 import { useEffect } from 'react';
 import { unstable_batchedUpdates } from 'react-dom';
 import { useTaskStore } from '../stores/task-store';
-import { useRoadmapStore } from '../stores/roadmap-store';
 import { useRateLimitStore } from '../stores/rate-limit-store';
 import { useAuthFailureStore } from '../stores/auth-failure-store';
 import { useProjectStore } from '../stores/project-store';
 import { setupInsightsListeners } from '../stores/insights-store';
-import type { ImplementationPlan, TaskStatus, RoadmapGenerationStatus, Roadmap, ExecutionProgress, RateLimitInfo, SDKRateLimitInfo, AuthFailureInfo } from '../../shared/types';
+import type { ImplementationPlan, TaskStatus, ExecutionProgress, RateLimitInfo, SDKRateLimitInfo, AuthFailureInfo } from '../../shared/types';
 
 /** Maximum log entries to buffer in the batch queue between flushes (OOM prevention) */
 const MAX_BATCH_QUEUE_LOGS = 100;
@@ -220,19 +219,6 @@ export function useIpcListeners(): void {
         // Filter by project to prevent multi-project interference
         if (!isTaskForCurrentProject(projectId)) return;
         queueUpdate(taskId, { status, reviewReason });
-
-        // Sync roadmap feature when task completes
-        if (status === 'done' || status === 'pr_created') {
-          useRoadmapStore.getState().markFeatureDoneBySpecId(taskId);
-          // Re-read state after mutation to get updated roadmap
-          const rm = useRoadmapStore.getState().roadmap;
-          const currentProjectId = useProjectStore.getState().activeProjectId || useProjectStore.getState().selectedProjectId;
-          if (rm && currentProjectId) {
-            window.electronAPI.saveRoadmap(currentProjectId, rm).catch((err) => {
-              console.error('[useIpc] Failed to persist roadmap after task completion:', err);
-            });
-          }
-        }
       }
     );
 
@@ -256,97 +242,6 @@ export function useIpcListeners(): void {
       }
     );
 
-    // Roadmap event listeners
-    // Helper to check if event is for the currently viewed project
-    const isCurrentProject = (eventProjectId: string): boolean => {
-      const currentProjectId = useRoadmapStore.getState().currentProjectId;
-      return currentProjectId === eventProjectId;
-    };
-
-    const cleanupRoadmapProgress = window.electronAPI.onRoadmapProgress(
-      (projectId: string, status: RoadmapGenerationStatus) => {
-        // Debug logging
-        if (window.DEBUG) {
-          console.warn('[Roadmap] Progress update:', {
-            projectId,
-            currentProjectId: useRoadmapStore.getState().currentProjectId,
-            phase: status.phase,
-            progress: status.progress,
-            message: status.message
-          });
-        }
-        // Only update if this is for the currently viewed project
-        if (isCurrentProject(projectId)) {
-          useRoadmapStore.getState().setGenerationStatus(status);
-        }
-      }
-    );
-
-    const cleanupRoadmapComplete = window.electronAPI.onRoadmapComplete(
-      (projectId: string, roadmap: Roadmap) => {
-        // Debug logging
-        if (window.DEBUG) {
-          console.warn('[Roadmap] Generation complete:', {
-            projectId,
-            currentProjectId: useRoadmapStore.getState().currentProjectId,
-            featuresCount: roadmap.features?.length || 0,
-            phasesCount: roadmap.phases?.length || 0
-          });
-        }
-        // Only update if this is for the currently viewed project
-        if (isCurrentProject(projectId)) {
-          useRoadmapStore.getState().setRoadmap(roadmap);
-          useRoadmapStore.getState().setGenerationStatus({
-            phase: 'complete',
-            progress: 100,
-            message: 'Roadmap ready'
-          });
-        }
-      }
-    );
-
-    const cleanupRoadmapError = window.electronAPI.onRoadmapError(
-      (projectId: string, error: string) => {
-        // Debug logging
-        if (window.DEBUG) {
-          console.error('[Roadmap] Error received:', {
-            projectId,
-            currentProjectId: useRoadmapStore.getState().currentProjectId,
-            error
-          });
-        }
-        // Only update if this is for the currently viewed project
-        if (isCurrentProject(projectId)) {
-          useRoadmapStore.getState().setGenerationStatus({
-            phase: 'error',
-            progress: 0,
-            message: 'Generation failed',
-            error
-          });
-        }
-      }
-    );
-
-    const cleanupRoadmapStopped = window.electronAPI.onRoadmapStopped(
-      (projectId: string) => {
-        // Debug logging
-        if (window.DEBUG) {
-          console.warn('[Roadmap] Generation stopped:', {
-            projectId,
-            currentProjectId: useRoadmapStore.getState().currentProjectId
-          });
-        }
-        // Only update if this is for the currently viewed project
-        if (isCurrentProject(projectId)) {
-          useRoadmapStore.getState().setGenerationStatus({
-            phase: 'idle',
-            progress: 0,
-            message: 'Generation stopped'
-          });
-        }
-      }
-    );
-
     // Terminal rate limit listener
     const showRateLimitModal = useRateLimitStore.getState().showRateLimitModal;
     const cleanupRateLimit = window.electronAPI.onTerminalRateLimit(
@@ -361,7 +256,7 @@ export function useIpcListeners(): void {
       }
     );
 
-    // SDK rate limit listener (for changelog, tasks, roadmap, ideation)
+    // SDK rate limit listener (for tasks and other agent operations)
     const showSDKRateLimitModal = useRateLimitStore.getState().showSDKRateLimitModal;
     const cleanupSDKRateLimit = window.electronAPI.onSDKRateLimit(
       (info: SDKRateLimitInfo) => {
@@ -406,10 +301,6 @@ export function useIpcListeners(): void {
       cleanupStatus();
       cleanupRateLimitHold();
       cleanupExecutionProgress();
-      cleanupRoadmapProgress();
-      cleanupRoadmapComplete();
-      cleanupRoadmapError();
-      cleanupRoadmapStopped();
       cleanupRateLimit();
       cleanupSDKRateLimit();
       cleanupAuthFailure();

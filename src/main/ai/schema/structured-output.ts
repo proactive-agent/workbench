@@ -7,7 +7,7 @@
  * Two approaches for different scenarios:
  *
  * 1. **Post-session file validation** — For agents that write JSON files via tools
- *    (planner, roadmap, etc.). Read the file, validate with Zod, retry with
+ *    (planner, QA, etc.). Read the file, validate with Zod, retry with
  *    error feedback if invalid.
  *
  * 2. **Inline Output.object()** — For agents that return structured text

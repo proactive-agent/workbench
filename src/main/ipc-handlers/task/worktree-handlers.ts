@@ -13,7 +13,6 @@ import { createMergeResolverFn } from '../../ai/runners/merge-resolver';
 import { createPR } from '../../ai/runners/github/pr-creator';
 import type { ModelShorthand } from '../../ai/config/types';
 import { findTaskAndProject } from './shared';
-import { updateRoadmapFeatureOutcome } from '../../utils/roadmap-utils';
 import { getToolPath } from '../../cli-tool-manager';
 import { promisify } from 'util';
 import {
@@ -2594,81 +2593,6 @@ export function registerWorktreeHandlers(
   const execFileAsync = promisify(execFile);
 
   /**
-   * Discard an orphaned worktree by spec name (no task association required)
-   * Used when the worktree exists but the task is missing or git state is corrupted
-   */
-  ipcMain.handle(
-    IPC_CHANNELS.TASK_WORKTREE_DISCARD_ORPHAN,
-    async (_, projectId: string, specName: string): Promise<IPCResult<WorktreeDiscardResult>> => {
-      try {
-        // Validate inputs
-        if (!projectId || typeof projectId !== 'string') {
-          console.error('discardOrphanedWorktree: Invalid projectId:', projectId);
-          return { success: false, error: 'Invalid projectId' };
-        }
-        if (!specName || typeof specName !== 'string') {
-          console.error('discardOrphanedWorktree: Invalid specName:', specName);
-          return { success: false, error: 'Invalid specName' };
-        }
-
-        const project = projectStore.getProject(projectId);
-        if (!project) {
-          return { success: false, error: 'Project not found' };
-        }
-
-        // Validate project.path
-        if (!project.path || typeof project.path !== 'string') {
-          console.error('discardOrphanedWorktree: Project path is invalid:', project.path);
-          return { success: false, error: 'Project path is invalid' };
-        }
-
-        // Find worktree at .auto-claude/worktrees/tasks/{spec-name}/
-        const worktreePath = findTaskWorktree(project.path, specName);
-
-        if (!worktreePath) {
-          return {
-            success: true,
-            data: {
-              success: true,
-              message: 'No worktree to discard'
-            }
-          };
-        }
-
-        // Use cleanupWorktree for robust, cross-platform worktree deletion
-        const cleanupResult = await cleanupWorktree({
-          worktreePath,
-          projectPath: project.path,
-          specId: specName,
-          logPrefix: '[ORPHAN_CLEANUP]',
-          deleteBranch: true
-        });
-
-        if (!cleanupResult.success) {
-          return {
-            success: false,
-            error: cleanupResult.warnings.join(', ') || 'Failed to cleanup orphaned worktree'
-          };
-        }
-
-        return {
-          success: true,
-          data: {
-            success: true,
-            message: 'Orphaned worktree deleted successfully'
-          }
-        };
-      } catch (error) {
-        console.error('Failed to discard orphaned worktree:', error);
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to discard orphaned worktree'
-        };
-      }
-    }
-  );
-
-  /**
    * List all spec worktrees for a project
    * Per-spec architecture: Each spec has its own worktree at .auto-claude/worktrees/tasks/{spec-name}/
    */
@@ -3072,14 +2996,6 @@ export function registerWorktreeHandlers(
             task.specId,
             debug
           );
-
-          // Update linked roadmap feature
-          if (project.path && task.specId) {
-            const roadmapFile = path.join(project.path, AUTO_BUILD_PATHS.ROADMAP_DIR, AUTO_BUILD_PATHS.ROADMAP_FILE);
-            updateRoadmapFeatureOutcome(roadmapFile, [task.specId], 'completed', '[PR_CREATE]').catch((err) => {
-              debug('Failed to update roadmap feature after PR creation:', err);
-            });
-          }
         } else if (result.alreadyExists) {
           debug('PR already exists, not updating task status');
         }

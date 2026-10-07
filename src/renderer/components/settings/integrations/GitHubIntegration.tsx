@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Github, RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch } from 'lucide-react';
+import { RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch } from 'lucide-react';
 import { Input } from '../../ui/input';
 import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
@@ -349,8 +349,6 @@ export function GitHubIntegration({
             />
           )}
 
-          {gitHubConnectionStatus?.connected && <IssuesAvailableInfo />}
-
           <Separator />
 
           {/* Default Branch Selector */}
@@ -640,22 +638,6 @@ function ConnectionStatus({ isChecking, connectionStatus }: ConnectionStatusProp
         ) : (
           <AlertCircle className="h-4 w-4 text-warning" />
         )}
-      </div>
-    </div>
-  );
-}
-
-function IssuesAvailableInfo() {
-  return (
-    <div className="rounded-lg border border-info/30 bg-info/5 p-3">
-      <div className="flex items-start gap-3">
-        <Github className="h-5 w-5 text-info mt-0.5" />
-        <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">Issues Available</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            Access GitHub Issues from the sidebar to view, investigate, and create tasks from issues.
-          </p>
-        </div>
       </div>
     </div>
   );

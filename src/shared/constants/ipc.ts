@@ -42,7 +42,6 @@ export const IPC_CHANNELS = {
   TASK_WORKTREE_MERGE: 'task:worktreeMerge',
   TASK_WORKTREE_MERGE_PREVIEW: 'task:worktreeMergePreview',  // Preview merge conflicts before merging
   TASK_WORKTREE_DISCARD: 'task:worktreeDiscard',
-  TASK_WORKTREE_DISCARD_ORPHAN: 'task:worktreeDiscardOrphan',  // Delete orphaned worktree by spec name (no task association)
   TASK_WORKTREE_CREATE_PR: 'task:worktreeCreatePR',
   TASK_WORKTREE_OPEN_IN_IDE: 'task:worktreeOpenInIDE',
   TASK_WORKTREE_OPEN_IN_TERMINAL: 'task:worktreeOpenInTerminal',
@@ -190,29 +189,6 @@ export const IPC_CHANNELS = {
   SHELL_OPEN_EXTERNAL: 'shell:openExternal',
   SHELL_OPEN_TERMINAL: 'shell:openTerminal',
 
-  // Roadmap operations
-  ROADMAP_GET: 'roadmap:get',
-  ROADMAP_GET_STATUS: 'roadmap:getStatus',
-  ROADMAP_SAVE: 'roadmap:save',
-  ROADMAP_GENERATE: 'roadmap:generate',
-  ROADMAP_GENERATE_WITH_COMPETITOR: 'roadmap:generateWithCompetitor',
-  ROADMAP_REFRESH: 'roadmap:refresh',
-  ROADMAP_STOP: 'roadmap:stop',
-  ROADMAP_UPDATE_FEATURE: 'roadmap:updateFeature',
-  ROADMAP_CONVERT_TO_SPEC: 'roadmap:convertToSpec',
-  COMPETITOR_ANALYSIS_SAVE: 'roadmap:competitorAnalysisSave',
-
-  // Roadmap events (main -> renderer)
-  ROADMAP_PROGRESS: 'roadmap:progress',
-  ROADMAP_COMPLETE: 'roadmap:complete',
-  ROADMAP_ERROR: 'roadmap:error',
-  ROADMAP_STOPPED: 'roadmap:stopped',
-
-  // Roadmap progress persistence (per-project state)
-  ROADMAP_PROGRESS_SAVE: 'roadmap:progressSave',
-  ROADMAP_PROGRESS_LOAD: 'roadmap:progressLoad',
-  ROADMAP_PROGRESS_CLEAR: 'roadmap:progressClear',
-
   // Context operations
   CONTEXT_GET: 'context:get',
   CONTEXT_REFRESH_INDEX: 'context:refreshIndex',
@@ -228,28 +204,6 @@ export const IPC_CHANNELS = {
   ENV_GET: 'env:get',
   ENV_UPDATE: 'env:update',
 
-  // Ideation operations
-  IDEATION_GET: 'ideation:get',
-  IDEATION_GENERATE: 'ideation:generate',
-  IDEATION_REFRESH: 'ideation:refresh',
-  IDEATION_STOP: 'ideation:stop',
-  IDEATION_UPDATE_IDEA: 'ideation:updateIdea',
-  IDEATION_CONVERT_TO_TASK: 'ideation:convertToTask',
-  IDEATION_DISMISS: 'ideation:dismiss',
-  IDEATION_DISMISS_ALL: 'ideation:dismissAll',
-  IDEATION_ARCHIVE: 'ideation:archive',
-  IDEATION_DELETE: 'ideation:delete',
-  IDEATION_DELETE_MULTIPLE: 'ideation:deleteMultiple',
-
-  // Ideation events (main -> renderer)
-  IDEATION_PROGRESS: 'ideation:progress',
-  IDEATION_LOG: 'ideation:log',
-  IDEATION_COMPLETE: 'ideation:complete',
-  IDEATION_ERROR: 'ideation:error',
-  IDEATION_STOPPED: 'ideation:stopped',
-  IDEATION_TYPE_COMPLETE: 'ideation:typeComplete',
-  IDEATION_TYPE_FAILED: 'ideation:typeFailed',
-
   // Linear integration
   LINEAR_GET_TEAMS: 'linear:getTeams',
   LINEAR_GET_PROJECTS: 'linear:getProjects',
@@ -259,13 +213,7 @@ export const IPC_CHANNELS = {
 
   // GitHub integration
   GITHUB_GET_REPOSITORIES: 'github:getRepositories',
-  GITHUB_GET_ISSUES: 'github:getIssues',
-  GITHUB_GET_ISSUE: 'github:getIssue',
-  GITHUB_GET_ISSUE_COMMENTS: 'github:getIssueComments',
   GITHUB_CHECK_CONNECTION: 'github:checkConnection',
-  GITHUB_INVESTIGATE_ISSUE: 'github:investigateIssue',
-  GITHUB_IMPORT_ISSUES: 'github:importIssues',
-  GITHUB_CREATE_RELEASE: 'github:createRelease',
 
   // GitHub OAuth (gh CLI authentication)
   GITHUB_CHECK_CLI: 'github:checkCli',
@@ -284,12 +232,7 @@ export const IPC_CHANNELS = {
   GITHUB_AUTH_DEVICE_CODE: 'github:authDeviceCode',
   GITHUB_AUTH_CHANGED: 'github:authChanged',  // Event: GitHub auth state changed (account swap)
 
-  // GitHub events (main -> renderer)
-  GITHUB_INVESTIGATION_PROGRESS: 'github:investigationProgress',
-  GITHUB_INVESTIGATION_COMPLETE: 'github:investigationComplete',
-  GITHUB_INVESTIGATION_ERROR: 'github:investigationError',
-
-// GitLab integration
+  // GitLab integration
   GITLAB_GET_PROJECTS: 'gitlab:getProjects',
   GITLAB_GET_ISSUES: 'gitlab:getIssues',
   GITLAB_GET_ISSUE: 'gitlab:getIssue',
@@ -380,89 +323,6 @@ export const IPC_CHANNELS = {
   GITLAB_TRIAGE_COMPLETE: 'gitlab:triage:complete',
   GITLAB_TRIAGE_ERROR: 'gitlab:triage:error',
 
-  // GitHub Auto-Fix operations
-  GITHUB_AUTOFIX_START: 'github:autofix:start',
-  GITHUB_AUTOFIX_STOP: 'github:autofix:stop',
-  GITHUB_AUTOFIX_GET_QUEUE: 'github:autofix:getQueue',
-  GITHUB_AUTOFIX_CHECK_LABELS: 'github:autofix:checkLabels',
-  GITHUB_AUTOFIX_CHECK_NEW: 'github:autofix:checkNew',
-  GITHUB_AUTOFIX_GET_CONFIG: 'github:autofix:getConfig',
-  GITHUB_AUTOFIX_SAVE_CONFIG: 'github:autofix:saveConfig',
-  GITHUB_AUTOFIX_BATCH: 'github:autofix:batch',
-  GITHUB_AUTOFIX_GET_BATCHES: 'github:autofix:getBatches',
-
-  // GitHub Auto-Fix events (main -> renderer)
-  GITHUB_AUTOFIX_PROGRESS: 'github:autofix:progress',
-  GITHUB_AUTOFIX_COMPLETE: 'github:autofix:complete',
-  GITHUB_AUTOFIX_ERROR: 'github:autofix:error',
-  GITHUB_AUTOFIX_BATCH_PROGRESS: 'github:autofix:batchProgress',
-  GITHUB_AUTOFIX_BATCH_COMPLETE: 'github:autofix:batchComplete',
-  GITHUB_AUTOFIX_BATCH_ERROR: 'github:autofix:batchError',
-
-  // GitHub Issue Analysis Preview (proactive batch workflow)
-  GITHUB_AUTOFIX_ANALYZE_PREVIEW: 'github:autofix:analyzePreview',
-  GITHUB_AUTOFIX_ANALYZE_PREVIEW_PROGRESS: 'github:autofix:analyzePreviewProgress',
-  GITHUB_AUTOFIX_ANALYZE_PREVIEW_COMPLETE: 'github:autofix:analyzePreviewComplete',
-  GITHUB_AUTOFIX_ANALYZE_PREVIEW_ERROR: 'github:autofix:analyzePreviewError',
-  GITHUB_AUTOFIX_APPROVE_BATCHES: 'github:autofix:approveBatches',
-
-  // GitHub PR Review operations
-  GITHUB_PR_LIST: 'github:pr:list',
-  GITHUB_PR_LIST_MORE: 'github:pr:listMore',  // Load more PRs (pagination)
-  GITHUB_PR_GET: 'github:pr:get',
-  GITHUB_PR_GET_DIFF: 'github:pr:getDiff',
-  GITHUB_PR_REVIEW: 'github:pr:review',
-  GITHUB_PR_REVIEW_CANCEL: 'github:pr:reviewCancel',
-  GITHUB_PR_GET_REVIEW: 'github:pr:getReview',
-  GITHUB_PR_GET_REVIEWS_BATCH: 'github:pr:getReviewsBatch',  // Batch load reviews for multiple PRs
-  GITHUB_PR_POST_REVIEW: 'github:pr:postReview',
-  GITHUB_PR_DELETE_REVIEW: 'github:pr:deleteReview',
-  GITHUB_PR_MERGE: 'github:pr:merge',
-  GITHUB_PR_ASSIGN: 'github:pr:assign',
-  GITHUB_PR_POST_COMMENT: 'github:pr:postComment',
-  GITHUB_PR_FIX: 'github:pr:fix',
-  GITHUB_PR_FOLLOWUP_REVIEW: 'github:pr:followupReview',
-  GITHUB_PR_CHECK_NEW_COMMITS: 'github:pr:checkNewCommits',
-  GITHUB_PR_CHECK_MERGE_READINESS: 'github:pr:checkMergeReadiness',
-  GITHUB_PR_MARK_REVIEW_POSTED: 'github:pr:markReviewPosted',
-  GITHUB_PR_UPDATE_BRANCH: 'github:pr:updateBranch',
-  GITHUB_PR_NOTIFY_EXTERNAL_REVIEW_COMPLETE: 'github:pr:notifyExternalReviewComplete',
-
-  // GitHub PR Review events (main -> renderer)
-  GITHUB_PR_REVIEW_PROGRESS: 'github:pr:reviewProgress',
-  GITHUB_PR_REVIEW_COMPLETE: 'github:pr:reviewComplete',
-  GITHUB_PR_REVIEW_ERROR: 'github:pr:reviewError',
-  GITHUB_PR_REVIEW_STATE_CHANGE: 'github:pr:reviewStateChange',
-  GITHUB_PR_LOGS_UPDATED: 'github:pr:logsUpdated',
-
-  // GitHub PR Logs (for viewing AI review logs)
-  GITHUB_PR_GET_LOGS: 'github:pr:getLogs',
-
-  // GitHub PR Status Polling (production system checks)
-  GITHUB_PR_STATUS_POLL_START: 'github:pr:statusPollStart',   // Start polling PR status
-  GITHUB_PR_STATUS_POLL_STOP: 'github:pr:statusPollStop',     // Stop polling PR status
-  GITHUB_PR_STATUS_UPDATE: 'github:pr:statusUpdate',          // Event: PR status updated (main -> renderer)
-
-  // GitHub PR Memory operations (saves review insights to memory layer)
-  GITHUB_PR_MEMORY_GET: 'github:pr:memory:get',        // Get PR review memories
-  GITHUB_PR_MEMORY_SEARCH: 'github:pr:memory:search',  // Search PR review memories
-
-  // GitHub Workflow Approval (for fork PRs)
-  GITHUB_WORKFLOWS_AWAITING_APPROVAL: 'github:workflows:awaitingApproval',
-  GITHUB_WORKFLOW_APPROVE: 'github:workflow:approve',
-
-  // GitHub Issue Triage operations
-  GITHUB_TRIAGE_RUN: 'github:triage:run',
-  GITHUB_TRIAGE_GET_RESULTS: 'github:triage:getResults',
-  GITHUB_TRIAGE_APPLY_LABELS: 'github:triage:applyLabels',
-  GITHUB_TRIAGE_GET_CONFIG: 'github:triage:getConfig',
-  GITHUB_TRIAGE_SAVE_CONFIG: 'github:triage:saveConfig',
-
-  // GitHub Issue Triage events (main -> renderer)
-  GITHUB_TRIAGE_PROGRESS: 'github:triage:progress',
-  GITHUB_TRIAGE_COMPLETE: 'github:triage:complete',
-  GITHUB_TRIAGE_ERROR: 'github:triage:error',
-
   // Ollama model detection and management
   OLLAMA_CHECK_STATUS: 'ollama:checkStatus',
   OLLAMA_CHECK_INSTALLED: 'ollama:checkInstalled',
@@ -471,27 +331,6 @@ export const IPC_CHANNELS = {
   OLLAMA_LIST_EMBEDDING_MODELS: 'ollama:listEmbeddingModels',
   OLLAMA_PULL_MODEL: 'ollama:pullModel',
   OLLAMA_PULL_PROGRESS: 'ollama:pullProgress',
-
-  // Changelog operations
-  CHANGELOG_GET_DONE_TASKS: 'changelog:getDoneTasks',
-  CHANGELOG_LOAD_TASK_SPECS: 'changelog:loadTaskSpecs',
-  CHANGELOG_GENERATE: 'changelog:generate',
-  CHANGELOG_SAVE: 'changelog:save',
-  CHANGELOG_READ_EXISTING: 'changelog:readExisting',
-  CHANGELOG_SUGGEST_VERSION: 'changelog:suggestVersion',
-  CHANGELOG_SUGGEST_VERSION_FROM_COMMITS: 'changelog:suggestVersionFromCommits',
-
-  // Changelog git operations (for git-based changelog generation)
-  CHANGELOG_GET_BRANCHES: 'changelog:getBranches',
-  CHANGELOG_GET_TAGS: 'changelog:getTags',
-  CHANGELOG_GET_COMMITS_PREVIEW: 'changelog:getCommitsPreview',
-  CHANGELOG_SAVE_IMAGE: 'changelog:saveImage',
-  CHANGELOG_READ_LOCAL_IMAGE: 'changelog:readLocalImage',
-
-  // Changelog events (main -> renderer)
-  CHANGELOG_GENERATION_PROGRESS: 'changelog:generationProgress',
-  CHANGELOG_GENERATION_COMPLETE: 'changelog:generationComplete',
-  CHANGELOG_GENERATION_ERROR: 'changelog:generationError',
 
   // Insights operations
   INSIGHTS_GET_SESSION: 'insights:getSession',
@@ -546,15 +385,6 @@ export const IPC_CHANNELS = {
   APP_UPDATE_ERROR: 'app-update:error',
   APP_UPDATE_STABLE_DOWNGRADE: 'app-update:stable-downgrade',  // Stable version available for downgrade from beta
   APP_UPDATE_READONLY_VOLUME: 'app-update:readonly-volume',  // App running from read-only volume (DMG), needs to be moved
-
-  // Release operations
-  RELEASE_SUGGEST_VERSION: 'release:suggestVersion',
-  RELEASE_CREATE: 'release:create',
-  RELEASE_PREFLIGHT: 'release:preflight',
-  RELEASE_GET_VERSIONS: 'release:getVersions',
-
-  // Release events (main -> renderer)
-  RELEASE_PROGRESS: 'release:progress',
 
   // Debug operations
   DEBUG_GET_INFO: 'debug:getInfo',

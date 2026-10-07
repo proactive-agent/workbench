@@ -76,31 +76,6 @@ import type {
 import type { AppSettings } from './settings';
 import type { AppUpdateInfo, AppUpdateProgress, AppUpdateAvailableEvent, AppUpdateDownloadedEvent, AppUpdateErrorEvent } from './app-update';
 import type {
-  ChangelogTask,
-  TaskSpecContent,
-  ChangelogGenerationRequest,
-  ChangelogGenerationResult,
-  ChangelogSaveRequest,
-  ChangelogSaveResult,
-  ChangelogGenerationProgress,
-  ExistingChangelog,
-  GitBranchInfo,
-  GitTagInfo,
-  GitCommit,
-  GitHistoryOptions,
-  BranchDiffOptions,
-  ReleaseableVersion,
-  ReleasePreflightStatus,
-  CreateReleaseRequest,
-  CreateReleaseResult,
-  ReleaseProgress
-} from './changelog';
-import type {
-  IdeationSession,
-  IdeationConfig,
-  IdeationStatus,
-  IdeationGenerationStatus,
-  Idea,
   InsightsSession,
   InsightsSessionSummary,
   InsightsChatStatus,
@@ -108,24 +83,13 @@ import type {
   InsightsModelConfig
 } from './insights';
 import type {
-  CompetitorAnalysis,
-  Roadmap,
-  RoadmapFeatureStatus,
-  RoadmapGenerationStatus,
-  PersistedRoadmapProgress
-} from './roadmap';
-import type {
   LinearTeam,
   LinearProject,
   LinearIssue,
   LinearImportResult,
   LinearSyncStatus,
   GitHubRepository,
-  GitHubIssue,
   GitHubSyncStatus,
-  GitHubImportResult,
-  GitHubInvestigationResult,
-  GitHubInvestigationStatus,
   GitLabProject,
   GitLabIssue,
   GitLabMergeRequest,
@@ -222,7 +186,6 @@ export interface ElectronAPI {
   mergeWorktreePreview: (taskId: string) => Promise<IPCResult<WorktreeMergeResult>>;
   createWorktreePR: (taskId: string, options?: WorktreeCreatePROptions) => Promise<IPCResult<WorktreeCreatePRResult>>;
   discardWorktree: (taskId: string, skipStatusChange?: boolean) => Promise<IPCResult<WorktreeDiscardResult>>;
-  discardOrphanedWorktree: (projectId: string, specName: string) => Promise<IPCResult<WorktreeDiscardResult>>;
   clearStagedState: (taskId: string) => Promise<IPCResult<{ cleared: boolean }>>;
   listWorktrees: (projectId: string, options?: { includeStats?: boolean }) => Promise<IPCResult<WorktreeListResult>>;
   worktreeOpenInIDE: (worktreePath: string, ide: SupportedIDE, customPath?: string) => Promise<IPCResult<{ opened: boolean }>>;
@@ -427,43 +390,6 @@ export interface ElectronAPI {
   // App info
   getAppVersion: () => Promise<string>;
 
-  // Roadmap operations
-  getRoadmap: (projectId: string) => Promise<IPCResult<Roadmap | null>>;
-  getRoadmapStatus: (projectId: string) => Promise<IPCResult<{ isRunning: boolean }>>;
-  saveRoadmap: (projectId: string, roadmap: Roadmap) => Promise<IPCResult>;
-  saveCompetitorAnalysis: (projectId: string, competitorAnalysis: CompetitorAnalysis) => Promise<IPCResult>;
-  generateRoadmap: (projectId: string, enableCompetitorAnalysis?: boolean, refreshCompetitorAnalysis?: boolean) => void;
-  refreshRoadmap: (projectId: string, enableCompetitorAnalysis?: boolean, refreshCompetitorAnalysis?: boolean) => void;
-  stopRoadmap: (projectId: string) => Promise<IPCResult>;
-  updateFeatureStatus: (
-    projectId: string,
-    featureId: string,
-    status: RoadmapFeatureStatus
-  ) => Promise<IPCResult>;
-  convertFeatureToSpec: (
-    projectId: string,
-    featureId: string
-  ) => Promise<IPCResult<Task>>;
-
-  // Roadmap progress persistence
-  saveRoadmapProgress: (projectId: string, progress: PersistedRoadmapProgress) => Promise<IPCResult>;
-  loadRoadmapProgress: (projectId: string) => Promise<IPCResult<PersistedRoadmapProgress | null>>;
-  clearRoadmapProgress: (projectId: string) => Promise<IPCResult>;
-
-  // Roadmap event listeners
-  onRoadmapProgress: (
-    callback: (projectId: string, status: RoadmapGenerationStatus) => void
-  ) => () => void;
-  onRoadmapComplete: (
-    callback: (projectId: string, roadmap: Roadmap) => void
-  ) => () => void;
-  onRoadmapError: (
-    callback: (projectId: string, error: string) => void
-  ) => () => void;
-  onRoadmapStopped: (
-    callback: (projectId: string) => void
-  ) => () => void;
-
   // Context operations
   getProjectContext: (projectId: string) => Promise<IPCResult<ProjectContextData>>;
   refreshProjectIndex: (projectId: string) => Promise<IPCResult<ProjectIndex>>;
@@ -495,23 +421,7 @@ export interface ElectronAPI {
 
   // GitHub integration operations
   getGitHubRepositories: (projectId: string) => Promise<IPCResult<GitHubRepository[]>>;
-  getGitHubIssues: (
-    projectId: string,
-    state?: 'open' | 'closed' | 'all',
-    page?: number,
-    fetchAll?: boolean
-  ) => Promise<IPCResult<{ issues: GitHubIssue[]; hasMore: boolean }>>;
-  getGitHubIssue: (projectId: string, issueNumber: number) => Promise<IPCResult<GitHubIssue>>;
   checkGitHubConnection: (projectId: string) => Promise<IPCResult<GitHubSyncStatus>>;
-  investigateGitHubIssue: (projectId: string, issueNumber: number, selectedCommentIds?: number[]) => void;
-  getIssueComments: (projectId: string, issueNumber: number) => Promise<IPCResult<Array<{ id: number; body: string; user: { login: string; avatar_url?: string }; created_at: string; updated_at: string }>>>;
-  importGitHubIssues: (projectId: string, issueNumbers: number[]) => Promise<IPCResult<GitHubImportResult>>;
-  createGitHubRelease: (
-    projectId: string,
-    version: string,
-    releaseNotes: string,
-    options?: { draft?: boolean; prerelease?: boolean }
-  ) => Promise<IPCResult<{ url: string }>>;
 
   // GitHub OAuth operations (gh CLI)
   checkGitHubCli: () => Promise<IPCResult<{ installed: boolean; version?: string }>>;
@@ -542,17 +452,6 @@ export interface ElectronAPI {
   // GitHub OAuth device code event (streams device code during auth flow)
   onGitHubAuthDeviceCode: (
     callback: (data: { deviceCode: string; authUrl: string; browserOpened: boolean }) => void
-  ) => () => void;
-
-  // GitHub event listeners
-  onGitHubInvestigationProgress: (
-    callback: (projectId: string, status: GitHubInvestigationStatus) => void
-  ) => () => void;
-  onGitHubInvestigationComplete: (
-    callback: (projectId: string, result: GitHubInvestigationResult) => void
-  ) => () => void;
-  onGitHubInvestigationError: (
-    callback: (projectId: string, error: string) => void
   ) => () => void;
 
   // GitLab integration operations
@@ -652,58 +551,6 @@ export interface ElectronAPI {
     callback: (projectId: string, error: string) => void
   ) => () => void;
 
-  // Release operations
-  getReleaseableVersions: (projectId: string) => Promise<IPCResult<ReleaseableVersion[]>>;
-  runReleasePreflightCheck: (projectId: string, version: string) => Promise<IPCResult<ReleasePreflightStatus>>;
-  createRelease: (request: CreateReleaseRequest) => void;
-
-  // Release event listeners
-  onReleaseProgress: (
-    callback: (projectId: string, progress: ReleaseProgress) => void
-  ) => () => void;
-  onReleaseComplete: (
-    callback: (projectId: string, result: CreateReleaseResult) => void
-  ) => () => void;
-  onReleaseError: (
-    callback: (projectId: string, error: string) => void
-  ) => () => void;
-
-  // Ideation operations
-  getIdeation: (projectId: string) => Promise<IPCResult<IdeationSession | null>>;
-  generateIdeation: (projectId: string, config: IdeationConfig) => void;
-  refreshIdeation: (projectId: string, config: IdeationConfig) => void;
-  stopIdeation: (projectId: string) => Promise<IPCResult>;
-  updateIdeaStatus: (projectId: string, ideaId: string, status: IdeationStatus) => Promise<IPCResult>;
-  convertIdeaToTask: (projectId: string, ideaId: string) => Promise<IPCResult<Task>>;
-  dismissIdea: (projectId: string, ideaId: string) => Promise<IPCResult>;
-  dismissAllIdeas: (projectId: string) => Promise<IPCResult>;
-  archiveIdea: (projectId: string, ideaId: string) => Promise<IPCResult>;
-  deleteIdea: (projectId: string, ideaId: string) => Promise<IPCResult>;
-  deleteMultipleIdeas: (projectId: string, ideaIds: string[]) => Promise<IPCResult>;
-
-  // Ideation event listeners
-  onIdeationProgress: (
-    callback: (projectId: string, status: IdeationGenerationStatus) => void
-  ) => () => void;
-  onIdeationLog: (
-    callback: (projectId: string, log: string) => void
-  ) => () => void;
-  onIdeationComplete: (
-    callback: (projectId: string, session: IdeationSession) => void
-  ) => () => void;
-  onIdeationError: (
-    callback: (projectId: string, error: string) => void
-  ) => () => void;
-  onIdeationStopped: (
-    callback: (projectId: string) => void
-  ) => () => void;
-  onIdeationTypeComplete: (
-    callback: (projectId: string, ideationType: string, ideas: Idea[]) => void
-  ) => () => void;
-  onIdeationTypeFailed: (
-    callback: (projectId: string, ideationType: string) => void
-  ) => () => void;
-
   // Electron app update operations
   checkAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
   downloadAppUpdate: () => Promise<IPCResult>;
@@ -741,50 +588,6 @@ export interface ElectronAPI {
   // Shell operations
   openExternal: (url: string) => Promise<void>;
   openTerminal: (dirPath: string) => Promise<IPCResult<void>>;
-
-  // Changelog operations
-  getChangelogDoneTasks: (projectId: string, tasks?: Task[]) => Promise<IPCResult<ChangelogTask[]>>;
-  loadTaskSpecs: (projectId: string, taskIds: string[]) => Promise<IPCResult<TaskSpecContent[]>>;
-  generateChangelog: (request: ChangelogGenerationRequest) => Promise<IPCResult<void>>; // Async with progress events
-  saveChangelog: (request: ChangelogSaveRequest) => Promise<IPCResult<ChangelogSaveResult>>;
-  readExistingChangelog: (projectId: string) => Promise<IPCResult<ExistingChangelog>>;
-  suggestChangelogVersion: (
-    projectId: string,
-    taskIds: string[]
-  ) => Promise<IPCResult<{ version: string; reason: string }>>;
-  suggestChangelogVersionFromCommits: (
-    projectId: string,
-    commits: import('./changelog').GitCommit[]
-  ) => Promise<IPCResult<{ version: string; reason: string }>>;
-
-  // Changelog git operations (for git-based changelog generation)
-  getChangelogBranches: (projectId: string) => Promise<IPCResult<GitBranchInfo[]>>;
-  getChangelogTags: (projectId: string) => Promise<IPCResult<GitTagInfo[]>>;
-  getChangelogCommitsPreview: (
-    projectId: string,
-    options: GitHistoryOptions | BranchDiffOptions,
-    mode: 'git-history' | 'branch-diff'
-  ) => Promise<IPCResult<GitCommit[]>>;
-  saveChangelogImage: (
-    projectId: string,
-    imageData: string,
-    filename: string
-  ) => Promise<IPCResult<{ relativePath: string; url: string }>>;
-  readLocalImage: (
-    projectPath: string,
-    relativePath: string
-  ) => Promise<IPCResult<string>>;
-
-  // Changelog event listeners
-  onChangelogGenerationProgress: (
-    callback: (projectId: string, progress: ChangelogGenerationProgress) => void
-  ) => () => void;
-  onChangelogGenerationComplete: (
-    callback: (projectId: string, result: ChangelogGenerationResult) => void
-  ) => () => void;
-  onChangelogGenerationError: (
-    callback: (projectId: string, error: string) => void
-  ) => () => void;
 
   // Insights operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;

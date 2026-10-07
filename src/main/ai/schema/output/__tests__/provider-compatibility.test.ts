@@ -9,11 +9,10 @@
  * support in structured output mode. For example, OpenAI does not support
  * `propertyNames`, `patternProperties`, or `$ref`. These tests catch
  * incompatibilities at build time rather than at runtime (where they surface
- * as 400 errors that silently break entire features like PR review).
+ * as 400 errors that silently break entire features).
  *
- * Reference incident: `z.record(z.string(), z.string())` generated
- * `propertyNames` which caused OpenAI to reject the SynthesisResultOutputSchema
- * with a 400, silently breaking PR review synthesis.
+ * Reference incident: `z.record(z.string(), z.string())` generates
+ * `propertyNames`, which OpenAI rejects with a 400.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -24,15 +23,6 @@ import {
   ComplexityAssessmentOutputSchema,
   ImplementationPlanOutputSchema,
   QASignoffOutputSchema,
-  ScanResultOutputSchema,
-  ReviewFindingsOutputSchema,
-  StructuralIssuesOutputSchema,
-  AICommentTriagesOutputSchema,
-  SpecialistOutputOutputSchema,
-  SynthesisResultOutputSchema,
-  FindingValidationsOutputSchema,
-  ResolutionVerificationOutputSchema,
-  TriageResultOutputSchema,
   ExtractedInsightsOutputSchema,
 } from '../index';
 
@@ -179,15 +169,6 @@ const ALL_OUTPUT_SCHEMAS: Array<{ name: string; schema: ZodSchema }> = [
   { name: 'ComplexityAssessmentOutputSchema', schema: ComplexityAssessmentOutputSchema },
   { name: 'ImplementationPlanOutputSchema', schema: ImplementationPlanOutputSchema },
   { name: 'QASignoffOutputSchema', schema: QASignoffOutputSchema },
-  { name: 'ScanResultOutputSchema', schema: ScanResultOutputSchema },
-  { name: 'ReviewFindingsOutputSchema', schema: ReviewFindingsOutputSchema },
-  { name: 'StructuralIssuesOutputSchema', schema: StructuralIssuesOutputSchema },
-  { name: 'AICommentTriagesOutputSchema', schema: AICommentTriagesOutputSchema },
-  { name: 'SpecialistOutputOutputSchema', schema: SpecialistOutputOutputSchema },
-  { name: 'SynthesisResultOutputSchema', schema: SynthesisResultOutputSchema },
-  { name: 'FindingValidationsOutputSchema', schema: FindingValidationsOutputSchema },
-  { name: 'ResolutionVerificationOutputSchema', schema: ResolutionVerificationOutputSchema },
-  { name: 'TriageResultOutputSchema', schema: TriageResultOutputSchema },
   { name: 'ExtractedInsightsOutputSchema', schema: ExtractedInsightsOutputSchema },
 ];
 
@@ -229,13 +210,5 @@ describe('Output Schema Provider Compatibility', () => {
         expect(jsonSchema.properties).toBeDefined();
       });
     }
-  });
-
-  describe('Regression: z.record() key type must not produce propertyNames', () => {
-    it('SynthesisResultOutputSchema.removalReasons should not produce propertyNames', () => {
-      const jsonSchema = toJSONSchema(SynthesisResultOutputSchema);
-      const violations = findForbiddenKeywords(jsonSchema, ['propertyNames']);
-      expect(violations).toEqual([]);
-    });
   });
 });

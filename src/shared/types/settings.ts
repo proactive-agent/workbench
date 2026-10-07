@@ -3,7 +3,6 @@
  */
 
 import type { NotificationSettings, MemoryEmbeddingProvider } from './project';
-import type { ChangelogFormat, ChangelogAudience, ChangelogEmojiLevel } from './changelog';
 import type { ProviderAccount, BuiltinProvider } from './provider-account';
 import type { ProviderModelSpec } from '../constants/models';
 
@@ -198,10 +197,7 @@ export interface PhaseThinkingConfig {
 // Values can be Claude shorthands or concrete model IDs
 export interface FeatureModelConfig {
   insights: string;    // Insights chat feature
-  ideation: string;    // Ideation generation
-  roadmap: string;     // Roadmap generation
-  githubIssues: string; // GitHub Issues automation
-  githubPrs: string;    // GitHub PR review automation
+  githubPrs: string;    // PR/MR review automation (used by GitLab MR review)
   utility: string;      // Utility agents (commit message, merge resolver)
   naming: string;       // AI naming (task titles, terminal names)
 }
@@ -209,9 +205,6 @@ export interface FeatureModelConfig {
 // Feature-specific thinking level configuration
 export interface FeatureThinkingConfig {
   insights: ThinkingLevel;
-  ideation: ThinkingLevel;
-  roadmap: ThinkingLevel;
-  githubIssues: ThinkingLevel;
   githubPrs: ThinkingLevel;
   utility: ThinkingLevel;
   naming: ThinkingLevel;
@@ -313,13 +306,9 @@ export interface AppSettings {
   // Custom phase configuration for Auto profile (overrides defaults)
   customPhaseModels?: PhaseModelConfig;
   customPhaseThinking?: PhaseThinkingConfig;
-  // Feature-specific configuration (insights, ideation, roadmap)
+  // Feature-specific configuration (insights, PR/MR review, utility, naming)
   featureModels?: FeatureModelConfig;
   featureThinking?: FeatureThinkingConfig;
-  // Changelog preferences
-  changelogFormat?: ChangelogFormat;
-  changelogAudience?: ChangelogAudience;
-  changelogEmojiLevel?: ChangelogEmojiLevel;
   // UI Scale setting (75-200%, default 100)
   uiScale?: number;
   // Log order setting for task detail view

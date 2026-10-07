@@ -3,7 +3,7 @@
  * ===================
  *
  * Shared helper that creates a ToolRegistry pre-populated with all builtin tools.
- * Used by worker threads, runners (insights, roadmap, ideation), and the client factory.
+ * Used by worker threads, runners (insights), and the client factory.
  */
 
 import { ToolRegistry } from './registry';

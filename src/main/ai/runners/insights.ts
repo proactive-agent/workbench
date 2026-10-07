@@ -123,22 +123,6 @@ function loadProjectContext(projectDir: string): string {
     }
   }
 
-  // Load roadmap if available
-  const roadmapPath = join(projectDir, '.auto-claude', 'roadmap', 'roadmap.json');
-  if (existsSync(roadmapPath)) {
-    const roadmap = safeParseJson<Record<string, unknown>>(readFileSync(roadmapPath, 'utf-8'));
-    if (roadmap) {
-      const features = ((roadmap.features as Record<string, unknown>[]) ?? []).slice(0, 10);
-      const featureSummary = features.map((f: Record<string, unknown>) => ({
-        title: f.title ?? '',
-        status: f.status ?? '',
-      }));
-      contextParts.push(
-        `## Roadmap Features\n\`\`\`json\n${JSON.stringify(featureSummary, null, 2)}\n\`\`\``,
-      );
-    }
-  }
-
   // Load existing tasks
   const tasksPath = join(projectDir, '.auto-claude', 'specs');
   if (existsSync(tasksPath)) {

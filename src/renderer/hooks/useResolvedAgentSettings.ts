@@ -43,7 +43,7 @@ export interface ResolvedAgentSettings {
   phaseModels: PhaseModelConfig;
   /** Phase thinking level settings */
   phaseThinking: PhaseThinkingConfig;
-  /** Feature model settings (insights, ideation, roadmap, githubIssues, githubPrs, utility) */
+  /** Feature model settings (insights, githubPrs, utility, naming) */
   featureModels: FeatureModelConfig;
   /** Feature thinking level settings */
   featureThinking: FeatureThinkingConfig;
@@ -55,7 +55,7 @@ export interface ResolvedAgentSettings {
  */
 export type AgentSettingsSource =
   | { type: 'phase'; phase: 'spec' | 'planning' | 'coding' | 'qa' }
-  | { type: 'feature'; feature: 'insights' | 'ideation' | 'roadmap' | 'githubIssues' | 'githubPrs' | 'utility' }
+  | { type: 'feature'; feature: 'insights' | 'githubPrs' | 'utility' }
   | { type: 'fixed'; model: string; thinking: ThinkingLevel };
 
 /**
@@ -104,9 +104,6 @@ export function useResolvedAgentSettings(
       const featureModels: FeatureModelConfig = mixedFeature
         ? {
             insights: mixedFeature.insights.modelId,
-            ideation: mixedFeature.ideation.modelId,
-            roadmap: mixedFeature.roadmap.modelId,
-            githubIssues: mixedFeature.githubIssues.modelId,
             githubPrs: mixedFeature.githubPrs.modelId,
             utility: mixedFeature.utility.modelId,
             naming: mixedFeature.naming?.modelId ?? 'haiku',
@@ -115,9 +112,6 @@ export function useResolvedAgentSettings(
       const featureThinking: FeatureThinkingConfig = mixedFeature
         ? {
             insights: mixedFeature.insights.thinkingLevel,
-            ideation: mixedFeature.ideation.thinkingLevel,
-            roadmap: mixedFeature.roadmap.thinkingLevel,
-            githubIssues: mixedFeature.githubIssues.thinkingLevel,
             githubPrs: mixedFeature.githubPrs.thinkingLevel,
             utility: mixedFeature.utility.thinkingLevel,
             naming: mixedFeature.naming?.thinkingLevel ?? 'low',

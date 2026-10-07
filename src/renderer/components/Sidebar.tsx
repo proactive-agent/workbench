@@ -5,19 +5,13 @@ import {
   Settings,
   LayoutGrid,
   Terminal,
-  Map,
   BookOpen,
-  Lightbulb,
   AlertCircle,
   Download,
   RefreshCw,
-  Github,
   GitlabIcon,
-  GitPullRequest,
   GitMerge,
-  FileText,
   Sparkles,
-  GitBranch,
   Wrench,
   PanelLeft,
   PanelLeftClose,
@@ -60,7 +54,7 @@ import { ProjectSwitcher } from './ProjectSwitcher';
 import { UsageIndicator } from './UsageIndicator';
 import type { Project, GitStatus } from '../../shared/types';
 
-export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'roadmap' | 'context' | 'ideation' | 'github-issues' | 'gitlab-issues' | 'github-prs' | 'gitlab-merge-requests' | 'changelog' | 'insights' | 'worktrees' | 'agent-tools';
+export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'context' | 'gitlab-issues' | 'gitlab-merge-requests' | 'insights' | 'agent-tools';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -85,18 +79,8 @@ const baseNavItems: NavItem[] = [
   { id: 'kanban', labelKey: 'navigation:items.kanban', icon: LayoutGrid, shortcut: 'K' },
   { id: 'terminals', labelKey: 'navigation:items.terminals', icon: Terminal, shortcut: 'A' },
   { id: 'insights', labelKey: 'navigation:items.insights', icon: Sparkles, shortcut: 'N' },
-  { id: 'roadmap', labelKey: 'navigation:items.roadmap', icon: Map, shortcut: 'D' },
-  { id: 'ideation', labelKey: 'navigation:items.ideation', icon: Lightbulb, shortcut: 'I' },
-  { id: 'changelog', labelKey: 'navigation:items.changelog', icon: FileText, shortcut: 'L' },
   { id: 'context', labelKey: 'navigation:items.context', icon: BookOpen, shortcut: 'C' },
-  { id: 'agent-tools', labelKey: 'navigation:items.agentTools', icon: Wrench, shortcut: 'M' },
-  { id: 'worktrees', labelKey: 'navigation:items.worktrees', icon: GitBranch, shortcut: 'W' }
-];
-
-// GitHub nav items shown when GitHub is enabled
-const githubNavItems: NavItem[] = [
-  { id: 'github-issues', labelKey: 'navigation:items.githubIssues', icon: Github, shortcut: 'G' },
-  { id: 'github-prs', labelKey: 'navigation:items.githubPRs', icon: GitPullRequest, shortcut: 'P' }
+  { id: 'agent-tools', labelKey: 'navigation:items.agentTools', icon: Wrench, shortcut: 'M' }
 ];
 
 // GitLab nav items shown when GitLab is enabled
@@ -185,27 +169,22 @@ export function Sidebar({
     saveSettings({ sidebarCollapsed: !isCollapsed });
   };
 
-  // Subscribe to project-env-store for reactive GitHub/GitLab tab visibility
-  const githubEnabled = useProjectEnvStore((state) => state.envConfig?.githubEnabled ?? false);
+  // Subscribe to project-env-store for reactive GitLab tab visibility
   const gitlabEnabled = useProjectEnvStore((state) => state.envConfig?.gitlabEnabled ?? false);
 
   // Track the last loaded project ID to avoid redundant loads
   const lastLoadedProjectIdRef = useRef<string | null>(null);
 
-  // Compute visible nav items based on GitHub/GitLab enabled state from store
+  // Compute visible nav items based on GitLab enabled state from store
   const visibleNavItems = useMemo(() => {
     const items = [...baseNavItems];
-
-    if (githubEnabled) {
-      items.push(...githubNavItems);
-    }
 
     if (gitlabEnabled) {
       items.push(...gitlabNavItems);
     }
 
     return items;
-  }, [githubEnabled, gitlabEnabled]);
+  }, [gitlabEnabled]);
 
   // Load envConfig when project changes to ensure store is populated
   useEffect(() => {

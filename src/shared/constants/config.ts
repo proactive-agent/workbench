@@ -51,10 +51,6 @@ export const DEFAULT_APP_SETTINGS = {
   globalOpenAIApiKey: undefined as string | undefined,
   // Selected agent profile - defaults to 'auto' for per-phase optimized model selection
   selectedAgentProfile: 'auto',
-  // Changelog preferences (persisted between sessions)
-  changelogFormat: 'keep-a-changelog' as const,
-  changelogAudience: 'user-facing' as const,
-  changelogEmojiLevel: 'none' as const,
   // UI Scale (default 100% - standard size)
   uiScale: UI_SCALE_DEFAULT,
   // Log order setting for task detail view (default chronological - oldest first)
@@ -97,21 +93,12 @@ export const DEFAULT_PROJECT_SETTINGS = {
 // IMPORTANT: All paths use .auto-claude/ (the installed instance), NOT auto-claude/ (source code)
 export const AUTO_BUILD_PATHS = {
   SPECS_DIR: '.auto-claude/specs',
-  ROADMAP_DIR: '.auto-claude/roadmap',
-  IDEATION_DIR: '.auto-claude/ideation',
   IMPLEMENTATION_PLAN: 'implementation_plan.json',
   SPEC_FILE: 'spec.md',
   QA_REPORT: 'qa_report.md',
   BUILD_PROGRESS: 'build-progress.txt',
-  GENERATION_PROGRESS: 'generation_progress.json',
   CONTEXT: 'context.json',
   REQUIREMENTS: 'requirements.json',
-  ROADMAP_FILE: 'roadmap.json',
-  ROADMAP_DISCOVERY: 'roadmap_discovery.json',
-  COMPETITOR_ANALYSIS: 'competitor_analysis.json',
-  MANUAL_COMPETITORS: 'manual_competitors.json',
-  IDEATION_FILE: 'ideation.json',
-  IDEATION_CONTEXT: 'ideation_context.json',
   PROJECT_INDEX: '.auto-claude/project_index.json',
   MEMORY_STATE: '.memory_state.json'
 } as const;

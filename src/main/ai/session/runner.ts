@@ -64,7 +64,6 @@ const CONTEXT_WINDOW_ABORT_REASON = '__context_window_exhausted__';
 const CONVERGENCE_NUDGE_AGENT_TYPES = new Set<string>([
   'qa_reviewer', 'qa_fixer',
   'spec_critic', 'spec_validation',
-  'pr_reviewer', 'pr_finding_validator',
 ]);
 
 /** Timeout for post-stream result promises (result.text, result.totalUsage).

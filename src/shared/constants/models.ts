@@ -178,12 +178,9 @@ export const DEFAULT_PHASE_THINKING: import('../types/settings').PhaseThinkingCo
 // Feature Settings (Non-Pipeline Features)
 // ============================================
 
-// Default feature model configuration (for insights, ideation, roadmap, github, utility, naming)
+// Default feature model configuration (for insights, PR/MR review, utility, naming)
 export const DEFAULT_FEATURE_MODELS: FeatureModelConfig = {
   insights: 'sonnet',     // Fast, responsive chat
-  ideation: 'opus',       // Creative ideation benefits from Opus
-  roadmap: 'opus',        // Strategic planning benefits from Opus
-  githubIssues: 'opus',   // Issue triage and analysis benefits from Opus
   githubPrs: 'opus',      // PR review benefits from thorough Opus analysis
   utility: 'haiku',       // Fast utility operations (commit messages, merge resolution)
   naming: 'haiku'         // Fast, cheap model for task titles and terminal names
@@ -192,9 +189,6 @@ export const DEFAULT_FEATURE_MODELS: FeatureModelConfig = {
 // Default feature thinking configuration
 export const DEFAULT_FEATURE_THINKING: FeatureThinkingConfig = {
   insights: 'medium',     // Balanced thinking for chat
-  ideation: 'high',       // Deep thinking for creative ideas
-  roadmap: 'high',        // Strategic thinking for roadmap
-  githubIssues: 'medium', // Moderate thinking for issue analysis
   githubPrs: 'medium',    // Moderate thinking for PR review
   utility: 'low',         // Fast thinking for utility operations
   naming: 'low'           // No thinking needed for short name generation
@@ -203,9 +197,6 @@ export const DEFAULT_FEATURE_THINKING: FeatureThinkingConfig = {
 // Feature labels for UI display
 export const FEATURE_LABELS: Record<keyof FeatureModelConfig, { label: string; description: string }> = {
   insights: { label: 'Insights Chat', description: 'Ask questions about your codebase' },
-  ideation: { label: 'Ideation', description: 'Generate feature ideas and improvements' },
-  roadmap: { label: 'Roadmap', description: 'Create strategic feature roadmaps' },
-  githubIssues: { label: 'GitHub Issues', description: 'Automated issue triage and labeling' },
   githubPrs: { label: 'GitHub PR Review', description: 'AI-powered pull request reviews' },
   utility: { label: 'Utility', description: 'Commit messages and merge conflict resolution' },
   naming: { label: 'AI Naming', description: 'Task titles and terminal tab names' },

@@ -29,7 +29,6 @@ import type {
 /** Patterns to detect worktree isolation */
 const WORKTREE_PATH_PATTERNS = [
   /[/\\]\.auto-claude[/\\]worktrees[/\\]tasks[/\\]/,
-  /[/\\]\.auto-claude[/\\]github[/\\]pr[/\\]worktrees[/\\]/,
   /[/\\]\.worktrees[/\\]/,
 ];
 

@@ -2793,7 +2793,7 @@ export class UsageMonitor extends EventEmitter {
     });
 
     // PROACTIVE OPERATION RESTART: Stop and restart all running Claude SDK operations with new profile credentials
-    // This includes autonomous tasks, PR reviews, insights, roadmap, etc.
+    // This includes autonomous tasks, MR reviews, insights, etc.
     // Claude Agent SDK sessions maintain state independently of auth tokens, so no progress is lost
     const operationRegistry = getOperationRegistry();
     const operationSummary = operationRegistry.getSummary();

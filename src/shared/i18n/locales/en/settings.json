@@ -214,7 +214,7 @@
     "aiTerminalNaming": "AI Terminal Naming",
     "aiTerminalNamingDescription": "Automatically name terminals based on commands (uses AI Naming model)",
     "featureModelSettings": "Feature Model Settings",
-    "featureModelSettingsDescription": "Model and thinking level for Insights, Ideation, and Roadmap",
+    "featureModelSettingsDescription": "Model and thinking level for Insights, MR review, and utility agents",
     "model": "Model",
     "thinkingLevel": "Thinking Level",
     "paths": "Paths",
@@ -489,7 +489,7 @@
       "description": "Assign a different provider and model to each pipeline phase for maximum flexibility.",
       "activateInfo": "Tasks created while this configuration is active will use the cross-provider setup.",
       "featureModelsTitle": "Feature Models",
-      "featureModelsDescription": "Configure models for non-pipeline features (Insights, Ideation, etc.)"
+      "featureModelsDescription": "Configure models for non-pipeline features (Insights, MR review, etc.)"
     },
     "customProfile": {
       "name": "Custom (Cross-Provider)",

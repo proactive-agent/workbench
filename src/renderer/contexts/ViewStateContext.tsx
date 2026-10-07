@@ -18,7 +18,7 @@ interface ViewStateProviderProps {
 
 /**
  * ViewStateProvider manages view state that needs to be shared across
- * different project pages (kanban, ideation, etc.).
+ * different project pages (kanban, insights, etc.).
  *
  * Currently manages:
  * - showArchived: Whether to show archived items in views

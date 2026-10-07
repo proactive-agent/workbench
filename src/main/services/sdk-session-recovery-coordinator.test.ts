@@ -109,7 +109,7 @@ describe('SDKSessionRecoveryCoordinator', () => {
       const metadata = { key: 'value' };
       const operation = coordinator.registerOperation(
         'task-2',
-        'roadmap',
+        'title-generation',
         'profile-1',
         'Test Profile',
         metadata
@@ -176,7 +176,7 @@ describe('SDKSessionRecoveryCoordinator', () => {
     it('should filter operations by type', () => {
       coordinator.registerOperation('task-1', 'task', 'profile-1', 'Test Profile');
       coordinator.registerOperation('task-2', 'task', 'profile-1', 'Test Profile');
-      coordinator.registerOperation('roadmap-1', 'roadmap', 'profile-1', 'Test Profile');
+      coordinator.registerOperation('title-1', 'title-generation', 'profile-1', 'Test Profile');
 
       const tasks = coordinator.getOperationsByType('task');
       expect(tasks).toHaveLength(2);
@@ -186,8 +186,8 @@ describe('SDKSessionRecoveryCoordinator', () => {
     it('should return empty array when no operations of type exist', () => {
       coordinator.registerOperation('task-1', 'task', 'profile-1', 'Test Profile');
 
-      const ideations = coordinator.getOperationsByType('ideation');
-      expect(ideations).toHaveLength(0);
+      const titleOps = coordinator.getOperationsByType('title-generation');
+      expect(titleOps).toHaveLength(0);
     });
   });
 
@@ -307,15 +307,15 @@ describe('SDKSessionRecoveryCoordinator', () => {
   describe('getStats', () => {
     it('should return correct statistics', () => {
       coordinator.registerOperation('task-1', 'task', 'profile-1', 'Profile 1');
-      coordinator.registerOperation('task-2', 'roadmap', 'profile-1', 'Profile 1');
-      coordinator.registerOperation('task-3', 'ideation', 'profile-2', 'Profile 2');
+      coordinator.registerOperation('task-2', 'title-generation', 'profile-1', 'Profile 1');
+      coordinator.registerOperation('task-3', 'other', 'profile-2', 'Profile 2');
 
       const stats = coordinator.getStats();
 
       expect(stats.activeOperations).toBe(3);
       expect(stats.operationsByType.task).toBe(1);
-      expect(stats.operationsByType.roadmap).toBe(1);
-      expect(stats.operationsByType.ideation).toBe(1);
+      expect(stats.operationsByType['title-generation']).toBe(1);
+      expect(stats.operationsByType.other).toBe(1);
     });
   });
 

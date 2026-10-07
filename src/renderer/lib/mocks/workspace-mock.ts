@@ -70,13 +70,6 @@ export const workspaceMock = {
     }
   }),
 
-  discardOrphanedWorktree: async (_projectId: string, _specName: string) => ({
-    success: true,
-    data: {
-      success: true,
-      message: 'Orphaned worktree discarded successfully'
-    }
-  }),
 
   clearStagedState: async () => ({
     success: true,

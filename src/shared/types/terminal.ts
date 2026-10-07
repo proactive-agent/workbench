@@ -96,11 +96,11 @@ export interface RateLimitInfo {
 
 /**
  * Rate limit information for SDK/CLI calls (non-terminal)
- * Used for changelog, task execution, roadmap, ideation, etc.
+ * Used for task execution, title generation, etc.
  */
 export interface SDKRateLimitInfo {
   /** Source of the rate limit (which feature hit it) */
-  source: 'changelog' | 'task' | 'roadmap' | 'ideation' | 'title-generator' | 'other';
+  source: 'task' | 'title-generator' | 'other';
   /** Project ID if applicable */
   projectId?: string;
   /** Task ID if applicable */
