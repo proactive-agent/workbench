@@ -1,9 +1,6 @@
-
-import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { X, ImageIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../lib/utils';
-import { DIALOG_ANIMATION_CLASS, DIALOG_OVERLAY_CLASS } from '../ui/dialog-styles';
+import { ImageIcon } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog';
 import type { ImageAttachment } from '../../../shared/types';
 
 interface ImagePreviewModalProps {
@@ -12,79 +9,49 @@ interface ImagePreviewModalProps {
   image: ImageAttachment | null;
 }
 
+/**
+ * Full-size preview of a task image, in the same frameless style as the Insights
+ * attachment preview: just the image and its name; closes on outside click or Escape.
+ */
 export function ImagePreviewModal({ open, onOpenChange, image }: ImagePreviewModalProps) {
-  const { t } = useTranslation(['tasks', 'common']);
+  const { t } = useTranslation(['tasks']);
 
   if (!image) return null;
 
-  // Determine the image source - prefer full-resolution data for enlarged preview, fall back to thumbnail
+  // Prefer full-resolution data for the enlarged preview, fall back to the thumbnail
   const imageSrc = image.data ? `data:${image.mimeType};base64,${image.data}` : image.thumbnail || null;
-  const isThumbnailFallback = !image.data && image.thumbnail;
+  const isThumbnailFallback = !image.data && !!image.thumbnail;
 
   return (
-    <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
-      <DialogPrimitive.Portal>
-        {/* Shared dialog backdrop (frameless lightbox, like AttachmentPreviewDialog) */}
-        <DialogPrimitive.Overlay className={DIALOG_OVERLAY_CLASS} />
-
-        {/* Content container */}
-        <DialogPrimitive.Content
-          className={cn(
-            'fixed inset-8 z-50 flex flex-col items-center justify-center',
-            DIALOG_ANIMATION_CLASS
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        hideCloseButton
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        className="flex w-auto max-w-[90vw] flex-col items-center gap-3 overflow-visible rounded-none border-0 bg-transparent p-0 shadow-none sm:max-w-[90vw]"
+      >
+        <DialogTitle className="sr-only">{image.filename}</DialogTitle>
+        <DialogDescription className="sr-only">
+          {t('tasks:imagePreview.description', { filename: image.filename })}
+        </DialogDescription>
+        <div className="relative flex h-[50vh] min-w-24 items-center justify-center">
+          {imageSrc ? (
+            <img
+              src={imageSrc}
+              alt={image.filename}
+              className="h-[50vh] w-auto max-w-[90vw] rounded-lg object-contain"
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center text-white/60">
+              <ImageIcon className="mb-3 h-16 w-16" strokeWidth={1.5} />
+              <p className="text-sm">{t('tasks:imagePreview.unavailable')}</p>
+            </div>
           )}
-        >
-          {/* Header with title and close button */}
-          <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-4">
-            <DialogPrimitive.Title className="text-[1.0625rem] font-semibold text-white truncate max-w-[calc(100%-60px)]">
-              {image.filename}
-            </DialogPrimitive.Title>
-            <DialogPrimitive.Close
-              className={cn(
-                'rounded-lg p-2',
-                'text-white/70 hover:text-white',
-                'hover:bg-white/10 transition-colors',
-                'focus:outline-none focus:ring-2 focus:ring-white/50',
-                'disabled:pointer-events-none'
-              )}
-              aria-label={t('tasks:imagePreview.close')}
-            >
-              <X className="h-5 w-5" />
-              <span className="sr-only">{t('tasks:imagePreview.close')}</span>
-            </DialogPrimitive.Close>
-          </div>
-
-          {/* Image display */}
-          <div className="flex flex-col items-center justify-center w-full h-full p-8 gap-4">
-            {imageSrc ? (
-              <>
-                <img
-                  src={imageSrc}
-                  alt={image.filename}
-                  className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
-                />
-                {/* Show indicator when displaying thumbnail fallback */}
-                {isThumbnailFallback && (
-                  <div className="px-3 py-1 rounded-full bg-white/10 backdrop-blur-sm">
-                    <p className="text-xs text-white/70">{t('tasks:imagePreview.lowResolution')}</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              // Fallback when no image data is available
-              <div className="flex flex-col items-center justify-center text-white/50">
-                <ImageIcon className="h-24 w-24 mb-4" />
-                <p className="text-sm">{t('tasks:imagePreview.unavailable')}</p>
-              </div>
-            )}
-          </div>
-
-          {/* Hidden description for accessibility */}
-          <DialogPrimitive.Description className="sr-only">
-            {t('tasks:imagePreview.description', { filename: image.filename })}
-          </DialogPrimitive.Description>
-        </DialogPrimitive.Content>
-      </DialogPrimitive.Portal>
-    </DialogPrimitive.Root>
+        </div>
+        <p className="max-w-[90vw] truncate text-sm text-white/90">{image.filename}</p>
+        {isThumbnailFallback && (
+          <p className="text-xs text-white/60">{t('tasks:imagePreview.lowResolution')}</p>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

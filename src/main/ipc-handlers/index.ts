@@ -28,7 +28,6 @@ import { registerDebugHandlers } from './debug-handlers';
 import { registerClaudeCodeHandlers } from './claude-code-handlers';
 import { registerMcpHandlers } from './mcp-handlers';
 import { registerProfileHandlers } from './profile-handlers';
-import { registerScreenshotHandlers } from './screenshot-handlers';
 import { registerTerminalWorktreeIpcHandlers } from './terminal';
 import { registerCodexAuthHandlers } from './codex-auth-handlers';
 import { notificationService } from '../notification-service';
@@ -109,9 +108,6 @@ export function setupIpcHandlers(
   // API Profile handlers (custom Anthropic-compatible endpoints)
   registerProfileHandlers();
 
-  // Screenshot capture handlers
-  registerScreenshotHandlers();
-
   // Codex OAuth authentication handlers
   registerCodexAuthHandlers();
 
@@ -139,6 +135,5 @@ export {
   registerClaudeCodeHandlers,
   registerMcpHandlers,
   registerProfileHandlers,
-  registerScreenshotHandlers,
   registerCodexAuthHandlers
 };

@@ -89,7 +89,6 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   const [description, setDescription] = useState(task.description);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showClassification, setShowClassification] = useState(false);
 
   // Classification fields
   const [category, setCategory] = useState<TaskCategory | ''>(task.metadata?.category || '');
@@ -186,13 +185,6 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       setRequireReviewBeforeCoding(task.metadata?.requireReviewBeforeCoding ?? false);
       setFastMode(task.metadata?.fastMode ?? false);
       setError(null);
-
-      // Auto-expand classification if it has content
-      if (task.metadata?.category || task.metadata?.priority || task.metadata?.complexity || task.metadata?.impact) {
-        setShowClassification(true);
-      } else {
-        setShowClassification(false);
-      }
     }
   }, [open, task, resolvedProfileId, selectedProfile.model, selectedProfile.thinkingLevel, profilePhaseModels, profilePhaseThinking]);
 
@@ -320,8 +312,6 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         onPriorityChange={setPriority}
         onComplexityChange={setComplexity}
         onImpactChange={setImpact}
-        showClassification={showClassification}
-        onShowClassificationChange={setShowClassification}
         images={images}
         onImagesChange={setImages}
         requireReviewBeforeCoding={requireReviewBeforeCoding}

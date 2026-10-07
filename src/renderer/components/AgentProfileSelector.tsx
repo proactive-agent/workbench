@@ -11,7 +11,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useActiveProvider } from '../hooks/useActiveProvider';
 import { getProviderModelLabel } from '../../shared/utils/model-display';
-import { Brain, Scale, Zap, Sliders, Sparkles, ChevronDown, ChevronUp, Pencil } from 'lucide-react';
+import { Brain, Scale, Zap, Sliders, Sparkles } from 'lucide-react';
 import { Label } from './ui/label';
 import {
   Select,
@@ -30,7 +30,6 @@ import {
 } from '../../shared/constants';
 import type { ModelType, ThinkingLevel } from '../../shared/types';
 import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
-import { cn } from '../lib/utils';
 
 interface AgentProfileSelectorProps {
   /** Currently selected profile ID ('auto', 'complex', 'balanced', 'quick', or 'custom') */
@@ -87,7 +86,6 @@ export function AgentProfileSelector({
 }: AgentProfileSelectorProps) {
   const { t } = useTranslation('settings');
   const { provider: activeProvider } = useActiveProvider();
-  const [showPhaseDetails, setShowPhaseDetails] = useState(false);
 
   // Ollama models are user-installed — fetch dynamically from the local server
   const [ollamaModels, setOllamaModels] = useState<Array<{ value: string; label: string }>>([]);
@@ -266,55 +264,12 @@ export function AgentProfileSelector({
       {/* Phase Configuration - shown for all preset profiles */}
       {!isCustom && (
         <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-          {/* Clickable Header */}
-          <button
-            type="button"
-            onClick={() => setShowPhaseDetails(!showPhaseDetails)}
-            className={cn(
-              'flex w-full items-center justify-between p-4 text-left',
-              'hover:bg-muted/50 transition-colors',
-              !disabled && 'cursor-pointer'
-            )}
-            disabled={disabled}
-          >
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm text-foreground">{t('agentProfile.phaseConfiguration')}</span>
-              {!showPhaseDetails && (
-                <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Pencil className="h-3 w-3" />
-                  <span>{t('agentProfile.clickToCustomize')}</span>
-                </span>
-              )}
-            </div>
-            {showPhaseDetails ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-
-          {/* Compact summary when collapsed */}
-          {!showPhaseDetails && (
-            <div className="px-4 pb-4 -mt-1">
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {(Object.keys(PHASE_LABEL_KEYS) as Array<keyof PhaseModelConfig>).map((phase) => {
-                  const modelLabel = activeProvider
-                    ? getProviderModelLabel(currentPhaseModels[phase], activeProvider)
-                    : (AVAILABLE_MODELS.find(m => m.value === currentPhaseModels[phase])?.label?.replace('Claude ', '') || currentPhaseModels[phase]);
-                  return (
-                    <div key={phase} className="flex items-center justify-between rounded bg-background/50 px-2 py-1">
-                      <span className="text-muted-foreground">{t(PHASE_LABEL_KEYS[phase].label)}:</span>
-                      <span className="font-medium">{modelLabel}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
+          <div className="p-4 pb-0">
+            <span className="font-medium text-sm text-foreground">{t('agentProfile.phaseConfiguration')}</span>
+          </div>
 
           {/* Detailed Phase Configuration */}
-          {showPhaseDetails && (
-            <div className="px-4 pb-4 space-y-4 border-t border-border pt-4">
+          <div className="px-4 pb-4 space-y-4 pt-4">
               {(Object.keys(PHASE_LABEL_KEYS) as Array<keyof PhaseModelConfig>).map((phase) => (
                 <div key={phase} className="space-y-2">
                   <div className="flex items-center justify-between">
@@ -355,8 +310,7 @@ export function AgentProfileSelector({
                   </div>
                 </div>
               ))}
-            </div>
-          )}
+          </div>
         </div>
       )}
 

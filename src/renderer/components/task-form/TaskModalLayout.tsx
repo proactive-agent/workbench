@@ -69,9 +69,10 @@ export function TaskModalLayout({
         {/* Full-height modal content - matches TaskDetailModal exactly */}
         <DialogPrimitive.Content
           className={cn(
-            'fixed left-[50%] top-4 z-50',
-            'translate-x-[-50%]',
-            'w-[95vw] max-w-5xl h-[calc(100vh-32px)]',
+            'fixed left-1/2 top-1/2 z-50',
+            '-translate-x-1/2 -translate-y-1/2',
+            // Same size as the opened task dialog
+            'w-[min(760px,calc(100vw-2rem))] h-[min(600px,calc(100vh-2rem))]',
             'overflow-hidden flex flex-col',
             DIALOG_SURFACE_CLASS,
             DIALOG_ANIMATION_CLASS

@@ -201,10 +201,6 @@
     "startFresh": "Start Fresh",
     "creating": "Creating...",
     "createTask": "Create Task",
-    "worktreeNotice": {
-      "title": "Isolated Workspace",
-      "description": "This task runs in an isolated git worktree. Your main branch stays safe until you choose to merge."
-    },
     "gitOptions": {
       "title": "Git Options (optional)",
       "baseBranchLabel": "Base Branch (optional)",
@@ -316,24 +312,6 @@
     "confirmBulkAction": "Confirm bulk action for {{count}} tasks",
     "processingTasks": "Processing selected tasks..."
   },
-  "screenshot": {
-    "title": "Capture Screenshot",
-    "description": "Select a screen or window to capture as a reference image",
-    "capture": "Capture",
-    "capturing": "Capturing...",
-    "noSources": "No screens or windows found",
-    "errors": {
-      "getSources": "Failed to get screenshot sources",
-      "fetchSources": "Failed to fetch screenshot sources",
-      "capture": "Failed to capture screenshot",
-      "captureFailed": "Failed to capture screenshot"
-    },
-    "devMode": {
-      "title": "Screenshot capture unavailable",
-      "description": "Screen capture is not available in development mode due to system permission restrictions.",
-      "hint": "Use an external screenshot tool and paste directly into the task description with {{shortcut}}."
-    }
-  },
   "deleteDialog": {
     "title": "Delete Task",
     "confirmMessage": "Are you sure you want to delete",
@@ -346,7 +324,9 @@
     "deleting": "Deleting..."
   },
   "referenceImages": {
-    "title": "Reference Images (optional)",
-    "description": "Add visual references like screenshots or designs to help the AI understand your requirements."
+    "title": "Reference images (optional)",
+    "description": "Add visual references like screenshots or designs to help the AI understand your requirements.",
+    "dropZone": "Drop images here or click to browse",
+    "preview": "Preview {{filename}}"
   }
 }

@@ -415,10 +415,6 @@ export const IPC_CHANNELS = {
   // Spell check
   SPELLCHECK_SET_LANGUAGES: 'spellcheck:setLanguages',  // Set spell check language (syncs with i18n)
 
-  // Screenshot capture
-  SCREENSHOT_GET_SOURCES: 'screenshot:getSources',  // Get available screens/windows
-  SCREENSHOT_CAPTURE: 'screenshot:capture',          // Capture screenshot from source
-
   // Queue routing (rate limit recovery)
   QUEUE_GET_RUNNING_TASKS_BY_PROFILE: 'queue:getRunningTasksByProfile',
   QUEUE_GET_BEST_PROFILE_FOR_TASK: 'queue:getBestProfileForTask',

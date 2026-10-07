@@ -12,7 +12,7 @@
  */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, ChevronDown, ChevronUp, RotateCcw, GitBranch, Info } from 'lucide-react';
+import { Loader2, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
 import { Label } from './ui/label';
 import { Combobox } from './ui/combobox';
@@ -76,8 +76,6 @@ export function TaskCreationWizard({
   const [description, setDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [showClassification, setShowClassification] = useState(false);
-  const [showGitOptions, setShowGitOptions] = useState(false);
 
   // Git options state - using structured GitBranchDetail for type indicators
   const [branches, setBranches] = useState<GitBranchDetail[]>([]);
@@ -184,10 +182,6 @@ export function TaskCreationWizard({
         setFastMode(draft.fastMode ?? false);
         setPushNewBranches(draft.pushNewBranches ?? projectPushNewBranches);
         setIsDraftRestored(true);
-
-        if (draft.category || draft.priority || draft.complexity || draft.impact) {
-          setShowClassification(true);
-        }
       } else {
         // No draft - reset to clean state for new task creation
         // This ensures no stale data from previous task creation persists
@@ -210,8 +204,6 @@ export function TaskCreationWizard({
         setUseWorktree(true);
         setPushNewBranches(projectPushNewBranches);
         setIsDraftRestored(false);
-        setShowClassification(false);
-        setShowGitOptions(false);
       }
     }
   }, [open, projectId, projectPushNewBranches, resolvedProfileId, resolvedPhaseModels, resolvedPhaseThinking, selectedProfile.model, selectedProfile.thinkingLevel]);
@@ -492,8 +484,6 @@ export function TaskCreationWizard({
     setUseWorktree(true);
     setPushNewBranches(projectPushNewBranches);
     setError(null);
-    setShowClassification(false);
-    setShowGitOptions(false);
     setIsDraftRestored(false);
   };
 
@@ -595,19 +585,6 @@ export function TaskCreationWizard({
       }
     >
       <div className="space-y-6">
-        {/* Worktree isolation info banner */}
-        <div className="flex items-start gap-3 rounded-lg border border-border px-4 py-3 text-sm">
-          <Info className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-medium text-foreground mb-1">
-              {t('tasks:wizard.worktreeNotice.title')}
-            </h4>
-            <p className="text-sm text-muted-foreground">
-              {t('tasks:wizard.worktreeNotice.description')}
-            </p>
-          </div>
-        </div>
-
         {/* Main form fields */}
         <TaskFormFields
           description={description}
@@ -639,8 +616,6 @@ export function TaskCreationWizard({
           onPriorityChange={setPriority}
           onComplexityChange={setComplexity}
           onImpactChange={setImpact}
-          showClassification={showClassification}
-          onShowClassificationChange={setShowClassification}
           images={images}
           onImagesChange={setImages}
           requireReviewBeforeCoding={requireReviewBeforeCoding}
@@ -665,36 +640,11 @@ export function TaskCreationWizard({
           )}
         </TaskFormFields>
 
-        {/* Git Options Toggle - unique to creation */}
-        <button
-          type="button"
-          onClick={() => setShowGitOptions(!showGitOptions)}
-          className={cn(
-            'flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors',
-            'w-full justify-between py-2 px-3 rounded-md hover:bg-muted/50'
-          )}
-          disabled={isCreating}
-          aria-expanded={showGitOptions}
-          aria-controls="git-options-section"
-        >
-          <span className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4" />
+        {/* Git Options - unique to creation */}
+        <div className="space-y-3">
+          <Label className="text-sm font-medium text-foreground">
             {t('tasks:wizard.gitOptions.title')}
-            {baseBranch && baseBranch !== PROJECT_DEFAULT_BRANCH && (
-              <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">
-                {baseBranch}
-              </span>
-            )}
-          </span>
-          {showGitOptions ? (
-            <ChevronUp className="h-4 w-4" />
-          ) : (
-            <ChevronDown className="h-4 w-4" />
-          )}
-        </button>
-
-        {/* Git Options */}
-        {showGitOptions && (
+          </Label>
           <div id="git-options-section" className="space-y-4 rounded-lg border border-border px-4 py-3">
             <div className="space-y-2">
               <Label htmlFor="base-branch" className="text-sm font-medium text-foreground">
@@ -743,7 +693,7 @@ export function TaskCreationWizard({
               </Button>
             </div>
           </div>
-        )}
+        </div>
       </div>
     </TaskModalLayout>
   );
