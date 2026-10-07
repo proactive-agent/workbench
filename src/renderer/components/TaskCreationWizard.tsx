@@ -520,7 +520,7 @@ export function TaskCreationWizard({
   // Render @ mention highlight overlay for the description textarea
   const descriptionOverlay = (
     <div
-      className="absolute inset-0 pointer-events-none overflow-hidden rounded-md border border-transparent"
+      className="absolute inset-0 pointer-events-none overflow-hidden rounded-lg border border-transparent bg-field"
       style={{
         padding: '0.5rem 0.75rem',
         font: 'inherit',

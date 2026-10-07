@@ -612,8 +612,12 @@ html:not([data-theme="lime"]) .font-heading {
 
 
 /* Base styles */
-* {
-  border-color: var(--border);
+/* Default border color lives in the base layer so border-color utilities
+   (border-transparent, border-primary, ...) can still override it */
+@layer base {
+  * {
+    border-color: var(--border);
+  }
 }
 
 body {
