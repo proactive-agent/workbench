@@ -41,7 +41,6 @@ interface ChatHistorySidebarProps {
   onSelectSession: (sessionId: string) => void;
   onDeleteSession: (sessionId: string) => Promise<boolean>;
   onRenameSession: (sessionId: string, newTitle: string) => Promise<boolean>;
-  onArchiveSession?: (sessionId: string) => Promise<void>;
   onUnarchiveSession?: (sessionId: string) => Promise<void>;
   onDeleteSessions?: (sessionIds: string[]) => Promise<void>;
   onArchiveSessions?: (sessionIds: string[]) => Promise<void>;
@@ -57,7 +56,6 @@ export function ChatHistorySidebar({
   onSelectSession,
   onDeleteSession,
   onRenameSession,
-  onArchiveSession,
   onUnarchiveSession,
   onDeleteSessions,
   onArchiveSessions,
@@ -246,7 +244,6 @@ export function ChatHistorySidebar({
                     onCancelEdit={handleCancelEdit}
                     onEditTitleChange={setEditTitle}
                     onDelete={() => setDeleteSessionId(session.id)}
-                    onArchive={onArchiveSession ? () => onArchiveSession(session.id) : undefined}
                     onUnarchive={
                       onUnarchiveSession ? () => onUnarchiveSession(session.id) : undefined
                     }
@@ -368,7 +365,6 @@ interface SessionItemProps {
   onCancelEdit: () => void;
   onEditTitleChange: (title: string) => void;
   onDelete: () => void;
-  onArchive?: () => Promise<void>;
   onUnarchive?: () => Promise<void>;
   isArchived: boolean;
   isSelectionMode: boolean;
@@ -387,7 +383,6 @@ function SessionItem({
   onCancelEdit,
   onEditTitleChange,
   onDelete,
-  onArchive,
   onUnarchive,
   isArchived,
   isSelectionMode,
@@ -502,20 +497,11 @@ function SessionItem({
               <Pencil className="mr-2 h-3.5 w-3.5" />
               {t('accessibility.renameAriaLabel')}
             </DropdownMenuItem>
-            {isArchived ? (
-              onUnarchive && (
-                <DropdownMenuItem onSelect={onUnarchive}>
-                  <ArchiveRestore className="mr-2 h-3.5 w-3.5" />
-                  {t('insights.unarchive')}
-                </DropdownMenuItem>
-              )
-            ) : (
-              onArchive && (
-                <DropdownMenuItem onSelect={onArchive}>
-                  <Archive className="mr-2 h-3.5 w-3.5" />
-                  {t('insights.archive')}
-                </DropdownMenuItem>
-              )
+            {isArchived && onUnarchive && (
+              <DropdownMenuItem onSelect={onUnarchive}>
+                <ArchiveRestore className="mr-2 h-3.5 w-3.5" />
+                {t('insights.unarchive')}
+              </DropdownMenuItem>
             )}
             <DropdownMenuItem
               onSelect={onDelete}

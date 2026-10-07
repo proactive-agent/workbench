@@ -32,7 +32,6 @@ import {
   deleteSession,
   deleteSessions,
   renameSession,
-  archiveSession,
   archiveSessions,
   unarchiveSession,
   updateModelConfig,
@@ -253,17 +252,6 @@ export function Insights({ projectId }: InsightsProps) {
 
   const handleRenameSession = async (sessionId: string, newTitle: string): Promise<boolean> => {
     return await renameSession(projectId, sessionId, newTitle);
-  };
-
-  const handleArchiveSession = async (sessionId: string) => {
-    try {
-      await archiveSession(projectId, sessionId);
-      await loadInsightsSessions(projectId, showArchived);
-      // Reload current session in case backend switched to a different one
-      await loadInsightsSession(projectId, showArchived);
-    } catch (error) {
-      console.error(`Failed to archive session ${sessionId}:`, error);
-    }
   };
 
   const handleUnarchiveSession = async (sessionId: string) => {
@@ -564,7 +552,6 @@ export function Insights({ projectId }: InsightsProps) {
           onSelectSession={handleSelectSession}
           onDeleteSession={handleDeleteSession}
           onRenameSession={handleRenameSession}
-          onArchiveSession={handleArchiveSession}
           onUnarchiveSession={handleUnarchiveSession}
           onDeleteSessions={handleDeleteSessions}
           onArchiveSessions={handleArchiveSessions}
