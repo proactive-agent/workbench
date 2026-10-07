@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, RotateCcw, Loader2, Image as ImageIcon, X } from 'lucide-react';
+import { Check, Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import {
@@ -131,7 +131,7 @@ export function QAFeedbackSection({
         });
       } catch (error) {
         console.error('[QAFeedbackSection] Failed to process pasted image:', error);
-        setError(t('feedback.processingError', 'Failed to process pasted image'));
+        setError(t('feedback.processingError'));
       }
     }
 
@@ -238,7 +238,7 @@ export function QAFeedbackSection({
           });
         } catch (error) {
           console.error('[QAFeedbackSection] Failed to process dropped image:', error);
-          setError(t('feedback.processingError', 'Failed to process dropped image'));
+          setError(t('feedback.processingError'));
         }
       }
 
@@ -265,19 +265,18 @@ export function QAFeedbackSection({
   const canSubmit = feedback.trim() || images.length > 0;
 
   return (
-    <div className="rounded-xl border border-warning/30 bg-warning/10 p-4">
-      <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-        <AlertCircle className="h-4 w-4 text-warning" />
-        {t('feedback.requestChanges', 'Request Changes')}
+    <div>
+      <h3 className="mb-1 text-sm text-foreground">
+        {t('feedback.requestChanges')}
       </h3>
-      <p className="text-sm text-muted-foreground mb-3">
-        {t('feedback.description', 'Found issues? Describe what needs to be fixed and the AI will continue working on it.')}
+      <p className="mb-3 text-sm text-(--nav-label-color)">
+        {t('feedback.description')}
       </p>
 
       {/* Textarea with paste/drop support */}
       <Textarea
         ref={textareaRef}
-        placeholder={t('feedback.placeholder', 'Describe the issues or changes needed...')}
+        placeholder={t('feedback.placeholder')}
         value={feedback}
         onChange={(e) => onFeedbackChange(e.target.value)}
         onPaste={handlePaste}
@@ -287,7 +286,7 @@ export function QAFeedbackSection({
         className={cn(
           "mb-2",
           // Visual feedback when dragging over textarea
-          isDragOverTextarea && !isSubmitting && "border-primary bg-primary/5 ring-2 ring-primary/20"
+          isDragOverTextarea && !isSubmitting && "bg-nav-hover"
         )}
         rows={3}
         disabled={isSubmitting}
@@ -295,25 +294,22 @@ export function QAFeedbackSection({
 
       {/* Drag/paste hint - only show when feature is enabled */}
       {imageUploadEnabled && (
-        <p className="text-xs text-muted-foreground mb-2">
-          {t('feedback.dragDropHint', 'Drag & drop images or paste screenshots')}
+        <p className="text-xs text-(--nav-label-color) mb-2">
+          {t('feedback.dragDropHint')}
         </p>
       )}
 
       {/* Paste Success Indicator */}
       {pasteSuccess && (
-        <div className="flex items-center gap-2 text-sm text-success mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
-          <ImageIcon className="h-4 w-4" />
-          {t('feedback.imageAdded', 'Image added successfully!')}
+        <div className="flex items-center gap-2 text-sm text-(--nav-label-color) mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
+          <Check className="h-4 w-4 text-success" />
+          {t('feedback.imageAdded')}
         </div>
       )}
 
       {/* Error display */}
       {error && (
-        <div className="flex items-start gap-2 rounded-lg bg-destructive/10 border border-destructive/30 p-2 text-sm text-destructive mb-2">
-          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-          <span>{error}</span>
-        </div>
+        <p className="mb-2 text-sm text-destructive">{error}</p>
       )}
 
       {/* Image Thumbnails - displayed inline below textarea */}
@@ -322,7 +318,7 @@ export function QAFeedbackSection({
           {images.map((image) => (
             <div
               key={image.id}
-              className="relative group rounded-md border border-border overflow-hidden cursor-pointer hover:ring-2 hover:ring-primary/50 transition-all"
+              className="relative group rounded-lg border border-border overflow-hidden"
               style={{ width: '64px', height: '64px' }}
               title={image.filename}
             >
@@ -341,12 +337,12 @@ export function QAFeedbackSection({
               {!isSubmitting && (
                 <button
                   type="button"
-                  className="absolute top-0.5 right-0.5 h-4 w-4 flex items-center justify-center rounded-full bg-destructive text-destructive-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-0.5 right-0.5 h-4 w-4 flex items-center justify-center rounded-full bg-foreground text-background opacity-0 group-hover:opacity-100 transition-opacity"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRemoveImage(image.id);
                   }}
-                  aria-label={t('feedback.removeImage', 'Remove image')}
+                  aria-label={t('feedback.removeImage')}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -356,24 +352,23 @@ export function QAFeedbackSection({
         </div>
       )}
 
-      <Button
-        variant="warning"
-        onClick={onReject}
-        disabled={isSubmitting || !canSubmit}
-        className="w-full"
-      >
-        {isSubmitting ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {t('feedback.submitting', 'Submitting...')}
-          </>
-        ) : (
-          <>
-            <RotateCcw className="mr-2 h-4 w-4" />
-            {t('feedback.requestChanges', 'Request Changes')}
-          </>
-        )}
-      </Button>
+      <div className="flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onReject}
+          disabled={isSubmitting || !canSubmit}
+        >
+          {isSubmitting ? (
+            <>
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              {t('feedback.submitting')}
+            </>
+          ) : (
+            t('feedback.requestChanges')
+          )}
+        </Button>
+      </div>
     </div>
   );
 }

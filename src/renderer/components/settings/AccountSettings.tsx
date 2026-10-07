@@ -1,24 +1,16 @@
 /**
  * AccountSettings - Unified account management across all AI providers
  *
- * Replaced the former two-tab (Claude Code / Custom Endpoints) layout with a
- * single provider-grouped list using ProviderAccountsList. The automatic
- * account switching section (AccountPriorityList) is kept below.
+ * claude.ai settings layout: one section per provider category (ProviderAccountsList),
+ * followed by the automatic account switching section and the account priority
+ * order (AccountPriorityList).
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  RefreshCw,
-  Activity,
-  AlertCircle,
-  Clock,
-  TrendingUp,
-  Info
-} from 'lucide-react';
-import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '../ui/tabs';
+import { cn } from '../../lib/utils';
 import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows, SegmentedControl } from './SettingsRow';
 import { AccountPriorityList, type UnifiedAccount } from './AccountPriorityList';
 import { ProviderAccountsList } from './ProviderAccountsList';
 import { useSettingsStore } from '../../stores/settings-store';
@@ -51,7 +43,7 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
   // Priority UI state
   // ============================================
   const [isSavingPriority, setIsSavingPriority] = useState(false);
-  const [priorityTab, setPriorityTab] = useState<string>('default');
+  const [priorityTab, setPriorityTab] = useState<'default' | 'cross-provider'>('default');
 
   // ============================================
   // Usage data state
@@ -180,7 +172,7 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
     }
   }, [crossProviderPriorityOrder, priorityOrder, setCrossProviderQueueOrder, toast, t]);
 
-  const handlePriorityTabChange = useCallback((tab: string) => {
+  const handlePriorityTabChange = useCallback((tab: 'default' | 'cross-provider') => {
     setPriorityTab(tab);
     // Lazy-initialize cross-provider order from global order on first tab switch
     if (tab === 'cross-provider' && crossProviderPriorityOrder.length === 0 && priorityOrder.length > 0) {
@@ -246,200 +238,184 @@ export function AccountSettings({ settings, onSettingsChange, isOpen }: AccountS
 
   const totalAccounts = unifiedAccounts.length;
 
+  const thresholdSlider = (
+    id: string,
+    value: number,
+    onChange: (value: number) => void,
+    describedBy: string
+  ) => (
+    <div className="flex items-center gap-3">
+      <input
+        id={id}
+        type="range"
+        min="0"
+        max="99"
+        step="1"
+        value={value}
+        onChange={(e) => onChange(parseInt(e.target.value, 10))}
+        disabled={isLoadingAutoSwitch}
+        aria-describedby={describedBy}
+        className={cn(
+          'h-1.5 w-40 cursor-pointer appearance-none rounded-full bg-segment-track disabled:cursor-default',
+          'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
+          '[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:appearance-none',
+          '[&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-foreground',
+          '[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:cursor-pointer',
+          '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-foreground'
+        )}
+      />
+      <span className="w-9 text-right text-sm tabular-nums text-foreground">{value}%</span>
+    </div>
+  );
+
   return (
-    <SettingsSection
-      title={t('accounts.title')}
-      description={t('accounts.description')}
-    >
-      <div className="space-y-6">
-        {/* Provider accounts list - replaces the former tabs */}
-        <ProviderAccountsList />
+    <>
+      {/* Provider accounts: one section per provider category */}
+      <ProviderAccountsList />
 
-        {/* Auto-Switch Settings Section */}
-        {totalAccounts > 1 && (
-          <div className="space-y-4 pt-6 border-t border-border">
-            <div className="flex items-center gap-2">
-              <RefreshCw className="h-4 w-4 text-muted-foreground" />
-              <h4 className="text-sm font-semibold text-foreground">{t('accounts.autoSwitching.title')}</h4>
-            </div>
+      {/* Automatic account switching */}
+      {totalAccounts > 1 && (
+        <SettingsSection title={t('accounts.autoSwitching.title')}>
+          <SettingsRows>
+            <SettingsRow
+              label={t('accounts.autoSwitching.enableAutoSwitching')}
+              description={t('accounts.autoSwitching.description')}
+            >
+              <Switch
+                checked={autoSwitchSettings?.enabled ?? false}
+                onCheckedChange={(enabled) => handleUpdateAutoSwitch({ enabled })}
+                disabled={isLoadingAutoSwitch}
+                aria-label={t('accounts.autoSwitching.enableAutoSwitching')}
+              />
+            </SettingsRow>
 
-            <div className="space-y-4">
-              <p className="text-sm text-muted-foreground">
-                {t('accounts.autoSwitching.description')}
-              </p>
-
-              {/* Master toggle */}
-              <div className="flex items-center justify-between">
-                <div>
-                  <Label className="text-sm font-medium">{t('accounts.autoSwitching.enableAutoSwitching')}</Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {t('accounts.autoSwitching.masterSwitch')}
-                  </p>
-                </div>
+            {autoSwitchSettings?.enabled && (
+              <SettingsRow
+                label={t('accounts.autoSwitching.proactiveMonitoring')}
+                description={t('accounts.autoSwitching.proactiveDescription')}
+              >
                 <Switch
-                  checked={autoSwitchSettings?.enabled ?? false}
-                  onCheckedChange={(enabled) => handleUpdateAutoSwitch({ enabled })}
+                  checked={autoSwitchSettings?.proactiveSwapEnabled ?? true}
+                  onCheckedChange={(value) => handleUpdateAutoSwitch({ proactiveSwapEnabled: value })}
                   disabled={isLoadingAutoSwitch}
+                  aria-label={t('accounts.autoSwitching.proactiveMonitoring')}
                 />
-              </div>
+              </SettingsRow>
+            )}
 
-              {autoSwitchSettings?.enabled && (
-                <>
-                  {/* Proactive Monitoring */}
-                  <div className="pl-6 space-y-4 pt-2 border-l-2 border-primary/20">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-medium flex items-center gap-2">
-                          <Activity className="h-3.5 w-3.5" />
-                          {t('accounts.autoSwitching.proactiveMonitoring')}
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t('accounts.autoSwitching.proactiveDescription')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={autoSwitchSettings?.proactiveSwapEnabled ?? true}
-                        onCheckedChange={(value) => handleUpdateAutoSwitch({ proactiveSwapEnabled: value })}
-                        disabled={isLoadingAutoSwitch}
-                      />
-                    </div>
+            {autoSwitchSettings?.enabled && autoSwitchSettings?.proactiveSwapEnabled && (
+              <SettingsRow
+                label={t('accounts.autoSwitching.sessionThreshold')}
+                htmlFor="session-threshold"
+                description={
+                  <span id="session-threshold-description">
+                    {t('accounts.autoSwitching.sessionThresholdDescription')}
+                  </span>
+                }
+              >
+                {thresholdSlider(
+                  'session-threshold',
+                  autoSwitchSettings?.sessionThreshold ?? 95,
+                  (value) => handleUpdateAutoSwitch({ sessionThreshold: value }),
+                  'session-threshold-description'
+                )}
+              </SettingsRow>
+            )}
 
-                    {autoSwitchSettings?.proactiveSwapEnabled && (
-                      <>
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="session-threshold" className="text-sm flex items-center gap-1.5">
-                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                              {t('accounts.autoSwitching.sessionThreshold')}
-                            </Label>
-                            <span className="text-sm font-mono">{autoSwitchSettings?.sessionThreshold ?? 95}%</span>
-                          </div>
-                          <input
-                            id="session-threshold"
-                            type="range"
-                            min="0"
-                            max="99"
-                            step="1"
-                            value={autoSwitchSettings?.sessionThreshold ?? 95}
-                            onChange={(e) => handleUpdateAutoSwitch({ sessionThreshold: parseInt(e.target.value, 10) })}
-                            disabled={isLoadingAutoSwitch}
-                            className="w-full"
-                            aria-describedby="session-threshold-description"
-                          />
-                          <p id="session-threshold-description" className="text-xs text-muted-foreground">
-                            {t('accounts.autoSwitching.sessionThresholdDescription')}
-                          </p>
-                        </div>
+            {autoSwitchSettings?.enabled && autoSwitchSettings?.proactiveSwapEnabled && (
+              <SettingsRow
+                label={t('accounts.autoSwitching.weeklyThreshold')}
+                htmlFor="weekly-threshold"
+                description={
+                  <span id="weekly-threshold-description">
+                    {t('accounts.autoSwitching.weeklyThresholdDescription')}
+                  </span>
+                }
+              >
+                {thresholdSlider(
+                  'weekly-threshold',
+                  autoSwitchSettings?.weeklyThreshold ?? 99,
+                  (value) => handleUpdateAutoSwitch({ weeklyThreshold: value }),
+                  'weekly-threshold-description'
+                )}
+              </SettingsRow>
+            )}
 
-                        <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor="weekly-threshold" className="text-sm flex items-center gap-1.5">
-                              <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
-                              {t('accounts.autoSwitching.weeklyThreshold')}
-                            </Label>
-                            <span className="text-sm font-mono">{autoSwitchSettings?.weeklyThreshold ?? 99}%</span>
-                          </div>
-                          <input
-                            id="weekly-threshold"
-                            type="range"
-                            min="0"
-                            max="99"
-                            step="1"
-                            value={autoSwitchSettings?.weeklyThreshold ?? 99}
-                            onChange={(e) => handleUpdateAutoSwitch({ weeklyThreshold: parseInt(e.target.value, 10) })}
-                            disabled={isLoadingAutoSwitch}
-                            className="w-full"
-                            aria-describedby="weekly-threshold-description"
-                          />
-                          <p id="weekly-threshold-description" className="text-xs text-muted-foreground">
-                            {t('accounts.autoSwitching.weeklyThresholdDescription')}
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </div>
+            {autoSwitchSettings?.enabled && (
+              <SettingsRow
+                label={t('accounts.autoSwitching.reactiveRecovery')}
+                description={t('accounts.autoSwitching.reactiveDescription')}
+              >
+                <Switch
+                  checked={autoSwitchSettings?.autoSwitchOnRateLimit ?? false}
+                  onCheckedChange={(value) => handleUpdateAutoSwitch({ autoSwitchOnRateLimit: value })}
+                  disabled={isLoadingAutoSwitch}
+                  aria-label={t('accounts.autoSwitching.reactiveRecovery')}
+                />
+              </SettingsRow>
+            )}
 
-                  {/* Reactive Recovery */}
-                  <div className="pl-6 space-y-4 pt-2 border-l-2 border-orange-500/20">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-medium flex items-center gap-2">
-                          <AlertCircle className="h-3.5 w-3.5" />
-                          {t('accounts.autoSwitching.reactiveRecovery')}
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t('accounts.autoSwitching.reactiveDescription')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={autoSwitchSettings?.autoSwitchOnRateLimit ?? false}
-                        onCheckedChange={(value) => handleUpdateAutoSwitch({ autoSwitchOnRateLimit: value })}
-                        disabled={isLoadingAutoSwitch}
-                      />
-                    </div>
+            {autoSwitchSettings?.enabled && (
+              <SettingsRow
+                label={t('accounts.autoSwitching.autoSwitchOnAuthFailure')}
+                description={t('accounts.autoSwitching.autoSwitchOnAuthFailureDescription')}
+              >
+                <Switch
+                  checked={autoSwitchSettings?.autoSwitchOnAuthFailure ?? false}
+                  onCheckedChange={(value) => handleUpdateAutoSwitch({ autoSwitchOnAuthFailure: value })}
+                  disabled={isLoadingAutoSwitch}
+                  aria-label={t('accounts.autoSwitching.autoSwitchOnAuthFailure')}
+                />
+              </SettingsRow>
+            )}
+          </SettingsRows>
+        </SettingsSection>
+      )}
 
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <Label className="text-sm font-medium">
-                          {t('accounts.autoSwitching.autoSwitchOnAuthFailure')}
-                        </Label>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t('accounts.autoSwitching.autoSwitchOnAuthFailureDescription')}
-                        </p>
-                      </div>
-                      <Switch
-                        checked={autoSwitchSettings?.autoSwitchOnAuthFailure ?? false}
-                        onCheckedChange={(value) => handleUpdateAutoSwitch({ autoSwitchOnAuthFailure: value })}
-                        disabled={isLoadingAutoSwitch}
-                      />
-                    </div>
-                  </div>
-
-                  {/* Account Priority Order - Tabbed */}
-                  <div className="pt-4 border-t border-border/50">
-                    <Tabs value={priorityTab} onValueChange={handlePriorityTabChange}>
-                      <TabsList className="mb-3">
-                        <TabsTrigger value="default">
-                          {t('accounts.priority.tabs.default')}
-                        </TabsTrigger>
-                        <TabsTrigger value="cross-provider">
-                          {t('accounts.priority.tabs.crossProvider')}
-                        </TabsTrigger>
-                      </TabsList>
-
-                      <TabsContent value="default">
-                        <AccountPriorityList
-                          accounts={unifiedAccounts}
-                          onReorder={handlePriorityReorder}
-                          onSetActive={handleSetActive}
-                          isLoading={isSavingPriority}
-                        />
-                      </TabsContent>
-
-                      <TabsContent value="cross-provider">
-                        <AccountPriorityList
-                          accounts={crossProviderUnifiedAccounts}
-                          onReorder={handleCrossProviderPriorityReorder}
-                          onSetActive={handleCrossProviderSetActive}
-                          isLoading={isSavingPriority}
-                        />
-                        <div className="rounded-lg bg-info/10 border border-info/30 p-3 mt-3">
-                          <div className="flex items-start gap-2">
-                            <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
-                            <p className="text-xs text-muted-foreground">
-                              {t('accounts.priority.crossProviderDescription')}
-                            </p>
-                          </div>
-                        </div>
-                      </TabsContent>
-                    </Tabs>
-                  </div>
-                </>
+      {/* Account priority order */}
+      {totalAccounts > 1 && autoSwitchSettings?.enabled && (
+        <SettingsSection title={t('accounts.priority.title')}>
+          <SettingsRows>
+            <SettingsRow
+              label={t('accounts.priority.modeLabel')}
+              description={
+                priorityTab === 'cross-provider'
+                  ? t('accounts.priority.crossProviderDescription')
+                  : t('accounts.priority.description')
+              }
+            >
+              <SegmentedControl
+                value={priorityTab}
+                onValueChange={handlePriorityTabChange}
+                ariaLabel={t('accounts.priority.modeLabel')}
+                options={[
+                  { value: 'default', label: t('accounts.priority.tabs.default') },
+                  { value: 'cross-provider', label: t('accounts.priority.tabs.crossProvider') },
+                ]}
+              />
+            </SettingsRow>
+            <div className="pt-1">
+              {priorityTab === 'cross-provider' ? (
+                <AccountPriorityList
+                  key="cross-provider"
+                  accounts={crossProviderUnifiedAccounts}
+                  onReorder={handleCrossProviderPriorityReorder}
+                  onSetActive={handleCrossProviderSetActive}
+                  isLoading={isSavingPriority}
+                />
+              ) : (
+                <AccountPriorityList
+                  key="default"
+                  accounts={unifiedAccounts}
+                  onReorder={handlePriorityReorder}
+                  onSetActive={handleSetActive}
+                  isLoading={isSavingPriority}
+                />
               )}
             </div>
-          </div>
-        )}
-      </div>
-    </SettingsSection>
+          </SettingsRows>
+        </SettingsSection>
+      )}
+    </>
   );
 }

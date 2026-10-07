@@ -59,7 +59,7 @@ export function InsightsModelSelector({
   const effortLabel = (level: ThinkingLevel) => t(`insights.model.effortLevels.${level}`);
 
   const renderCheck = (selected: boolean) =>
-    selected ? <Check className="ml-3 h-4 w-4 shrink-0 text-ring" strokeWidth={2.25} /> : <span className="ml-3 w-4 shrink-0" />;
+    selected ? <Check className="ml-3 h-4 w-4 shrink-0 text-(--menu-check)" strokeWidth={2} /> : <span className="ml-3 w-4 shrink-0" />;
 
   return (
     <>

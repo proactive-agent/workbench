@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bug, FolderOpen, Copy, FileText, RefreshCw, Loader2, Check, AlertCircle } from 'lucide-react';
+import { FolderOpen, Copy, RefreshCw, Loader2, Check, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
@@ -82,14 +82,13 @@ export function DebugSettings() {
 
   return (
     <SettingsSection
-      title={t('debug.title', 'Debug & Logs')}
+      title={t('debug.title', 'Debug & logs')}
       description={t('debug.description', 'Access logs and debug information for troubleshooting')}
     >
-      <div className="space-y-4">
         <SettingsRows>
           {/* Error Reporting Toggle */}
           <SettingsRow
-            label={t('debug.errorReporting.label', 'Anonymous Error Reporting')}
+            label={t('debug.errorReporting.label', 'Anonymous error reporting')}
             description={t('debug.errorReporting.description', 'Send crash reports to help improve Auto Claude. No personal data or code is collected.')}
             htmlFor="sentry-toggle"
           >
@@ -100,124 +99,105 @@ export function DebugSettings() {
             />
           </SettingsRow>
 
-          {/* Quick Actions */}
+          {/* Copy debug info (for bug reports) */}
           <SettingsRow
-            label={t('debug.helpTitle', 'Reporting Issues')}
+            label={t('debug.helpTitle', 'Reporting issues')}
             description={t('debug.helpText', 'When reporting bugs, click "Copy Debug Info" to get system information and recent errors that help us diagnose the issue.')}
-            footer={
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleOpenLogsFolder}
-                >
-                  <FolderOpen className="mr-1.5 h-3.5 w-3.5" />
-                  {t('debug.openLogsFolder', 'Open Logs Folder')}
-                </Button>
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCopyDebugInfo}
+              disabled={copySuccess}
+            >
+              {copySuccess ? (
+                <>
+                  <Check className="mr-1.5 h-3.5 w-3.5 text-success" strokeWidth={1.75} />
+                  {t('debug.copied', 'Copied!')}
+                </>
+              ) : (
+                <>
+                  <Copy className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+                  {t('debug.copyDebugInfo', 'Copy debug info')}
+                </>
+              )}
+            </Button>
+          </SettingsRow>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCopyDebugInfo}
-                  disabled={copySuccess}
-                >
-                  {copySuccess ? (
-                    <>
-                      <Check className="mr-1.5 h-3.5 w-3.5 text-success" />
-                      {t('debug.copied', 'Copied!')}
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="mr-1.5 h-3.5 w-3.5" />
-                      {t('debug.copyDebugInfo', 'Copy Debug Info')}
-                    </>
-                  )}
-                </Button>
+          {/* Logs folder */}
+          <SettingsRow
+            label={t('debug.logsLocation', 'Logs location')}
+            description={debugInfo ? <span className="break-all font-mono text-xs">{debugInfo.logsPath}</span> : undefined}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleOpenLogsFolder}
+            >
+              <FolderOpen className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+              {t('debug.openLogsFolder', 'Open logs folder')}
+            </Button>
+          </SettingsRow>
 
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={loadDebugInfo}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
-                  )}
-                  {t('debug.loadInfo', 'Load Debug Info')}
-                </Button>
+          {/* System information + recent errors */}
+          <SettingsRow
+            label={t('debug.systemInfo', 'System information')}
+            footer={debugInfo ? (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 rounded-xl border border-border px-4 py-3 text-xs">
+                  {Object.entries(debugInfo.systemInfo).map(([key, value]) => (
+                    <div key={key} className="flex min-w-0 justify-between gap-2">
+                      <span className="shrink-0 text-muted-foreground">{key}</span>
+                      <span className="truncate text-right font-mono text-foreground" title={value}>{value}</span>
+                    </div>
+                  ))}
+                </div>
+
+                {debugInfo.recentErrors.length > 0 ? (
+                  <div>
+                    <p className="mb-1.5 text-sm text-foreground">
+                      {t('debug.recentErrors', 'Recent errors')} ({debugInfo.recentErrors.length})
+                    </p>
+                    <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl bg-segment-track px-4 py-3">
+                      {debugInfo.recentErrors.map((recentError, index) => (
+                        <div key={index} className="break-all font-mono text-xs text-muted-foreground">
+                          {recentError}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                    <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
+                    {t('debug.noRecentErrors', 'No recent errors')}
+                  </p>
+                )}
               </div>
-            }
-          />
+            ) : undefined}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadDebugInfo}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <RefreshCw className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+              )}
+              {t('debug.loadInfo', 'Load debug info')}
+            </Button>
+          </SettingsRow>
         </SettingsRows>
 
         {/* Error Display */}
         {error && (
-          <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive text-sm">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <p className="mt-2 flex items-start gap-1.5 text-sm text-destructive">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.75} />
             {error}
-          </div>
+          </p>
         )}
-
-        {/* Debug Info Display */}
-        {debugInfo && (
-          <div className="space-y-4">
-            {/* System Information */}
-            <div className="rounded-lg border border-border p-4">
-              <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
-                <Bug className="h-4 w-4" />
-                {t('debug.systemInfo', 'System Information')}
-              </h4>
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                {Object.entries(debugInfo.systemInfo).map(([key, value]) => (
-                  <div key={key} className="flex justify-between gap-2">
-                    <span className="text-muted-foreground">{key}:</span>
-                    <span className="font-mono text-right truncate" title={value}>{value}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Logs Path */}
-            <div className="rounded-lg border border-border p-4">
-              <h4 className="font-medium text-sm mb-2 flex items-center gap-2">
-                <FileText className="h-4 w-4" />
-                {t('debug.logsLocation', 'Logs Location')}
-              </h4>
-              <code className="text-xs text-muted-foreground bg-muted/50 px-2 py-1 rounded block truncate">
-                {debugInfo.logsPath}
-              </code>
-            </div>
-
-            {/* Recent Errors */}
-            {debugInfo.recentErrors.length > 0 && (
-              <div className="rounded-lg border border-border p-4">
-                <h4 className="font-medium text-sm mb-3 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
-                  {t('debug.recentErrors', 'Recent Errors')} ({debugInfo.recentErrors.length})
-                </h4>
-                <div className="space-y-1 max-h-48 overflow-y-auto">
-                  {debugInfo.recentErrors.map((error, index) => (
-                    <div key={index} className="text-xs font-mono text-muted-foreground bg-muted/30 px-2 py-1 rounded">
-                      {error}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {debugInfo.recentErrors.length === 0 && (
-              <div className="rounded-lg border border-border p-4">
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Check className="h-4 w-4 text-success" />
-                  {t('debug.noRecentErrors', 'No recent errors')}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </SettingsSection>
   );
 }

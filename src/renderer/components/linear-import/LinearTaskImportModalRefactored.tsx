@@ -4,7 +4,8 @@
  * Uses extracted hooks and components for better maintainability
  */
 
-import { Download, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ export function LinearTaskImportModalRefactored({
   onOpenChange,
   onImportComplete
 }: LinearTaskImportModalProps) {
+  const { t } = useTranslation(['dialogs', 'common']);
   // Use the orchestration hook to manage all state and handlers
   const {
     teams,
@@ -71,10 +73,10 @@ export function LinearTaskImportModalRefactored({
       <DialogContent className="sm:max-w-[700px] max-h-[85vh] flex flex-col">
         <DialogHeader className="shrink-0">
           <DialogTitle>
-            Import Linear Tasks
+            {t('dialogs:linearImport.title')}
           </DialogTitle>
           <DialogDescription>
-            Select tasks from Linear to import into AutoBuild
+            {t('dialogs:linearImport.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -146,7 +148,7 @@ export function LinearTaskImportModalRefactored({
             size="sm"
             onClick={() => handleOpenChange(false)}
           >
-            {importResult?.success ? 'Done' : 'Cancel'}
+            {importResult?.success ? t('dialogs:linearImport.done') : t('common:buttons.cancel')}
           </Button>
           {!importResult?.success && (
             <Button
@@ -157,14 +159,10 @@ export function LinearTaskImportModalRefactored({
               {isImporting ? (
                 <>
                   <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                  Importing...
+                  {t('dialogs:linearImport.importing')}
                 </>
               ) : (
-                <>
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
-                  Import {selectedIssueIds.size} Task
-                  {selectedIssueIds.size !== 1 ? 's' : ''}
-                </>
+                t('dialogs:linearImport.importCount', { count: selectedIssueIds.size })
               )}
             </Button>
           )}

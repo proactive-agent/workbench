@@ -5,7 +5,10 @@ import { useSettingsStore } from '../../stores/settings-store';
 import { useToast } from '../../hooks/use-toast';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import { ProviderSection } from './ProviderSection';
+import { SettingsSection } from './SettingsSection';
+import { SettingsRows } from './SettingsRow';
 import { AddAccountDialog } from './AddAccountDialog';
+import { buttonVariants } from '../ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -186,34 +189,30 @@ export function ProviderAccountsList() {
   }
 
   return (
-    <div className="space-y-5">
+    <>
       {categories.map(({ key, label, providers: categoryProviders }) => {
         if (categoryProviders.length === 0) return null;
         return (
-          <div key={key} className="space-y-2">
-            <div className="flex items-center gap-2 pt-1 first:pt-0">
-              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground/70">
-                {label}
-              </span>
-              <div className="flex-1 h-px bg-border/40" />
-            </div>
-            {categoryProviders.map((providerInfo) => {
-              const accounts = accountsByProvider.get(providerInfo.id) ?? [];
-              const envDetected = providerInfo.envVars.some(v => envCredentials?.[v]);
-              return (
-                <ProviderSection
-                  key={providerInfo.id}
-                  provider={providerInfo}
-                  accounts={accounts}
-                  envDetected={envDetected}
-                  onAddAccount={handleAddAccount}
-                  onEditAccount={handleEditAccount}
-                  onDeleteAccount={handleDeleteAccount}
-                  onReauthAccount={handleReauthAccount}
-                />
-              );
-            })}
-          </div>
+          <SettingsSection key={key} title={label}>
+            <SettingsRows>
+              {categoryProviders.map((providerInfo) => {
+                const accounts = accountsByProvider.get(providerInfo.id) ?? [];
+                const envDetected = providerInfo.envVars.some(v => envCredentials?.[v]);
+                return (
+                  <ProviderSection
+                    key={providerInfo.id}
+                    provider={providerInfo}
+                    accounts={accounts}
+                    envDetected={envDetected}
+                    onAddAccount={handleAddAccount}
+                    onEditAccount={handleEditAccount}
+                    onDeleteAccount={handleDeleteAccount}
+                    onReauthAccount={handleReauthAccount}
+                  />
+                );
+              })}
+            </SettingsRows>
+          </SettingsSection>
         );
       })}
 
@@ -246,7 +245,7 @@ export function ProviderAccountsList() {
             <AlertDialogAction
               onClick={confirmDelete}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={buttonVariants({ variant: 'destructive', size: 'sm' })}
             >
               {isDeleting ? (
                 <>
@@ -260,6 +259,6 @@ export function ProviderAccountsList() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

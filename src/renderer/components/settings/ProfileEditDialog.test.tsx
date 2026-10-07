@@ -162,7 +162,7 @@ describe('ProfileEditDialog - Edit Mode', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Edit Profile')).toBeInTheDocument();
+      expect(screen.getByText('Edit profile')).toBeInTheDocument();
     });
   });
 
@@ -241,7 +241,7 @@ describe('ProfileEditDialog - Create Mode', () => {
       />
     );
 
-    expect(screen.getByText('Add API Profile')).toBeInTheDocument();
+    expect(screen.getByText('Add API profile')).toBeInTheDocument();
   });
 
   // Fields should be empty in create mode
@@ -493,7 +493,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Test Connection')).toBeInTheDocument();
+      expect(screen.getByText('Test connection')).toBeInTheDocument();
     });
   });
 
@@ -506,7 +506,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
       />
     );
 
-    const testButton = await screen.findByText('Test Connection');
+    const testButton = await screen.findByText('Test connection');
     fireEvent.click(testButton);
 
     await waitFor(() => {
@@ -566,8 +566,8 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Connection Successful')).toBeInTheDocument();
-      expect(screen.getByText('Connection successful')).toBeInTheDocument();
+      // Result title and the mocked result message share the same text
+      expect(screen.getAllByText('Connection successful')).toHaveLength(2);
     });
   });
 
@@ -594,7 +594,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText('Connection Failed')).toBeInTheDocument();
+      expect(screen.getByText('Connection failed')).toBeInTheDocument();
       expect(screen.getByText('Authentication failed. Please check your API key.')).toBeInTheDocument();
     });
   });
@@ -626,7 +626,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
     fireEvent.change(keyInput, { target: { value: 'sk-ant-test12345678' } });
 
     // Test button should still be disabled since baseUrl is empty
-    const testButton = screen.getByText('Test Connection');
+    const testButton = screen.getByText('Test connection');
     expect(testButton).toBeDisabled();
 
     // Should NOT call testConnection
@@ -660,7 +660,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
     fireEvent.change(urlInput, { target: { value: 'https://api.example.com' } });
 
     // Test button should still be disabled since apiKey is empty
-    const testButton = screen.getByText('Test Connection');
+    const testButton = screen.getByText('Test connection');
     expect(testButton).toBeDisabled();
 
     // Should NOT call testConnection
@@ -686,7 +686,7 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
       />
     );
 
-    const testButton = await screen.findByText('Test Connection');
+    const testButton = await screen.findByText('Test connection');
     fireEvent.click(testButton);
 
     await waitFor(() => {

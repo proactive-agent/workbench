@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, ExternalLink, Clock, RefreshCw, User, ChevronDown, Check, Zap, Star, Plus } from 'lucide-react';
+import { ExternalLink, RefreshCw, ChevronDown, Check, Star, Plus } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -18,7 +18,7 @@ import {
   DropdownMenuTrigger,
 } from './ui/dropdown-menu';
 import { Switch } from './ui/switch';
-import { Label } from './ui/label';
+import { SettingsRow, SettingsRows } from './settings/SettingsRow';
 import { Input } from './ui/input';
 import { useRateLimitStore } from '../stores/rate-limit-store';
 import { useClaudeProfileStore, loadClaudeProfiles, switchTerminalToProfile } from '../stores/claude-profile-store';
@@ -168,8 +168,7 @@ export function RateLimitModal() {
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && hideRateLimitModal()}>
       <DialogContent className="sm:max-w-[520px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 text-warning" />
+          <DialogTitle>
             {t('rateLimit.modalTitle')}
           </DialogTitle>
           <DialogDescription>
@@ -180,160 +179,143 @@ export function RateLimitModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 pt-4">
           {/* Auto-switch notification */}
           {autoSwitchHappened && (
-            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
-              <Zap className="h-4 w-4 text-success shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {t('rateLimit.autoSwitching', { name: suggestedProfile?.name })}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t('rateLimit.autoSwitchingDescription')}
-                </p>
-              </div>
+            <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+              <p className="text-foreground">
+                {t('rateLimit.autoSwitching', { name: suggestedProfile?.name })}
+              </p>
+              <p className="text-muted-foreground mt-0.5">
+                {t('rateLimit.autoSwitchingDescription')}
+              </p>
             </div>
           )}
 
           {/* Reset time info */}
           {rateLimitInfo?.resetTime && !autoSwitchHappened && (
-            <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
-              <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-foreground">
-                  {t('rateLimit.resetsTime', { time: rateLimitInfo.resetTime })}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {t('rateLimit.usageRestored')}
-                </p>
-              </div>
+            <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+              <p className="text-foreground">
+                {t('rateLimit.resetsTime', { time: rateLimitInfo.resetTime })}
+              </p>
+              <p className="text-muted-foreground mt-0.5">
+                {t('rateLimit.usageRestored')}
+              </p>
             </div>
           )}
 
-          {/* Profile switching / Add account section - show unless auto-switch happened */}
-          {!autoSwitchHappened && (
-            <div className="rounded-lg border border-border px-4 py-3 text-sm">
-              <h4 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
-                <User className="h-4 w-4" />
-                {hasMultipleProfiles ? t('rateLimit.switchAccount') : t('rateLimit.useAnotherAccount')}
-              </h4>
-
-              {hasMultipleProfiles ? (
-                <>
-                  <p className="text-sm text-muted-foreground mb-3">
-                    {suggestedProfile ? (
-                      t('rateLimit.recommended', { name: suggestedProfile.name })
-                    ) : (
-                      t('rateLimit.otherSubscriptions')
-                    )}
-                  </p>
-
-                  <div className="flex items-center gap-2">
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="outline" className="flex-1 justify-between">
+          <SettingsRows>
+            {/* Profile switching / Add account section - show unless auto-switch happened */}
+            {!autoSwitchHappened && hasMultipleProfiles && (
+              <SettingsRow
+                label={t('rateLimit.switchAccount')}
+                description={
+                  suggestedProfile
+                    ? t('rateLimit.recommended', { name: suggestedProfile.name })
+                    : t('rateLimit.otherSubscriptions')
+                }
+                stacked
+                footer={
+                  selectedProfile?.description ? (
+                    <p className="text-sm text-(--nav-label-color)">{selectedProfile.description}</p>
+                  ) : undefined
+                }
+              >
+                <div className="flex items-center gap-2">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm" className="flex-1 justify-between">
+                        <span className="truncate flex items-center gap-2">
+                          {selectedProfile?.name || t('rateLimit.selectAccount')}
+                          {selectedProfileId === rateLimitInfo?.suggestedProfileId && (
+                            <Star className="h-3 w-3 text-muted-foreground" />
+                          )}
+                        </span>
+                        <ChevronDown className="h-4 w-4 shrink-0 ml-2" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="start" className="w-[220px]">
+                      {availableProfiles.map((profile) => (
+                        <DropdownMenuItem
+                          key={profile.id}
+                          onClick={() => setSelectedProfileId(profile.id)}
+                          className="flex items-center justify-between"
+                        >
                           <span className="truncate flex items-center gap-2">
-                            {selectedProfile?.name || t('rateLimit.selectAccount')}
-                            {selectedProfileId === rateLimitInfo?.suggestedProfileId && (
-                              <Star className="h-3 w-3 text-yellow-500" />
+                            {profile.name}
+                            {profile.id === rateLimitInfo?.suggestedProfileId && (
+                              <Star className="h-3 w-3 text-muted-foreground" aria-label={t('rateLimit.recommendedLabel')} />
                             )}
                           </span>
-                          <ChevronDown className="h-4 w-4 shrink-0 ml-2" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="start" className="w-[220px] bg-popover border border-border shadow-lg">
-                        {availableProfiles.map((profile) => (
-                          <DropdownMenuItem
-                            key={profile.id}
-                            onClick={() => setSelectedProfileId(profile.id)}
-                            className="flex items-center justify-between"
-                          >
-                            <span className="truncate flex items-center gap-2">
-                              {profile.name}
-                              {profile.id === rateLimitInfo?.suggestedProfileId && (
-                                <Star className="h-3 w-3 text-yellow-500" aria-label="Recommended" />
-                              )}
-                            </span>
-                            {selectedProfileId === profile.id && (
-                              <Check className="h-4 w-4 shrink-0" />
-                            )}
-                          </DropdownMenuItem>
-                        ))}
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          onClick={() => {
-                            // Focus the add account input
-                            const input = document.querySelector('input[placeholder*="Account name"]') as HTMLInputElement;
-                            if (input) input.focus();
-                          }}
-                          className="flex items-center gap-2 text-muted-foreground"
-                        >
-                          <Plus className="h-4 w-4" />
-                          {t('rateLimit.addNewAccount')}
+                          {selectedProfileId === profile.id && (
+                            <Check className="h-4 w-4 shrink-0" />
+                          )}
                         </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                      ))}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        onClick={() => {
+                          // Focus the add account input
+                          const input = document.querySelector('input[placeholder*="Account name"]') as HTMLInputElement;
+                          if (input) input.focus();
+                        }}
+                        className="flex items-center gap-2 text-muted-foreground"
+                      >
+                        <Plus className="h-4 w-4" />
+                        {t('rateLimit.addNewAccount')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
 
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleSwitchProfile}
-                      disabled={!selectedProfileId || isSwitching}
-                      className="gap-2 shrink-0"
-                    >
-                      {isSwitching ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-spin" />
-                          {t('rateLimit.switching')}
-                        </>
-                      ) : (
-                        <>
-                          <RefreshCw className="h-4 w-4" />
-                          {t('buttons.switch')}
-                        </>
-                      )}
-                    </Button>
-                  </div>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleSwitchProfile}
+                    disabled={!selectedProfileId || isSwitching}
+                    className="gap-2 shrink-0"
+                  >
+                    {isSwitching ? (
+                      <>
+                        <RefreshCw className="h-4 w-4 animate-spin" />
+                        {t('rateLimit.switching')}
+                      </>
+                    ) : (
+                      t('buttons.switch')
+                    )}
+                  </Button>
+                </div>
+              </SettingsRow>
+            )}
 
-                  {selectedProfile?.description && (
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {selectedProfile.description}
-                    </p>
-                  )}
+            {/* Auto-switch toggle */}
+            {!autoSwitchHappened && hasMultipleProfiles && availableProfiles.length > 0 && (
+              <SettingsRow label={t('rateLimit.autoSwitchOnRateLimit')} htmlFor="auto-switch">
+                <Switch
+                  id="auto-switch"
+                  checked={autoSwitchEnabled}
+                  onCheckedChange={handleAutoSwitchToggle}
+                  disabled={isLoadingSettings}
+                />
+              </SettingsRow>
+            )}
 
-                  {/* Auto-switch toggle */}
-                  {availableProfiles.length > 0 && (
-                    <div className="flex items-center justify-between mt-4 pt-3 border-t border-border/50">
-                      <Label htmlFor="auto-switch" className="text-xs text-muted-foreground cursor-pointer">
-                        {t('rateLimit.autoSwitchOnRateLimit')}
-                      </Label>
-                      <Switch
-                        id="auto-switch"
-                        checked={autoSwitchEnabled}
-                        onCheckedChange={handleAutoSwitchToggle}
-                        disabled={isLoadingSettings}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground mb-3">
-                  {t('rateLimit.addAnotherSubscription')}
-                </p>
-              )}
-
-              {/* Add new account section */}
-              <div className={hasMultipleProfiles ? "mt-4 pt-3 border-t border-border/50" : ""}>
-                <p className="text-xs text-muted-foreground mb-2">
-                  {hasMultipleProfiles ? t('rateLimit.addAnotherAccount') : t('rateLimit.connectAccount')}
-                </p>
+            {/* Add new account */}
+            {!autoSwitchHappened && (
+              <SettingsRow
+                label={hasMultipleProfiles ? t('rateLimit.addAnotherAccount') : t('rateLimit.useAnotherAccount')}
+                description={
+                  hasMultipleProfiles
+                    ? t('rateLimit.willOpenLogin')
+                    : `${t('rateLimit.addAnotherSubscription')} ${t('rateLimit.willOpenLogin')}`
+                }
+                stacked
+              >
                 <div className="flex items-center gap-2">
                   <Input
                     placeholder={t('rateLimit.accountNamePlaceholder')}
                     value={newProfileName}
                     onChange={(e) => setNewProfileName(e.target.value)}
-                    className="flex-1 h-8 text-sm"
+                    className="flex-1"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newProfileName.trim()) {
                         handleAddProfile();
@@ -347,41 +329,28 @@ export function RateLimitModal() {
                     disabled={!newProfileName.trim() || isAddingProfile}
                     className="gap-1 shrink-0"
                   >
-                    {isAddingProfile ? (
-                      <RefreshCw className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Plus className="h-3 w-3" />
-                    )}
+                    {isAddingProfile && <RefreshCw className="h-3 w-3 animate-spin" />}
                     {t('buttons.add')}
                   </Button>
                 </div>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {t('rateLimit.willOpenLogin')}
-                </p>
-              </div>
-            </div>
-          )}
+              </SettingsRow>
+            )}
 
-          {/* Upgrade prompt */}
-          <div className="rounded-lg border border-border px-4 py-3 text-sm">
-            <h4 className="text-sm font-medium text-foreground mb-2">
-              {t('rateLimit.upgradeTitle')}
-            </h4>
-            <p className="text-sm text-muted-foreground mb-3">
-              {t('rateLimit.upgradeDescription')}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={handleUpgrade}
-              aria-label={t('accessibility.upgradeSubscriptionAriaLabel')}
-            >
-              <ExternalLink className="h-4 w-4" aria-hidden="true" />
-              {t('rateLimit.upgradeSubscription')}
-              <span className="sr-only">({t('accessibility.opensInNewWindow')})</span>
-            </Button>
-          </div>
+            {/* Upgrade prompt */}
+            <SettingsRow label={t('rateLimit.upgradeTitle')} description={t('rateLimit.upgradeDescription')}>
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2"
+                onClick={handleUpgrade}
+                aria-label={t('accessibility.upgradeSubscriptionAriaLabel')}
+              >
+                {t('rateLimit.upgradeSubscription')}
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                <span className="sr-only">({t('accessibility.opensInNewWindow')})</span>
+              </Button>
+            </SettingsRow>
+          </SettingsRows>
         </div>
 
         <DialogFooter>

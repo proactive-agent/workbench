@@ -9,7 +9,6 @@ export { TaskSelector } from './TaskSelector';
 export { useXterm } from './useXterm';
 export { usePtyProcess } from './usePtyProcess';
 export { useTerminalEvents } from './useTerminalEvents';
-export { useAutoNaming } from './useAutoNaming';
 
 // Export types and constants
 export type { TerminalProps } from './types';

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Sparkles, Loader2, CheckCircle2, MessageCircle } from 'lucide-react';
+import { Loader2, Check } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Progress } from '../../ui/progress';
 import { Checkbox } from '../../ui/checkbox';
@@ -120,36 +120,34 @@ export function InvestigationDialog({
                 <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               </div>
             ) : fetchNotesError ? (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
-                <p className="text-sm text-destructive font-medium">{t('investigation.failedToLoadNotes')}</p>
-                <p className="text-xs text-destructive/80 mt-1">{fetchNotesError}</p>
+              <div className="text-sm" role="alert">
+                <p className="text-destructive">{t('investigation.failedToLoadNotes')}</p>
+                <p className="text-muted-foreground mt-1">{fetchNotesError}</p>
               </div>
             ) : notes.length > 0 ? (
               <div className="space-y-2 flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-medium flex items-center gap-2">
-                    <MessageCircle className="h-4 w-4" />
+                  <h4 className="text-sm font-medium text-foreground">
                     {t('investigation.selectNotes')} ({selectedNoteIds.length}/{notes.length})
                   </h4>
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={toggleAllNotes}
-                    className="text-xs"
                   >
                     {selectedNoteIds.length === notes.length ? t('investigation.deselectAll') : t('investigation.selectAll')}
                   </Button>
                 </div>
                 <ScrollArea
-                  className="flex min-h-0 rounded-lg border border-border"
+                  className="flex min-h-0 rounded-xl border border-border"
                   viewportClassName="h-auto"
                 >
-                  <div className="p-2 space-y-2">
+                  <div className="p-1">
                     {notes.map((note) => (
                       <button
                         type="button"
                         key={note.id}
-                        className="flex gap-3 p-3 rounded-lg border border-border hover:bg-nav-hover transition-colors cursor-pointer w-full text-left"
+                        className="flex gap-3 p-3 rounded-lg hover:bg-nav-hover transition-colors cursor-pointer w-full text-left"
                         onClick={() => toggleNote(note.id)}
                       >
                         <Checkbox
@@ -173,13 +171,13 @@ export function InvestigationDialog({
                 </ScrollArea>
               </div>
             ) : (
-              <div className="rounded-lg border border-border px-4 py-3 text-sm">
-                <h4 className="text-sm font-medium mb-2">{t('investigation.willInclude')}</h4>
-                <ul className="text-sm text-muted-foreground space-y-1">
-                  <li>• {t('investigation.includeTitle')}</li>
-                  <li>• {t('investigation.includeLink')}</li>
-                  <li>• {t('investigation.includeLabels')}</li>
-                  <li>• {t('investigation.noNotes')}</li>
+              <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <p className="text-foreground mb-2">{t('investigation.willInclude')}</p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                  <li>{t('investigation.includeTitle')}</li>
+                  <li>{t('investigation.includeLink')}</li>
+                  <li>{t('investigation.includeLabels')}</li>
+                  <li>{t('investigation.noNotes')}</li>
                 </ul>
               </div>
             )}
@@ -195,14 +193,14 @@ export function InvestigationDialog({
             </div>
 
             {investigationStatus.phase === 'error' && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              <p className="text-sm text-destructive" role="alert">
                 {investigationStatus.error}
-              </div>
+              </p>
             )}
 
             {investigationStatus.phase === 'complete' && (
-              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+              <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <Check className="h-4 w-4 shrink-0 text-success" />
                 {t('investigation.taskCreated')}
               </div>
             )}
@@ -216,7 +214,6 @@ export function InvestigationDialog({
                 {t('investigation.cancel')}
               </Button>
               <Button size="sm" onClick={handleStartInvestigation}>
-                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
                 {t('detail.createTask')}
               </Button>
             </>

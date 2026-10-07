@@ -66,13 +66,14 @@ SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayNam
 const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = 'popper', ...props }, ref) => (
+>(({ className, children, position = 'popper', align = 'end', ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
       className={cn(
-        'relative z-50 max-h-96 min-w-[8rem] overflow-hidden',
-        'surface-border rounded-lg border border-border bg-card text-foreground shadow-lg',
+        // claude.ai dropdown: 12px panel with a hairline border and a soft shadow
+        'relative z-50 max-h-96 min-w-[13rem] max-w-[24rem] overflow-hidden',
+        'rounded-xl border border-border bg-card text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.24)]',
         'data-[state=open]:animate-in data-[state=closed]:animate-out',
         'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
         'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
@@ -83,12 +84,14 @@ const SelectContent = React.forwardRef<
         className
       )}
       position={position}
+      // Right-aligned to the trigger, like claude.ai menus (full-width triggers are unaffected)
+      align={align}
       {...props}
     >
       <SelectScrollUpButton />
       <SelectPrimitive.Viewport
         className={cn(
-          'p-1 max-h-[300px] overflow-y-auto',
+          'p-1.5 max-h-[300px] overflow-y-auto',
           position === 'popper' &&
             'w-full min-w-(--radix-select-trigger-width)'
         )}
@@ -107,7 +110,7 @@ const SelectLabel = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <SelectPrimitive.Label
     ref={ref}
-    className={cn('py-1.5 pl-8 pr-2 text-sm font-semibold text-muted-foreground', className)}
+    className={cn('px-3 py-1.5 text-xs text-(--nav-label-color)', className)}
     {...props}
   />
 ));
@@ -120,22 +123,25 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      'relative flex w-full cursor-default select-none items-center',
-      'rounded-md py-2 pl-8 pr-2 text-sm outline-none',
-      'focus:bg-accent focus:text-accent-foreground',
+      'relative flex w-full min-w-0 cursor-default select-none items-center',
+      'rounded-lg py-2 pl-3 pr-9 text-sm text-foreground outline-none',
+      'focus:bg-nav-hover',
       'data-[disabled]:pointer-events-none data-[disabled]:opacity-50',
       'transition-colors duration-150',
       className
     )}
     {...props}
   >
-    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+    {/* Selected item: blue check on the right, like claude.ai */}
+    <span className="absolute right-3 flex h-4 w-4 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
-        <Check className="h-4 w-4 text-primary" />
+        <Check className="h-4 w-4 text-(--menu-check)" strokeWidth={2} />
       </SelectPrimitive.ItemIndicator>
     </span>
 
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    <span className="min-w-0 truncate">
+      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+    </span>
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;

@@ -29,6 +29,16 @@ interface ProviderTabBarProps {
   needsSetup?: (provider: BuiltinProvider) => boolean;
 }
 
+// claude.ai segmented-control look: items sit on a translucent track, the active one is raised
+const itemClass = (isActive: boolean) =>
+  cn(
+    'relative inline-flex h-full items-center gap-1 rounded-[7px] px-3 text-sm outline-none',
+    'transition-[color,background-color,box-shadow] duration-75 focus-visible:shadow-(--shadow-focus)',
+    isActive
+      ? 'bg-segment-thumb text-foreground shadow-[inset_0_0_0_1px_var(--segment-thumb-ring),0_1px_2px_0_rgb(0_0_0/0.05)]'
+      : 'text-muted-foreground hover:text-foreground'
+  );
+
 function getProviderDisplayName(provider: BuiltinProvider): string {
   const info = PROVIDER_REGISTRY.find((p) => p.id === provider);
   return info?.name ?? provider;
@@ -61,7 +71,11 @@ export function ProviderTabBar({
     hasOverflow && activeProvider !== null && overflowProviders.includes(activeProvider);
 
   return (
-    <div className="flex items-center gap-1.5 flex-wrap">
+    <div
+      role="tablist"
+      aria-label={t('agentProfile.providerTabs.label')}
+      className="inline-flex h-8 w-fit max-w-full shrink-0 items-stretch rounded-lg bg-segment-track p-px"
+    >
       {visibleProviders.map((provider) => {
         const isActive = provider === activeProvider;
         const showSetupDot = needsSetup?.(provider) ?? false;
@@ -69,20 +83,18 @@ export function ProviderTabBar({
           <button
             key={provider}
             type="button"
+            role="tab"
+            aria-selected={isActive}
             onClick={() => onProviderChange(provider)}
-            className={cn(
-              'relative px-3 py-1.5 text-sm font-medium rounded-full transition-colors',
-              isActive
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            )}
+            className={itemClass(isActive)}
           >
             {getProviderDisplayName(provider)}
             {showSetupDot && (
-              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
-              </span>
+              <span
+                className="ml-0.5 inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-(--error)"
+                title={t('agentProfile.providerTabs.needsSetup')}
+                aria-label={t('agentProfile.providerTabs.needsSetup')}
+              />
             )}
           </button>
         );
@@ -93,32 +105,32 @@ export function ProviderTabBar({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className={cn(
-                'px-3 py-1.5 text-sm font-medium rounded-full transition-colors flex items-center gap-1',
-                isActiveInOverflow
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              )}
+              role="tab"
+              aria-selected={isActiveInOverflow}
+              className={itemClass(isActiveInOverflow)}
             >
               {isActiveInOverflow && activeProvider !== null
                 ? getProviderDisplayName(activeProvider)
                 : t('agentProfile.providerTabs.moreProviders')}
-              <ChevronDown className="h-3.5 w-3.5" />
+              <ChevronDown className="h-3.5 w-3.5" strokeWidth={1.75} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start">
+          <DropdownMenuContent align="end">
             {overflowProviders.map((provider) => (
               <DropdownMenuItem
                 key={provider}
                 onClick={() => onProviderChange(provider)}
                 className={cn(
                   'relative',
-                  provider === activeProvider && 'bg-accent text-accent-foreground'
+                  provider === activeProvider && 'bg-nav-active text-foreground'
                 )}
               >
                 {getProviderDisplayName(provider)}
                 {needsSetup?.(provider) && (
-                  <span className="ml-2 inline-flex h-2 w-2 rounded-full bg-red-500 shrink-0" />
+                  <span
+                    className="ml-2 inline-flex h-1.5 w-1.5 rounded-full bg-(--error) shrink-0"
+                    aria-label={t('agentProfile.providerTabs.needsSetup')}
+                  />
                 )}
               </DropdownMenuItem>
             ))}
@@ -131,12 +143,7 @@ export function ProviderTabBar({
           <TooltipProvider delayDuration={200}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <span
-                  className={cn(
-                    'inline-flex px-3 py-1.5 text-sm font-medium rounded-full',
-                    'bg-muted/50 text-muted-foreground/50 cursor-not-allowed'
-                  )}
-                >
+                <span className="inline-flex h-full cursor-not-allowed items-center px-3 text-sm text-muted-foreground/50">
                   {t('agentProfile.providerTabs.crossProvider')}
                 </span>
               </TooltipTrigger>
@@ -148,13 +155,10 @@ export function ProviderTabBar({
         ) : (
           <button
             type="button"
+            role="tab"
+            aria-selected={!!isCrossProviderActive}
             onClick={onCrossProviderClick}
-            className={cn(
-              'px-3 py-1.5 text-sm font-medium rounded-full transition-colors',
-              isCrossProviderActive
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            )}
+            className={itemClass(!!isCrossProviderActive)}
           >
             {t('agentProfile.providerTabs.crossProvider')}
           </button>

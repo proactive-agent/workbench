@@ -7,6 +7,9 @@ import { LinearIntegration } from '../integrations/LinearIntegration';
 import { GitHubIntegration } from '../integrations/GitHubIntegration';
 import { GitLabIntegration } from '../integrations/GitLabIntegration';
 import { InitializationGuard } from '../common/InitializationGuard';
+import { SettingsRow, SettingsRows } from '../SettingsRow';
+import { Input } from '../../ui/input';
+import { DEFAULT_MAX_PARALLEL_TASKS, MAX_PARALLEL_TASKS_LIMIT, MIN_PARALLEL_TASKS } from '../../../../shared/constants/task';
 import type { ProjectSettingsSection } from '../ProjectSettingsContent';
 
 interface SectionRouterProps {
@@ -77,19 +80,45 @@ export function SectionRouter({
   switch (activeSection) {
     case 'general':
       return (
-        <SettingsSection
-          title="General"
-          description={`Configure Auto-Build, agent model, and notifications for ${project.name}`}
-        >
-          <GeneralSettings
-            project={project}
-            settings={settings}
-            setSettings={setSettings}
-            versionInfo={versionInfo}
-            isCheckingVersion={isCheckingVersion}
-            isUpdating={isUpdating}
-            handleInitialize={handleInitialize}
-          />
+        <GeneralSettings
+          project={project}
+          settings={settings}
+          setSettings={setSettings}
+          versionInfo={versionInfo}
+          isCheckingVersion={isCheckingVersion}
+          isUpdating={isUpdating}
+          handleInitialize={handleInitialize}
+        />
+      );
+
+    case 'queue':
+      return (
+        <SettingsSection title={t('projectSections.queue.title')}>
+          <SettingsRows>
+            <SettingsRow
+              label={t('projectSections.queue.maxParallelTasks')}
+              description={t('projectSections.queue.maxParallelTasksDescription', {
+                min: MIN_PARALLEL_TASKS,
+                max: MAX_PARALLEL_TASKS_LIMIT
+              })}
+              htmlFor="maxParallelTasks"
+            >
+              <Input
+                id="maxParallelTasks"
+                type="number"
+                min={MIN_PARALLEL_TASKS}
+                max={MAX_PARALLEL_TASKS_LIMIT}
+                className="w-20"
+                value={settings.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (e.target.value === '' || !Number.isFinite(value)) return;
+                  const clamped = Math.min(MAX_PARALLEL_TASKS_LIMIT, Math.max(MIN_PARALLEL_TASKS, Math.round(value)));
+                  setSettings((prev) => ({ ...prev, maxParallelTasks: clamped }));
+                }}
+              />
+            </SettingsRow>
+          </SettingsRows>
         </SettingsSection>
       );
 
@@ -119,79 +148,64 @@ export function SectionRouter({
 
     case 'github':
       return (
-        <SettingsSection
-          title={t('projectSections.github.integrationTitle')}
-          description={t('projectSections.github.integrationDescription')}
+        <InitializationGuard
+          initialized={!!project.autoBuildPath}
+          title={t('projectSections.github.title')}
+          description={t('projectSections.github.syncDescription')}
         >
-          <InitializationGuard
-            initialized={!!project.autoBuildPath}
-            title={t('projectSections.github.integrationTitle')}
-            description={t('projectSections.github.syncDescription')}
-          >
-            <GitHubIntegration
-              envConfig={envConfig}
-              updateEnvConfig={updateEnvConfig}
-              showGitHubToken={showGitHubToken}
-              setShowGitHubToken={setShowGitHubToken}
-              gitHubConnectionStatus={gitHubConnectionStatus}
-              isCheckingGitHub={isCheckingGitHub}
-              projectPath={project.path}
-              settings={settings}
-              setSettings={setSettings}
-            />
-          </InitializationGuard>
-        </SettingsSection>
+          <GitHubIntegration
+            envConfig={envConfig}
+            updateEnvConfig={updateEnvConfig}
+            showGitHubToken={showGitHubToken}
+            setShowGitHubToken={setShowGitHubToken}
+            gitHubConnectionStatus={gitHubConnectionStatus}
+            isCheckingGitHub={isCheckingGitHub}
+            projectPath={project.path}
+            settings={settings}
+            setSettings={setSettings}
+          />
+        </InitializationGuard>
       );
 
     case 'gitlab':
       return (
-        <SettingsSection
-          title={t('projectSections.gitlab.integrationTitle')}
-          description={t('projectSections.gitlab.integrationDescription')}
+        <InitializationGuard
+          initialized={!!project.autoBuildPath}
+          title={t('projectSections.gitlab.title')}
+          description={t('projectSections.gitlab.syncDescription')}
         >
-          <InitializationGuard
-            initialized={!!project.autoBuildPath}
-            title={t('projectSections.gitlab.integrationTitle')}
-            description={t('projectSections.gitlab.syncDescription')}
-          >
-            <GitLabIntegration
-              envConfig={envConfig}
-              updateEnvConfig={updateEnvConfig}
-              showGitLabToken={showGitLabToken}
-              setShowGitLabToken={setShowGitLabToken}
-              gitLabConnectionStatus={gitLabConnectionStatus}
-              isCheckingGitLab={isCheckingGitLab}
-              projectPath={project.path}
-              settings={settings}
-              setSettings={setSettings}
-            />
-          </InitializationGuard>
-        </SettingsSection>
+          <GitLabIntegration
+            envConfig={envConfig}
+            updateEnvConfig={updateEnvConfig}
+            showGitLabToken={showGitLabToken}
+            setShowGitLabToken={setShowGitLabToken}
+            gitLabConnectionStatus={gitLabConnectionStatus}
+            isCheckingGitLab={isCheckingGitLab}
+            projectPath={project.path}
+            settings={settings}
+            setSettings={setSettings}
+          />
+        </InitializationGuard>
       );
 
     case 'memory':
       return (
-        <SettingsSection
-          title={t('projectSections.memory.integrationTitle')}
-          description={t('projectSections.memory.integrationDescription')}
+        <InitializationGuard
+          initialized={!!project.autoBuildPath}
+          title={t('projectSections.memory.title')}
+          description={t('projectSections.memory.syncDescription')}
         >
-          <InitializationGuard
-            initialized={!!project.autoBuildPath}
-            title={t('projectSections.memory.integrationTitle')}
-            description={t('projectSections.memory.syncDescription')}
-          >
-            <SecuritySettings
-              envConfig={envConfig}
-              settings={settings}
-              setSettings={setSettings}
-              updateEnvConfig={updateEnvConfig}
-              showOpenAIKey={showOpenAIKey}
-              setShowOpenAIKey={setShowOpenAIKey}
-              expanded={true}
-              onToggle={() => {}}
-            />
-          </InitializationGuard>
-        </SettingsSection>
+          <SecuritySettings
+            envConfig={envConfig}
+            settings={settings}
+            setSettings={setSettings}
+            updateEnvConfig={updateEnvConfig}
+            showOpenAIKey={showOpenAIKey}
+            setShowOpenAIKey={setShowOpenAIKey}
+            expanded={true}
+            onToggle={() => {}}
+          />
+        </InitializationGuard>
       );
 
     default:

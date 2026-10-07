@@ -24,9 +24,9 @@ const STAGE_TO_I18N_KEY: Record<string, string> = {
 };
 
 const LOG_TYPE_COLORS: Record<MergeLogEntryType, string> = {
-  info: 'text-info',
-  success: 'text-success',
-  warning: 'text-warning',
+  info: 'text-muted-foreground',
+  success: 'text-foreground',
+  warning: 'text-foreground',
   error: 'text-destructive',
 };
 
@@ -105,11 +105,7 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
   return (
     <div
       className={cn(
-        'rounded-xl border p-4 space-y-3',
-        isError && 'border-destructive/50 bg-destructive/5',
-        isComplete && 'border-success/50 bg-success/5',
-        isStalled && !isError && !isComplete && 'border-warning/50 bg-warning/5',
-        !isError && !isComplete && !isStalled && 'border-info/50 bg-info/5'
+        'rounded-xl bg-segment-track px-4 py-3 space-y-3'
       )}
     >
       {/* Stage label and percentage */}
@@ -120,33 +116,28 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
           ) : isComplete ? (
             <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
           ) : isStalled ? (
-            <Clock className="h-4 w-4 text-warning shrink-0" />
+            <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
           ) : (
-            <Loader2 className="h-4 w-4 animate-spin text-info shrink-0" />
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground shrink-0" />
           )}
           <span
             className={cn(
-              'text-sm font-medium',
-              isError && 'text-destructive',
-              isComplete && 'text-success',
-              isStalled && !isError && !isComplete && 'text-warning'
+              'text-sm text-foreground',
+              isError && 'text-destructive'
             )}
           >
             {stageLabel}
           </span>
         </div>
-        <span className="text-sm font-semibold tabular-nums">{percent}%</span>
+        <span className="text-sm tabular-nums text-(--nav-label-color)">{percent}%</span>
       </div>
 
       {/* Progress bar */}
       <Progress
         value={percent}
         className={cn(
-          'h-2',
-          isError && '[&>div]:bg-destructive',
-          isComplete && '[&>div]:bg-success',
-          isStalled && !isError && !isComplete && '[&>div]:bg-warning',
-          !isError && !isComplete && !isStalled && '[&>div]:bg-info'
+          'h-1.5',
+          isError && '[&>div]:bg-destructive'
         )}
         animated={!isError && !isComplete}
       />
@@ -154,7 +145,7 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
       {/* Conflict counter */}
       {conflictsFound > 0 && (
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          <AlertTriangle className="h-3.5 w-3.5 text-warning shrink-0" />
+          <AlertTriangle className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
           <span>
             {t('taskReview:mergeProgress.conflictCounter', {
               found: conflictsFound,
@@ -176,7 +167,7 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
 
       {/* Completion / error messages */}
       {isComplete && (
-        <p className="text-xs text-success">{t('taskReview:mergeProgress.completionMessage')}</p>
+        <p className="text-xs text-(--nav-label-color)">{t('taskReview:mergeProgress.completionMessage')}</p>
       )}
       {isError && (
         <p className="text-xs text-destructive">{t('taskReview:mergeProgress.errorMessage')}</p>
@@ -203,7 +194,7 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
           {logsExpanded && (
             <div
               ref={logContainerRef}
-              className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-background/50 p-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
+              className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-border p-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent"
             >
               <div className="space-y-1">
                 {logEntries.map((entry, idx) => (

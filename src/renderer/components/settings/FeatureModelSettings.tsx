@@ -2,8 +2,9 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsStore } from '../../stores/settings-store';
 import { saveProviderAgentConfig } from '../../stores/settings-store';
 import { MultiProviderModelSelect } from './MultiProviderModelSelect';
-import { ThinkingLevelSelect } from './ThinkingLevelSelect';
-import { Label } from '../ui/label';
+import { ReasoningTypeHint, ThinkingLevelSelect } from './ThinkingLevelSelect';
+import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 import {
   DEFAULT_FEATURE_MODELS,
   DEFAULT_FEATURE_THINKING,
@@ -57,51 +58,44 @@ export function FeatureModelSettings({ provider }: FeatureModelSettingsProps) {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-1">
-        <Label className="text-sm font-medium text-foreground">
-          {t('general.featureModelSettings')}
-        </Label>
-      </div>
+    <SettingsSection
+      title={t('general.featureModelSettings')}
+      description={t('general.featureModelSettingsDescription')}
+    >
+      <SettingsRows>
+        {(Object.keys(FEATURE_LABELS) as Array<keyof FeatureModelConfig>).map((feature) => {
+          const currentModel = featureModels[feature];
+          const currentThinking = featureThinking[feature];
 
-      {(Object.keys(FEATURE_LABELS) as Array<keyof FeatureModelConfig>).map((feature) => {
-        const currentModel = featureModels[feature];
-        const currentThinking = featureThinking[feature];
-
-        return (
-          <div key={feature} className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label className="text-sm font-medium text-foreground">
-                {FEATURE_LABELS[feature].label}
-              </Label>
-              <span className="text-xs text-muted-foreground">
-                {FEATURE_LABELS[feature].description}
-              </span>
-            </div>
-            <div className="grid grid-cols-2 gap-3 max-w-md">
-              {/* Model Select */}
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">
-                  {t('general.model')}
-                </Label>
-                <MultiProviderModelSelect
-                  value={currentModel}
-                  onChange={(value) => handleModelChange(feature, value)}
-                  filterProvider={provider}
-                />
-              </div>
-
-              {/* Thinking Level Select */}
+          return (
+            <SettingsRow
+              key={feature}
+              label={FEATURE_LABELS[feature].label}
+              description={
+                <>
+                  {FEATURE_LABELS[feature].description}
+                  <ReasoningTypeHint withSeparator modelValue={currentModel} provider={provider} />
+                </>
+              }
+            >
+              <MultiProviderModelSelect
+                variant="inline"
+                ariaLabel={t('general.model')}
+                value={currentModel}
+                onChange={(value) => handleModelChange(feature, value)}
+                filterProvider={provider}
+              />
               <ThinkingLevelSelect
+                inline
                 value={currentThinking}
                 onChange={(value) => handleThinkingChange(feature, value)}
                 modelValue={currentModel}
                 provider={provider}
               />
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            </SettingsRow>
+          );
+        })}
+      </SettingsRows>
+    </SettingsSection>
   );
 }

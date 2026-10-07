@@ -26,12 +26,11 @@ import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { TaskCard } from './TaskCard';
 import { SortableTaskCard } from './SortableTaskCard';
-import { QueueSettingsModal } from './QueueSettingsModal';
 import { TASK_STATUS_COLUMNS, TASK_STATUS_LABELS } from '../../shared/constants';
 import { cn } from '../lib/utils';
 import { persistTaskStatus, forceCompleteTask, archiveTasks, useTaskStore, isQueueAtCapacity, DEFAULT_MAX_PARALLEL_TASKS } from '../stores/task-store';
 import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
-import { updateProjectSettings, useProjectStore } from '../stores/project-store';
+import { useProjectStore } from '../stores/project-store';
 import { useToast } from '../hooks/use-toast';
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog';
 import type { Task, TaskStatus, TaskOrderState } from '../../shared/types';
@@ -70,7 +69,6 @@ interface DroppableColumnProps {
   isOver: boolean;
   onAddClick?: () => void;
   onArchiveAll?: () => void;
-  onQueueSettings?: () => void;
   onQueueAll?: () => void;
   maxParallelTasks?: number;
   archivedCount?: number;
@@ -116,7 +114,6 @@ function droppableColumnPropsAreEqual(
   if (prevProps.onStatusChange !== nextProps.onStatusChange) return false;
   if (prevProps.onAddClick !== nextProps.onAddClick) return false;
   if (prevProps.onArchiveAll !== nextProps.onArchiveAll) return false;
-  if (prevProps.onQueueSettings !== nextProps.onQueueSettings) return false;
   if (prevProps.onQueueAll !== nextProps.onQueueAll) return false;
   if (prevProps.maxParallelTasks !== nextProps.maxParallelTasks) return false;
   if (prevProps.archivedCount !== nextProps.archivedCount) return false;
@@ -181,7 +178,7 @@ const getEmptyStateContent = (status: TaskStatus, t: (key: string) => string): {
   }
 };
 
-const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskClick, onStatusChange, isOver, onAddClick, onArchiveAll, onQueueSettings, onQueueAll, maxParallelTasks, archivedCount, showArchived, onToggleArchived }: DroppableColumnProps) {
+const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskClick, onStatusChange, isOver, onAddClick, onArchiveAll, onQueueAll, maxParallelTasks, archivedCount, showArchived, onToggleArchived }: DroppableColumnProps) {
   const { t } = useTranslation(['tasks', 'common']);
   const { setNodeRef } = useDroppable({
     id: status
@@ -247,14 +244,14 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
       <div
         ref={setNodeRef}
         className={cn(
-          'flex flex-1 flex-col rounded-xl border border-white/5 bg-(image:--column-bg) backdrop-blur-sm transition-all duration-200',
+          'flex flex-1 flex-col rounded-xl border border-border [.dark_&]:border-white/5 bg-(image:--column-bg) backdrop-blur-sm transition-all duration-200',
           getColumnBorderColor(),
           'border-t-(length:--column-top-width)',
           isOver && 'drop-zone-highlight'
         )}
       >
         {/* Column header - enhanced styling */}
-        <div className="flex items-center justify-between p-4 border-b border-white/5">
+        <div className="flex items-center justify-between p-4 border-b border-border [.dark_&]:border-white/5">
         <div className="flex items-center gap-2.5">
           <h2 className="font-semibold text-sm text-foreground">
             {t(TASK_STATUS_LABELS[status])}
@@ -279,7 +276,7 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 hover:bg-cyan-500/10 hover:text-cyan-400 transition-colors"
+                  className="h-7 w-7 text-muted-foreground hover:bg-nav-hover hover:text-foreground transition-colors"
                   onClick={onQueueAll}
                   title={t('queue.queueAll')}
                 >
@@ -290,7 +287,7 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="h-7 w-7 hover:bg-primary/10 hover:text-primary transition-colors"
+                  className="h-7 w-7 text-muted-foreground hover:bg-nav-hover hover:text-foreground transition-colors"
                   onClick={onAddClick}
                   aria-label={t('kanban.addTaskAriaLabel')}
                 >
@@ -299,22 +296,11 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
               )}
             </>
           )}
-          {status === 'queue' && onQueueSettings && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 hover:bg-cyan-500/10 hover:text-cyan-400 transition-colors"
-              onClick={onQueueSettings}
-              title={t('kanban.queueSettings')}
-            >
-              <Settings className="h-4 w-4" />
-            </Button>
-          )}
           {status === 'done' && onArchiveAll && tasks.length > 0 && !showArchived && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 hover:bg-muted-foreground/10 hover:text-muted-foreground transition-colors"
+              className="h-7 w-7 text-muted-foreground hover:bg-nav-hover hover:text-foreground transition-colors"
               onClick={onArchiveAll}
               aria-label={t('tooltips.archiveAllDone')}
             >
@@ -331,7 +317,7 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
                     'h-7 w-7 transition-colors relative',
                     showArchived
                       ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                      : 'hover:bg-muted-foreground/10 hover:text-muted-foreground'
+                      : 'text-muted-foreground hover:bg-nav-hover hover:text-foreground'
                   )}
                   onClick={onToggleArchived}
                   aria-pressed={showArchived}
@@ -414,11 +400,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   const projectId = tasks[0]?.projectId;
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
   const maxParallelTasks = project?.settings?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
-
-  // Queue settings modal state
-  const [showQueueSettings, setShowQueueSettings] = useState(false);
-  // Store projectId when modal opens to prevent modal from disappearing if tasks change
-  const queueSettingsProjectIdRef = useRef<string | null>(null);
 
   // Queue processing lock to prevent race conditions
   const isProcessingQueueRef = useRef(false);
@@ -687,31 +668,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   };
 
   /**
-   * Save queue settings (maxParallelTasks)
-   *
-   * Uses the stored ref value to ensure the save works even if tasks
-   * change while the modal is open.
-   */
-  const handleSaveQueueSettings = async (maxParallel: number) => {
-    const savedProjectId = queueSettingsProjectIdRef.current || projectId;
-    if (!savedProjectId) return;
-
-    const success = await updateProjectSettings(savedProjectId, { maxParallelTasks: maxParallel });
-    if (success) {
-      toast({
-        title: t('queue.settings.saved'),
-        variant: 'default'
-      });
-    } else {
-      toast({
-        title: t('queue.settings.saveFailed'),
-        description: t('queue.settings.retry'),
-        variant: 'destructive'
-      });
-    }
-  };
-
-  /**
    * Automatically move tasks from Queue to In Progress to fill available capacity
    * Promotes multiple tasks if needed (e.g., after bulk queue)
    */
@@ -950,25 +906,32 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
 
   return (
     <div className="flex h-full flex-col">
-      {/* Kanban header with refresh button */}
-      {onRefresh && (
-        <div className="flex items-center justify-end px-6 pt-2">
+      {/* Kanban header: refresh and queue settings */}
+      <div className="flex items-center justify-end px-6 pt-2">
           <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
+              onClick={() => window.dispatchEvent(new CustomEvent('open-project-settings', { detail: 'queue' }))}
+            >
+              <Settings className="h-3.5 w-3.5" />
+              {t('common:actions.settings')}
+            </Button>
             {onRefresh && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={onRefresh}
                 disabled={isRefreshing}
-                className="gap-2 text-muted-foreground hover:text-foreground"
+                className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
               >
-                <RefreshCw className={cn("h-4 w-4", isRefreshing && "animate-spin")} />
+                <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
                 {isRefreshing ? t('common:buttons.refreshing') : t('tasks:refreshTasks')}
               </Button>
             )}
           </div>
         </div>
-      )}
       {/* Kanban columns */}
       <DndContext
         sensors={sensors}
@@ -988,12 +951,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
               isOver={overColumnId === status}
               onAddClick={status === 'backlog' ? onNewTaskClick : undefined}
               onQueueAll={status === 'backlog' ? handleQueueAll : undefined}
-              onQueueSettings={status === 'queue' ? () => {
-                // Only open modal if we have a valid projectId
-                if (!projectId) return;
-                queueSettingsProjectIdRef.current = projectId;
-                setShowQueueSettings(true);
-              } : undefined}
               onArchiveAll={status === 'done' ? handleArchiveAll : undefined}
               maxParallelTasks={status === 'in_progress' ? maxParallelTasks : undefined}
               archivedCount={status === 'done' ? archivedCount : undefined}
@@ -1028,21 +985,6 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         onConfirm={handleWorktreeCleanupConfirm}
       />
 
-      {/* Queue Settings Modal */}
-      {(queueSettingsProjectIdRef.current || projectId) && (
-        <QueueSettingsModal
-          open={showQueueSettings}
-          onOpenChange={(open) => {
-            setShowQueueSettings(open);
-            if (!open) {
-              queueSettingsProjectIdRef.current = null;
-            }
-          }}
-          projectId={queueSettingsProjectIdRef.current || projectId || ''}
-          currentMaxParallel={maxParallelTasks}
-          onSave={handleSaveQueueSettings}
-        />
-      )}
 
     </div>
   );

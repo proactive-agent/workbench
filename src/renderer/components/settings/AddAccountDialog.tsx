@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, CheckCircle2, AlertCircle, Terminal, Plus, X } from 'lucide-react';
+import { Loader2, Check, Terminal, Plus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -508,6 +508,7 @@ export function AddAccountDialog({
             {/* Authenticate Button */}
             {oauthStatus === 'idle' && (
               <Button
+                size="sm"
                 onClick={handleAuthenticate}
                 className="w-full"
                 disabled={!name.trim()}
@@ -518,34 +519,34 @@ export function AddAccountDialog({
 
             {/* Progress States */}
             {oauthStatus === 'authenticating' && (
-              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexAuthenticating') : t('providers.dialog.oauthAuthenticating')}</span>
               </div>
             )}
 
             {oauthStatus === 'waiting' && (
-              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
-                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+              <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexWaiting') : t('providers.dialog.oauthWaiting')}</span>
               </div>
             )}
 
             {oauthStatus === 'success' && (
-              <div className="flex items-center gap-2 rounded-lg border border-border px-4 py-3 text-sm">
-                <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+              <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <Check className="h-4 w-4 shrink-0 text-success" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexSuccess') : t('providers.dialog.oauthSuccess', { email: oauthEmail ?? 'Unknown' })}</span>
               </div>
             )}
 
             {oauthStatus === 'error' && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                  <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                <div className="text-sm text-destructive" role="alert">
                   <span>{isCodexOAuth ? t('providers.dialog.codexError', { error: oauthError ?? 'Unknown' }) : t('providers.dialog.oauthError', { error: oauthError ?? 'Unknown' })}</span>
                 </div>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={handleAuthenticate}
                   className="w-full"
                   disabled={!name.trim()}
@@ -658,7 +659,7 @@ export function AddAccountDialog({
             {provider === 'openai-compatible' && (
               <div className="space-y-2">
                 <Label>{t('providers.dialog.fields.models')}</Label>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-(--nav-label-color)">
                   {t('providers.dialog.modelsDescription')}
                 </p>
 
@@ -668,12 +669,13 @@ export function AddAccountDialog({
                     {customModels.map((model) => (
                       <div
                         key={model.id}
-                        className="flex items-center gap-2 rounded-md border border-border px-2.5 py-1.5 text-sm"
+                        className="flex items-center gap-2 rounded-lg bg-segment-track px-3 py-1.5 text-sm"
                       >
-                        <span className="font-medium truncate">{model.label}</span>
+                        <span className="truncate">{model.label}</span>
                         <span className="text-xs text-muted-foreground truncate">{model.id}</span>
                         <button
                           type="button"
+                          aria-label={t('providers.dialog.removeModel', { model: model.label })}
                           onClick={() => setCustomModels(prev => prev.filter(m => m.id !== model.id))}
                           className="ml-auto shrink-0 text-muted-foreground hover:text-destructive transition-colors"
                         >
@@ -690,7 +692,7 @@ export function AddAccountDialog({
                     value={newModelId}
                     onChange={(e) => setNewModelId(e.target.value)}
                     placeholder={t('providers.dialog.placeholders.modelId')}
-                    className="flex-1 h-8 text-xs"
+                    className="flex-1"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newModelId.trim()) {
                         e.preventDefault();
@@ -708,7 +710,7 @@ export function AddAccountDialog({
                     value={newModelLabel}
                     onChange={(e) => setNewModelLabel(e.target.value)}
                     placeholder={t('providers.dialog.placeholders.modelLabel')}
-                    className="w-28 h-8 text-xs"
+                    className="w-28"
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && newModelId.trim()) {
                         e.preventDefault();
@@ -727,6 +729,7 @@ export function AddAccountDialog({
                     variant="outline"
                     size="icon"
                     className="h-8 w-8 shrink-0"
+                    aria-label={t('providers.dialog.addModel')}
                     disabled={!newModelId.trim()}
                     onClick={() => {
                       const id = newModelId.trim();
@@ -803,14 +806,14 @@ function FallbackTerminalWrapper({
 
   if (!AuthTerminalComponent) {
     return (
-      <div className="flex items-center justify-center h-48 rounded-lg border border-border">
+      <div className="flex items-center justify-center h-48 rounded-xl border border-border">
         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="rounded-lg border border-border overflow-hidden" style={{ height: 280 }}>
+    <div className="rounded-xl border border-border overflow-hidden" style={{ height: 280 }}>
       <AuthTerminalComponent
         terminalId={terminalId}
         configDir={configDir}

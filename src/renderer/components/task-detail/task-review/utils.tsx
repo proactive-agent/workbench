@@ -9,7 +9,7 @@ export function getSeverityIcon(severity: string) {
     case 'low':
       return <CheckCircle className="h-4 w-4 text-success" />;
     case 'medium':
-      return <AlertTriangle className="h-4 w-4 text-warning" />;
+      return <AlertTriangle className="h-4 w-4 text-muted-foreground" />;
     case 'high':
     case 'critical':
       return <XCircle className="h-4 w-4 text-destructive" />;

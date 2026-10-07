@@ -1,4 +1,5 @@
-import { FolderX, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,6 +10,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../ui/alert-dialog';
+import { buttonVariants } from '../../ui/button';
 import type { Task, WorktreeStatus } from '../../../../shared/types';
 
 interface DiscardDialogProps {
@@ -31,32 +33,33 @@ export function DiscardDialog({
   onOpenChange,
   onDiscard
 }: DiscardDialogProps) {
+  const { t } = useTranslation(['taskReview', 'common']);
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            Discard Build
-          </AlertDialogTitle>
+          <AlertDialogTitle>{t('taskReview:discard.title')}</AlertDialogTitle>
           <AlertDialogDescription asChild>
-            <div className="text-sm text-muted-foreground space-y-3">
+            <div className="space-y-3">
               <p>
-                Are you sure you want to discard all changes for <strong className="text-foreground">"{task.title}"</strong>?
+                {t('taskReview:discard.confirmMessage')} <span className="text-foreground">"{task.title}"</span>?
               </p>
-              <p className="text-destructive">
-                This will permanently delete the isolated workspace and all uncommitted changes.
-                The task will be moved back to Planning status.
+              <p className="rounded-xl bg-segment-track px-4 py-3 text-foreground">
+                {t('taskReview:discard.warning')}
               </p>
               {worktreeStatus?.exists && (
-                <div className="rounded-lg border border-border px-4 py-3 text-sm">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-muted-foreground">Files changed:</span>
-                    <span>{worktreeStatus.filesChanged || 0}</span>
+                <div className="[&>*+*]:border-t [&>*+*]:border-settings-divider">
+                  <div className="flex items-center justify-between py-2">
+                    <span>{t('taskReview:discard.filesChanged')}</span>
+                    <span className="tabular-nums text-foreground">{worktreeStatus.filesChanged || 0}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Lines:</span>
-                    <span className="text-success">+{worktreeStatus.additions || 0}</span>
-                    <span className="text-destructive">-{worktreeStatus.deletions || 0}</span>
+                  <div className="flex items-center justify-between py-2">
+                    <span>{t('taskReview:discard.lines')}</span>
+                    <span className="flex gap-2 tabular-nums">
+                      <span className="text-success">+{worktreeStatus.additions || 0}</span>
+                      <span className="text-destructive">-{worktreeStatus.deletions || 0}</span>
+                    </span>
                   </div>
                 </div>
               )}
@@ -64,25 +67,22 @@ export function DiscardDialog({
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDiscarding}>Cancel</AlertDialogCancel>
+          <AlertDialogCancel disabled={isDiscarding}>{t('common:buttons.cancel')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
               onDiscard();
             }}
             disabled={isDiscarding}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={buttonVariants({ variant: 'destructive', size: 'sm' })}
           >
             {isDiscarding ? (
               <>
                 <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                Discarding...
+                {t('taskReview:discard.discarding')}
               </>
             ) : (
-              <>
-                <FolderX className="mr-1.5 h-3.5 w-3.5" />
-                Discard Build
-              </>
+              t('taskReview:discard.confirm')
             )}
           </AlertDialogAction>
         </AlertDialogFooter>

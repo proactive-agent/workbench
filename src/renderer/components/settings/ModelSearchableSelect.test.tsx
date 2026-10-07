@@ -342,9 +342,9 @@ describe('ModelSearchableSelect', () => {
     fireEvent.focus(input);
 
     await waitFor(() => {
-      // Selected model should have Check icon indicator (via background color)
+      // Selected model is marked (and shows the check icon)
       const sonnetButton = screen.getByText('Claude Sonnet 4.5').closest('button');
-      expect(sonnetButton).toHaveClass('bg-accent');
+      expect(sonnetButton).toHaveAttribute('data-selected', 'true');
     });
   });
 

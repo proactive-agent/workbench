@@ -262,7 +262,7 @@ describe('ProfileList - Delete Confirmation Dialog', () => {
     const deleteButton = screen.getByTestId('profile-delete-button-profile-1');
     fireEvent.click(deleteButton);
 
-    // Dialog should have Delete elements (title "Delete Profile?" and "Delete" button)
+    // Dialog should have Delete elements (title "Delete profile?" and "Delete" button)
     expect(screen.getByText(i18n.t('settings:apiProfiles.dialog.deleteTitle'))).toBeInTheDocument();
     expect(screen.getByText(i18n.t('settings:apiProfiles.dialog.delete'))).toBeInTheDocument();
   });

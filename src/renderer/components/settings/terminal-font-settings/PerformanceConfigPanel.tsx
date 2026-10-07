@@ -1,9 +1,8 @@
-import { Zap, Minus, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../../lib/utils';
-import { Label } from '../../ui/label';
+import { SettingsRow, SettingsRows, SegmentedControl, type SegmentedOption } from '../SettingsRow';
+import { SettingsSlider } from './SettingsSlider';
 import type { TerminalFontSettings } from '../../../stores/terminal-font-settings-store';
-import { SCROLLBACK_MIN, SCROLLBACK_MAX, SCROLLBACK_STEP, SLIDER_INPUT_CLASSES } from '../../../lib/terminal-font-constants';
+import { SCROLLBACK_MIN, SCROLLBACK_MAX, SCROLLBACK_STEP } from '../../../lib/terminal-font-constants';
 
 interface PerformanceConfigPanelProps {
   settings: TerminalFontSettings;
@@ -73,118 +72,57 @@ export function PerformanceConfigPanel({ settings, onSettingChange }: Performanc
     onSettingChange('scrollback', newScrollback);
   };
 
+  const presetOptions: SegmentedOption<string>[] = scrollbackPresets.map((preset) => ({
+    value: String(preset.value),
+    label: preset.label,
+  }));
+  const matchesPreset = scrollbackPresets.some((preset) => preset.value === settings.scrollback);
+
   return (
-    <div className="space-y-6">
-      {/* Preset Buttons */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Zap className="h-4 w-4" />
-          {t('terminalFonts.performanceConfig.presets', { defaultValue: 'Quick Presets' })}
-        </Label>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.performanceConfig.presetsDescription', {
-            defaultValue: 'Common scrollback limits for different use cases',
-          })}
-        </p>
-        <div className="grid grid-cols-4 gap-3 max-w-lg pt-1">
-          {scrollbackPresets.map((preset) => {
-            const isSelected = settings.scrollback === preset.value;
-            return (
-              <button
-                type="button"
-                key={preset.value}
-                onClick={() => handlePresetChange(preset.value)}
-                aria-pressed={isSelected}
-                className={cn(
-                  'flex flex-col items-center gap-2 p-4 rounded-lg border-2 transition-all',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                  isSelected
-                    ? 'border-primary bg-primary/5'
-                    : 'border-border hover:border-primary/50 hover:bg-accent/50'
-                )}
-              >
-                <Zap className="h-4 w-4" />
-                <div className="text-center">
-                  <div className="text-sm font-medium">{preset.label}</div>
-                  <div className="text-xs text-muted-foreground">{preset.description}</div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+    <SettingsRows>
+      {/* Preset values */}
+      <SettingsRow
+        label={t('terminalFonts.performanceConfig.presets', { defaultValue: 'Quick presets' })}
+        description={t('terminalFonts.performanceConfig.presetsDescription', {
+          defaultValue: 'Common scrollback limits for different use cases',
+        })}
+      >
+        {/* Remount when the value leaves/enters the preset list so the thumb hides/reappears */}
+        <SegmentedControl
+          key={matchesPreset ? 'preset' : 'custom'}
+          value={String(settings.scrollback)}
+          options={presetOptions}
+          onValueChange={(value) => handlePresetChange(Number(value))}
+          ariaLabel={t('terminalFonts.performanceConfig.presets', { defaultValue: 'Quick presets' })}
+        />
+      </SettingsRow>
 
       {/* Fine-tune Slider */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium text-foreground">
-            {t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback Limit' })}
-          </Label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-mono text-muted-foreground">
-              {formatScrollback(settings.scrollback)}
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => handleScrollbackChange(settings.scrollback - SCROLLBACK_STEP)}
-                disabled={settings.scrollback <= SCROLLBACK_MIN}
-                className={cn(
-                  'p-1 rounded-md transition-colors',
-                  'hover:bg-accent text-muted-foreground hover:text-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-                )}
-                title={t('terminalFonts.performanceConfig.decreaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
-                aria-label={t('terminalFonts.performanceConfig.decreaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleScrollbackChange(settings.scrollback + SCROLLBACK_STEP)}
-                disabled={settings.scrollback >= SCROLLBACK_MAX}
-                className={cn(
-                  'p-1 rounded-md transition-colors',
-                  'hover:bg-accent text-muted-foreground hover:text-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-                )}
-                title={t('terminalFonts.performanceConfig.increaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
-                aria-label={t('terminalFonts.performanceConfig.increaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.performanceConfig.scrollbackDescription', {
-            defaultValue: 'Maximum number of lines to keep in terminal history (1K-100K)',
-          })}
-        </p>
-        <input
-          type="range"
+      <SettingsRow
+        label={t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback limit' })}
+        description={t('terminalFonts.performanceConfig.scrollbackDescription', {
+          defaultValue: 'Maximum number of lines to keep in terminal history (1K-100K)',
+        })}
+      >
+        <SettingsSlider
+          value={settings.scrollback}
           min={SCROLLBACK_MIN}
           max={SCROLLBACK_MAX}
           step={SCROLLBACK_STEP}
-          value={settings.scrollback}
-          onChange={(e) => handleScrollbackChange(parseInt(e.target.value, 10))}
-          aria-label={t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback Limit' })}
-          aria-valuemin={SCROLLBACK_MIN}
-          aria-valuemax={SCROLLBACK_MAX}
-          aria-valuenow={settings.scrollback}
-          aria-valuetext={t('terminalFonts.performanceConfig.scrollbackValue', {
+          onChange={handleScrollbackChange}
+          parse={(raw) => parseInt(raw, 10)}
+          ariaLabel={t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback limit' })}
+          ariaValueText={t('terminalFonts.performanceConfig.scrollbackValue', {
             defaultValue: '{{value}} lines',
             value: formatScrollback(settings.scrollback),
           })}
-          className={cn(...SLIDER_INPUT_CLASSES)}
+          valueLabel={formatScrollback(settings.scrollback)}
+          onDecrease={() => handleScrollbackChange(settings.scrollback - SCROLLBACK_STEP)}
+          onIncrease={() => handleScrollbackChange(settings.scrollback + SCROLLBACK_STEP)}
+          decreaseTitle={t('terminalFonts.performanceConfig.decreaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
+          increaseTitle={t('terminalFonts.performanceConfig.increaseScrollback', { step: formatScrollback(SCROLLBACK_STEP) })}
         />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{formatScrollback(SCROLLBACK_MIN)}</span>
-          <span>{formatScrollback(SCROLLBACK_MAX)}</span>
-        </div>
-      </div>
-    </div>
+      </SettingsRow>
+    </SettingsRows>
   );
 }

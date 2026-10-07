@@ -1,9 +1,10 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GitMerge, Copy, Check, Sparkles, Loader2, RotateCcw } from 'lucide-react';
+import { Copy, Check } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import { persistTaskStatus } from '../../../stores/task-store';
+import { StagedActions, StagedNextSteps } from './WorkspaceMessages';
 import type { Task } from '../../../../shared/types';
 
 interface StagedSuccessMessageProps {
@@ -119,38 +120,29 @@ export function StagedSuccessMessage({
   const anyActionInProgress = isDeleting || isMarkingDone || isResetting;
 
   return (
-    <div className="rounded-xl border border-success/30 bg-success/10 p-4">
-      <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-        <GitMerge className="h-4 w-4 text-success" />
-        {t('taskReview:stagedSuccess.title')}
-      </h3>
-      <p className="text-sm text-muted-foreground mb-3">
-        {stagedSuccess}
-      </p>
+    <div className="space-y-3">
+      <div>
+        <h3 className="flex items-center gap-1.5 text-sm text-foreground">
+          <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
+          {t('taskReview:stagedSuccess.title')}
+        </h3>
+        <p className="mt-1 text-sm text-(--nav-label-color)">{stagedSuccess}</p>
+      </div>
 
-      {/* Commit Message Section */}
+      {/* AI-generated commit message */}
       {suggestedCommitMessage && (
-        <div className="bg-background/50 rounded-lg p-3 mb-3">
-          <div className="flex items-center justify-between mb-2">
-            <p className="text-xs text-muted-foreground flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3 text-purple-400" />
-              {t('taskReview:stagedSuccess.aiCommitMessage')}
-            </p>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              className="h-6 px-2 text-xs"
-              disabled={!commitMessage}
-            >
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-foreground">{t('taskReview:stagedSuccess.aiCommitMessage')}</p>
+            <Button variant="ghost" size="sm" onClick={handleCopy} disabled={!commitMessage}>
               {copied ? (
                 <>
-                  <Check className="h-3 w-3 mr-1 text-success" />
+                  <Check className="mr-1.5 h-3.5 w-3.5 text-success" />
                   {t('taskReview:stagedSuccess.copied')}
                 </>
               ) : (
                 <>
-                  <Copy className="h-3 w-3 mr-1" />
+                  <Copy className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
                   {t('taskReview:stagedSuccess.copy')}
                 </>
               )}
@@ -159,127 +151,30 @@ export function StagedSuccessMessage({
           <Textarea
             value={commitMessage}
             onChange={(e) => setCommitMessage(e.target.value)}
-            className="font-mono text-xs min-h-[100px] bg-background/80 resize-y"
+            className="min-h-[100px] resize-y font-mono text-xs"
             placeholder={t('taskReview:stagedSuccess.commitMessagePlaceholder')}
           />
-          <p className="text-[10px] text-muted-foreground mt-1.5">
-            {t('taskReview:stagedSuccess.editHint')} <code className="bg-background px-1 rounded">git commit -m "..."</code>
+          <p className="text-xs text-(--nav-label-color)">
+            {t('taskReview:stagedSuccess.editHint')} <code className="rounded bg-nav-hover px-1 font-mono">git commit -m "..."</code>
           </p>
         </div>
       )}
 
-      <div className="bg-background/50 rounded-lg p-3 mb-3">
-        <p className="text-xs text-muted-foreground mb-2">{t('taskReview:stagedSuccess.nextSteps')}</p>
-        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          <li>{t('taskReview:stagedSuccess.reviewChanges')} <code className="bg-background px-1 rounded">git status</code> and <code className="bg-background px-1 rounded">git diff --staged</code></li>
-          <li>{t('taskReview:stagedSuccess.commitWhenReady')} <code className="bg-background px-1 rounded">git commit -m "your message"</code></li>
-          <li>{t('taskReview:stagedSuccess.pushToRemote')}</li>
-        </ol>
-      </div>
+      <StagedNextSteps />
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          {hasWorktree ? (
-            <Button
-              onClick={handleDeleteWorktreeAndMarkDone}
-              disabled={anyActionInProgress}
-              size="sm"
-              variant="default"
-              className="flex-1"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('taskReview:stagedSuccess.cleaningUp')}
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  {t('taskReview:stagedSuccess.deleteWorktreeAndMarkDone')}
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleMarkDoneOnly}
-              disabled={anyActionInProgress}
-              size="sm"
-              variant="default"
-              className="flex-1"
-            >
-              {isMarkingDone ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('taskReview:stagedSuccess.markingDone')}
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  {t('taskReview:stagedSuccess.markAsDone')}
-                </>
-              )}
-            </Button>
-          )}
-        </div>
+      <StagedActions
+        hasWorktree={hasWorktree}
+        canReviewAgain={!!onReviewAgain}
+        disabled={anyActionInProgress}
+        isDeleting={isDeleting}
+        isMarkingDone={isMarkingDone}
+        isResetting={isResetting}
+        onDeleteWorktreeAndMarkDone={handleDeleteWorktreeAndMarkDone}
+        onMarkDoneOnly={handleMarkDoneOnly}
+        onReviewAgain={handleReviewAgain}
+      />
 
-        {/* Secondary actions row */}
-        <div className="flex gap-2">
-          {hasWorktree && (
-            <Button
-              onClick={handleMarkDoneOnly}
-              disabled={anyActionInProgress}
-              size="sm"
-              variant="outline"
-              className="flex-1"
-            >
-              {isMarkingDone ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('taskReview:stagedSuccess.markingDone')}
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  {t('taskReview:stagedSuccess.markDoneOnly')}
-                </>
-              )}
-            </Button>
-          )}
-
-          {hasWorktree && onReviewAgain && (
-            <Button
-              onClick={handleReviewAgain}
-              disabled={anyActionInProgress}
-              size="sm"
-              variant="outline"
-              className="flex-1"
-            >
-              {isResetting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  {t('taskReview:stagedSuccess.resetting')}
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  {t('taskReview:stagedSuccess.reviewAgain')}
-                </>
-              )}
-            </Button>
-          )}
-        </div>
-
-        {error && (
-          <p className="text-xs text-destructive">{error}</p>
-        )}
-
-        {hasWorktree && (
-          <p className="text-xs text-muted-foreground">
-            {t('taskReview:stagedSuccess.worktreeExplanation')}
-          </p>
-        )}
-      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
     </div>
   );
 }

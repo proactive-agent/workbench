@@ -43,7 +43,7 @@ export function APIRoutesSection({ api }: APIRoutesSectionProps) {
               ))}
             </div>
             <code className="flex-1 font-mono text-muted-foreground truncate">{route.path}</code>
-            {route.requires_auth && <Lock className="h-3 w-3 text-orange-500 shrink-0" />}
+            {route.requires_auth && <Lock className="h-3 w-3 text-muted-foreground shrink-0" />}
           </div>
         ))}
       </CollapsibleContent>

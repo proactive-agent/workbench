@@ -30,17 +30,14 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import {
   GripVertical,
-  Star,
-  Tag,
+  Check,
   Infinity,
   AlertCircle,
-  Users,
-  Server,
   Clock,
-  TrendingUp,
-  Info
+  TrendingUp
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 
@@ -50,41 +47,6 @@ import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 const THRESHOLD_CRITICAL = 95;  // Red: At or near limit
 const THRESHOLD_WARNING = 91;   // Orange: Very high usage
 const THRESHOLD_ELEVATED = 71;  // Yellow: Moderate usage
-
-/**
- * Get color class based on usage percentage
- */
-const getColorClass = (percent: number): string => {
-  if (percent >= THRESHOLD_CRITICAL) return 'text-red-500';
-  if (percent >= THRESHOLD_WARNING) return 'text-orange-500';
-  if (percent >= THRESHOLD_ELEVATED) return 'text-yellow-500';
-  return 'text-green-500';
-};
-
-/**
- * Get background class for progress bars
- */
-const getBarColorClass = (percent: number): string => {
-  if (percent >= THRESHOLD_CRITICAL) return 'bg-red-500';
-  if (percent >= THRESHOLD_WARNING) return 'bg-orange-500';
-  if (percent >= THRESHOLD_ELEVATED) return 'bg-yellow-500';
-  return 'bg-green-500';
-};
-
-const PROVIDER_BADGE_COLORS: Record<string, string> = {
-  'anthropic': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
-  'openai': 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20',
-  'google': 'bg-blue-500/10 text-blue-500 border-blue-500/20',
-  'mistral': 'bg-amber-500/10 text-amber-500 border-amber-500/20',
-  'groq': 'bg-yellow-500/10 text-yellow-500 border-yellow-500/20',
-  'xai': 'bg-slate-500/10 text-slate-500 border-slate-500/20',
-  'amazon-bedrock': 'bg-orange-600/10 text-orange-600 border-orange-600/20',
-  'azure': 'bg-sky-500/10 text-sky-500 border-sky-500/20',
-  'ollama': 'bg-purple-500/10 text-purple-500 border-purple-500/20',
-  'openai-compatible': 'bg-gray-500/10 text-gray-500 border-gray-500/20',
-  'zai': 'bg-indigo-500/10 text-indigo-500 border-indigo-500/20',
-  'openrouter': 'bg-violet-500/10 text-violet-500 border-violet-500/20',
-};
 
 const getProviderDisplayName = (provider?: string): string => {
   return PROVIDER_REGISTRY.find((entry) => entry.id === provider)?.name ?? provider ?? 'Unknown';
@@ -154,136 +116,73 @@ function SortableAccountItem({ account, index, onSetActive }: SortableAccountIte
   };
 
   const statusKey = getStatusKey(account.sessionPercent, account.weeklyPercent, account.isRateLimited);
+  const isStatusCritical = statusKey === 'nearLimit' || statusKey === 'rateLimited';
+
+  const metaParts = [
+    getProviderDisplayName(account.provider),
+    account.type === 'oauth' ? t('accounts.priority.typeOAuth') : t('accounts.priority.typeAPI'),
+  ];
 
   return (
     <div
       ref={setNodeRef}
       style={style}
       className={cn(
-        'flex items-center gap-3 p-3 rounded-lg border transition-all',
-        isDragging && 'opacity-60 shadow-lg scale-[1.02]',
-        account.isActive
-          ? 'border-primary bg-primary/5'
-          : account.isAvailable
-            ? 'border-border bg-background hover:bg-muted/50'
-            : 'border-border/50 bg-muted/20 opacity-60'
+        'relative flex items-center gap-3 bg-background py-3',
+        isDragging && 'rounded-lg opacity-80 shadow-lg',
+        !account.isAvailable && 'opacity-60'
       )}
     >
       {/* Drag handle */}
-      <div
+      <button
+        type="button"
         {...attributes}
         {...listeners}
-        className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 -ml-1"
+        aria-label={t('accounts.priority.dragHandle')}
+        className="-ml-1 cursor-grab rounded p-1 text-(--nav-label-color) outline-none hover:text-foreground focus-visible:shadow-(--shadow-focus) active:cursor-grabbing"
       >
-        <GripVertical className="h-4 w-4" />
-      </div>
+        <GripVertical className="h-4 w-4" strokeWidth={1.75} />
+      </button>
 
       {/* Priority number */}
-      <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium text-muted-foreground shrink-0">
+      <span className="w-4 shrink-0 text-center text-sm tabular-nums text-(--nav-label-color)">
         {index + 1}
-      </div>
-
-      {/* Account icon - visual distinction between OAuth and API */}
-      <div className={cn(
-        "h-8 w-8 rounded-full flex items-center justify-center shrink-0",
-        account.type === 'oauth' ? "bg-primary/10 text-primary" : "bg-secondary text-secondary-foreground"
-      )}>
-        {account.type === 'oauth' ? (
-          <Users className="h-4 w-4" />
-        ) : (
-          <Server className="h-4 w-4" />
-        )}
-      </div>
+      </span>
 
       {/* Account info and usage */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-sm font-medium text-foreground truncate">
-            {account.displayName}
-          </span>
-          {/* Provider label */}
-          <span className={cn(
-            "text-[10px] px-1.5 py-0.5 rounded border",
-            PROVIDER_BADGE_COLORS[account.provider ?? ''] ?? 'bg-muted text-muted-foreground border-border'
-          )}>
-            {getProviderDisplayName(account.provider)}
-          </span>
-          {/* Account type indicator */}
-          <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 bg-muted rounded">
-            {account.type === 'oauth' ? t('accounts.priority.typeOAuth') : t('accounts.priority.typeAPI')}
-          </span>
-          {/* Status badges - only ONE account should have "In Use" */}
-          {account.isActive && (
-            <span className="text-[10px] bg-primary/20 text-primary px-1.5 py-0.5 rounded flex items-center gap-1">
-              <Star className="h-2.5 w-2.5" />
-              {t('accounts.priority.inUse')}
-            </span>
-          )}
-          {account.isNext && !account.isActive && (
-            <span className="text-[10px] bg-warning/20 text-warning px-1.5 py-0.5 rounded flex items-center gap-1">
-              <Tag className="h-2.5 w-2.5" />
-              {t('accounts.priority.next')}
-            </span>
-          )}
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+          <span className="truncate text-sm text-foreground">{account.displayName}</span>
+          <span className="text-sm text-(--nav-label-color)">{metaParts.join(' · ')}</span>
         </div>
-        <span className="text-xs text-muted-foreground truncate block">
-          {account.identifier}
-        </span>
+        <span className="block truncate text-sm text-(--nav-label-color)">{account.identifier}</span>
 
-        {/* Usage bars for OAuth accounts */}
+        {/* Usage for OAuth accounts */}
         {account.type === 'oauth' && account.isAvailable && account.sessionPercent !== undefined && (
-          <div className="flex items-center gap-3 mt-2">
-            {/* Session usage */}
+          <div className="mt-1 flex items-center gap-4 text-xs text-(--nav-label-color)">
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 flex-1 max-w-[120px]">
-                  <Clock className="h-3 w-3 text-muted-foreground/70 shrink-0" />
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", getBarColorClass(account.sessionPercent))}
-                      style={{ width: `${Math.min(account.sessionPercent, 100)}%` }}
-                    />
-                  </div>
-                  <span className={cn("text-[10px] tabular-nums font-medium w-8", getColorClass(account.sessionPercent))}>
-                    {Math.round(account.sessionPercent)}%
-                  </span>
-                </div>
+                <span className="flex items-center gap-1.5 tabular-nums">
+                  <Clock className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  {Math.round(account.sessionPercent)}%
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
                 {t('accounts.priority.sessionUsage')}
               </TooltipContent>
             </Tooltip>
-
-            {/* Weekly usage */}
             <Tooltip>
               <TooltipTrigger asChild>
-                <div className="flex items-center gap-1.5 flex-1 max-w-[120px]">
-                  <TrendingUp className="h-3 w-3 text-muted-foreground/70 shrink-0" />
-                  <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className={cn("h-full rounded-full transition-all", getBarColorClass(account.weeklyPercent ?? 0))}
-                      style={{ width: `${Math.min(account.weeklyPercent ?? 0, 100)}%` }}
-                    />
-                  </div>
-                  <span className={cn("text-[10px] tabular-nums font-medium w-8", getColorClass(account.weeklyPercent ?? 0))}>
-                    {Math.round(account.weeklyPercent ?? 0)}%
-                  </span>
-                </div>
+                <span className="flex items-center gap-1.5 tabular-nums">
+                  <TrendingUp className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  {Math.round(account.weeklyPercent ?? 0)}%
+                </span>
               </TooltipTrigger>
               <TooltipContent side="top" className="text-xs">
                 {t('accounts.priority.weeklyUsage')}
               </TooltipContent>
             </Tooltip>
-
-            {/* Status indicator */}
-            <span className={cn(
-              "text-[10px] px-1.5 py-0.5 rounded shrink-0",
-              statusKey === 'healthy' && 'bg-green-500/10 text-green-600',
-              statusKey === 'moderate' && 'bg-yellow-500/10 text-yellow-600',
-              statusKey === 'highUsage' && 'bg-orange-500/10 text-orange-600',
-              statusKey === 'nearLimit' && 'bg-red-500/10 text-red-600',
-              statusKey === 'rateLimited' && 'bg-red-500/20 text-red-600 font-medium'
-            )}>
+            <span className={cn(isStatusCritical && 'text-destructive')}>
               {t(`accounts.priority.status.${statusKey}`)}
             </span>
           </div>
@@ -291,11 +190,9 @@ function SortableAccountItem({ account, index, onSetActive }: SortableAccountIte
 
         {/* OAuth account not authenticated */}
         {account.type === 'oauth' && !account.isAvailable && (
-          <div className="flex items-center gap-1.5 mt-1.5">
-            <AlertCircle className="h-3 w-3 text-destructive" />
-            <span className="text-[10px] text-destructive">
-              {t('accounts.priority.needsAuth')}
-            </span>
+          <div className="flex items-center gap-1.5 text-xs text-destructive">
+            <AlertCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
+            {t('accounts.priority.needsAuth')}
           </div>
         )}
 
@@ -303,14 +200,12 @@ function SortableAccountItem({ account, index, onSetActive }: SortableAccountIte
         {account.type === 'oauth' && account.isDuplicateUsage && account.isAvailable && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 mt-1.5 cursor-help">
-                <AlertCircle className="h-3 w-3 text-warning" />
-                <span className="text-[10px] text-warning">
-                  {t('accounts.priority.duplicateUsage')}
-                </span>
+              <div className="flex w-fit cursor-help items-center gap-1.5 text-xs text-(--nav-label-color)">
+                <AlertCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
+                {t('accounts.priority.duplicateUsage')}
               </div>
             </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs max-w-[250px]">
+            <TooltipContent side="top" className="max-w-[250px] text-xs">
               {t('accounts.priority.duplicateUsageHint')}
             </TooltipContent>
           </Tooltip>
@@ -320,45 +215,51 @@ function SortableAccountItem({ account, index, onSetActive }: SortableAccountIte
         {account.type === 'oauth' && account.needsReauthentication && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <div className="flex items-center gap-1.5 mt-1.5 cursor-help">
-                <AlertCircle className="h-3 w-3 text-destructive" />
-                <span className="text-[10px] text-destructive">
-                  {t('accounts.priority.needsReauth')}
-                </span>
+              <div className="flex w-fit cursor-help items-center gap-1.5 text-xs text-destructive">
+                <AlertCircle className="h-3.5 w-3.5" strokeWidth={1.75} />
+                {t('accounts.priority.needsReauth')}
               </div>
             </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs max-w-[250px]">
+            <TooltipContent side="top" className="max-w-[250px] text-xs">
               {t('accounts.priority.needsReauthHint')}
             </TooltipContent>
           </Tooltip>
         )}
       </div>
 
-      {/* Right side actions */}
-      <div className="flex items-center gap-1.5 shrink-0">
-        {/* Set Active button - only shown for non-active accounts */}
-        {onSetActive && !account.isActive && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                onClick={() => onSetActive(account.id)}
-                className="text-muted-foreground hover:text-primary p-1 rounded hover:bg-primary/10 transition-colors"
-              >
-                <Star className="h-3.5 w-3.5" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top" className="text-xs">
-              {t('accounts.priority.setActiveTooltip')}
-            </TooltipContent>
-          </Tooltip>
-        )}
-        {/* Pay-per-use badge for API profiles */}
+      {/* Right side: status / actions */}
+      <div className="flex shrink-0 items-center gap-2 text-sm text-(--nav-label-color)">
         {account.type === 'api' && (
-          <span className="text-[10px] bg-muted text-muted-foreground px-2 py-1 rounded flex items-center gap-1">
-            <Infinity className="h-3 w-3" />
+          <span className="flex items-center gap-1">
+            <Infinity className="h-4 w-4" strokeWidth={1.75} />
             {t('accounts.priority.payPerUse')}
           </span>
+        )}
+        {account.isActive ? (
+          <span className="flex items-center gap-1.5 text-foreground">
+            <Check className="h-4 w-4" strokeWidth={1.75} />
+            {t('accounts.priority.inUse')}
+          </span>
+        ) : (
+          <>
+            {account.isNext && <span>{t('accounts.priority.next')}</span>}
+            {onSetActive && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onSetActive(account.id)}
+                  >
+                    {t('accounts.priority.setActive')}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('accounts.priority.setActiveTooltip')}
+                </TooltipContent>
+              </Tooltip>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -471,24 +372,12 @@ export function AccountPriorityList({ accounts, onReorder, onSetActive, isLoadin
 
   if (items.length === 0) {
     return (
-      <div className="text-center py-8 text-muted-foreground">
-        <p className="text-sm">{t('accounts.priority.noAccounts')}</p>
-      </div>
+      <p className="py-3 text-sm text-(--nav-label-color)">{t('accounts.priority.noAccounts')}</p>
     );
   }
 
   return (
     <div className="space-y-4">
-      {/* Header */}
-      <div>
-        <h4 className="text-sm font-semibold text-foreground mb-1">
-          {t('accounts.priority.title')}
-        </h4>
-        <p className="text-xs text-muted-foreground">
-          {t('accounts.priority.description')}
-        </p>
-      </div>
-
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
@@ -499,8 +388,8 @@ export function AccountPriorityList({ accounts, onReorder, onSetActive, isLoadin
           strategy={verticalListSortingStrategy}
         >
           <div className={cn(
-            "space-y-2",
-            isLoading && "opacity-50 pointer-events-none"
+            '[&>*+*]:border-t [&>*+*]:border-settings-divider',
+            isLoading && 'pointer-events-none opacity-50'
           )}>
             {items.map((account, index) => (
               <SortableAccountItem
@@ -519,14 +408,9 @@ export function AccountPriorityList({ accounts, onReorder, onSetActive, isLoadin
       </DndContext>
 
       {/* Explanatory tip - provider agnostic */}
-      <div className="rounded-lg bg-info/10 border border-info/30 p-3 mt-4">
-        <div className="flex items-start gap-2">
-          <Info className="h-4 w-4 text-info shrink-0 mt-0.5" />
-          <div className="text-xs text-muted-foreground space-y-1">
-            <p className="font-medium text-foreground">{t('accounts.priority.tipTitle')}</p>
-            <p>{t('accounts.priority.tipDescription')}</p>
-          </div>
-        </div>
+      <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+        <p className="text-foreground">{t('accounts.priority.tipTitle')}</p>
+        <p className="mt-1 text-(--nav-label-color)">{t('accounts.priority.tipDescription')}</p>
       </div>
     </div>
   );

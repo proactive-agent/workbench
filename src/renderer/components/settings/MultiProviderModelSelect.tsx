@@ -13,6 +13,12 @@ interface MultiProviderModelSelectProps {
   onChange: (value: string) => void;
   className?: string;
   filterProvider?: BuiltinProvider;  // When set, only show models for this provider
+  /**
+   * 'inline': compact borderless "Value ⌄" trigger for a settings row's control slot
+   * (claude.ai style); the dropdown opens right-aligned under it.
+   */
+  variant?: 'default' | 'inline';
+  ariaLabel?: string;
 }
 
 function formatContextWindow(size: number): string {
@@ -20,7 +26,15 @@ function formatContextWindow(size: number): string {
   return `${(size / 1000).toFixed(0)}K`;
 }
 
-export function MultiProviderModelSelect({ value, onChange, className, filterProvider }: MultiProviderModelSelectProps) {
+export function MultiProviderModelSelect({
+  value,
+  onChange,
+  className,
+  filterProvider,
+  variant = 'default',
+  ariaLabel,
+}: MultiProviderModelSelectProps) {
+  const isInline = variant === 'inline';
   const { t } = useTranslation(['settings']);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -246,23 +260,46 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
       <button
         type="button"
         onClick={open ? handleClose : handleOpen}
+        aria-label={ariaLabel}
+        aria-expanded={open}
         className={cn(
-          'flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm',
-          'ring-offset-background',
-          'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
-          'disabled:cursor-not-allowed disabled:opacity-50',
-          'hover:bg-accent/50 transition-colors'
+          isInline
+            ? cn(
+                'flex h-8 max-w-64 items-center gap-1.5 rounded-lg px-2 text-sm text-foreground',
+                'outline-none focus-visible:shadow-(--shadow-focus)',
+                'hover:bg-nav-hover transition-colors',
+                open && 'bg-nav-hover'
+              )
+            : cn(
+                'flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm',
+                'ring-offset-background',
+                'focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
+                'hover:bg-accent/50 transition-colors'
+              ),
+          'disabled:cursor-not-allowed disabled:opacity-50'
         )}
       >
         <span className={cn('truncate', !value && 'text-muted-foreground')}>
           {value ? displayLabel : t('settings:modelSelect.placeholder', { defaultValue: 'Select a model' })}
         </span>
-        <ChevronDown className={cn('h-4 w-4 text-muted-foreground shrink-0 ml-2 transition-transform', open && 'rotate-180')} />
+        <ChevronDown
+          className={cn(
+            'h-4 w-4 text-muted-foreground shrink-0 transition-transform',
+            !isInline && 'ml-2',
+            open && 'rotate-180'
+          )}
+        />
       </button>
 
       {/* Dropdown panel */}
       {open && (
-        <div className="absolute z-50 min-w-full w-max max-w-[400px] mt-1 bg-popover border border-border rounded-md shadow-lg flex flex-col max-h-80">
+        <div
+          className={cn(
+            'absolute z-50 min-w-full w-max max-w-[400px] mt-1 flex flex-col max-h-80 overflow-hidden',
+            'bg-popover border border-border rounded-xl shadow-lg',
+            isInline && 'right-0'
+          )}
+        >
           {/* Search */}
           <div className="p-2 border-b border-border">
             <div className="relative">
@@ -310,10 +347,10 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                   <div key={provider}>
                     {/* Provider header */}
                     <div className={cn(
-                      'flex items-center justify-between px-3 py-1.5 bg-muted/50 sticky top-0',
+                      'flex items-center justify-between px-3 py-1.5 bg-popover sticky top-0',
                       !configured && 'opacity-60'
                     )}>
-                      <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      <span className="text-xs font-medium text-(--nav-label-color)">
                         {providerInfo?.name ?? provider}
                       </span>
                       {!configured && providerInfo?.website && (
@@ -321,7 +358,7 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                           href={providerInfo.website}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground hover:underline"
                           onClick={e => e.stopPropagation()}
                         >
                           {t('settings:modelSelect.configureProvider', { defaultValue: 'Configure' })}
@@ -340,22 +377,21 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                           onClick={() => configured ? handleSelect(model.value) : undefined}
                           disabled={!configured}
                           className={cn(
-                            'w-full px-3 py-2 text-left text-sm flex items-start gap-2',
-                            'hover:bg-accent transition-colors',
-                            isSelected && 'bg-accent',
+                            'mx-1.5 flex w-[calc(100%-0.75rem)] items-start gap-2 rounded-lg px-3 py-2 text-left text-sm',
+                            'hover:bg-nav-hover transition-colors',
                             !configured && 'opacity-50 cursor-not-allowed'
                           )}
                         >
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-1.5">
-                              <span className="font-medium">{model.label}</span>
+                              <span>{model.label}</span>
                               {model.description && (
                                 <span className="text-[10px] text-muted-foreground shrink-0">
                                   {model.description}
                                 </span>
                               )}
                               {model.apiKeyOnly && openaiHasMixedAuth && (
-                                <span className="text-[9px] font-medium px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 shrink-0">
+                                <span className="text-[10px] text-muted-foreground shrink-0">
                                   {t('settings:modelSelect.apiKeyOnly', { defaultValue: 'API key' })}
                                 </span>
                               )}
@@ -389,7 +425,7 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                             )}
                           </div>
                           {isSelected && (
-                            <Check className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+                            <Check className="mt-0.5 h-4 w-4 shrink-0 text-(--menu-check)" strokeWidth={2} />
                           )}
                         </button>
                       );
@@ -419,7 +455,7 @@ export function MultiProviderModelSelect({ value, onChange, className, filterPro
                 disabled={!customInput.trim()}
                 className={cn(
                   'shrink-0 px-2 h-7 rounded-md text-xs font-medium transition-colors',
-                  'bg-primary text-primary-foreground hover:bg-primary/90',
+                  'bg-fill-control text-foreground hover:bg-fill-control-hover',
                   'disabled:opacity-50 disabled:cursor-not-allowed'
                 )}
               >

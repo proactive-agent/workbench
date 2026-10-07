@@ -2,7 +2,8 @@
  * Success banner shown after successful import
  */
 
-import { CheckCircle2 } from 'lucide-react';
+import { Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
 import type { LinearImportResult } from '../types';
 
@@ -12,19 +13,20 @@ interface ImportSuccessBannerProps {
 }
 
 export function ImportSuccessBanner({ importResult, onClose }: ImportSuccessBannerProps) {
+  const { t } = useTranslation(['dialogs', 'common']);
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-border px-4 py-3 text-sm">
-      <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+    <div className="flex items-center gap-3 rounded-xl bg-segment-track px-4 py-3 text-sm">
+      <Check className="h-4 w-4 text-success shrink-0" />
       <div className="flex-1">
-        <p className="text-sm font-medium text-foreground">
-          Successfully imported {importResult.imported} task{importResult.imported !== 1 ? 's' : ''}
+        <p className="text-sm text-foreground">
+          {t('dialogs:linearImport.importedCount', { count: importResult.imported })}
         </p>
-        <p className="text-xs text-muted-foreground mt-1">
-          Tasks are being processed. Check your Kanban board for progress.
+        <p className="text-sm text-muted-foreground mt-0.5">
+          {t('dialogs:linearImport.importedDescription')}
         </p>
       </div>
       <Button variant="outline" size="sm" onClick={onClose}>
-        Close
+        {t('common:buttons.close')}
       </Button>
     </div>
   );

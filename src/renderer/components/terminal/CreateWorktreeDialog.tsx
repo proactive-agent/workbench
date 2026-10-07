@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GitBranch, Loader2, ListTodo } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -13,6 +13,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
+import { SettingsRow } from '../settings/SettingsRow';
 import {
   Select,
   SelectContent,
@@ -281,8 +282,8 @@ export function CreateWorktreeDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
-          {/* Worktree Name */}
+        <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 pt-4">
+          {/* Worktree name */}
           <div className="space-y-2">
             <Label htmlFor="worktree-name">{t('terminal:worktree.name')}</Label>
             <Input
@@ -293,20 +294,19 @@ export function CreateWorktreeDialog({
               disabled={isCreating}
               autoFocus
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-(--nav-label-color)">
               {t('terminal:worktree.nameHelp')}
             </p>
           </div>
 
           {/* Task Association (Optional) */}
           <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <ListTodo className="h-4 w-4" />
-              {t('terminal:worktree.associateTask')}
-              <span className="text-muted-foreground text-xs">({t('common:labels.optional')})</span>
+            <Label htmlFor="worktree-task">
+              {t('terminal:worktree.associateTask')}{' '}
+              <span className="text-muted-foreground font-normal">({t('common:labels.optional')})</span>
             </Label>
             <Select value={selectedTaskId || 'none'} onValueChange={handleTaskSelect}>
-              <SelectTrigger>
+              <SelectTrigger id="worktree-task">
                 <SelectValue placeholder={t('terminal:worktree.selectTask')} />
               </SelectTrigger>
               <SelectContent>
@@ -321,28 +321,23 @@ export function CreateWorktreeDialog({
           </div>
 
           {/* Git Branch Toggle */}
-          <div className="flex items-center justify-between space-x-2 rounded-lg border border-border px-4 py-3">
-            <div className="space-y-0.5">
-              <Label htmlFor="create-branch" className="flex items-center gap-2 cursor-pointer">
-                <GitBranch className="h-4 w-4" />
-                {t('terminal:worktree.createBranch')}
-              </Label>
-              <p className="text-xs text-muted-foreground">
-                {t('terminal:worktree.branchHelp', { branch: `terminal/${previewName}` })}
-              </p>
-            </div>
+          <SettingsRow
+            className="py-0"
+            label={t('terminal:worktree.createBranch')}
+            description={t('terminal:worktree.branchHelp', { branch: `terminal/${previewName}` })}
+            htmlFor="create-branch"
+          >
             <Switch
               id="create-branch"
               checked={createGitBranch}
               onCheckedChange={setCreateGitBranch}
               disabled={isCreating}
             />
-          </div>
+          </SettingsRow>
 
           {/* Base Branch Selection - Searchable */}
           <div className="space-y-2">
-            <Label htmlFor="base-branch" className="flex items-center gap-2">
-              <GitBranch className="h-4 w-4" />
+            <Label htmlFor="base-branch">
               {t('terminal:worktree.baseBranch')}
             </Label>
             <Combobox
@@ -355,7 +350,7 @@ export function CreateWorktreeDialog({
               emptyMessage={t('terminal:worktree.noBranchFound')}
               disabled={isCreating || isLoadingBranches}
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm text-(--nav-label-color)">
               {t('terminal:worktree.baseBranchHelp')}
             </p>
           </div>

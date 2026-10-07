@@ -14,7 +14,7 @@
  * - Edit mode: API key masked with "Change" button
  */
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Loader2, Check, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -352,7 +352,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                     ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
+                <p className="text-sm text-(--nav-label-color)">
                   {t('settings:apiProfiles.hints.preset')}
                 </p>
               </div>
@@ -374,7 +374,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                 className={urlError ? 'border-destructive' : ''}
               />
               {urlError && <p className="text-sm text-destructive">{urlError}</p>}
-              <p className="text-xs text-muted-foreground">
+              <p className="text-sm text-(--nav-label-color)">
                 {t('settings:apiProfiles.hints.baseUrl')}
               </p>
             </div>
@@ -437,13 +437,13 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
           <Button
             type="button"
             variant="outline"
-            className="w-full"
+            size="sm"
             onClick={handleTestConnection}
             disabled={isTestingConnection || !isFormValidForTest()}
           >
             {isTestingConnection ? (
               <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
                 {t('settings:apiProfiles.testConnection.testing')}
               </>
             ) : (
@@ -453,31 +453,19 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
 
           {/* Inline connection test result */}
           {showTestResult && testConnectionResult && (
-            <div className={`flex items-start gap-2 p-3 rounded-lg border ${
-              testConnectionResult.success
-                ? 'bg-green-50 border-green-200 dark:bg-green-950 dark:border-green-800'
-                : 'bg-red-50 border-red-200 dark:bg-red-950 dark:border-red-800'
-            }`}>
+            <div className="flex items-start gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
               {testConnectionResult.success ? (
-                <CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
+                <Check className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
               ) : (
-                <AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 flex-shrink-0" />
+                <X className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium ${
-                  testConnectionResult.success
-                    ? 'text-green-800 dark:text-green-200'
-                    : 'text-red-800 dark:text-red-200'
-                }`}>
+                <p className="text-foreground">
                   {testConnectionResult.success
                     ? t('settings:apiProfiles.testConnection.success')
                     : t('settings:apiProfiles.testConnection.failure')}
                 </p>
-                <p className={`text-sm ${
-                  testConnectionResult.success
-                    ? 'text-green-700 dark:text-green-300'
-                    : 'text-red-700 dark:text-red-300'
-                }`}>
+                <p className="text-muted-foreground">
                   {testConnectionResult.message}
                 </p>
               </div>
@@ -485,15 +473,17 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
           )}
 
           {/* Optional model mappings */}
-          <div className="space-y-3 pt-2 border-t">
-            <Label className="text-base">{t('settings:apiProfiles.models.title')}</Label>
-            <p className="text-xs text-muted-foreground">
-              {t('settings:apiProfiles.models.description')}
-            </p>
+          <div className="space-y-3 pt-4 border-t border-settings-divider">
+            <div className="space-y-1">
+              <h3 className="text-sm font-medium text-foreground">{t('settings:apiProfiles.models.title')}</h3>
+              <p className="text-sm text-(--nav-label-color)">
+                {t('settings:apiProfiles.models.description')}
+              </p>
+            </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="model-default" className="text-sm text-muted-foreground">
+                <Label htmlFor="model-default">
                   {t('settings:apiProfiles.models.defaultLabel')}
                 </Label>
                 <ModelSearchableSelect
@@ -506,7 +496,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="model-haiku" className="text-sm text-muted-foreground">
+                <Label htmlFor="model-haiku">
                   {t('settings:apiProfiles.models.haikuLabel')}
                 </Label>
                 <ModelSearchableSelect
@@ -519,7 +509,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="model-sonnet" className="text-sm text-muted-foreground">
+                <Label htmlFor="model-sonnet">
                   {t('settings:apiProfiles.models.sonnetLabel')}
                 </Label>
                 <ModelSearchableSelect
@@ -532,7 +522,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="model-opus" className="text-sm text-muted-foreground">
+                <Label htmlFor="model-opus">
                   {t('settings:apiProfiles.models.opusLabel')}
                 </Label>
                 <ModelSearchableSelect
@@ -548,9 +538,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
 
           {/* General error display */}
           {profilesError && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
-              <p className="text-sm text-destructive">{profilesError}</p>
-            </div>
+            <p className="text-sm text-destructive" role="alert">{profilesError}</p>
           )}
         </div>
 

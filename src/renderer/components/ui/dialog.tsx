@@ -79,7 +79,7 @@ DialogHeader.displayName = 'DialogHeader';
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   // Full-width bar: the negative margins reach the edges of the p-6 dialog panel
   <div
-    className={cn('-mx-6 -mb-6 mt-6', DIALOG_FOOTER_BAR_CLASS, DIALOG_FOOTER_ACTIONS_CLASS, className)}
+    className={cn('mt-6', DIALOG_FOOTER_BAR_CLASS, DIALOG_FOOTER_ACTIONS_CLASS, className)}
     {...props}
   />
 );

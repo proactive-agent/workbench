@@ -2,7 +2,9 @@
  * Controls for selecting/deselecting all issues and refreshing
  */
 
-import { CheckSquare, Square, Minus, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Checkbox } from '../../ui/checkbox';
 
 interface SelectionControlsProps {
   isAllSelected: boolean;
@@ -25,24 +27,19 @@ export function SelectionControls({
   onDeselectAll,
   onRefresh
 }: SelectionControlsProps) {
+  const { t } = useTranslation('dialogs');
   return (
-    <div className="flex items-center justify-between py-2 border-b border-border shrink-0">
+    <div className="flex items-center justify-between py-2 border-b border-settings-divider shrink-0">
       <div className="flex items-center gap-3">
-        <button
-          onClick={isAllSelected ? onDeselectAll : onSelectAll}
-          className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-        >
-          {isAllSelected ? (
-            <CheckSquare className="h-4 w-4 text-primary" />
-          ) : isSomeSelected ? (
-            <Minus className="h-4 w-4" />
-          ) : (
-            <Square className="h-4 w-4" />
-          )}
-          {isAllSelected ? 'Deselect all' : 'Select all'}
-        </button>
+        <label className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground cursor-pointer">
+          <Checkbox
+            checked={isAllSelected ? true : isSomeSelected ? 'indeterminate' : false}
+            onCheckedChange={() => (isAllSelected ? onDeselectAll() : onSelectAll())}
+          />
+          {isAllSelected ? t('linearImport.deselectAll') : t('linearImport.selectAll')}
+        </label>
         <span className="text-xs text-muted-foreground">
-          {selectedCount} of {filteredCount} selected
+          {t('linearImport.selectedCount', { selected: selectedCount, total: filteredCount })}
         </span>
       </div>
 
@@ -52,7 +49,7 @@ export function SelectionControls({
         disabled={isLoadingIssues}
       >
         <RefreshCw className={`h-3 w-3 ${isLoadingIssues ? 'animate-spin' : ''}`} />
-        Refresh
+        {t('linearImport.refresh')}
       </button>
     </div>
   );

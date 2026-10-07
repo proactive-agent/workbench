@@ -24,6 +24,20 @@ class ResizeObserverMock {
 }
 global.ResizeObserver = ResizeObserverMock;
 
+// jsdom has no matchMedia (used by SegmentedControl's thumb animation)
+if (!window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
 // Mock the toast hook
 vi.mock('../../../../hooks/use-toast', () => ({
   useToast: () => ({
@@ -80,22 +94,19 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
     it('should render all expected sections', () => {
       renderWithI18n(<TerminalFontSettings />);
 
-      // Main sections - use getAllByText for text that may appear multiple times
-      expect(screen.getAllByText(/terminal fonts/i).length).toBeGreaterThan(0);
-
       // Import/Export buttons
       expect(screen.getAllByText(/export json/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/import json/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/copy to clipboard/i).length).toBeGreaterThan(0);
 
       // Configuration sections
-      expect(screen.getAllByText(/font configuration/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/cursor configuration/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/performance settings/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText(/quick presets/i).length).toBeGreaterThan(0);
+      expect(screen.getByRole('heading', { name: 'Font' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Cursor' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Scrollback' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Presets' })).toBeInTheDocument();
 
       // Preview section
-      expect(screen.getAllByText(/live preview/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/import and export/i).length).toBeGreaterThan(0);
     });
 
     it('should complete render cycle without hanging', async () => {
@@ -105,7 +116,7 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       // The waitFor timeout provides the safety net for catching hangs/infinite loops
       await waitFor(
         () => {
-          expect(screen.getByText(/terminal fonts/i)).toBeInTheDocument();
+          expect(screen.getByRole('heading', { name: /configuration/i })).toBeInTheDocument();
         },
         { timeout: 2000 }
       );
@@ -336,7 +347,7 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       }
 
       // Verify component still renders correctly after multiple re-renders
-      expect(screen.getAllByText(/terminal fonts/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/import and export/i).length).toBeGreaterThan(0);
     });
   });
 });

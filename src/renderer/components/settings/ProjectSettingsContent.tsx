@@ -4,13 +4,14 @@ import { LinearTaskImportModal } from '../LinearTaskImportModal';
 import { SettingsSection } from './SettingsSection';
 import { useProjectSettings, UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 import { loadTasks } from '../../stores/task-store';
+import { updateProjectSettings } from '../../stores/project-store';
 import { EmptyProjectState } from './common/EmptyProjectState';
 import { ErrorDisplay } from './common/ErrorDisplay';
 import { SectionRouter } from './sections/SectionRouter';
 import { createHookProxy } from './utils/hookProxyFactory';
 import type { Project } from '../../../shared/types';
 
-export type ProjectSettingsSection = 'general' | 'linear' | 'github' | 'gitlab' | 'memory' | 'context' | 'mcp';
+export type ProjectSettingsSection = 'general' | 'queue' | 'linear' | 'github' | 'gitlab' | 'memory' | 'context' | 'mcp';
 
 /**
  * Project sections that are self-contained pages (they load and persist their own data) rather
@@ -111,6 +112,18 @@ function ProjectSettingsContentInner({
     handleInitialize,
     error
   } = hook;
+
+  // Project settings save as they change (no Save button); quick edits are batched
+  const savedSettingsRef = useRef(JSON.stringify(project.settings));
+  useEffect(() => {
+    const next = JSON.stringify(settings);
+    if (next === savedSettingsRef.current) return;
+    const timer = setTimeout(() => {
+      savedSettingsRef.current = next;
+      void updateProjectSettings(project.id, settings);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [settings, project.id]);
 
   // Expose hook to parent for save coordination - only once when dialog opens
   // We use hookRef to avoid infinite loops (hook object is recreated each render)

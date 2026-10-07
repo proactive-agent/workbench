@@ -9,7 +9,7 @@ import {
   DialogDescription
 } from './ui/dialog';
 import { Button } from './ui/button';
-import { Label } from './ui/label';
+import { SettingsRow, SettingsRows } from './settings/SettingsRow';
 import {
   Select,
   SelectContent,
@@ -63,9 +63,8 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          <div className="space-y-2">
-            <Label htmlFor="model-select">{t('customModel.model')}</Label>
+        <SettingsRows className="pt-2">
+          <SettingsRow label={t('customModel.model')} htmlFor="model-select">
             <Select value={model} onValueChange={(v) => setModel(v as ModelType)}>
               <SelectTrigger id="model-select">
                 <SelectValue />
@@ -78,10 +77,9 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
                 ))}
               </SelectContent>
             </Select>
-          </div>
+          </SettingsRow>
 
-          <div className="space-y-2">
-            <Label htmlFor="thinking-select">{t('customModel.thinkingLevel')}</Label>
+          <SettingsRow label={t('customModel.thinkingLevel')} htmlFor="thinking-select">
             <Select value={thinkingLevel} onValueChange={(v) => setThinkingLevel(v as ThinkingLevel)}>
               <SelectTrigger id="thinking-select">
                 <SelectValue />
@@ -99,8 +97,8 @@ export function CustomModelModal({ currentConfig, onSave, onClose, open = true }
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        </div>
+          </SettingsRow>
+        </SettingsRows>
 
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={onClose}>

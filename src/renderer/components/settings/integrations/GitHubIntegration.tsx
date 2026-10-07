@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch } from 'lucide-react';
+import { RefreshCw, KeyRound, Loader2, Lock, Globe, ChevronDown } from 'lucide-react';
 import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
-import { Separator } from '../../ui/separator';
 import { Button } from '../../ui/button';
+import { SettingsSection } from '../SettingsSection';
+import { SettingsRow, SettingsRows } from '../SettingsRow';
+import { StatusIndicator } from '../common/StatusIndicator';
+import { cn } from '../../../lib/utils';
 import { Combobox } from '../../ui/combobox';
 import { GitHubOAuthFlow } from '../../project-settings/GitHubOAuthFlow';
 import { PasswordInput } from '../../project-settings/PasswordInput';
@@ -223,218 +225,219 @@ export function GitHubIntegration({
   const selectedBranch = settings?.mainBranch || envConfig?.defaultBranch || '';
   const pushNewBranches = settings?.pushNewBranches !== false;
 
+  const connectionRequested = !!(envConfig.githubToken && envConfig.githubRepo);
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <Label className="font-normal text-foreground">Enable GitHub Issues</Label>
-          <p className="text-xs text-muted-foreground">
-            Sync issues from GitHub and create tasks automatically
-          </p>
-        </div>
-        <Switch
-          checked={envConfig.githubEnabled}
-          onCheckedChange={(checked) => updateEnvConfig({ githubEnabled: checked })}
-        />
-      </div>
+    <>
+      <SettingsSection title={t('settings:projectSections.github.title')}>
+        <SettingsRows>
+          <SettingsRow
+            label={t('settings:projectPages.github.enableIssues')}
+            description={t('settings:projectPages.github.enableIssuesDescription')}
+          >
+            <Switch
+              checked={envConfig.githubEnabled}
+              onCheckedChange={(checked) => updateEnvConfig({ githubEnabled: checked })}
+              aria-label={t('settings:projectPages.github.enableIssues')}
+            />
+          </SettingsRow>
+          {envConfig.githubEnabled && (
+            <SettingsRow
+              label={t('settings:projectPages.github.autoSync')}
+              description={t('settings:projectPages.github.autoSyncDescription')}
+            >
+              <Switch
+                checked={envConfig.githubAutoSync || false}
+                onCheckedChange={(checked) => updateEnvConfig({ githubAutoSync: checked })}
+                aria-label={t('settings:projectPages.github.autoSync')}
+              />
+            </SettingsRow>
+          )}
+        </SettingsRows>
+      </SettingsSection>
 
       {envConfig.githubEnabled && (
         <>
-          {/* OAuth Success State */}
-          {authMode === 'oauth-success' && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-success/30 bg-success/10 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                    <div>
-                      <p className="text-sm font-medium text-success">Connected via GitHub CLI</p>
-                      {oauthUsername && (
-                        <p className="text-xs text-success/80 flex items-center gap-1 mt-0.5">
-                          <User className="h-3 w-3" />
-                          Authenticated as {oauthUsername}
-                        </p>
-                      )}
-                    </div>
-                  </div>
+          <SettingsSection title={t('settings:projectPages.github.connectionTitle')}>
+            <SettingsRows>
+              {/* OAuth Success State */}
+              {authMode === 'oauth-success' && (
+                <>
+                  <SettingsRow
+                    label={
+                      <StatusIndicator state="success" tone="foreground">
+                        {t('settings:projectPages.github.connectedViaCli')}
+                      </StatusIndicator>
+                    }
+                    description={
+                      oauthUsername
+                        ? t('settings:projectPages.github.authenticatedAs', { username: oauthUsername })
+                        : undefined
+                    }
+                  >
+                    <Button variant="outline" size="sm" onClick={handleSwitchToManual}>
+                      {t('settings:projectPages.github.useDifferentToken')}
+                    </Button>
+                  </SettingsRow>
+
+                  <RepositoryDropdown
+                    repos={repos}
+                    selectedRepo={envConfig.githubRepo || ''}
+                    isLoading={isLoadingRepos}
+                    error={reposError}
+                    onSelect={handleSelectRepo}
+                    onRefresh={fetchUserRepos}
+                    onManualEntry={() => setAuthMode('manual')}
+                  />
+                </>
+              )}
+
+              {/* OAuth Flow */}
+              {authMode === 'oauth' && (
+                <SettingsRow
+                  label={t('settings:projectPages.github.authentication')}
+                  footer={<GitHubOAuthFlow onSuccess={handleOAuthSuccess} onCancel={handleSwitchToManual} />}
+                >
+                  <Button variant="outline" size="sm" onClick={handleSwitchToManual}>
+                    {t('settings:projectPages.github.useManualToken')}
+                  </Button>
+                </SettingsRow>
+              )}
+
+              {/* Manual Token Entry */}
+              {authMode === 'manual' && (
+                <>
+                  <SettingsRow
+                    label={t('settings:projectPages.github.oauth')}
+                    description={t('settings:projectPages.github.oauthDescription')}
+                  >
+                    <Button variant="outline" size="sm" onClick={handleSwitchToOAuth} className="gap-2">
+                      <KeyRound className="h-4 w-4" strokeWidth={1.75} />
+                      {t('settings:projectPages.github.useOAuth')}
+                    </Button>
+                  </SettingsRow>
+                  <SettingsRow
+                    stacked
+                    label={t('settings:projectPages.github.token')}
+                    description={
+                      <>
+                        {t('settings:projectPages.github.tokenDescription')}{' '}
+                        <a
+                          href="https://github.com/settings/tokens/new?scopes=repo&description=Auto-Build-UI"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t('settings:projectPages.github.tokenLink')}
+                        </a>
+                      </>
+                    }
+                  >
+                    <PasswordInput
+                      value={envConfig.githubToken || ''}
+                      onChange={(value) => updateEnvConfig({ githubToken: value })}
+                      placeholder="ghp_xxxxxxxx or github_pat_xxxxxxxx"
+                    />
+                  </SettingsRow>
+                  <SettingsRow
+                    stacked
+                    label={t('settings:projectPages.github.repository')}
+                    description={t('settings:projectPages.github.repositoryFormat')}
+                  >
+                    <Input
+                      placeholder="owner/repository"
+                      value={envConfig.githubRepo || ''}
+                      onChange={(e) => updateEnvConfig({ githubRepo: e.target.value })}
+                    />
+                  </SettingsRow>
+                </>
+              )}
+
+              {connectionRequested && (
+                <SettingsRow
+                  label={t('settings:projectPages.github.connectionStatus')}
+                  description={
+                    gitHubConnectionStatus?.connected && gitHubConnectionStatus.repoDescription
+                      ? gitHubConnectionStatus.repoDescription
+                      : undefined
+                  }
+                >
+                  <StatusIndicator
+                    state={isCheckingGitHub ? 'loading' : gitHubConnectionStatus?.connected ? 'success' : 'error'}
+                    className="max-w-[20rem]"
+                  >
+                    <span className="truncate">
+                      {isCheckingGitHub
+                        ? t('settings:projectPages.github.checking')
+                        : gitHubConnectionStatus?.connected
+                          ? t('settings:projectPages.github.connectedTo', { repo: gitHubConnectionStatus.repoFullName })
+                          : gitHubConnectionStatus?.error || t('settings:projectPages.github.notConnected')}
+                    </span>
+                  </StatusIndicator>
+                </SettingsRow>
+              )}
+            </SettingsRows>
+          </SettingsSection>
+
+          <SettingsSection title={t('settings:projectPages.github.branchesTitle')}>
+            <SettingsRows>
+              {/* Default Branch Selector */}
+              {projectPath && (
+                <SettingsRow
+                  label={t('settings:projectSections.github.defaultBranch.label')}
+                  description={
+                    selectedBranch
+                      ? t('settings:projectSections.github.defaultBranch.selectedBranchHelp', { branch: selectedBranch })
+                      : t('settings:projectSections.github.defaultBranch.description')
+                  }
+                  footer={
+                    branchesError ? (
+                      <StatusIndicator state="error" tone="destructive">
+                        {branchesError}
+                      </StatusIndicator>
+                    ) : undefined
+                  }
+                >
+                  <Combobox
+                    options={branchOptions}
+                    value={selectedBranch}
+                    onValueChange={handleBranchChange}
+                    placeholder={t('settings:projectSections.github.defaultBranch.autoDetect')}
+                    searchPlaceholder={t('settings:projectSections.github.defaultBranch.searchPlaceholder')}
+                    emptyMessage={t('settings:projectSections.github.defaultBranch.noBranchesFound')}
+                    disabled={isLoadingBranches}
+                    className="field-border min-w-[14rem] justify-end"
+                  />
                   <Button
                     variant="ghost"
-                    size="sm"
-                    onClick={handleSwitchToManual}
-                    className="text-xs"
+                    size="icon"
+                    onClick={fetchBranches}
+                    disabled={isLoadingBranches}
+                    className="h-8 w-8 text-muted-foreground"
+                    aria-label={t('settings:projectPages.github.refreshBranches')}
                   >
-                    Use Different Token
+                    <RefreshCw className={cn('h-4 w-4', isLoadingBranches && 'animate-spin')} strokeWidth={1.75} />
                   </Button>
-                </div>
-              </div>
-
-              {/* Repository Dropdown */}
-              <RepositoryDropdown
-                repos={repos}
-                selectedRepo={envConfig.githubRepo || ''}
-                isLoading={isLoadingRepos}
-                error={reposError}
-                onSelect={handleSelectRepo}
-                onRefresh={fetchUserRepos}
-                onManualEntry={() => setAuthMode('manual')}
-              />
-            </div>
-          )}
-
-          {/* OAuth Flow */}
-          {authMode === 'oauth' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium text-foreground">GitHub Authentication</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSwitchToManual}
-                >
-                  Use Manual Token
-                </Button>
-              </div>
-              <GitHubOAuthFlow
-                onSuccess={handleOAuthSuccess}
-                onCancel={handleSwitchToManual}
-              />
-            </div>
-          )}
-
-          {/* Manual Token Entry */}
-          {authMode === 'manual' && (
-            <>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium text-foreground">Personal Access Token</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSwitchToOAuth}
-                    className="gap-2"
-                  >
-                    <KeyRound className="h-3 w-3" />
-                    Use OAuth Instead
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  Create a token with <code className="px-1 bg-muted rounded">repo</code> scope from{' '}
-                  <a
-                    href="https://github.com/settings/tokens/new?scopes=repo&description=Auto-Build-UI"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-info hover:underline"
-                  >
-                    GitHub Settings
-                  </a>
-                </p>
-                <PasswordInput
-                  value={envConfig.githubToken || ''}
-                  onChange={(value) => updateEnvConfig({ githubToken: value })}
-                  placeholder="ghp_xxxxxxxx or github_pat_xxxxxxxx"
-                />
-              </div>
-
-              <RepositoryInput
-                value={envConfig.githubRepo || ''}
-                onChange={(value) => updateEnvConfig({ githubRepo: value })}
-              />
-            </>
-          )}
-
-          {envConfig.githubToken && envConfig.githubRepo && (
-            <ConnectionStatus
-              isChecking={isCheckingGitHub}
-              connectionStatus={gitHubConnectionStatus}
-            />
-          )}
-
-          <Separator />
-
-          {/* Default Branch Selector */}
-          {projectPath && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <GitBranch className="h-4 w-4 text-info" />
-                    <Label className="text-sm font-medium text-foreground">
-                      {t('settings:projectSections.github.defaultBranch.label')}
-                    </Label>
-                  </div>
-                  <p className="text-xs text-muted-foreground pl-6">
-                    {t('settings:projectSections.github.defaultBranch.description')}
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={fetchBranches}
-                  disabled={isLoadingBranches}
-                  className="h-7 px-2"
-                >
-                  <RefreshCw className={`h-3 w-3 ${isLoadingBranches ? 'animate-spin' : ''}`} />
-                </Button>
-              </div>
-
-              {branchesError && (
-                <div className="flex items-center gap-2 text-xs text-destructive pl-6">
-                  <AlertCircle className="h-3 w-3" />
-                  {branchesError}
-                </div>
+                </SettingsRow>
               )}
 
-              <div className="pl-6">
-                <Combobox
-                  options={branchOptions}
-                  value={selectedBranch}
-                  onValueChange={handleBranchChange}
-                  placeholder={t('settings:projectSections.github.defaultBranch.autoDetect')}
-                  searchPlaceholder={t('settings:projectSections.github.defaultBranch.searchPlaceholder')}
-                  emptyMessage={t('settings:projectSections.github.defaultBranch.noBranchesFound')}
-                  disabled={isLoadingBranches}
-                  className="w-full"
-                />
-              </div>
-
-              {selectedBranch && (
-                <p className="text-xs text-muted-foreground pl-6">
-                  {t('settings:projectSections.github.defaultBranch.selectedBranchHelp', { branch: selectedBranch })}
-                </p>
+              {setSettings && (
+                <SettingsRow
+                  label={t('settings:projectSections.github.pushNewBranches.label')}
+                  description={t('settings:projectSections.github.pushNewBranches.description')}
+                >
+                  <Switch
+                    checked={pushNewBranches}
+                    onCheckedChange={(checked) => setSettings(prev => ({ ...prev, pushNewBranches: checked }))}
+                    aria-label={t('settings:projectSections.github.pushNewBranches.label')}
+                  />
+                </SettingsRow>
               )}
-            </div>
-          )}
-
-          {setSettings && (
-            <>
-              <Separator />
-
-              <div className="flex items-center justify-between">
-                <div className="space-y-0.5">
-                  <Label className="font-normal text-foreground">
-                    {t('settings:projectSections.github.pushNewBranches.label')}
-                  </Label>
-                  <p className="text-xs text-muted-foreground">
-                    {t('settings:projectSections.github.pushNewBranches.description')}
-                  </p>
-                </div>
-                <Switch
-                  checked={pushNewBranches}
-                  onCheckedChange={(checked) => setSettings(prev => ({ ...prev, pushNewBranches: checked }))}
-                />
-              </div>
-            </>
-          )}
-
-          <Separator />
-
-          <AutoSyncToggle
-            enabled={envConfig.githubAutoSync || false}
-            onToggle={(checked) => updateEnvConfig({ githubAutoSync: checked })}
-          />
+            </SettingsRows>
+          </SettingsSection>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -457,6 +460,7 @@ function RepositoryDropdown({
   onRefresh,
   onManualEntry
 }: RepositoryDropdownProps) {
+  const { t } = useTranslation('settings');
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState('');
 
@@ -468,70 +472,69 @@ function RepositoryDropdown({
   const selectedRepoData = repos.find(r => r.fullName === selectedRepo);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-foreground">Repository</Label>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="h-7 px-2"
-          >
-            <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onManualEntry}
-            className="h-7 text-xs"
-          >
-            Enter Manually
-          </Button>
+    <SettingsRow
+      stacked
+      label={
+        <div className="flex items-center justify-between gap-2">
+          <span>{t('projectPages.github.repository')}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRefresh}
+              disabled={isLoading}
+              className="h-8 w-8 text-muted-foreground"
+              aria-label={t('projectPages.github.refreshRepositories')}
+            >
+              <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} strokeWidth={1.75} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={onManualEntry}>
+              {t('projectPages.github.enterManually')}
+            </Button>
+          </div>
         </div>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-xs text-destructive">
-          <AlertCircle className="h-3 w-3" />
-          {error}
-        </div>
-      )}
-
+      }
+      footer={
+        error ? (
+          <StatusIndicator state="error" tone="destructive">
+            {error}
+          </StatusIndicator>
+        ) : undefined
+      }
+    >
       <div className="relative">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           disabled={isLoading}
-          className="w-full flex items-center justify-between px-3 py-2 text-sm border border-input rounded-md bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          className="field-border flex h-8 w-full items-center justify-between rounded-lg px-3 text-sm text-foreground outline-none disabled:opacity-50"
         >
           {isLoading ? (
             <span className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              Loading repositories...
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+              {t('projectPages.github.loadingRepositories')}
             </span>
           ) : selectedRepo ? (
             <span className="flex items-center gap-2">
               {selectedRepoData?.isPrivate ? (
-                <Lock className="h-3 w-3 text-muted-foreground" />
+                <Lock className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
               ) : (
-                <Globe className="h-3 w-3 text-muted-foreground" />
+                <Globe className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
               )}
               {selectedRepo}
             </span>
           ) : (
-            <span className="text-muted-foreground">Select a repository...</span>
+            <span className="text-muted-foreground">{t('projectPages.github.selectRepository')}</span>
           )}
-          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
         </button>
 
         {isOpen && !isLoading && (
-          <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-hidden">
+          <div className="absolute z-50 mt-1 max-h-64 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
             {/* Search filter */}
-            <div className="p-2 border-b border-border">
+            <div className="border-b border-border p-2">
               <Input
-                placeholder="Search repositories..."
+                placeholder={t('projectPages.github.searchRepositories')}
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 className="h-8 text-sm"
@@ -540,10 +543,10 @@ function RepositoryDropdown({
             </div>
 
             {/* Repository list */}
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-48 overflow-y-auto p-1">
               {filteredRepos.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-                  {filter ? 'No matching repositories' : 'No repositories found'}
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
+                  {filter ? t('projectPages.github.noMatchingRepositories') : t('projectPages.github.noRepositories')}
                 </div>
               ) : (
                 filteredRepos.map((repo) => (
@@ -555,19 +558,20 @@ function RepositoryDropdown({
                       setIsOpen(false);
                       setFilter('');
                     }}
-                    className={`w-full px-3 py-2 text-left hover:bg-accent flex items-start gap-2 ${
-                      repo.fullName === selectedRepo ? 'bg-accent' : ''
-                    }`}
+                    className={cn(
+                      'flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-nav-hover',
+                      repo.fullName === selectedRepo && 'bg-nav-active'
+                    )}
                   >
                     {repo.isPrivate ? (
-                      <Lock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
                     ) : (
-                      <Globe className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <Globe className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{repo.fullName}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-foreground">{repo.fullName}</p>
                       {repo.description && (
-                        <p className="text-xs text-muted-foreground truncate">{repo.description}</p>
+                        <p className="truncate text-xs text-muted-foreground">{repo.description}</p>
                       )}
                     </div>
                   </button>
@@ -577,90 +581,6 @@ function RepositoryDropdown({
           </div>
         )}
       </div>
-
-      {selectedRepo && (
-        <p className="text-xs text-muted-foreground">
-          Selected: <code className="px-1 bg-muted rounded">{selectedRepo}</code>
-        </p>
-      )}
-    </div>
-  );
-}
-
-interface RepositoryInputProps {
-  value: string;
-  onChange: (value: string) => void;
-}
-
-function RepositoryInput({ value, onChange }: RepositoryInputProps) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-sm font-medium text-foreground">Repository</Label>
-      <p className="text-xs text-muted-foreground">
-        Format: <code className="px-1 bg-muted rounded">owner/repo</code> (e.g., facebook/react)
-      </p>
-      <Input
-        placeholder="owner/repository"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
-interface ConnectionStatusProps {
-  isChecking: boolean;
-  connectionStatus: GitHubSyncStatus | null;
-}
-
-function ConnectionStatus({ isChecking, connectionStatus }: ConnectionStatusProps) {
-  return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground">Connection Status</p>
-          <p className="text-xs text-muted-foreground">
-            {isChecking ? 'Checking...' :
-              connectionStatus?.connected
-                ? `Connected to ${connectionStatus.repoFullName}`
-                : connectionStatus?.error || 'Not connected'}
-          </p>
-          {connectionStatus?.connected && connectionStatus.repoDescription && (
-            <p className="text-xs text-muted-foreground mt-1 italic">
-              {connectionStatus.repoDescription}
-            </p>
-          )}
-        </div>
-        {isChecking ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : connectionStatus?.connected ? (
-          <CheckCircle2 className="h-4 w-4 text-success" />
-        ) : (
-          <AlertCircle className="h-4 w-4 text-warning" />
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface AutoSyncToggleProps {
-  enabled: boolean;
-  onToggle: (checked: boolean) => void;
-}
-
-function AutoSyncToggle({ enabled, onToggle }: AutoSyncToggleProps) {
-  return (
-    <div className="flex items-center justify-between">
-      <div className="space-y-0.5">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-info" />
-          <Label className="font-normal text-foreground">Auto-Sync on Load</Label>
-        </div>
-        <p className="text-xs text-muted-foreground pl-6">
-          Automatically fetch issues when the project loads
-        </p>
-      </div>
-      <Switch checked={enabled} onCheckedChange={onToggle} />
-    </div>
+    </SettingsRow>
   );
 }

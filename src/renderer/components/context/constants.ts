@@ -42,17 +42,17 @@ export const serviceTypeIcons: Record<string, React.ElementType> = {
   unknown: FileCode
 };
 
-// Service type color mapping
+// Service type badge classes (neutral, claude.ai style)
 export const serviceTypeColors: Record<string, string> = {
-  backend: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-  frontend: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-  worker: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  scraper: 'bg-green-500/10 text-green-400 border-green-500/30',
-  library: 'bg-gray-500/10 text-gray-400 border-gray-500/30',
-  proxy: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  mobile: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  desktop: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
-  unknown: 'bg-muted text-muted-foreground border-muted'
+  backend: 'bg-segment-track text-muted-foreground border-transparent',
+  frontend: 'bg-segment-track text-muted-foreground border-transparent',
+  worker: 'bg-segment-track text-muted-foreground border-transparent',
+  scraper: 'bg-segment-track text-muted-foreground border-transparent',
+  library: 'bg-segment-track text-muted-foreground border-transparent',
+  proxy: 'bg-segment-track text-muted-foreground border-transparent',
+  mobile: 'bg-segment-track text-muted-foreground border-transparent',
+  desktop: 'bg-segment-track text-muted-foreground border-transparent',
+  unknown: 'bg-segment-track text-muted-foreground border-transparent'
 };
 
 // Memory type icon mapping (16 types)
@@ -75,24 +75,24 @@ export const memoryTypeIcons: Record<MemoryType, React.ElementType> = {
   context_cost: DollarSign
 };
 
-// Memory type colors for badges and styling (16 types)
+// Memory type badge classes (neutral, claude.ai style; 16 types)
 export const memoryTypeColors: Record<MemoryType, string> = {
-  gotcha: 'bg-red-500/10 text-red-400 border-red-500/30',
-  decision: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  preference: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  pattern: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-  requirement: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-  error_pattern: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  module_insight: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
-  prefetch_pattern: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
-  work_state: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
-  causal_dependency: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
-  task_calibration: 'bg-green-500/10 text-green-400 border-green-500/30',
-  e2e_observation: 'bg-sky-500/10 text-sky-400 border-sky-500/30',
-  dead_end: 'bg-rose-500/10 text-rose-400 border-rose-500/30',
-  work_unit_outcome: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-  workflow_recipe: 'bg-violet-500/10 text-violet-400 border-violet-500/30',
-  context_cost: 'bg-pink-500/10 text-pink-400 border-pink-500/30'
+  gotcha: 'bg-segment-track text-muted-foreground border-transparent',
+  decision: 'bg-segment-track text-muted-foreground border-transparent',
+  preference: 'bg-segment-track text-muted-foreground border-transparent',
+  pattern: 'bg-segment-track text-muted-foreground border-transparent',
+  requirement: 'bg-segment-track text-muted-foreground border-transparent',
+  error_pattern: 'bg-segment-track text-muted-foreground border-transparent',
+  module_insight: 'bg-segment-track text-muted-foreground border-transparent',
+  prefetch_pattern: 'bg-segment-track text-muted-foreground border-transparent',
+  work_state: 'bg-segment-track text-muted-foreground border-transparent',
+  causal_dependency: 'bg-segment-track text-muted-foreground border-transparent',
+  task_calibration: 'bg-segment-track text-muted-foreground border-transparent',
+  e2e_observation: 'bg-segment-track text-muted-foreground border-transparent',
+  dead_end: 'bg-segment-track text-muted-foreground border-transparent',
+  work_unit_outcome: 'bg-segment-track text-muted-foreground border-transparent',
+  workflow_recipe: 'bg-segment-track text-muted-foreground border-transparent',
+  context_cost: 'bg-segment-track text-muted-foreground border-transparent'
 };
 
 // Memory type labels for display (16 types)
@@ -143,14 +143,14 @@ export const legacyMemoryTypeIcons: Record<string, React.ElementType> = {
 
 // Legacy colors kept for backward compatibility
 export const legacyMemoryTypeColors: Record<string, string> = {
-  session_insight: 'bg-amber-500/10 text-amber-400 border-amber-500/30',
-  codebase_discovery: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-  codebase_map: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-  task_outcome: 'bg-green-500/10 text-green-400 border-green-500/30',
-  qa_result: 'bg-teal-500/10 text-teal-400 border-teal-500/30',
-  historical_context: 'bg-slate-500/10 text-slate-400 border-slate-500/30',
-  pr_review: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
-  pr_finding: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-  pr_pattern: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-  pr_gotcha: 'bg-red-500/10 text-red-400 border-red-500/30'
+  session_insight: 'bg-segment-track text-muted-foreground border-transparent',
+  codebase_discovery: 'bg-segment-track text-muted-foreground border-transparent',
+  codebase_map: 'bg-segment-track text-muted-foreground border-transparent',
+  task_outcome: 'bg-segment-track text-muted-foreground border-transparent',
+  qa_result: 'bg-segment-track text-muted-foreground border-transparent',
+  historical_context: 'bg-segment-track text-muted-foreground border-transparent',
+  pr_review: 'bg-segment-track text-muted-foreground border-transparent',
+  pr_finding: 'bg-segment-track text-muted-foreground border-transparent',
+  pr_pattern: 'bg-segment-track text-muted-foreground border-transparent',
+  pr_gotcha: 'bg-segment-track text-muted-foreground border-transparent'
 };

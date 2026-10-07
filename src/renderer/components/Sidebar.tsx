@@ -2,8 +2,6 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
-  AlertCircle,
-  Download,
   RefreshCw,
   GitlabIcon,
   GitMerge,
@@ -341,22 +339,16 @@ export function Sidebar({
           'electron-drag flex h-14 shrink-0 items-center gap-1 pt-6',
           isCollapsed ? 'justify-center px-2' : 'px-2'
         )}>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="electron-no-drag h-8 w-8 text-muted-foreground hover:bg-nav-hover hover:text-foreground"
-                onClick={toggleSidebar}
-                aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
-              >
-                <PanelLeft className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              {isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
-            </TooltipContent>
-          </Tooltip>
+          {/* No hover tooltip; the label stays available to screen readers */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="electron-no-drag h-8 w-8 text-muted-foreground hover:bg-nav-hover hover:text-foreground"
+            onClick={toggleSidebar}
+            aria-label={isCollapsed ? t('actions.expandSidebar') : t('actions.collapseSidebar')}
+          >
+            <PanelLeft className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
+          </Button>
           {!isCollapsed && (
             <span
               className={cn(
@@ -457,9 +449,9 @@ export function Sidebar({
               {t('dialogs:initialize.description')}
             </DialogDescription>
           </DialogHeader>
-          <div className="py-4">
-            <div className="rounded-lg border border-border px-4 py-3 text-sm">
-              <p className="font-medium mb-2">{t('dialogs:initialize.willDo')}</p>
+          <div className="space-y-4 pt-4">
+            <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+              <p className="text-foreground mb-2">{t('dialogs:initialize.willDo')}</p>
               <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                 <li>{t('dialogs:initialize.createFolder')}</li>
                 <li>{t('dialogs:initialize.copyFramework')}</li>
@@ -467,16 +459,11 @@ export function Sidebar({
               </ul>
             </div>
             {!settings.autoBuildPath && (
-              <div className="mt-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
-                <div className="flex items-start gap-2">
-                  <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
-                  <div>
-                    <p className="font-medium text-foreground">{t('dialogs:initialize.sourcePathNotConfigured')}</p>
-                    <p className="text-muted-foreground mt-1">
-                      {t('dialogs:initialize.sourcePathNotConfiguredDescription')}
-                    </p>
-                  </div>
-                </div>
+              <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <p className="text-foreground">{t('dialogs:initialize.sourcePathNotConfigured')}</p>
+                <p className="text-muted-foreground mt-1">
+                  {t('dialogs:initialize.sourcePathNotConfiguredDescription')}
+                </p>
               </div>
             )}
           </div>
@@ -495,10 +482,7 @@ export function Sidebar({
                   {t('common:labels.initializing')}
                 </>
               ) : (
-                <>
-                  <Download className="mr-1.5 h-3.5 w-3.5" />
-                  {t('common:buttons.initialize')}
-                </>
+                t('common:buttons.initialize')
               )}
             </Button>
           </DialogFooter>

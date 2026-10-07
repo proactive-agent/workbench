@@ -2,15 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { COLOR_THEMES, DEFAULT_COLOR_THEME, sanitizeColorTheme } from '../themes';
 
 describe('COLOR_THEMES', () => {
-  it('contains only the default and lime themes', () => {
-    expect(COLOR_THEMES.map((theme) => theme.id)).toEqual(['default', 'lime']);
+  it('contains only the default theme', () => {
+    expect(COLOR_THEMES.map((theme) => theme.id)).toEqual(['default']);
   });
 });
 
 describe('sanitizeColorTheme', () => {
   it('keeps known themes', () => {
     expect(sanitizeColorTheme('default')).toBe('default');
-    expect(sanitizeColorTheme('lime')).toBe('lime');
+  });
+
+  it('maps the removed lime theme to default', () => {
+    expect(sanitizeColorTheme('lime')).toBe('default');
   });
 
   it('maps the renamed claude theme to default', () => {

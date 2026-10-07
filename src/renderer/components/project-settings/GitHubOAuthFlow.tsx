@@ -1,18 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import {
-  Github,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  Info,
-  ExternalLink,
-  Terminal,
-  Copy,
-  Check,
-  Clock
-} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Github, Loader2, ExternalLink, Copy, Check } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Card, CardContent } from '../ui/card';
 
 interface GitHubOAuthFlowProps {
   onSuccess: (token: string, username?: string) => void;
@@ -41,6 +30,7 @@ const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
  * Guides users through authenticating with GitHub using the gh CLI
  */
 export function GitHubOAuthFlow({ onSuccess, onCancel }: GitHubOAuthFlowProps) {
+  const { t } = useTranslation(['dialogs', 'common']);
   const [status, setStatus] = useState<'checking' | 'need-install' | 'need-auth' | 'authenticating' | 'success' | 'error'>('checking');
   const [error, setError] = useState<string | null>(null);
   const [_cliInstalled, setCliInstalled] = useState(false);
@@ -325,86 +315,64 @@ export function GitHubOAuthFlow({ onSuccess, onCancel }: GitHubOAuthFlowProps) {
       {/* Checking status */}
       {status === 'checking' && (
         <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
       )}
 
       {/* Need to install gh CLI */}
       {status === 'need-install' && (
         <div className="space-y-4">
-          <Card className="border border-warning/30 bg-warning/10">
-            <CardContent className="p-5">
-              <div className="flex items-start gap-4">
-                <Terminal className="h-6 w-6 text-warning shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-3">
-                  <h3 className="text-lg font-medium text-foreground">
-                    GitHub CLI Required
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    The GitHub CLI (gh) is required for OAuth authentication. This provides a secure
-                    way to authenticate without manually creating tokens.
-                  </p>
-                  <div className="flex gap-3">
-                    <Button onClick={handleOpenGhInstall} className="gap-2">
-                      <ExternalLink className="h-4 w-4" />
-                      Install GitHub CLI
-                    </Button>
-                    <Button variant="outline" onClick={handleRetry}>
-                      I've Installed It
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="space-y-1">
+            <h3 className="text-sm font-medium text-foreground">
+              {t('githubOAuth.cliRequiredTitle')}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {t('githubOAuth.cliRequiredDescription')}
+            </p>
+          </div>
 
-          <Card className="border border-info/30 bg-info/10">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <Info className="h-5 w-5 text-info shrink-0 mt-0.5" />
-                <div className="flex-1 text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground mb-2">Installation instructions:</p>
-                  <ul className="space-y-1 list-disc list-inside">
-                    <li>macOS: <code className="px-1.5 py-0.5 bg-muted rounded font-mono text-xs">brew install gh</code></li>
-                    <li>Windows: <code className="px-1.5 py-0.5 bg-muted rounded font-mono text-xs">winget install GitHub.cli</code></li>
-                    <li>Linux: Visit <a href="https://cli.github.com/" target="_blank" rel="noopener noreferrer" className="text-info hover:underline">cli.github.com</a></li>
-                  </ul>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="rounded-xl bg-segment-track px-4 py-3 text-sm text-muted-foreground">
+            <p className="text-foreground mb-2">{t('githubOAuth.installInstructions')}</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li>macOS: <code className="font-mono text-xs text-foreground">brew install gh</code></li>
+              <li>Windows: <code className="font-mono text-xs text-foreground">winget install GitHub.cli</code></li>
+              <li>
+                {t('githubOAuth.linuxVisit')}{' '}
+                <a href="https://cli.github.com/" target="_blank" rel="noopener noreferrer" className="text-foreground underline-offset-2 hover:underline">cli.github.com</a>
+              </li>
+            </ul>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={handleRetry}>
+              {t('githubOAuth.installedIt')}
+            </Button>
+            <Button size="sm" onClick={handleOpenGhInstall} className="gap-1.5">
+              {t('githubOAuth.installCli')}
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
       )}
 
       {/* Need authentication */}
       {status === 'need-auth' && (
         <div className="space-y-4">
-          <Card className="border border-info/30 bg-info/10">
-            <CardContent className="p-5">
-              <div className="flex items-start gap-4">
-                <Github className="h-6 w-6 text-info shrink-0 mt-0.5" />
-                <div className="flex-1 space-y-3">
-                  <h3 className="text-lg font-medium text-foreground">
-                    Connect to GitHub
-                  </h3>
-                  <p className="text-sm text-muted-foreground">
-                    Click the button below to authenticate with GitHub. This will open your browser
-                    where you can authorize the application.
-                  </p>
-                  {cliVersion && (
-                    <p className="text-xs text-muted-foreground">
-                      Using GitHub CLI {cliVersion}
-                    </p>
-                  )}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+            <p className="text-muted-foreground">
+              {t('githubOAuth.authDescription')}
+            </p>
+            {cliVersion && (
+              <p className="mt-1 text-muted-foreground">
+                {t('githubOAuth.usingCli', { version: cliVersion })}
+              </p>
+            )}
+          </div>
 
           <div className="flex justify-center">
-            <Button onClick={handleStartAuth} size="lg" className="gap-2">
-              <Github className="h-5 w-5" />
-              Authenticate with GitHub
+            <Button onClick={handleStartAuth} size="sm" className="gap-1.5">
+              <Github className="h-3.5 w-3.5" />
+              {t('githubOAuth.authenticate')}
             </Button>
           </div>
         </div>
@@ -413,220 +381,173 @@ export function GitHubOAuthFlow({ onSuccess, onCancel }: GitHubOAuthFlowProps) {
       {/* Authenticating */}
       {status === 'authenticating' && (
         <div className="space-y-4">
-          <Card className="border border-info/30 bg-info/10">
-            <CardContent className="p-6">
-              <div className="flex items-center gap-4">
-                <Loader2 className="h-6 w-6 animate-spin text-info shrink-0" />
-                <div className="flex-1">
-                  <h3 className="text-lg font-medium text-foreground">
-                    Authenticating...
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {browserOpened
-                      ? 'Please complete the authentication in your browser. This window will update automatically.'
-                      : 'Waiting for authentication flow to start...'}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="flex items-start gap-3 rounded-xl bg-segment-track px-4 py-3 text-sm">
+            <Loader2 className="h-4 w-4 mt-0.5 animate-spin text-muted-foreground shrink-0" />
+            <div className="flex-1">
+              <p className="text-foreground">{t('githubOAuth.authenticating')}</p>
+              <p className="text-muted-foreground mt-0.5">
+                {browserOpened ? t('githubOAuth.completeInBrowser') : t('githubOAuth.waitingForFlow')}
+              </p>
+            </div>
+          </div>
 
           {/* Device Code Display */}
           {deviceCode && (
-            <Card className="border border-primary/30 bg-primary/5">
-              <CardContent className="p-6">
-                <div className="text-center space-y-4">
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-foreground">
-                      Your one-time code
-                    </p>
-                    <div className="flex items-center justify-center gap-3">
-                      <code className="text-3xl font-mono font-bold tracking-widest text-primary px-4 py-2 bg-primary/10 rounded-lg">
-                        {deviceCode}
-                      </code>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={handleCopyDeviceCode}
-                        className="shrink-0"
-                      >
-                        {codeCopied ? (
-                          <>
-                            <Check className="h-4 w-4 mr-1 text-success" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4 mr-1" />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
+            <div className="text-center space-y-3 py-2">
+              <p className="text-sm text-foreground">
+                {t('githubOAuth.oneTimeCode')}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                <code className="text-2xl font-mono font-semibold tracking-widest text-foreground px-4 py-2 rounded-xl bg-segment-track">
+                  {deviceCode}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopyDeviceCode}
+                  className="shrink-0"
+                >
+                  {codeCopied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1 text-success" />
+                      {t('githubOAuth.copied')}
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      {t('githubOAuth.copy')}
+                    </>
+                  )}
+                </Button>
+              </div>
 
-                  <div className="text-sm text-muted-foreground space-y-2">
-                    <p>
-                      {browserOpened
-                        ? 'Enter this code in your browser to complete authentication.'
-                        : 'Copy this code, then open the link below to authenticate.'}
-                    </p>
-                    {!browserOpened && authUrl && (
-                      <Button
-                        variant="link"
-                        onClick={handleOpenAuthUrl}
-                        className="text-info hover:text-info/80 p-0 h-auto gap-1"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                        Open {authUrl}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+              <div className="text-sm text-muted-foreground space-y-2">
+                <p>
+                  {browserOpened ? t('githubOAuth.enterCodeInBrowser') : t('githubOAuth.copyCodeThenOpen')}
+                </p>
+                {!browserOpened && authUrl && (
+                  <Button
+                    variant="link"
+                    onClick={handleOpenAuthUrl}
+                    className="text-foreground p-0 h-auto gap-1"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                    {t('githubOAuth.openUrl', { url: authUrl })}
+                  </Button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       )}
 
       {/* Success */}
       {status === 'success' && (
-        <Card className="border border-success/30 bg-success/10">
-          <CardContent className="p-6">
-            <div className="flex items-start gap-4">
-              <CheckCircle2 className="h-6 w-6 text-success shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="text-lg font-medium text-success">
-                  Successfully Connected
-                </h3>
-                <p className="text-sm text-success/80 mt-1">
-                  {username ? `Connected as ${username}` : 'Your GitHub account is now connected'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        <div className="flex items-start gap-3 rounded-xl bg-segment-track px-4 py-3 text-sm">
+          <Check className="h-4 w-4 mt-0.5 text-success shrink-0" />
+          <div className="flex-1">
+            <p className="text-foreground">{t('githubOAuth.connected')}</p>
+            <p className="text-muted-foreground mt-0.5">
+              {username ? t('githubOAuth.connectedAs', { username }) : t('githubOAuth.accountConnected')}
+            </p>
+          </div>
+        </div>
       )}
 
       {/* Error */}
       {status === 'error' && error && (
         <div className="space-y-4">
-          <Card className={`border ${isTimeout ? 'border-warning/30 bg-warning/10' : 'border-destructive/30 bg-destructive/10'}`}>
-            <CardContent className="p-5">
-              <div className="flex items-start gap-3">
-                {isTimeout ? (
-                  <Clock className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                ) : (
-                  <AlertCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
-                )}
-                <div className="flex-1">
-                  <h3 className={`text-lg font-medium ${isTimeout ? 'text-warning' : 'text-destructive'}`}>
-                    {isTimeout ? 'Authentication Timed Out' : 'Authentication Failed'}
-                  </h3>
-                  <p className={`text-sm mt-1 ${isTimeout ? 'text-warning/80' : 'text-destructive/80'}`}>{error}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          <div className="text-sm" role="alert">
+            <p className="text-destructive">
+              {isTimeout ? t('githubOAuth.timedOut') : t('githubOAuth.failed')}
+            </p>
+            <p className="text-muted-foreground mt-1">{error}</p>
+          </div>
 
           {/* Fallback URL display when browser failed to open */}
           {authUrl && (
-            <Card className="border border-warning/30 bg-warning/10">
-              <CardContent className="p-5">
-                <div className="space-y-4">
-                  <div className="flex items-start gap-3">
-                    <Info className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-                    <div className="flex-1">
-                      <h3 className="text-base font-medium text-foreground">
-                        Complete Authentication Manually
-                      </h3>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        The browser couldn't be opened automatically. Please visit the URL below to complete authentication:
-                      </p>
-                    </div>
-                  </div>
+            <div className="space-y-3 rounded-xl bg-segment-track px-4 py-3 text-sm">
+              <div>
+                <p className="text-foreground">{t('githubOAuth.manualTitle')}</p>
+                <p className="text-muted-foreground mt-0.5">{t('githubOAuth.manualDescription')}</p>
+              </div>
 
-                  <div className="flex flex-col gap-3">
-                    <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                      <code className="text-sm font-mono text-foreground flex-1 break-all">
-                        {authUrl}
-                      </code>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={async () => {
-                          try {
-                            await navigator.clipboard.writeText(authUrl);
-                            setUrlCopied(true);
-                            // Clear any existing timeout before setting a new one
-                            if (urlCopyTimeoutRef.current) {
-                              clearTimeout(urlCopyTimeoutRef.current);
-                            }
-                            urlCopyTimeoutRef.current = setTimeout(() => setUrlCopied(false), 2000);
-                          } catch (err) {
-                            debugLog('Failed to copy URL:', err);
-                          }
-                        }}
-                        className="shrink-0"
-                      >
-                        {urlCopied ? (
-                          <>
-                            <Check className="h-4 w-4 mr-1 text-success" />
-                            Copied
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="h-4 w-4 mr-1" />
-                            Copy
-                          </>
-                        )}
-                      </Button>
-                    </div>
-
-                    <Button
-                      variant="secondary"
-                      onClick={handleOpenAuthUrl}
-                      className="gap-2"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Open URL in Browser
-                    </Button>
-                  </div>
-
-                  {/* Device code reminder if available */}
-                  {deviceCode && (
-                    <div className="pt-2 border-t border-warning/20">
-                      <p className="text-sm text-muted-foreground">
-                        When prompted, enter this code:{' '}
-                        <code className="font-mono font-bold text-primary px-2 py-0.5 bg-primary/10 rounded">
-                          {deviceCode}
-                        </code>
-                      </p>
-                    </div>
+              <div className="flex items-center gap-2">
+                <code className="text-sm font-mono text-foreground flex-1 break-all">
+                  {authUrl}
+                </code>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(authUrl);
+                      setUrlCopied(true);
+                      // Clear any existing timeout before setting a new one
+                      if (urlCopyTimeoutRef.current) {
+                        clearTimeout(urlCopyTimeoutRef.current);
+                      }
+                      urlCopyTimeoutRef.current = setTimeout(() => setUrlCopied(false), 2000);
+                    } catch (err) {
+                      debugLog('Failed to copy URL:', err);
+                    }
+                  }}
+                  className="shrink-0"
+                >
+                  {urlCopied ? (
+                    <>
+                      <Check className="h-3.5 w-3.5 mr-1 text-success" />
+                      {t('githubOAuth.copied')}
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      {t('githubOAuth.copy')}
+                    </>
                   )}
-                </div>
-              </CardContent>
-            </Card>
+                </Button>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleOpenAuthUrl}
+                className="gap-1.5"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                {t('githubOAuth.openInBrowser')}
+              </Button>
+
+              {/* Device code reminder if available */}
+              {deviceCode && (
+                <p className="text-muted-foreground">
+                  {t('githubOAuth.enterCodePrompt')}{' '}
+                  <code className="font-mono font-semibold text-foreground">
+                    {deviceCode}
+                  </code>
+                </p>
+              )}
+            </div>
           )}
 
-          <div className="flex justify-center gap-3">
-            <Button onClick={handleStartAuth} variant="outline">
-              Retry
-            </Button>
+          <div className="flex justify-end gap-2">
             {onCancel && (
-              <Button onClick={onCancel} variant="ghost">
-                Cancel
+              <Button onClick={onCancel} variant="ghost" size="sm">
+                {t('common:buttons.cancel')}
               </Button>
             )}
+            <Button onClick={handleStartAuth} variant="outline" size="sm">
+              {t('common:buttons.retry')}
+            </Button>
           </div>
         </div>
       )}
 
       {/* Cancel button for non-error states */}
       {status !== 'error' && status !== 'success' && onCancel && (
-        <div className="flex justify-center pt-2">
-          <Button onClick={onCancel} variant="ghost">
-            Cancel
+        <div className="flex justify-end pt-2">
+          <Button onClick={onCancel} variant="ghost" size="sm">
+            {t('common:buttons.cancel')}
           </Button>
         </div>
       )}

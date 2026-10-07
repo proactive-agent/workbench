@@ -1,7 +1,10 @@
 import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
+import { SettingsSection } from '../SettingsSection';
 
 interface InitializationGuardProps {
   initialized: boolean;
+  /** Page title, shown as the section heading while the page is unavailable */
   title: string;
   description: string;
   children: ReactNode;
@@ -17,11 +20,13 @@ export function InitializationGuard({
   description: _description,
   children
 }: InitializationGuardProps) {
+  const { t } = useTranslation('settings');
+
   if (!initialized) {
     return (
-      <div className="rounded-lg border border-border bg-muted/50 p-4 text-center text-sm text-muted-foreground">
-        Initialize Auto-Build first to configure {title.toLowerCase()}
-      </div>
+      <SettingsSection title={title}>
+        <p className="text-sm text-(--nav-label-color)">{t('projectPages.initializeFirst')}</p>
+      </SettingsSection>
     );
   }
 

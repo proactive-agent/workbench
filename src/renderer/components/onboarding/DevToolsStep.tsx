@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Code, Terminal, Loader2, Check, RefreshCw, Info } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Label } from '../ui/label';
-import { Card, CardContent } from '../ui/card';
+import { SettingsRow, SettingsRows } from '../settings/SettingsRow';
 import {
   Select,
   SelectContent,
@@ -274,12 +274,7 @@ export function DevToolsStep({ onNext, onBack }: DevToolsStepProps) {
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Code className="h-7 w-7" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
             {t('devtools.title')}
           </h1>
           <p className="mt-2 text-muted-foreground">
@@ -289,241 +284,210 @@ export function DevToolsStep({ onNext, onBack }: DevToolsStepProps) {
 
         {/* Loading state */}
         {isDetecting && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            <span className="ml-3 text-muted-foreground">{t('devtools.detecting')}</span>
+          <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t('devtools.detecting')}
           </div>
         )}
 
         {/* Main content */}
         {!isDetecting && (
-          <div className="space-y-6">
-            {/* Error banner */}
+          <div className="space-y-4">
+            {/* Error */}
             {error && (
-              <Card className="border border-destructive/30 bg-destructive/10">
-                <CardContent className="p-4">
-                  <p className="text-sm text-destructive">{error}</p>
-                </CardContent>
-              </Card>
+              <p className="text-sm text-destructive" role="alert">{error}</p>
             )}
 
-            {/* Info card */}
-            <Card className="border border-info/30 bg-info/10">
-              <CardContent className="p-5">
-                <div className="flex items-start gap-4">
-                  <Info className="h-5 w-5 text-info shrink-0 mt-0.5" />
-                  <div className="flex-1 space-y-3">
-                    <p className="text-sm font-medium text-foreground">
-                      {t('devtools.whyConfigure')}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {t('devtools.whyConfigureDescription')}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            {/* Info */}
+            <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+              <p className="text-foreground">
+                {t('devtools.whyConfigure')}
+              </p>
+              <p className="mt-1 text-muted-foreground">
+                {t('devtools.whyConfigureDescription')}
+              </p>
+            </div>
 
-            {/* Detect Again Button */}
-            <div className="flex justify-end">
+            <SettingsRows>
+              <SettingsRow
+                label={t('devtools.ide.label')}
+                description={t('devtools.ide.description')}
+                footer={
+                  preferredIDE === 'custom' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-ide-path">{t('devtools.ide.customPath')}</Label>
+                      <Input
+                        id="custom-ide-path"
+                        value={customIDEPath}
+                        onChange={(e) => setCustomIDEPath(e.target.value)}
+                        placeholder="/path/to/your/ide"
+                        disabled={isSaving}
+                      />
+                    </div>
+                  ) : undefined
+                }
+              >
+                <Select
+                  value={preferredIDE}
+                  onValueChange={(value: SupportedIDE) => setPreferredIDE(value)}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger aria-label={t('devtools.ide.label')}>
+                    <SelectValue placeholder={t('devtools.ide.placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ideOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        // Tools that weren't detected can't be picked ("Custom..." always can)
+                        disabled={!option.detected && option.value !== 'custom'}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+
+              <SettingsRow
+                label={t('devtools.terminal.label')}
+                description={t('devtools.terminal.description')}
+                footer={
+                  preferredTerminal === 'custom' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-terminal-path">{t('devtools.terminal.customPath')}</Label>
+                      <Input
+                        id="custom-terminal-path"
+                        value={customTerminalPath}
+                        onChange={(e) => setCustomTerminalPath(e.target.value)}
+                        placeholder="/path/to/your/terminal"
+                        disabled={isSaving}
+                      />
+                    </div>
+                  ) : undefined
+                }
+              >
+                <Select
+                  value={preferredTerminal}
+                  onValueChange={(value: SupportedTerminal) => setPreferredTerminal(value)}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger aria-label={t('devtools.terminal.label')}>
+                    <SelectValue placeholder={t('devtools.terminal.placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {terminalOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        // Tools that weren't detected can't be picked ("Custom..." always can)
+                        disabled={!option.detected && option.value !== 'custom'}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+
+              <SettingsRow
+                label={t('devtools.cli.label')}
+                description={t('devtools.cli.description')}
+                footer={
+                  preferredCLI === 'custom' ? (
+                    <div className="space-y-2">
+                      <Label htmlFor="custom-cli-path">{t('devtools.cli.customPath')}</Label>
+                      <Input
+                        id="custom-cli-path"
+                        value={customCLIPath}
+                        onChange={(e) => setCustomCLIPath(e.target.value)}
+                        placeholder="/path/to/your/cli"
+                        disabled={isSaving}
+                      />
+                    </div>
+                  ) : undefined
+                }
+              >
+                <Select
+                  value={preferredCLI}
+                  onValueChange={(value: SupportedCLI) => setPreferredCLI(value)}
+                  disabled={isSaving}
+                >
+                  <SelectTrigger aria-label={t('devtools.cli.label')}>
+                    <SelectValue placeholder={t('devtools.cli.placeholder')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {cliOptions.map((option) => (
+                      <SelectItem
+                        key={option.value}
+                        value={option.value}
+                        // Tools that weren't detected can't be picked ("Custom..." always can)
+                        disabled={!option.detected && option.value !== 'custom'}
+                      >
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </SettingsRow>
+            </SettingsRows>
+
+            <div className="flex items-start justify-between gap-4">
+              {/* Detection summary */}
+              {detectedTools && (
+                <div className="text-sm text-muted-foreground">
+                  <p className="text-foreground mb-1">{t('devtools.detectedSummary')}</p>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    {detectedTools.ides.map((ide) => (
+                      <li key={ide.id}>{ide.name}</li>
+                    ))}
+                    {detectedTools.terminals.filter(t => t.id !== 'system').map((term) => (
+                      <li key={term.id}>{term.name}</li>
+                    ))}
+                    {detectedTools.clis?.filter(c => c.installed).map((cli) => (
+                      <li key={cli.id}>{cli.name}</li>
+                    ))}
+                    {detectedTools.ides.length === 0 && detectedTools.terminals.filter(t => t.id !== 'system').length === 0 && (!detectedTools.clis || detectedTools.clis.length === 0) && (
+                      <li>{t('devtools.noToolsDetected')}</li>
+                    )}
+                  </ul>
+                </div>
+              )}
+
+              {/* Detect again */}
               <Button
                 variant="outline"
                 size="sm"
                 onClick={detectTools}
                 disabled={isDetecting}
+                className="ml-auto shrink-0"
               >
-                <RefreshCw className="h-4 w-4 mr-2" />
+                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 {t('devtools.detectAgain')}
               </Button>
             </div>
-
-            {/* IDE Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Code className="h-4 w-4" />
-                {t('devtools.ide.label')}
-              </Label>
-              <Select
-                value={preferredIDE}
-                onValueChange={(value: SupportedIDE) => setPreferredIDE(value)}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select IDE..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {ideOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        <span>{option.label}</span>
-                        {option.detected && (
-                          <Check className="h-3 w-3 text-green-500" />
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {t('devtools.ide.description')}
-              </p>
-
-              {/* Custom IDE Path */}
-              {preferredIDE === 'custom' && (
-                <div className="mt-3">
-                  <Label htmlFor="custom-ide-path" className="text-xs text-muted-foreground">
-                    {t('devtools.ide.customPath')}
-                  </Label>
-                  <Input
-                    id="custom-ide-path"
-                    value={customIDEPath}
-                    onChange={(e) => setCustomIDEPath(e.target.value)}
-                    placeholder="/path/to/your/ide"
-                    className="mt-1"
-                    disabled={isSaving}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Terminal Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Terminal className="h-4 w-4" />
-                {t('devtools.terminal.label')}
-              </Label>
-              <Select
-                value={preferredTerminal}
-                onValueChange={(value: SupportedTerminal) => setPreferredTerminal(value)}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select terminal..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {terminalOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        <span>{option.label}</span>
-                        {option.detected && (
-                          <Check className="h-3 w-3 text-green-500" />
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {t('devtools.terminal.description')}
-              </p>
-
-              {/* Custom Terminal Path */}
-              {preferredTerminal === 'custom' && (
-                <div className="mt-3">
-                  <Label htmlFor="custom-terminal-path" className="text-xs text-muted-foreground">
-                    {t('devtools.terminal.customPath')}
-                  </Label>
-                  <Input
-                    id="custom-terminal-path"
-                    value={customTerminalPath}
-                    onChange={(e) => setCustomTerminalPath(e.target.value)}
-                    placeholder="/path/to/your/terminal"
-                    className="mt-1"
-                    disabled={isSaving}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* CLI Selection */}
-            <div className="space-y-3">
-              <Label className="text-sm font-medium text-foreground flex items-center gap-2">
-                <Terminal className="h-4 w-4" />
-                {t('devtools.cli.label')}
-              </Label>
-              <Select
-                value={preferredCLI}
-                onValueChange={(value: SupportedCLI) => setPreferredCLI(value)}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select CLI..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {cliOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        <span>{option.label}</span>
-                        {option.detected && (
-                          <Check className="h-3 w-3 text-green-500" />
-                        )}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {t('devtools.cli.description')}
-              </p>
-
-              {/* Custom CLI Path */}
-              {preferredCLI === 'custom' && (
-                <div className="mt-3">
-                  <Label htmlFor="custom-cli-path" className="text-xs text-muted-foreground">
-                    {t('devtools.cli.customPath')}
-                  </Label>
-                  <Input
-                    id="custom-cli-path"
-                    value={customCLIPath}
-                    onChange={(e) => setCustomCLIPath(e.target.value)}
-                    placeholder="/path/to/your/cli"
-                    className="mt-1"
-                    disabled={isSaving}
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* Detection Summary */}
-            {detectedTools && (
-              <div className="text-xs text-muted-foreground bg-muted/50 p-3 rounded-md">
-                <p className="font-medium mb-1">{t('devtools.detectedSummary')}</p>
-                <ul className="list-disc list-inside space-y-0.5">
-                  {detectedTools.ides.map((ide) => (
-                    <li key={ide.id}>{ide.name}</li>
-                  ))}
-                  {detectedTools.terminals.filter(t => t.id !== 'system').map((term) => (
-                    <li key={term.id}>{term.name}</li>
-                  ))}
-                  {detectedTools.clis?.filter(c => c.installed).map((cli) => (
-                    <li key={cli.id}>{cli.name}</li>
-                  ))}
-                  {detectedTools.ides.length === 0 && detectedTools.terminals.filter(t => t.id !== 'system').length === 0 && (!detectedTools.clis || detectedTools.clis.length === 0) && (
-                    <li>{t('devtools.noToolsDetected')}</li>
-                  )}
-                </ul>
-              </div>
-            )}
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex justify-between items-center mt-10 pt-6 border-t border-border">
+        <div className="flex justify-between items-center mt-10 pt-6 border-t border-settings-divider">
           <Button
             variant="ghost"
+            size="sm"
             onClick={onBack}
-            className="text-muted-foreground hover:text-foreground"
           >
             {t('common:buttons.back', 'Back')}
           </Button>
           <Button
+            size="sm"
             onClick={handleSave}
             disabled={isDetecting || isSaving}
           >
             {isSaving ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                Saving...
+                <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                {t('common:buttons.saving', 'Saving...')}
               </>
             ) : (
               t('devtools.saveAndContinue')

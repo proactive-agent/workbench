@@ -173,7 +173,8 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
             aria-controls={open ? listboxId : undefined}
             id={id}
             className={cn(
-              'flex h-10 w-full items-center justify-between rounded-lg',
+              // field-border: picks up the claude field look inside dialogs (and goes borderless in a row's control slot)
+              'field-border flex h-10 w-full items-center justify-between rounded-lg',
               'border border-border bg-card px-3 py-2 text-sm',
               'text-foreground placeholder:text-muted-foreground',
               'focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary',
@@ -195,8 +196,8 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
           </button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[var(--radix-popover-trigger-width)] p-0"
-          align="start"
+          className="w-auto min-w-[max(var(--radix-popover-trigger-width),13rem)] max-w-[24rem] p-0"
+          align="end"
           sideOffset={4}
           onKeyDown={handleKeyDown}
         >
@@ -222,7 +223,7 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
           </div>
 
           {/* Options list */}
-          <ScrollArea className="max-h-[300px]">
+          <ScrollArea className="max-h-[300px] [&_[data-radix-scroll-area-viewport]>div]:!block">
             <div id={listboxId} role="listbox" aria-label={searchPlaceholder || placeholder} className="p-1">
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-sm text-muted-foreground">
@@ -241,8 +242,8 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
                         <div
                           role="presentation"
                           className={cn(
-                            'px-2 py-1.5 text-xs font-semibold text-muted-foreground',
-                            index > 0 && 'mt-1 border-t border-border pt-2'
+                            'px-3 py-1.5 text-xs text-(--nav-label-color)',
+                            index > 0 && '-mx-1.5 mt-1.5 border-t border-border px-4.5 pt-2.5'
                           )}
                         >
                           {option.group}
@@ -264,21 +265,23 @@ const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps>(
                         onClick={() => handleSelect(option.value)}
                         onMouseEnter={() => setFocusedIndex(index)}
                         className={cn(
-                          'relative flex w-full cursor-default select-none items-center',
-                          'rounded-md py-2 pl-8 pr-2 text-sm outline-none',
-                          'hover:bg-accent hover:text-accent-foreground',
+                          'relative flex w-full min-w-0 cursor-default select-none items-center',
+                          'rounded-lg py-2 pl-3 pr-9 text-sm text-foreground outline-none',
+                          'hover:bg-nav-hover',
                           'transition-colors duration-150',
-                          focusedIndex === index && 'bg-accent text-accent-foreground'
+                          focusedIndex === index && 'bg-nav-hover'
                         )}
                       >
-                        <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
-                          {value === option.value && <Check className="h-4 w-4 text-primary" />}
+                        {/* Selected option: blue check on the right, like claude.ai menus */}
+                        <span className="absolute right-3 flex h-4 w-4 items-center justify-center">
+                          {value === option.value && <Check className="h-4 w-4 text-(--menu-check)" strokeWidth={2} />}
                         </span>
-                        <span className="flex flex-1 items-center gap-2 truncate">
+                        {/* min-w-0 lets long labels shrink and end with an ellipsis */}
+                        <span className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden">
                           {option.icon && (
                             <span className="shrink-0 text-muted-foreground">{option.icon}</span>
                           )}
-                          <span className="truncate">{option.label}</span>
+                          <span className="min-w-0 truncate">{option.label}</span>
                           {option.badge && (
                             <span className="shrink-0">{option.badge}</span>
                           )}

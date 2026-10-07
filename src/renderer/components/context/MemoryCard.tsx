@@ -16,7 +16,6 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
-import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import type { RendererMemory } from '../../../shared/types';
 import { memoryTypeIcons, memoryTypeColors, memoryTypeLabels } from './constants';
@@ -120,7 +119,7 @@ function ListItem({
 function ConfidenceBar({ confidence }: { confidence: number }) {
   const pct = Math.round(confidence * 100);
   const color =
-    pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500';
+    pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-muted-foreground' : 'bg-destructive';
   return (
     <div className="flex items-center gap-1.5" title={`Confidence: ${pct}%`}>
       <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden">
@@ -264,13 +263,13 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
   const isWorkflowRecipe = memory.type === 'workflow_recipe';
 
   return (
-    <Card className="bg-muted/30 border-border/50 hover:border-border transition-colors">
-      <CardContent className="pt-4 pb-4">
+    <div className="py-3">
+      <div>
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className="p-2 rounded-lg bg-accent/10 shrink-0">
-              <Icon className="h-4 w-4 text-accent" />
+            <div className="mt-0.5 shrink-0">
+              <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
             </div>
             <div className="flex-1 min-w-0">
               {/* Type badge + session label */}
@@ -285,17 +284,17 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
                   <span className="text-sm font-medium text-foreground">{sessionLabel}</span>
                 )}
                 {memory.pinned && (
-                  <Pin className="h-3.5 w-3.5 text-accent shrink-0" aria-label={t('memory.badges.pinned')} />
+                  <Pin className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-label={t('memory.badges.pinned')} />
                 )}
                 {memory.needsReview && (
                   <Flag
-                    className="h-3.5 w-3.5 text-amber-400 shrink-0"
+                    className="h-3.5 w-3.5 text-muted-foreground shrink-0"
                     aria-label={t('memory.badges.needsReview')}
                   />
                 )}
                 {memory.userVerified && (
                   <ShieldCheck
-                    className="h-3.5 w-3.5 text-green-400 shrink-0"
+                    className="h-3.5 w-3.5 text-success shrink-0"
                     aria-label={t('memory.badges.verified')}
                   />
                 )}
@@ -370,7 +369,7 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-7 gap-1 text-xs text-muted-foreground hover:text-green-400"
+                className="h-7 gap-1 text-xs text-muted-foreground hover:text-foreground"
                 onClick={() => onVerify(memory.id)}
                 title={t('memory.actions.verify')}
               >
@@ -384,7 +383,7 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
                 size="sm"
                 className={cn(
                   'h-7 gap-1 text-xs',
-                  memory.pinned ? 'text-accent' : 'text-muted-foreground hover:text-accent'
+                  memory.pinned ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'
                 )}
                 onClick={() => onPin(memory.id, !memory.pinned)}
                 title={memory.pinned ? t('memory.actions.unpin') : t('memory.actions.pin')}
@@ -410,10 +409,10 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
 
         {/* Expanded Content */}
         {expanded && (
-          <div className="mt-4 space-y-4 pt-4 border-t border-border/50">
+          <div className="mt-4 space-y-4 pl-7">
             {/* Plain content display for non-JSON or simple memories */}
             {!parsed && memory.content && (
-              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono p-3 bg-background rounded-lg max-h-64 overflow-auto border border-border/50">
+              <pre className="text-xs text-muted-foreground whitespace-pre-wrap font-mono p-3 rounded-xl bg-segment-track max-h-64 overflow-auto">
                 {memory.content}
               </pre>
             )}
@@ -664,7 +663,7 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
         {!hasContent && !memory.content && expanded && (
           <p className="mt-4 text-xs text-muted-foreground italic">No additional details available.</p>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Type, Minus, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { cn } from '../../../lib/utils';
-import { Label } from '../../ui/label';
+import { Input } from '../../ui/input';
 import { Combobox, ComboboxOption } from '../../ui/combobox';
+import { SettingsRow, SettingsRows } from '../SettingsRow';
+import { SettingsSlider, StepperButton } from './SettingsSlider';
 import type { TerminalFontSettings } from '../../../stores/terminal-font-settings-store';
 import { COMMON_MONOSPACE_FONTS } from '../../../lib/font-discovery';
 import {
@@ -19,7 +19,6 @@ import {
   LETTER_SPACING_MIN,
   LETTER_SPACING_MAX,
   LETTER_SPACING_STEP,
-  SLIDER_INPUT_CLASSES,
 } from '../../../lib/terminal-font-constants';
 
 interface FontConfigPanelProps {
@@ -125,239 +124,145 @@ export function FontConfigPanel({ settings, onSettingChange }: FontConfigPanelPr
     onSettingChange('letterSpacing', roundedValue);
   };
 
+  const pixels = t('terminalFonts.fontConfig.pixels', { defaultValue: 'pixels' });
+  const formatSpacing = (value: number) =>
+    value > 0 ? `+${numberFormatter.format(value)}` : numberFormatter.format(value);
+
   return (
-    <div className="space-y-6">
+    <SettingsRows>
       {/* Font Family */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-foreground flex items-center gap-2">
-          <Type className="h-4 w-4" />
-          {t('terminalFonts.fontConfig.fontFamily', { defaultValue: 'Font Family' })}
-        </Label>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.fontConfig.fontFamilyDescription', {
-            defaultValue: 'Primary monospace font for terminal text',
-          })}
-        </p>
-        <div className="max-w-md">
-          <Combobox
-            value={currentFontFamily}
-            onValueChange={handleFontFamilyChange}
-            options={availableFonts}
-            placeholder={t('terminalFonts.fontConfig.selectFont', { defaultValue: 'Select a font...' })}
-            searchPlaceholder={t('terminalFonts.fontConfig.searchFont', { defaultValue: 'Search fonts...' })}
-            emptyMessage={t('terminalFonts.fontConfig.noFonts', { defaultValue: 'No fonts found' })}
-          />
-        </div>
-        {/* Current font chain display */}
-        <div className="text-xs text-muted-foreground">
-          {t('terminalFonts.fontConfig.fontChain', { defaultValue: 'Font chain:' })}{' '}
-          <code className="px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-            {settings.fontFamily.join(', ')}
-          </code>
-        </div>
-      </div>
+      <SettingsRow
+        label={t('terminalFonts.fontConfig.fontFamily', { defaultValue: 'Font family' })}
+        description={
+          <>
+            {t('terminalFonts.fontConfig.fontFamilyDescription', {
+              defaultValue: 'Primary monospace font for terminal text',
+            })}
+            <span className="mt-0.5 block text-xs">
+              {t('terminalFonts.fontConfig.fontChain', { defaultValue: 'Font chain:' })}{' '}
+              <code className="font-mono">{settings.fontFamily.join(', ')}</code>
+            </span>
+          </>
+        }
+      >
+        <Combobox
+          value={currentFontFamily}
+          onValueChange={handleFontFamilyChange}
+          options={availableFonts}
+          placeholder={t('terminalFonts.fontConfig.selectFont', { defaultValue: 'Select a font...' })}
+          searchPlaceholder={t('terminalFonts.fontConfig.searchFont', { defaultValue: 'Search fonts...' })}
+          emptyMessage={t('terminalFonts.fontConfig.noFonts', { defaultValue: 'No fonts found' })}
+          className="field-border h-8 w-56"
+        />
+      </SettingsRow>
 
       {/* Font Size */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium text-foreground">
-            {t('terminalFonts.fontConfig.fontSize', { defaultValue: 'Font Size' })}
-          </Label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-mono text-muted-foreground">
-              {settings.fontSize}px
-            </span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => handleFontSizeChange(settings.fontSize - FONT_SIZE_STEP)}
-                disabled={settings.fontSize <= FONT_SIZE_MIN}
-                className={cn(
-                  'p-1 rounded-md transition-colors',
-                  'hover:bg-accent text-muted-foreground hover:text-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-                )}
-                title={t('terminalFonts.fontConfig.decreaseFontSize', { step: FONT_SIZE_STEP })}
-              >
-                <Minus className="h-3.5 w-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => handleFontSizeChange(settings.fontSize + FONT_SIZE_STEP)}
-                disabled={settings.fontSize >= FONT_SIZE_MAX}
-                className={cn(
-                  'p-1 rounded-md transition-colors',
-                  'hover:bg-accent text-muted-foreground hover:text-foreground',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                  'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-                )}
-                title={t('terminalFonts.fontConfig.increaseFontSize', { step: FONT_SIZE_STEP })}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.fontConfig.fontSizeDescription', {
-            defaultValue: 'Base font size in pixels (10-24px)',
-          })}
-        </p>
-        <input
-          type="range"
+      <SettingsRow
+        label={t('terminalFonts.fontConfig.fontSize', { defaultValue: 'Font size' })}
+        description={t('terminalFonts.fontConfig.fontSizeDescription', {
+          defaultValue: 'Base font size in pixels (10-24px)',
+        })}
+      >
+        <SettingsSlider
+          value={settings.fontSize}
           min={FONT_SIZE_MIN}
           max={FONT_SIZE_MAX}
           step={FONT_SIZE_STEP}
-          value={settings.fontSize}
-          onChange={(e) => handleFontSizeChange(parseInt(e.target.value, 10))}
-          aria-label={t('terminalFonts.fontConfig.fontSize', { defaultValue: 'Font Size' })}
-          aria-valuemin={FONT_SIZE_MIN}
-          aria-valuemax={FONT_SIZE_MAX}
-          aria-valuenow={settings.fontSize}
-          aria-valuetext={`${settings.fontSize} ${t('terminalFonts.fontConfig.pixels', { defaultValue: 'pixels' })}`}
-          className={cn(...SLIDER_INPUT_CLASSES)}
+          onChange={handleFontSizeChange}
+          parse={(raw) => parseInt(raw, 10)}
+          ariaLabel={t('terminalFonts.fontConfig.fontSize', { defaultValue: 'Font size' })}
+          ariaValueText={`${settings.fontSize} ${pixels}`}
+          valueLabel={`${settings.fontSize}px`}
+          onDecrease={() => handleFontSizeChange(settings.fontSize - FONT_SIZE_STEP)}
+          onIncrease={() => handleFontSizeChange(settings.fontSize + FONT_SIZE_STEP)}
+          decreaseTitle={t('terminalFonts.fontConfig.decreaseFontSize', { step: FONT_SIZE_STEP })}
+          increaseTitle={t('terminalFonts.fontConfig.increaseFontSize', { step: FONT_SIZE_STEP })}
         />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{FONT_SIZE_MIN}px</span>
-          <span>{FONT_SIZE_MAX}px</span>
-        </div>
-      </div>
+      </SettingsRow>
 
       {/* Font Weight */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-foreground">
-          {t('terminalFonts.fontConfig.fontWeight', { defaultValue: 'Font Weight' })}
-        </Label>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.fontConfig.fontWeightDescription', {
-            defaultValue: 'Font weight from 100 (thin) to 900 (black), in steps of 100',
-          })}
-        </p>
-        <div className="flex items-center gap-3 max-w-xs">
-          <input
+      <SettingsRow
+        label={t('terminalFonts.fontConfig.fontWeight', { defaultValue: 'Font weight' })}
+        description={
+          <>
+            {t('terminalFonts.fontConfig.fontWeightDescription', {
+              defaultValue: 'Font weight from 100 (thin) to 900 (black), in steps of 100',
+            })}
+            <span className="mt-0.5 block text-xs">
+              {t('terminalFonts.fontConfig.commonWeights', {
+                defaultValue: 'Common: 400 (normal), 600 (semi-bold), 700 (bold)',
+              })}
+            </span>
+          </>
+        }
+      >
+        <div className="flex items-center gap-0.5">
+          <StepperButton
+            direction="decrease"
+            onClick={() => handleFontWeightChange((settings.fontWeight - FONT_WEIGHT_STEP).toString())}
+            disabled={settings.fontWeight <= FONT_WEIGHT_MIN}
+            title={t('terminalFonts.fontConfig.decreaseFontWeight', { step: FONT_WEIGHT_STEP })}
+          />
+          <Input
             type="number"
             min={FONT_WEIGHT_MIN}
             max={FONT_WEIGHT_MAX}
             step={FONT_WEIGHT_STEP}
             value={settings.fontWeight}
             onChange={(e) => handleFontWeightChange(e.target.value)}
-            className={cn(
-              'w-24 h-10 px-3 rounded-lg',
-              'border border-border bg-card',
-              'text-sm text-foreground',
-              'focus:outline-none focus:ring-2 focus:ring-ring focus:border-primary',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-              'transition-colors duration-200'
-            )}
+            aria-label={t('terminalFonts.fontConfig.fontWeight', { defaultValue: 'Font weight' })}
+            className="h-8 w-20 text-center font-mono"
           />
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => handleFontWeightChange((settings.fontWeight - FONT_WEIGHT_STEP).toString())}
-              disabled={settings.fontWeight <= FONT_WEIGHT_MIN}
-              className={cn(
-                'p-1 rounded-md transition-colors',
-                'hover:bg-accent text-muted-foreground hover:text-foreground',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-              )}
-              title={t('terminalFonts.fontConfig.decreaseFontWeight', { step: FONT_WEIGHT_STEP })}
-            >
-              <Minus className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => handleFontWeightChange((settings.fontWeight + FONT_WEIGHT_STEP).toString())}
-              disabled={settings.fontWeight >= FONT_WEIGHT_MAX}
-              className={cn(
-                'p-1 rounded-md transition-colors',
-                'hover:bg-accent text-muted-foreground hover:text-foreground',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-                'disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent'
-              )}
-              title={t('terminalFonts.fontConfig.increaseFontWeight', { step: FONT_WEIGHT_STEP })}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
+          <StepperButton
+            direction="increase"
+            onClick={() => handleFontWeightChange((settings.fontWeight + FONT_WEIGHT_STEP).toString())}
+            disabled={settings.fontWeight >= FONT_WEIGHT_MAX}
+            title={t('terminalFonts.fontConfig.increaseFontWeight', { step: FONT_WEIGHT_STEP })}
+          />
         </div>
-        <div className="text-xs text-muted-foreground">
-          {t('terminalFonts.fontConfig.commonWeights', {
-            defaultValue: 'Common: 400 (normal), 600 (semi-bold), 700 (bold)',
-          })}
-        </div>
-      </div>
+      </SettingsRow>
 
       {/* Line Height */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium text-foreground">
-            {t('terminalFonts.fontConfig.lineHeight', { defaultValue: 'Line Height' })}
-          </Label>
-          <span className="text-sm font-mono text-muted-foreground">
-            {numberFormatter.format(settings.lineHeight)}
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.fontConfig.lineHeightDescription', {
-            defaultValue: 'Line height as a multiple of font size (1.0-2.0)',
-          })}
-        </p>
-        <input
-          type="range"
+      <SettingsRow
+        label={t('terminalFonts.fontConfig.lineHeight', { defaultValue: 'Line height' })}
+        description={t('terminalFonts.fontConfig.lineHeightDescription', {
+          defaultValue: 'Line height as a multiple of font size (1.0-2.0)',
+        })}
+      >
+        <SettingsSlider
+          value={settings.lineHeight}
           min={LINE_HEIGHT_MIN}
           max={LINE_HEIGHT_MAX}
           step={LINE_HEIGHT_STEP}
-          value={settings.lineHeight}
-          onChange={(e) => handleLineHeightChange(parseFloat(e.target.value))}
-          aria-label={t('terminalFonts.fontConfig.lineHeight', { defaultValue: 'Line Height' })}
-          aria-valuemin={LINE_HEIGHT_MIN}
-          aria-valuemax={LINE_HEIGHT_MAX}
-          aria-valuenow={settings.lineHeight}
-          aria-valuetext={numberFormatter.format(settings.lineHeight)}
-          className={cn(...SLIDER_INPUT_CLASSES)}
+          onChange={handleLineHeightChange}
+          ariaLabel={t('terminalFonts.fontConfig.lineHeight', { defaultValue: 'Line height' })}
+          ariaValueText={numberFormatter.format(settings.lineHeight)}
+          valueLabel={numberFormatter.format(settings.lineHeight)}
+          minLabel={LINE_HEIGHT_MIN.toFixed(1)}
+          maxLabel={LINE_HEIGHT_MAX.toFixed(1)}
         />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{LINE_HEIGHT_MIN.toFixed(1)}</span>
-          <span>{LINE_HEIGHT_MAX.toFixed(1)}</span>
-        </div>
-      </div>
+      </SettingsRow>
 
       {/* Letter Spacing */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <Label className="text-sm font-medium text-foreground">
-            {t('terminalFonts.fontConfig.letterSpacing', { defaultValue: 'Letter Spacing' })}
-          </Label>
-          <span className="text-sm font-mono text-muted-foreground">
-            {settings.letterSpacing > 0 ? `+${numberFormatter.format(settings.letterSpacing)}` : numberFormatter.format(settings.letterSpacing)}px
-          </span>
-        </div>
-        <p className="text-sm text-muted-foreground">
-          {t('terminalFonts.fontConfig.letterSpacingDescription', {
-            defaultValue: 'Horizontal spacing between characters (-2 to 5px)',
-          })}
-        </p>
-        <input
-          type="range"
+      <SettingsRow
+        label={t('terminalFonts.fontConfig.letterSpacing', { defaultValue: 'Letter spacing' })}
+        description={t('terminalFonts.fontConfig.letterSpacingDescription', {
+          defaultValue: 'Horizontal spacing between characters (-2 to 5px)',
+        })}
+      >
+        <SettingsSlider
+          value={settings.letterSpacing}
           min={LETTER_SPACING_MIN}
           max={LETTER_SPACING_MAX}
           step={LETTER_SPACING_STEP}
-          value={settings.letterSpacing}
-          onChange={(e) => handleLetterSpacingChange(parseFloat(e.target.value))}
-          aria-label={t('terminalFonts.fontConfig.letterSpacing', { defaultValue: 'Letter Spacing' })}
-          aria-valuemin={LETTER_SPACING_MIN}
-          aria-valuemax={LETTER_SPACING_MAX}
-          aria-valuenow={settings.letterSpacing}
-          aria-valuetext={`${settings.letterSpacing > 0 ? '+' : ''}${numberFormatter.format(settings.letterSpacing)} ${t('terminalFonts.fontConfig.pixels', { defaultValue: 'pixels' })}`}
-          className={cn(...SLIDER_INPUT_CLASSES)}
+          onChange={handleLetterSpacingChange}
+          ariaLabel={t('terminalFonts.fontConfig.letterSpacing', { defaultValue: 'Letter spacing' })}
+          ariaValueText={`${formatSpacing(settings.letterSpacing)} ${pixels}`}
+          valueLabel={`${formatSpacing(settings.letterSpacing)}px`}
+          minLabel={`${LETTER_SPACING_MIN}px`}
+          maxLabel={`+${LETTER_SPACING_MAX}px`}
         />
-        <div className="flex justify-between text-xs text-muted-foreground">
-          <span>{LETTER_SPACING_MIN}px</span>
-          <span>+{LETTER_SPACING_MAX}px</span>
-        </div>
-      </div>
-    </div>
+      </SettingsRow>
+    </SettingsRows>
   );
 }

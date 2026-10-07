@@ -1,4 +1,4 @@
-import { AlertCircle, GitMerge, Loader2, Check, RotateCcw, Play } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
@@ -12,13 +12,12 @@ interface LoadingMessageProps {
 /**
  * Displays a loading indicator while workspace info is being fetched
  */
-export function LoadingMessage({ message = 'Loading workspace info...' }: LoadingMessageProps) {
+export function LoadingMessage({ message }: LoadingMessageProps) {
+  const { t } = useTranslation(['taskReview']);
   return (
-    <div className="rounded-xl border border-border bg-secondary/30 p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
-        <Loader2 className="h-4 w-4 animate-spin" />
-        <span className="text-sm">{message}</span>
-      </div>
+    <div className="flex items-center gap-2 py-1 text-sm text-(--nav-label-color)">
+      <Loader2 className="h-4 w-4 animate-spin" />
+      <span>{message ?? t('taskReview:workspace.loading')}</span>
     </div>
   );
 }
@@ -32,7 +31,7 @@ interface NoWorkspaceMessageProps {
  * Displays message when no workspace is found for the task
  */
 export function NoWorkspaceMessage({ task, onClose }: NoWorkspaceMessageProps) {
-  const { t } = useTranslation(['tasks']);
+  const { t } = useTranslation(['tasks', 'taskReview']);
   const [isMarkingDone, setIsMarkingDone] = useState(false);
   const [isProceeding, setIsProceeding] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,72 +71,54 @@ export function NoWorkspaceMessage({ task, onClose }: NoWorkspaceMessageProps) {
       }
     } catch (err) {
       console.error('Error proceeding to coding:', err);
-      setError(err instanceof Error ? err.message : 'Failed to start task');
+      setError(err instanceof Error ? err.message : t('tasks:wizard.errors.startFailed'));
     } finally {
       setIsProceeding(false);
     }
   };
 
   return (
-    <div className="rounded-xl border border-border bg-secondary/30 p-4">
-      <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-        <AlertCircle className="h-4 w-4 text-muted-foreground" />
-        {isPlanReview ? 'Human Review Required' : 'No Workspace Found'}
-      </h3>
-      <p className="text-sm text-muted-foreground mb-3">
-        {isPlanReview
-          ? 'Human review required prior to coding. Review your spec.md for any necessary changes.'
-          : 'No isolated workspace was found for this task. The changes may have been made directly in your project.'}
-      </p>
+    <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+      <div className="flex items-center gap-4">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="text-foreground">
+            {isPlanReview ? t('taskReview:noWorkspace.planReviewTitle') : t('taskReview:noWorkspace.title')}
+          </p>
+          <p className="text-(--nav-label-color)">
+            {isPlanReview ? t('taskReview:noWorkspace.planReviewDescription') : t('taskReview:noWorkspace.description')}
+          </p>
+        </div>
 
-      {/* Allow marking as done */}
-      {isPlanReview ? (
-        <Button
-          onClick={handleProceedToCoding}
-          disabled={isProceeding}
-          size="sm"
-          variant="default"
-          className="w-full"
-        >
-          {isProceeding ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Updating...
-            </>
-          ) : (
-            <>
-              <Play className="h-4 w-4 mr-2" />
-              Proceed to Coding
-            </>
-          )}
-        </Button>
-      ) : task && task.status === 'human_review' && (
-        <Button
-          onClick={handleMarkDone}
-          disabled={isMarkingDone}
-          size="sm"
-          variant="default"
-          className="w-full"
-        >
-          {isMarkingDone ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Updating...
-            </>
-          ) : (
-            <>
-              <Check className="h-4 w-4 mr-2" />
-              Mark as Done
-            </>
-          )}
-        </Button>
-      )}
+        {isPlanReview ? (
+          <Button onClick={handleProceedToCoding} disabled={isProceeding} size="sm" className="shrink-0">
+            {isProceeding ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {t('taskReview:noWorkspace.updating')}
+              </>
+            ) : (
+              t('taskReview:noWorkspace.proceedToCoding')
+            )}
+          </Button>
+        ) : task && task.status === 'human_review' && (
+          <Button onClick={handleMarkDone} disabled={isMarkingDone} size="sm" className="shrink-0">
+            {isMarkingDone ? (
+              <>
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                {t('taskReview:noWorkspace.updating')}
+              </>
+            ) : (
+              t('taskReview:stagedSuccess.markAsDone')
+            )}
+          </Button>
+        )}
+      </div>
 
       {error && (
-        <p className="text-xs text-destructive mt-2">{error}</p>
+        <p className="mt-2 text-destructive">{error}</p>
       )}
       {notice && (
-        <p className="text-xs text-muted-foreground mt-2">{notice}</p>
+        <p className="mt-2 text-(--nav-label-color)">{notice}</p>
       )}
     </div>
   );
@@ -154,7 +135,8 @@ interface StagedInProjectMessageProps {
 /**
  * Displays message when changes have already been staged in the main project
  */
-export function StagedInProjectMessage({ task, projectPath, hasWorktree = false, onClose, onReviewAgain }: StagedInProjectMessageProps) {
+export function StagedInProjectMessage({ task, hasWorktree = false, onClose, onReviewAgain }: StagedInProjectMessageProps) {
+  const { t } = useTranslation(['taskReview']);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMarkingDone, setIsMarkingDone] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
@@ -171,7 +153,7 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
       const result = await window.electronAPI.discardWorktree(task.id, true);
 
       if (!result.success) {
-        setError(result.error || 'Failed to delete worktree');
+        setError(result.error || t('taskReview:stagedSuccess.errors.failedToDeleteWorktree'));
         return;
       }
 
@@ -179,7 +161,7 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
       const statusResult = await persistTaskStatus(task.id, 'done');
       if (!statusResult.success) {
         // Worktree is already deleted but status update failed - inform user of inconsistent state
-        setError('Worktree deleted but failed to update task status: ' + (statusResult.error || 'Unknown error'));
+        setError(t('taskReview:stagedSuccess.errors.worktreeDeletedButStatusFailed', { error: statusResult.error || '' }));
         return;
       }
 
@@ -187,7 +169,7 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
       onClose?.();
     } catch (err) {
       console.error('Error deleting worktree:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete worktree');
+      setError(err instanceof Error ? err.message : t('taskReview:stagedSuccess.errors.failedToDeleteWorktree'));
     } finally {
       setIsDeleting(false);
     }
@@ -200,13 +182,13 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
     try {
       const result = await persistTaskStatus(task.id, 'done', { keepWorktree: true });
       if (!result.success) {
-        setError(result.error || 'Failed to mark as done');
+        setError(result.error || t('taskReview:stagedSuccess.errors.failedToMarkAsDone'));
         return;
       }
       onClose?.();
     } catch (err) {
       console.error('Error marking task as done:', err);
-      setError(err instanceof Error ? err.message : 'Failed to mark as done');
+      setError(err instanceof Error ? err.message : t('taskReview:stagedSuccess.errors.failedToMarkAsDone'));
     } finally {
       setIsMarkingDone(false);
     }
@@ -223,7 +205,7 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
       const result = await window.electronAPI.clearStagedState(task.id);
 
       if (!result.success) {
-        setError(result.error || 'Failed to reset staged state');
+        setError(result.error || t('taskReview:stagedSuccess.errors.failedToResetStagedState'));
         return;
       }
 
@@ -231,136 +213,125 @@ export function StagedInProjectMessage({ task, projectPath, hasWorktree = false,
       onReviewAgain();
     } catch (err) {
       console.error('Error resetting staged state:', err);
-      setError(err instanceof Error ? err.message : 'Failed to reset staged state');
+      setError(err instanceof Error ? err.message : t('taskReview:stagedSuccess.errors.failedToResetStagedState'));
     } finally {
       setIsResetting(false);
     }
   };
 
+  const anyActionInProgress = isDeleting || isMarkingDone || isResetting;
+
   return (
-    <div className="rounded-xl border border-success/30 bg-success/10 p-4">
-      <h3 className="font-medium text-sm text-foreground mb-2 flex items-center gap-2">
-        <GitMerge className="h-4 w-4 text-success" />
-        Changes Staged in Project
-      </h3>
-      <p className="text-sm text-muted-foreground mb-3">
-        This task's changes have been staged in your main project{task.stagedAt ? ` on ${new Date(task.stagedAt).toLocaleDateString()}` : ''}.
-      </p>
-      <div className="bg-background/50 rounded-lg p-3 mb-3">
-        <p className="text-xs text-muted-foreground mb-2">Next steps:</p>
-        <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
-          <li>Review staged changes with <code className="bg-background px-1 rounded">git status</code> and <code className="bg-background px-1 rounded">git diff --staged</code></li>
-          <li>Commit when ready: <code className="bg-background px-1 rounded">git commit -m "your message"</code></li>
-          <li>Push to remote when satisfied</li>
-        </ol>
+    <div className="space-y-3">
+      <div>
+        <h3 className="text-sm text-foreground">{t('taskReview:stagedInProject.title')}</h3>
+        <p className="mt-1 text-sm text-(--nav-label-color)">
+          {task.stagedAt
+            ? t('taskReview:stagedInProject.descriptionOn', { date: new Date(task.stagedAt).toLocaleDateString() })
+            : t('taskReview:stagedInProject.description')}
+        </p>
       </div>
 
-      {/* Action buttons */}
-      <div className="flex flex-col gap-2">
-        <div className="flex gap-2">
-          {/* Primary action: Mark Done or Delete Worktree & Mark Done */}
-          {hasWorktree ? (
-            <Button
-              onClick={handleDeleteWorktreeAndMarkDone}
-              disabled={isDeleting || isMarkingDone || isResetting}
-              size="sm"
-              variant="default"
-              className="flex-1"
-            >
-              {isDeleting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Cleaning up...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Delete Worktree & Mark Done
-                </>
-              )}
-            </Button>
-          ) : (
-            <Button
-              onClick={handleMarkDoneOnly}
-              disabled={isDeleting || isMarkingDone || isResetting}
-              size="sm"
-              variant="default"
-              className="flex-1"
-            >
-              {isMarkingDone ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Marking done...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Mark as Done
-                </>
-              )}
-            </Button>
-          )}
-        </div>
+      <StagedNextSteps />
 
-        {/* Secondary actions row */}
-        <div className="flex gap-2">
-          {/* Mark Done Only (when worktree exists) - allows keeping worktree */}
-          {hasWorktree && (
-            <Button
-              onClick={handleMarkDoneOnly}
-              disabled={isDeleting || isMarkingDone || isResetting}
-              size="sm"
-              variant="outline"
-              className="flex-1"
-            >
-              {isMarkingDone ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Marking done...
-                </>
-              ) : (
-                <>
-                  <Check className="h-4 w-4 mr-2" />
-                  Mark Done Only
-                </>
-              )}
-            </Button>
-          )}
+      <StagedActions
+        hasWorktree={hasWorktree}
+        canReviewAgain={!!onReviewAgain}
+        disabled={anyActionInProgress}
+        isDeleting={isDeleting}
+        isMarkingDone={isMarkingDone}
+        isResetting={isResetting}
+        onDeleteWorktreeAndMarkDone={handleDeleteWorktreeAndMarkDone}
+        onMarkDoneOnly={handleMarkDoneOnly}
+        onReviewAgain={handleReviewAgain}
+      />
 
-          {/* Review Again button - only show if worktree exists and callback provided */}
-          {hasWorktree && onReviewAgain && (
-            <Button
-              onClick={handleReviewAgain}
-              disabled={isDeleting || isMarkingDone || isResetting}
-              size="sm"
-              variant="outline"
-              className="flex-1"
-            >
-              {isResetting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Resetting...
-                </>
-              ) : (
-                <>
-                  <RotateCcw className="h-4 w-4 mr-2" />
-                  Review Again
-                </>
-              )}
-            </Button>
-          )}
-        </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+    </div>
+  );
+}
 
-        {error && (
-          <p className="text-xs text-destructive">{error}</p>
+/**
+ * "Next steps" info box shown after changes were staged in the main project
+ */
+export function StagedNextSteps() {
+  const { t } = useTranslation(['taskReview']);
+  const code = 'rounded bg-nav-hover px-1 font-mono text-xs';
+  return (
+    <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+      <p className="mb-1.5 text-foreground">{t('taskReview:stagedSuccess.nextSteps')}</p>
+      <ol className="list-inside list-decimal space-y-1 text-(--nav-label-color)">
+        <li>
+          {t('taskReview:stagedSuccess.reviewChanges')} <code className={code}>git status</code>{' '}
+          {t('taskReview:stagedSuccess.and')} <code className={code}>git diff --staged</code>
+        </li>
+        <li>
+          {t('taskReview:stagedSuccess.commitWhenReady')} <code className={code}>git commit -m "your message"</code>
+        </li>
+        <li>{t('taskReview:stagedSuccess.pushToRemote')}</li>
+      </ol>
+    </div>
+  );
+}
+
+interface StagedActionsProps {
+  hasWorktree: boolean;
+  canReviewAgain: boolean;
+  disabled: boolean;
+  isDeleting: boolean;
+  isMarkingDone: boolean;
+  isResetting: boolean;
+  onDeleteWorktreeAndMarkDone: () => void;
+  onMarkDoneOnly: () => void;
+  onReviewAgain: () => void;
+}
+
+/**
+ * Right-aligned actions after staging: review again / mark done only (secondary) and the
+ * primary "delete worktree & mark done" (or "mark as done" when no worktree is left).
+ */
+export function StagedActions({
+  hasWorktree,
+  canReviewAgain,
+  disabled,
+  isDeleting,
+  isMarkingDone,
+  isResetting,
+  onDeleteWorktreeAndMarkDone,
+  onMarkDoneOnly,
+  onReviewAgain
+}: StagedActionsProps) {
+  const { t } = useTranslation(['taskReview']);
+  const spinner = <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {hasWorktree && canReviewAgain && (
+          <Button onClick={onReviewAgain} disabled={disabled} size="sm" variant="outline">
+            {isResetting ? <>{spinner}{t('taskReview:stagedSuccess.resetting')}</> : t('taskReview:stagedSuccess.reviewAgain')}
+          </Button>
         )}
-
         {hasWorktree && (
-          <p className="text-xs text-muted-foreground">
-            "Delete Worktree & Mark Done" cleans up the isolated workspace. "Mark Done Only" keeps it for reference.
-          </p>
+          <Button onClick={onMarkDoneOnly} disabled={disabled} size="sm" variant="outline">
+            {isMarkingDone ? <>{spinner}{t('taskReview:stagedSuccess.markingDone')}</> : t('taskReview:stagedSuccess.markDoneOnly')}
+          </Button>
+        )}
+        {hasWorktree ? (
+          <Button onClick={onDeleteWorktreeAndMarkDone} disabled={disabled} size="sm">
+            {isDeleting ? <>{spinner}{t('taskReview:stagedSuccess.cleaningUp')}</> : t('taskReview:stagedSuccess.deleteWorktreeAndMarkDone')}
+          </Button>
+        ) : (
+          <Button onClick={onMarkDoneOnly} disabled={disabled} size="sm">
+            {isMarkingDone ? <>{spinner}{t('taskReview:stagedSuccess.markingDone')}</> : t('taskReview:stagedSuccess.markAsDone')}
+          </Button>
         )}
       </div>
+      {hasWorktree && (
+        <p className="text-right text-xs text-(--nav-label-color)">
+          {t('taskReview:stagedSuccess.worktreeExplanation')}
+        </p>
+      )}
     </div>
   );
 }

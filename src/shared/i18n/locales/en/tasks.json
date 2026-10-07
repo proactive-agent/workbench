@@ -1,5 +1,5 @@
 {
-  "refreshTasks": "Refresh Tasks",
+  "refreshTasks": "Refresh",
   "status": {
     "backlog": "Backlog",
     "queue": "Queue",
@@ -95,7 +95,6 @@
     "keepWorktree": "Keep Worktree",
     "deleteWorktree": "Delete Worktree & Mark Done",
     "refreshTasks": "Refresh Tasks",
-    "queueSettings": "Queue Settings",
     "orderSaveFailedTitle": "Reorder not saved",
     "orderSaveFailedDescription": "Your task order change was applied but couldn't be saved to storage. It will be lost on refresh.",
     "selectAll": "Select all",
@@ -121,18 +120,7 @@
     "autoPromoted": "Task auto-promoted from queue to In Progress.",
     "capacityAvailable": "{{count}} slot(s) available in In Progress.",
     "queueAll": "Add All to Queue",
-    "queueAllSuccess": "Moved {{count}} tasks to queue.",
-    "settings": {
-      "title": "Queue Settings",
-      "description": "Configure the maximum number of tasks that can run in parallel in the \"In Progress\" board",
-      "maxParallelLabel": "Max Parallel Tasks",
-      "minValueError": "Must be at least 1",
-      "maxValueError": "Cannot exceed 10",
-      "hint": "When this limit is reached, new tasks will wait in the queue before moving to \"In Progress\"",
-      "saved": "Queue settings saved",
-      "saveFailed": "Failed to save queue settings",
-      "retry": "Please try again"
-    }
+    "queueAllSuccess": "Moved {{count}} tasks to queue."
   },
   "execution": {
     "phases": {
@@ -161,9 +149,17 @@
   "metadata": {
     "fastMode": "Fast",
     "severity": "severity",
-    "pullRequest": "Pull Request",
+    "pullRequest": "Pull request",
     "showMore": "Show more",
-    "showLess": "Show less"
+    "showLess": "Show less",
+    "created": "Created {{time}}",
+    "updated": "Updated {{time}}",
+    "rationale": "Rationale",
+    "problemSolved": "Problem solved",
+    "targetAudience": "Target audience",
+    "dependencies": "Dependencies",
+    "acceptanceCriteria": "Acceptance criteria",
+    "affectedFiles": "Affected files"
   },
   "images": {
     "removeImageAriaLabel": "Remove image {{filename}}",
@@ -181,16 +177,16 @@
     "backgroundTaskDescription": "The task is still running. You can reopen this dialog to monitor progress."
   },
   "wizard": {
-    "createTitle": "Create New Task",
+    "createTitle": "Create new task",
     "createDescription": "Describe what you want to build. The AI will analyze your request and create a detailed specification.",
     "descriptionPlaceholder": "Describe the feature, bug fix, or improvement you want to implement. Be as specific as possible about requirements, constraints, and expected behavior. Type @ to reference files.",
     "draftRestored": "Draft restored",
-    "startFresh": "Start Fresh",
+    "startFresh": "Start fresh",
     "creating": "Creating...",
-    "createTask": "Create Task",
+    "createTask": "Create",
     "gitOptions": {
-      "title": "Git Options (optional)",
-      "baseBranchLabel": "Base Branch (optional)",
+      "title": "Git",
+      "baseBranchLabel": "Base branch",
       "useProjectDefault": "Use project default",
       "useProjectDefaultWithBranch": "Use project default ({{branch}})",
       "searchBranches": "Search branches...",
@@ -212,15 +208,19 @@
     "maxImagesError": "Maximum of {{count}} images allowed",
     "invalidTypeError": "Invalid image type. Allowed: {{types}}",
     "removeImage": "Remove image",
-    "processingError": "Failed to process image"
+    "processingError": "Failed to process image",
+    "requestChanges": "Request changes",
+    "description": "Found issues? Describe what needs to be fixed and the AI will continue working on it.",
+    "placeholder": "Describe the issues or changes needed...",
+    "submitting": "Submitting..."
   },
   "review": {
     "mergeTooltip": "Merges changes from the task's worktree branch back to your base branch. AI will resolve any conflicts. You can then choose whether to keep or remove the worktree."
   },
   "edit": {
-    "title": "Edit Task",
+    "title": "Edit task",
     "description": "Update task details including title, description, classification, images, and settings. Changes will be saved to the spec files.",
-    "saveChanges": "Save Changes",
+    "saveChanges": "Save",
     "errors": {
       "updateFailed": "Failed to update task. Please try again."
     }
@@ -229,13 +229,18 @@
     "description": "Description",
     "descriptionPlaceholder": "Describe the feature, bug fix, or improvement you want to implement. Be as specific as possible about requirements, constraints, and expected behavior.",
     "imageAddedSuccess": "Image added successfully!",
-    "taskTitle": "Task Title",
+    "taskTitle": "Title",
     "titlePlaceholder": "Leave empty to auto-generate from description",
     "titleHelpText": "A short, descriptive title will be generated automatically if left empty.",
-    "classificationOptional": "Classification (optional)",
+    "sections": {
+      "task": "Task",
+      "agent": "Agent",
+      "classification": "Classification",
+      "options": "Options"
+    },
     "requireReviewLabel": "Require human review before coding",
     "requireReviewDescription": "When enabled, you'll be prompted to review the spec and implementation plan before the coding phase begins. This allows you to approve, request changes, or provide feedback.",
-    "fastModeLabel": "Fast Mode",
+    "fastModeLabel": "Fast mode",
     "fastModeDescription": "Same Opus 4.6 model with faster output. Higher cost per token.",
     "fastModeNotice": "Requires \"extra usage\" enabled on your Claude subscription.",
     "errors": {
@@ -288,7 +293,11 @@
   "subtasks": {
     "untitled": "Untitled subtask",
     "expandAll": "Expand all",
-    "collapseAll": "Collapse all"
+    "collapseAll": "Collapse all",
+    "empty": "No subtasks defined",
+    "emptyHint": "Implementation subtasks will appear here after planning",
+    "completedOf": "{{completed}} of {{total}} completed",
+    "verification": "Verification"
   },
   "bulkPR": {
     "selectAllInColumn": "Select all tasks in column",
@@ -300,20 +309,80 @@
     "processingTasks": "Processing selected tasks..."
   },
   "deleteDialog": {
-    "title": "Delete Task",
+    "title": "Delete task",
     "confirmMessage": "Are you sure you want to delete",
     "destructiveWarning": "This action cannot be undone. All task files, including the spec, implementation plan, and any generated code will be permanently deleted from the project.",
     "checkingChanges": "Checking for uncommitted changes...",
     "uncommittedChanges": "This task's worktree has {{count}} uncommitted file(s)",
     "uncommittedChangesHint": "These changes have not been committed or merged. Deleting this task will permanently discard all uncommitted work in the worktree.",
     "cancel": "Cancel",
-    "deletePermanently": "Delete Permanently",
-    "deleting": "Deleting..."
+    "deletePermanently": "Delete permanently",
+    "deleting": "Deleting...",
+    "failed": "Failed to delete task"
+  },
+  "fileAutocomplete": {
+    "noFiles": "No files found",
+    "keyboardHint": "↑↓ to navigate · Enter to select · Esc to close"
   },
   "referenceImages": {
     "title": "Reference images (optional)",
     "description": "Add visual references like screenshots or designs to help the AI understand your requirements.",
     "dropZone": "Drop images here or click to browse",
     "preview": "Preview {{filename}}"
+  },
+  "detailTabs": {
+    "label": "Task sections",
+    "overview": "Overview",
+    "subtasks": "Subtasks ({{count}})",
+    "logs": "Logs"
+  },
+  "detail": {
+    "resumeFailedTitle": "Cannot resume task",
+    "resumeFailedDescription": "Failed to load implementation plan. Please try again or check the task files."
+  },
+  "warnings": {
+    "stuckTitle": "Task appears stuck",
+    "stuckDescription": "This task is marked as running but no active process was found. This can happen if the app crashed or the process was terminated unexpectedly.",
+    "recover": "Recover and restart",
+    "recovering": "Recovering...",
+    "incompleteTitle": "Task incomplete",
+    "incompleteDescription": "This task has a spec and implementation plan but never completed any subtasks ({{completed}}/{{total}}). The process likely crashed during spec creation.",
+    "resume": "Resume task"
+  },
+  "logs": {
+    "empty": "No logs yet",
+    "emptyHint": "Logs will appear here when the task runs",
+    "entries_one": "{{count}} entry",
+    "entries_other": "{{count}} entries",
+    "phases": {
+      "planning": "Planning",
+      "coding": "Coding",
+      "validation": "Validation"
+    },
+    "tools": {
+      "reading": "Reading",
+      "searchingFiles": "Searching files",
+      "searchingCode": "Searching code",
+      "editing": "Editing",
+      "writing": "Writing",
+      "running": "Running"
+    },
+    "done": "Done",
+    "showOutput": "Show output",
+    "hideOutput": "Hide output",
+    "more": "More",
+    "less": "Less"
+  },
+  "detailHeader": {
+    "stuck": "Stuck",
+    "incomplete": "Incomplete",
+    "subtaskProgress": "{{completed}}/{{total}} subtasks",
+    "reviewReason": {
+      "completed": "Completed",
+      "errors": "Has errors",
+      "plan_review": "Approve plan",
+      "stopped": "Stopped",
+      "qa": "QA issues"
+    }
   }
 }

@@ -19,6 +19,7 @@ import {
 } from '../ui/alert-dialog';
 import { WorktreeIcon } from '../icons/app-icons';
 import { cn } from '../../lib/utils';
+import { buttonVariants } from '../ui/button';
 import { useProjectStore } from '../../stores/project-store';
 
 type NavigableItem =
@@ -346,10 +347,8 @@ export function WorktreeSelector({
         tabIndex={-1}
         aria-selected={isFocused}
         className={cn(
-          'flex items-center text-xs px-2 py-1.5 rounded-sm cursor-pointer group',
-          isFocused
-            ? 'bg-accent text-accent-foreground'
-            : 'hover:bg-accent/50'
+          'group flex cursor-pointer items-center rounded-lg px-3 py-2 text-sm text-foreground',
+          isFocused ? 'bg-nav-hover' : 'hover:bg-nav-hover'
         )}
         onClick={(e) => {
           e.stopPropagation();
@@ -361,9 +360,9 @@ export function WorktreeSelector({
         onMouseEnter={() => setFocusedIndex(index)}
       >
         <div className="flex flex-col min-w-0 flex-1">
-          <span className="truncate font-medium">{name}</span>
+          <span className="truncate">{name}</span>
           {branchLabel && (
-            <span className="text-[10px] text-muted-foreground truncate">
+            <span className="truncate text-xs text-(--nav-label-color)">
               {branchLabel}
             </span>
           )}
@@ -376,11 +375,11 @@ export function WorktreeSelector({
               e.preventDefault();
               setDeleteWorktree(item.data);
             }}
-            className="ml-2 p-1 rounded hover:bg-destructive/10 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            className="ml-2 shrink-0 rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-nav-hover hover:text-destructive group-hover:opacity-100"
             aria-label={t('common:delete')}
             title={t('common:delete')}
           >
-            <Trash2 className="h-3 w-3" />
+            <Trash2 className="h-3.5 w-3.5" strokeWidth={1.75} />
           </button>
         )}
       </div>
@@ -397,21 +396,21 @@ export function WorktreeSelector({
         <button
           type="button"
           className={cn(
-            'flex items-center gap-1 h-6 px-2 rounded text-xs font-medium transition-colors',
+            'flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm transition-colors',
             'hover:bg-nav-hover hover:text-foreground text-muted-foreground'
           )}
           onClick={(e) => e.stopPropagation()}
         >
-          <WorktreeIcon className="h-3 w-3 shrink-0" />
+          <WorktreeIcon className="h-4 w-4 shrink-0" />
           <span className={cn('truncate', labelClassName)} title={currentWorktree?.name}>
             {currentWorktree?.name ?? t('terminal:worktree.create')}
           </span>
-          <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-56 p-0"
+        className="w-auto min-w-[15rem] max-w-[22rem] p-1.5"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           searchInputRef.current?.focus();
@@ -420,22 +419,22 @@ export function WorktreeSelector({
         {/* Pinned: Create new worktree */}
         <button
           type="button"
-          className="flex items-center text-xs px-2 py-1.5 m-1 rounded-sm cursor-pointer text-foreground hover:bg-nav-hover w-[calc(100%-0.5rem)] text-left"
+          className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-nav-hover"
           onClick={(e) => {
             e.stopPropagation();
             setIsOpen(false);
             onCreateWorktree();
           }}
         >
-          <Plus className="h-3 w-3 mr-2" />
+          <Plus className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
           {t('terminal:worktree.createNew')}
         </button>
 
-        <div className="border-t border-border" />
+        <div className="-mx-1.5 my-1.5 h-px bg-border" />
 
         {/* Search input */}
-        <div className="flex items-center px-2 py-1.5">
-          <Search className="h-3 w-3 mr-2 text-muted-foreground shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
           <input
             ref={searchInputRef}
             type="search"
@@ -448,21 +447,21 @@ export function WorktreeSelector({
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder={t('terminal:worktree.searchPlaceholder')}
-            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--nav-label-color)"
           />
         </div>
 
-        <div className="border-t border-border" />
+        <div className="-mx-1.5 my-1.5 h-px bg-border" />
 
         {/* Scrollable results */}
         <div className="max-h-[min(500px,60vh)] overflow-y-auto">
-          <div id={listboxId} role="listbox" aria-label={t('terminal:worktree.searchPlaceholder')} className="p-1">
+          <div id={listboxId} role="listbox" aria-label={t('terminal:worktree.searchPlaceholder')}>
             {isLoading ? (
               <div className="flex items-center justify-center py-2">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             ) : !hasResults ? (
-              <div className="py-2 text-center text-xs text-muted-foreground">
+              <div className="px-3 py-2 text-sm text-(--nav-label-color)">
                 {t('terminal:worktree.noResults')}
               </div>
             ) : (
@@ -470,7 +469,7 @@ export function WorktreeSelector({
                 {/* Terminal Worktrees */}
                 {terminalItems.length > 0 && (
                   <>
-                    <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="px-3 py-1.5 text-xs text-(--nav-label-color)">
                       {t('terminal:worktree.existing')}
                     </div>
                     {terminalItems.map((item, i) => renderWorktreeItem(item, i))}
@@ -480,8 +479,8 @@ export function WorktreeSelector({
                 {/* Task Worktrees */}
                 {taskItems.length > 0 && (
                   <>
-                    {terminalItems.length > 0 && <div className="border-t border-border my-1" />}
-                    <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    {terminalItems.length > 0 && <div className="-mx-1.5 my-1.5 h-px bg-border" />}
+                    <div className="px-3 py-1.5 text-xs text-(--nav-label-color)">
                       {t('terminal:worktree.taskWorktrees')}
                     </div>
                     {taskItems.map((item, i) => renderWorktreeItem(item, terminalItems.length + i))}
@@ -492,9 +491,9 @@ export function WorktreeSelector({
                 {otherItems.length > 0 && (
                   <>
                     {(terminalItems.length > 0 || taskItems.length > 0) && (
-                      <div className="border-t border-border my-1" />
+                      <div className="-mx-1.5 my-1.5 h-px bg-border" />
                     )}
-                    <div className="px-2 py-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
+                    <div className="px-3 py-1.5 text-xs text-(--nav-label-color)">
                       {t('terminal:worktree.otherWorktrees')}
                     </div>
                     {otherItems.map((item, i) => renderWorktreeItem(item, terminalItems.length + taskItems.length + i))}
@@ -511,7 +510,7 @@ export function WorktreeSelector({
     <AlertDialog open={!!deleteWorktree} onOpenChange={(open) => !open && setDeleteWorktree(null)}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{t('terminal:worktree.deleteTitle', 'Delete Worktree?')}</AlertDialogTitle>
+          <AlertDialogTitle>{t('terminal:worktree.deleteTitle', 'Delete worktree?')}</AlertDialogTitle>
           <AlertDialogDescription>
             {t('terminal:worktree.deleteDescription', 'This will permanently delete the worktree and its branch. Any uncommitted changes will be lost.')}
             {deleteWorktree && (
@@ -529,7 +528,7 @@ export function WorktreeSelector({
           <AlertDialogAction
             onClick={handleDeleteWorktree}
             disabled={isDeleting}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            className={buttonVariants({ variant: 'destructive', size: 'sm' })}
           >
             {isDeleting ? (
               <>
@@ -537,10 +536,7 @@ export function WorktreeSelector({
                 {t('common:deleting', 'Deleting...')}
               </>
             ) : (
-              <>
-                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
-                {t('common:delete')}
-              </>
+              t('common:delete')
             )}
           </AlertDialogAction>
         </AlertDialogFooter>

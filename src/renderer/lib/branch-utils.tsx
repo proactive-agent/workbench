@@ -7,10 +7,10 @@ import type { ComboboxOption } from '../components/ui/combobox';
 import type { GitBranchDetail } from '../../shared/types';
 import { cn } from './utils';
 
-// Badge styling constants for branch type indicators
-const BADGE_BASE_CLASSES = 'text-xs px-1.5 py-0.5 rounded';
-const LOCAL_BADGE_CLASSES = 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400';
-const REMOTE_BADGE_CLASSES = 'bg-blue-500/10 text-blue-600 dark:text-blue-400';
+// Branch type indicators ("Local" / "Remote"): plain muted text, like claude.ai status labels
+const BADGE_BASE_CLASSES = 'text-xs';
+const LOCAL_BADGE_CLASSES = 'text-(--nav-label-color)';
+const REMOTE_BADGE_CLASSES = 'text-(--nav-label-color)';
 
 /**
  * Configuration for building branch options

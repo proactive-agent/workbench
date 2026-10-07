@@ -16,11 +16,15 @@ import {
   Clock,
   Pause
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Badge } from '../ui/badge';
 import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '../ui/collapsible';
 import { cn } from '../../lib/utils';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { Task, TaskLogs, TaskLogPhase, TaskPhaseLog, TaskLogEntry } from '../../../shared/types';
+
+// Neutral chip for tool activity (no per-tool colors)
+const TOOL_CHIP_CLASS = 'text-muted-foreground bg-segment-track';
 
 interface TaskLogsProps {
   task: Task;
@@ -33,11 +37,6 @@ interface TaskLogsProps {
   onTogglePhase: (phase: TaskLogPhase) => void;
 }
 
-const PHASE_LABELS: Record<TaskLogPhase, string> = {
-  planning: 'Planning',
-  coding: 'Coding',
-  validation: 'Validation'
-};
 
 export function TaskLogs({
   task,
@@ -49,6 +48,7 @@ export function TaskLogs({
   onLogsScroll,
   onTogglePhase
 }: TaskLogsProps) {
+  const { t } = useTranslation(['tasks']);
   return (
     <div
       ref={logsContainerRef}
@@ -84,8 +84,8 @@ export function TaskLogs({
         ) : (
           <div className="text-center text-sm text-muted-foreground py-8">
             <Terminal className="mx-auto mb-2 h-8 w-8 opacity-50" />
-            <p>No logs yet</p>
-            <p className="text-xs mt-1">Logs will appear here when the task runs</p>
+            <p>{t('tasks:logs.empty')}</p>
+            <p className="text-xs mt-1">{t('tasks:logs.emptyHint')}</p>
           </div>
         )}
       </div>
@@ -117,6 +117,7 @@ function getPhaseStatusIcon(status: string) {
 }
 
 function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskSettled }: PhaseLogSectionProps) {
+  const { t } = useTranslation(['tasks']);
   const logOrder = useSettingsStore(s => s.settings.logOrder);
   // If the task is in a settled state (human_review, done, etc.), any "active" phase
   // is actually completed — the log writer may have missed the endPhase() call.
@@ -141,10 +142,10 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskSettled 
           className="flex w-full items-center gap-2 rounded-xl border border-border p-3 text-left transition-colors hover:bg-nav-hover"
         >
           <span className="shrink-0">{getPhaseStatusIcon(status)}</span>
-          <span className="text-sm font-medium text-foreground">{PHASE_LABELS[phase]}</span>
+          <span className="text-sm text-foreground">{t(`tasks:logs.phases.${phase}`)}</span>
           {hasEntries && (
-            <span className="text-xs text-muted-foreground">
-              ({phaseLog?.entries.length} entries)
+            <span className="text-xs text-(--nav-label-color)">
+              {t('tasks:logs.entries', { count: phaseLog?.entries.length ?? 0 })}
             </span>
           )}
           <ChevronRight
@@ -158,7 +159,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskSettled 
       <CollapsibleContent>
         <div className="mt-1 ml-6 border-l-2 border-border pl-4 py-2 space-y-1">
           {!hasEntries ? (
-            <p className="text-xs text-muted-foreground italic">No logs yet</p>
+            <p className="text-xs text-muted-foreground">{t('tasks:logs.empty')}</p>
           ) : (
             displayedEntries.map((entry) => (
               <LogEntry key={`${entry.timestamp}-${entry.type}-${entry.content}`} entry={entry} />
@@ -176,25 +177,26 @@ interface LogEntryProps {
 }
 
 function LogEntry({ entry }: LogEntryProps) {
+  const { t } = useTranslation(['tasks']);
   const [isExpanded, setIsExpanded] = useState(false);
   const hasDetail = Boolean(entry.detail);
 
   const getToolInfo = (toolName: string) => {
     switch (toolName) {
       case 'Read':
-        return { icon: FileText, label: 'Reading', color: 'text-blue-500 bg-blue-500/10' };
+        return { icon: FileText, label: t('tasks:logs.tools.reading'), color: TOOL_CHIP_CLASS };
       case 'Glob':
-        return { icon: FolderSearch, label: 'Searching files', color: 'text-amber-500 bg-amber-500/10' };
+        return { icon: FolderSearch, label: t('tasks:logs.tools.searchingFiles'), color: TOOL_CHIP_CLASS };
       case 'Grep':
-        return { icon: Search, label: 'Searching code', color: 'text-green-500 bg-green-500/10' };
+        return { icon: Search, label: t('tasks:logs.tools.searchingCode'), color: TOOL_CHIP_CLASS };
       case 'Edit':
-        return { icon: Pencil, label: 'Editing', color: 'text-purple-500 bg-purple-500/10' };
+        return { icon: Pencil, label: t('tasks:logs.tools.editing'), color: TOOL_CHIP_CLASS };
       case 'Write':
-        return { icon: FileCode, label: 'Writing', color: 'text-cyan-500 bg-cyan-500/10' };
+        return { icon: FileCode, label: t('tasks:logs.tools.writing'), color: TOOL_CHIP_CLASS };
       case 'Bash':
-        return { icon: Terminal, label: 'Running', color: 'text-orange-500 bg-orange-500/10' };
+        return { icon: Terminal, label: t('tasks:logs.tools.running'), color: TOOL_CHIP_CLASS };
       default:
-        return { icon: Wrench, label: toolName, color: 'text-muted-foreground bg-muted' };
+        return { icon: Wrench, label: toolName, color: TOOL_CHIP_CLASS };
     }
   };
 
@@ -243,7 +245,7 @@ function LogEntry({ entry }: LogEntryProps) {
           <div className={cn('inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs', color, 'opacity-60')}>
             <Icon className="h-3 w-3" />
             <CheckCircle2 className="h-3 w-3 text-success" />
-            <span className="text-muted-foreground">Done</span>
+            <span className="text-muted-foreground">{t('tasks:logs.done')}</span>
           </div>
           {hasDetail && (
             <button
@@ -257,19 +259,19 @@ function LogEntry({ entry }: LogEntryProps) {
               {isExpanded ? (
                 <>
                   <ChevronDown className="h-2.5 w-2.5" />
-                  <span>Hide output</span>
+                  <span>{t('tasks:logs.hideOutput')}</span>
                 </>
               ) : (
                 <>
                   <ChevronRight className="h-2.5 w-2.5" />
-                  <span>Show output</span>
+                  <span>{t('tasks:logs.showOutput')}</span>
                 </>
               )}
             </button>
           )}
         </div>
         {hasDetail && isExpanded && (
-          <div className="mt-1.5 ml-4 p-2 bg-secondary/30 rounded-md border border-border/50 overflow-x-auto">
+          <div className="mt-1.5 ml-4 p-2 rounded-lg border border-border overflow-x-auto">
             <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
               {entry.detail}
             </pre>
@@ -282,7 +284,7 @@ function LogEntry({ entry }: LogEntryProps) {
   if (entry.type === 'error') {
     return (
       <div className="flex flex-col">
-        <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 rounded-md px-2 py-1">
+        <div className="flex items-start gap-2 text-xs text-destructive px-2 py-1">
           <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
           <span className="break-words flex-1">{entry.content}</span>
           <SubphaseBadge />
@@ -300,7 +302,7 @@ function LogEntry({ entry }: LogEntryProps) {
           )}
         </div>
         {hasDetail && isExpanded && (
-          <div className="mt-1.5 ml-4 p-2 bg-destructive/5 rounded-md border border-destructive/20 overflow-x-auto">
+          <div className="mt-1.5 ml-4 p-2 rounded-lg border border-border overflow-x-auto">
             <pre className="text-[10px] text-destructive/80 whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
               {entry.detail}
             </pre>
@@ -312,8 +314,8 @@ function LogEntry({ entry }: LogEntryProps) {
 
   if (entry.type === 'success') {
     return (
-      <div className="flex items-start gap-2 text-xs text-success bg-success/10 rounded-md px-2 py-1">
-        <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0" />
+      <div className="flex items-start gap-2 text-xs text-foreground px-2 py-1">
+        <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-success" />
         <span className="break-words flex-1">{entry.content}</span>
         <SubphaseBadge />
       </div>
@@ -322,7 +324,7 @@ function LogEntry({ entry }: LogEntryProps) {
 
   if (entry.type === 'info') {
     return (
-      <div className="flex items-start gap-2 text-xs text-info bg-info/10 rounded-md px-2 py-1">
+      <div className="flex items-start gap-2 text-xs text-muted-foreground px-2 py-1">
         <Info className="h-3 w-3 mt-0.5 shrink-0" />
         <span className="break-words flex-1">{entry.content}</span>
         <SubphaseBadge />
@@ -351,19 +353,19 @@ function LogEntry({ entry }: LogEntryProps) {
             {isExpanded ? (
               <>
                 <ChevronDown className="h-2.5 w-2.5" />
-                <span>Less</span>
+                <span>{t('tasks:logs.less')}</span>
               </>
             ) : (
               <>
                 <ChevronRight className="h-2.5 w-2.5" />
-                <span>More</span>
+                <span>{t('tasks:logs.more')}</span>
               </>
             )}
           </button>
         )}
       </div>
       {hasDetail && isExpanded && (
-        <div className="mt-1.5 ml-12 p-2 bg-secondary/30 rounded-md border border-border/50 overflow-x-auto">
+        <div className="mt-1.5 ml-12 p-2 rounded-lg border border-border overflow-x-auto">
           <pre className="text-[10px] text-muted-foreground whitespace-pre-wrap break-words font-mono max-h-[300px] overflow-y-auto">
             {entry.detail}
           </pre>

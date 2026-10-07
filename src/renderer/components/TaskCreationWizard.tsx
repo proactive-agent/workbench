@@ -14,7 +14,9 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, RotateCcw } from 'lucide-react';
 import { Button } from './ui/button';
-import { Label } from './ui/label';
+import { Switch } from './ui/switch';
+import { SettingsRow, SettingsRows } from './settings/SettingsRow';
+import { SettingsSection } from './settings/SettingsSection';
 import { Combobox } from './ui/combobox';
 import { TaskModalLayout } from './task-form/TaskModalLayout';
 import { TaskFormFields } from './task-form/TaskFormFields';
@@ -22,7 +24,6 @@ import { FileAutocomplete } from './FileAutocomplete';
 import { createTask, saveDraft, loadDraft, clearDraft, isDraftEmpty } from '../stores/task-store';
 import { useProjectStore } from '../stores/project-store';
 import { buildBranchOptions } from '../lib/branch-utils';
-import { cn } from '../lib/utils';
 import type { TaskCategory, TaskPriority, TaskComplexity, TaskImpact, TaskMetadata, ImageAttachment, TaskDraft, ModelType, ThinkingLevel, ReferencedFile, GitBranchDetail } from '../../shared/types';
 import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
 import {
@@ -99,7 +100,7 @@ export function TaskCreationWizard({
 
   // Build branch options using shared utility - groups by local/remote with type indicators
   const branchOptions = useMemo(() => {
-    return buildBranchOptions(branches, {
+    const options = buildBranchOptions(branches, {
       t,
       includeProjectDefault: {
         value: PROJECT_DEFAULT_BRANCH,
@@ -108,6 +109,21 @@ export function TaskCreationWizard({
           ? 'tasks:wizard.gitOptions.useProjectDefaultWithBranch'
           : 'tasks:wizard.gitOptions.useProjectDefault',
       },
+    });
+    // Show the branch type ("Local" / "Remote") as plain muted text instead of a colored badge
+    return options.map((option) => {
+      if (!option.badge) return option;
+      const branchName = option.value === PROJECT_DEFAULT_BRANCH ? projectDefaultBranch : option.value;
+      const branchType = branches.find((b) => b.name === branchName)?.type;
+      if (!branchType) return option;
+      return {
+        ...option,
+        badge: (
+          <span className="text-xs text-(--nav-label-color)">
+            {t(branchType === 'local' ? 'common:git.branchType.local' : 'common:git.branchType.remote')}
+          </span>
+        ),
+      };
     });
   }, [branches, projectDefaultBranch, t]);
 
@@ -510,7 +526,7 @@ export function TaskCreationWizard({
   // Render @ mention highlight overlay for the description textarea
   const descriptionOverlay = (
     <div
-      className="absolute inset-0 pointer-events-none overflow-hidden rounded-lg border border-transparent bg-field"
+      className="absolute inset-0 pointer-events-none overflow-hidden rounded-lg border border-transparent"
       style={{
         padding: '0.5rem 0.75rem',
         font: 'inherit',
@@ -537,6 +553,46 @@ export function TaskCreationWizard({
     </div>
   );
 
+  // Git options - unique to creation; rendered as the last section of the form
+  const gitOptionsSection = (
+    <SettingsSection title={t('tasks:wizard.gitOptions.title')}>
+      <SettingsRows>
+        <SettingsRow
+          label={t('tasks:wizard.gitOptions.baseBranchLabel')}
+          description={t('tasks:wizard.gitOptions.helpText')}
+          htmlFor="base-branch"
+        >
+          <Combobox
+            id="base-branch"
+            value={baseBranch}
+            onValueChange={setBaseBranch}
+            options={branchOptions}
+            placeholder={projectDefaultBranch
+              ? t('tasks:wizard.gitOptions.useProjectDefaultWithBranch', { branch: projectDefaultBranch })
+              : t('tasks:wizard.gitOptions.useProjectDefault')
+            }
+            searchPlaceholder={t('tasks:wizard.gitOptions.searchBranches')}
+            emptyMessage={t('tasks:wizard.gitOptions.noBranchesFound')}
+            disabled={isCreating || isLoadingBranches}
+            className="h-8 w-auto max-w-[18rem] gap-1.5 border-transparent bg-transparent px-2 hover:bg-nav-hover focus:border-transparent focus:ring-0 focus-visible:shadow-(--shadow-focus) data-[state=open]:bg-nav-hover"
+          />
+        </SettingsRow>
+        <SettingsRow
+          label={t('tasks:wizard.gitOptions.pushNewBranchesLabel')}
+          description={t('tasks:wizard.gitOptions.pushNewBranchesDescription')}
+          htmlFor="push-new-branches"
+        >
+          <Switch
+            id="push-new-branches"
+            checked={pushNewBranches}
+            onCheckedChange={setPushNewBranches}
+            disabled={isCreating}
+          />
+        </SettingsRow>
+      </SettingsRows>
+    </SettingsSection>
+  );
+
   return (
     <TaskModalLayout
       open={open}
@@ -550,16 +606,16 @@ export function TaskCreationWizard({
             {/* Draft restored indicator */}
             {isDraftRestored && (
               <div className="flex items-center gap-2">
-                <span className="text-xs bg-info/10 text-info px-2 py-1 rounded-md">
+                <span className="text-sm text-(--nav-label-color)">
                   {t('tasks:wizard.draftRestored')}
                 </span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 px-2 text-xs text-muted-foreground hover:text-foreground"
+                  className="gap-1.5 text-muted-foreground hover:text-foreground"
                   onClick={handleDiscardDraft}
                 >
-                  <RotateCcw className="h-3 w-3 mr-1" />
+                  <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
                   {t('tasks:wizard.startFresh')}
                 </Button>
               </div>
@@ -584,117 +640,61 @@ export function TaskCreationWizard({
         </div>
       }
     >
-      <div className="space-y-6">
-        {/* Main form fields */}
-        <TaskFormFields
-          description={description}
-          onDescriptionChange={handleDescriptionChange}
-          descriptionPlaceholder={t('tasks:wizard.descriptionPlaceholder')}
-          descriptionOverlay={descriptionOverlay}
-          descriptionRef={descriptionRef}
-          title={title}
-          onTitleChange={setTitle}
-          profileId={profileId}
-          model={model}
-          thinkingLevel={thinkingLevel}
-          phaseModels={phaseModels}
-          phaseThinking={phaseThinking}
-          onProfileChange={(newProfileId, newModel, newThinkingLevel) => {
-            setProfileId(newProfileId);
-            setModel(newModel);
-            setThinkingLevel(newThinkingLevel);
-          }}
-          onModelChange={setModel}
-          onThinkingLevelChange={setThinkingLevel}
-          onPhaseModelsChange={setPhaseModels}
-          onPhaseThinkingChange={setPhaseThinking}
-          category={category}
-          priority={priority}
-          complexity={complexity}
-          impact={impact}
-          onCategoryChange={setCategory}
-          onPriorityChange={setPriority}
-          onComplexityChange={setComplexity}
-          onImpactChange={setImpact}
-          images={images}
-          onImagesChange={setImages}
-          requireReviewBeforeCoding={requireReviewBeforeCoding}
-          onRequireReviewChange={setRequireReviewBeforeCoding}
-          fastMode={fastMode}
-          onFastModeChange={setFastMode}
-          showFastModeToggle={showFastModeToggle}
-          disabled={isCreating}
-          error={error}
-          onError={setError}
-          idPrefix="create"
-        >
-          {/* File autocomplete popup - positioned relative to TaskFormFields */}
-          {autocomplete?.show && projectPath && (
-            <FileAutocomplete
-              query={autocomplete.query}
-              projectPath={projectPath}
-              position={autocomplete.position}
-              onSelect={handleAutocompleteSelect}
-              onClose={() => setAutocomplete(null)}
-            />
-          )}
-        </TaskFormFields>
-
-        {/* Git Options - unique to creation */}
-        <div className="space-y-3">
-          <Label className="text-sm font-medium text-foreground">
-            {t('tasks:wizard.gitOptions.title')}
-          </Label>
-          <div id="git-options-section" className="space-y-4 rounded-lg border border-border px-4 py-3">
-            <div className="space-y-2">
-              <Label htmlFor="base-branch" className="text-sm font-medium text-foreground">
-                {t('tasks:wizard.gitOptions.baseBranchLabel')}
-              </Label>
-              <Combobox
-                id="base-branch"
-                value={baseBranch}
-                onValueChange={setBaseBranch}
-                options={branchOptions}
-                placeholder={projectDefaultBranch
-                  ? t('tasks:wizard.gitOptions.useProjectDefaultWithBranch', { branch: projectDefaultBranch })
-                  : t('tasks:wizard.gitOptions.useProjectDefault')
-                }
-                searchPlaceholder={t('tasks:wizard.gitOptions.searchBranches')}
-                emptyMessage={t('tasks:wizard.gitOptions.noBranchesFound')}
-                disabled={isCreating || isLoadingBranches}
-                className="h-9"
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('tasks:wizard.gitOptions.helpText')}
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label className="text-sm font-medium text-foreground">
-                  {t('tasks:wizard.gitOptions.pushNewBranchesLabel')}
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  {t('tasks:wizard.gitOptions.pushNewBranchesDescription')}
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={cn(
-                  'h-8 px-3 border',
-                  pushNewBranches ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground'
-                )}
-                onClick={() => setPushNewBranches((current) => !current)}
-                disabled={isCreating}
-              >
-                {pushNewBranches ? 'On' : 'Off'}
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
+      {/* Main form fields (Git options are appended as an extra section) */}
+      <TaskFormFields
+        description={description}
+        onDescriptionChange={handleDescriptionChange}
+        descriptionPlaceholder={t('tasks:wizard.descriptionPlaceholder')}
+        descriptionOverlay={descriptionOverlay}
+        descriptionRef={descriptionRef}
+        title={title}
+        onTitleChange={setTitle}
+        profileId={profileId}
+        model={model}
+        thinkingLevel={thinkingLevel}
+        phaseModels={phaseModels}
+        phaseThinking={phaseThinking}
+        onProfileChange={(newProfileId, newModel, newThinkingLevel) => {
+          setProfileId(newProfileId);
+          setModel(newModel);
+          setThinkingLevel(newThinkingLevel);
+        }}
+        onModelChange={setModel}
+        onThinkingLevelChange={setThinkingLevel}
+        onPhaseModelsChange={setPhaseModels}
+        onPhaseThinkingChange={setPhaseThinking}
+        category={category}
+        priority={priority}
+        complexity={complexity}
+        impact={impact}
+        onCategoryChange={setCategory}
+        onPriorityChange={setPriority}
+        onComplexityChange={setComplexity}
+        onImpactChange={setImpact}
+        images={images}
+        onImagesChange={setImages}
+        requireReviewBeforeCoding={requireReviewBeforeCoding}
+        onRequireReviewChange={setRequireReviewBeforeCoding}
+        fastMode={fastMode}
+        onFastModeChange={setFastMode}
+        showFastModeToggle={showFastModeToggle}
+        disabled={isCreating}
+        error={error}
+        onError={setError}
+        idPrefix="create"
+        extraSections={gitOptionsSection}
+      >
+        {/* File autocomplete popup - positioned relative to TaskFormFields */}
+        {autocomplete?.show && projectPath && (
+          <FileAutocomplete
+            query={autocomplete.query}
+            projectPath={projectPath}
+            position={autocomplete.position}
+            onSelect={handleAutocompleteSelect}
+            onClose={() => setAutocomplete(null)}
+          />
+        )}
+      </TaskFormFields>
     </TaskModalLayout>
   );
 }

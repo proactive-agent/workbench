@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, KeyRound, Loader2, CheckCircle2, AlertCircle, User, Lock, Globe, ChevronDown, GitBranch, Server, Terminal, ExternalLink } from 'lucide-react';
+import { RefreshCw, KeyRound, Loader2, Lock, Globe, ChevronDown, GitBranch, Terminal, ExternalLink } from 'lucide-react';
 import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
 import { Switch } from '../../ui/switch';
-import { Separator } from '../../ui/separator';
 import { Button } from '../../ui/button';
+import { SettingsSection } from '../SettingsSection';
+import { SettingsRow, SettingsRows } from '../SettingsRow';
+import { StatusIndicator } from '../common/StatusIndicator';
+import { cn } from '../../../lib/utils';
 import { PasswordInput } from '../../project-settings/PasswordInput';
 import type { ProjectEnvConfig, GitLabSyncStatus, ProjectSettings } from '../../../../shared/types';
 
@@ -56,7 +58,7 @@ export function GitLabIntegration({
   settings,
   setSettings
 }: GitLabIntegrationProps) {
-  const { t } = useTranslation('gitlab');
+  const { t } = useTranslation(['gitlab', 'settings']);
   const [authMode, setAuthMode] = useState<'manual' | 'oauth' | 'oauth-success'>('manual');
   const [oauthUsername, setOauthUsername] = useState<string | null>(null);
   const [projects, setProjects] = useState<GitLabProject[]>([]);
@@ -306,281 +308,261 @@ export function GitLabIntegration({
     }
   };
 
+  const selectedBranch = settings?.mainBranch || envConfig.defaultBranch || '';
+  const gitlabUrl = envConfig.gitlabInstanceUrl || 'https://gitlab.com';
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <Label className="font-normal text-foreground">{t('settings.enableIssues')}</Label>
-          <p className="text-xs text-muted-foreground">
-            {t('settings.enableIssuesDescription')}
-          </p>
-        </div>
-        <Switch
-          checked={envConfig.gitlabEnabled}
-          onCheckedChange={(checked) => updateEnvConfig({ gitlabEnabled: checked })}
-        />
-      </div>
+    <>
+      <SettingsSection title={t('settings:projectSections.gitlab.title')}>
+        <SettingsRows>
+          <SettingsRow label={t('settings.enableIssues')} description={t('settings.enableIssuesDescription')}>
+            <Switch
+              checked={envConfig.gitlabEnabled}
+              onCheckedChange={(checked) => updateEnvConfig({ gitlabEnabled: checked })}
+              aria-label={t('settings.enableIssues')}
+            />
+          </SettingsRow>
+          {envConfig.gitlabEnabled && (
+            <SettingsRow label={t('settings.autoSyncOnLoad')} description={t('settings.autoSyncDescription')}>
+              <Switch
+                checked={envConfig.gitlabAutoSync || false}
+                onCheckedChange={(checked) => updateEnvConfig({ gitlabAutoSync: checked })}
+                aria-label={t('settings.autoSyncOnLoad')}
+              />
+            </SettingsRow>
+          )}
+        </SettingsRows>
+      </SettingsSection>
 
       {envConfig.gitlabEnabled && (
         <>
-          {/* Instance URL */}
-          <InstanceUrlInput
-            value={envConfig.gitlabInstanceUrl || 'https://gitlab.com'}
-            onChange={(value) => updateEnvConfig({ gitlabInstanceUrl: value })}
-          />
-
-          {/* OAuth Success State */}
-          {authMode === 'oauth-success' && (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-success/30 bg-success/10 p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <CheckCircle2 className="h-5 w-5 text-success" />
-                    <div>
-                      <p className="text-sm font-medium text-success">{t('settings.connectedVia')}</p>
-                      {oauthUsername && (
-                        <p className="text-xs text-success/80 flex items-center gap-1 mt-0.5">
-                          <User className="h-3 w-3" />
-                          {t('settings.authenticatedAs')} {oauthUsername}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleSwitchToManual}
-                    className="text-xs"
-                  >
-                    {t('settings.useDifferentToken')}
-                  </Button>
-                </div>
-              </div>
-
-              {/* Project Dropdown */}
-              <ProjectDropdown
-                projects={projects}
-                selectedProject={envConfig.gitlabProject || ''}
-                isLoading={isLoadingProjects}
-                error={projectsError}
-                onSelect={handleSelectProject}
-                onRefresh={fetchUserProjects}
-                onManualEntry={() => setAuthMode('manual')}
-              />
-            </div>
-          )}
-
-          {/* OAuth Flow */}
-          {authMode === 'oauth' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Label className="text-sm font-medium text-foreground">{t('settings.authentication')}</Label>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleSwitchToManual}
-                >
-                  {t('settings.useManualToken')}
-                </Button>
-              </div>
-              <div className="rounded-lg border border-info/30 bg-info/10 p-4">
-                <div className="flex items-center gap-3">
-                  <Loader2 className="h-5 w-5 text-info animate-spin" />
-                  <div>
-                    <p className="text-sm font-medium text-foreground">{t('settings.authenticating')}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {t('settings.browserWindow')}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Manual Token Entry */}
-          {authMode === 'manual' && (
-            <>
-              {/* glab CLI Required Card */}
-              {glabInstalled === false && (
-                <div className="rounded-lg border border-warning/30 bg-warning/10 p-4 mb-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-warning mt-0.5 shrink-0" />
-                    <div className="flex-1 space-y-3">
-                      <div>
-                        <p className="text-sm font-medium text-foreground">{t('settings.cli.required')}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {t('settings.cli.notInstalled')}
-                        </p>
-                      </div>
-                      {glabInstallSuccess ? (
-                        <div className="rounded-md border border-success/30 bg-success/10 p-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <CheckCircle2 className="h-4 w-4 text-success" />
-                              <p className="text-xs text-success">{t('settings.cli.installSuccess')}</p>
-                            </div>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={handleRefreshGlab}
-                              disabled={isCheckingGlab}
-                              className="h-7 gap-1.5"
-                            >
-                              <RefreshCw className={`h-3 w-3 ${isCheckingGlab ? 'animate-spin' : ''}`} />
-                              {t('settings.cli.refresh')}
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={handleInstallGlab}
-                            disabled={isInstallingGlab}
-                            className="gap-2"
-                          >
-                            {isInstallingGlab ? (
-                              <>
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                                {t('settings.cli.installing')}
-                              </>
-                            ) : (
-                              <>
-                                <Terminal className="h-3 w-3" />
-                                {t('settings.cli.installButton')}
-                              </>
-                            )}
-                          </Button>
-                          <a
-                            href="https://gitlab.com/gitlab-org/cli#installation"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-info hover:underline flex items-center gap-1"
-                          >
-                            {t('settings.cli.learnMore')}
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* glab CLI Installed Success */}
-              {glabInstalled === true && glabVersion && (
-                <div className="rounded-lg border border-success/30 bg-success/10 p-3 mb-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                    <p className="text-xs text-success">
-                      {t('settings.cli.installed')} <span className="font-mono">{glabVersion}</span>
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-sm font-medium text-foreground">{t('settings.personalAccessToken')}</Label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleSwitchToOAuth}
-                    disabled={glabInstalled === false || isCheckingGlab}
-                    className="gap-2"
-                  >
-                    {isCheckingGlab ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <KeyRound className="h-3 w-3" />
-                    )}
-                    {t('settings.useOAuth')}
-                  </Button>
-                </div>
-                <p className="text-xs text-muted-foreground">
-                  {t('settings.tokenScope')} <code className="px-1 bg-muted rounded">{t('settings.scopeApi')}</code> {t('settings.scopeFrom')}{' '}
-                  <a
-                    href={`${envConfig.gitlabInstanceUrl || 'https://gitlab.com'}/-/user_settings/personal_access_tokens`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-info hover:underline"
-                  >
-                    {t('settings.gitlabSettings')}
-                  </a>
-                </p>
-                <PasswordInput
-                  value={envConfig.gitlabToken || ''}
-                  onChange={(value) => updateEnvConfig({ gitlabToken: value })}
-                  placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
+          <SettingsSection title={t('settings.connectionTitle')}>
+            <SettingsRows>
+              {/* Instance URL */}
+              <SettingsRow stacked label={t('settings.instance')} description={t('settings.instanceDescription')}>
+                <Input
+                  placeholder="https://gitlab.com"
+                  value={gitlabUrl}
+                  onChange={(e) => updateEnvConfig({ gitlabInstanceUrl: e.target.value })}
                 />
-              </div>
+              </SettingsRow>
 
-              <ProjectInput
-                value={envConfig.gitlabProject || ''}
-                onChange={(value) => updateEnvConfig({ gitlabProject: value })}
-              />
-            </>
-          )}
+              {/* OAuth Success State */}
+              {authMode === 'oauth-success' && (
+                <>
+                  <SettingsRow
+                    label={
+                      <StatusIndicator state="success" tone="foreground">
+                        {t('settings.connectedVia')}
+                      </StatusIndicator>
+                    }
+                    description={oauthUsername ? `${t('settings.authenticatedAs')} ${oauthUsername}` : undefined}
+                  >
+                    <Button variant="outline" size="sm" onClick={handleSwitchToManual}>
+                      {t('settings.useDifferentToken')}
+                    </Button>
+                  </SettingsRow>
 
-          {envConfig.gitlabToken && envConfig.gitlabProject && (
-            <ConnectionStatus
-              isChecking={isCheckingGitLab}
-              connectionStatus={gitLabConnectionStatus}
-            />
-          )}
+                  <ProjectDropdown
+                    projects={projects}
+                    selectedProject={envConfig.gitlabProject || ''}
+                    isLoading={isLoadingProjects}
+                    error={projectsError}
+                    onSelect={handleSelectProject}
+                    onRefresh={fetchUserProjects}
+                    onManualEntry={() => setAuthMode('manual')}
+                  />
+                </>
+              )}
 
-          {gitLabConnectionStatus?.connected && <IssuesAvailableInfo />}
+              {/* OAuth Flow */}
+              {authMode === 'oauth' && (
+                <SettingsRow
+                  label={
+                    <StatusIndicator state="loading" tone="foreground">
+                      {t('settings.authenticating')}
+                    </StatusIndicator>
+                  }
+                  description={t('settings.browserWindow')}
+                >
+                  <Button variant="outline" size="sm" onClick={handleSwitchToManual}>
+                    {t('settings.useManualToken')}
+                  </Button>
+                </SettingsRow>
+              )}
 
-          <Separator />
+              {/* Manual Token Entry */}
+              {authMode === 'manual' && (
+                <>
+                  {/* glab CLI status */}
+                  {glabInstalled === false && (
+                    <SettingsRow
+                      label={t('settings.cli.required')}
+                      description={
+                        glabInstallSuccess ? (
+                          t('settings.cli.installSuccess')
+                        ) : (
+                          <>
+                            {t('settings.cli.notInstalled')}{' '}
+                            <a
+                              href="https://gitlab.com/gitlab-org/cli#installation"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-0.5 underline underline-offset-2 hover:text-foreground"
+                            >
+                              {t('settings.cli.learnMore')}
+                              <ExternalLink className="h-3 w-3" strokeWidth={1.75} />
+                            </a>
+                          </>
+                        )
+                      }
+                    >
+                      {glabInstallSuccess ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRefreshGlab}
+                          disabled={isCheckingGlab}
+                          className="gap-2"
+                        >
+                          <RefreshCw className={cn('h-4 w-4', isCheckingGlab && 'animate-spin')} strokeWidth={1.75} />
+                          {t('settings.cli.refresh')}
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleInstallGlab}
+                          disabled={isInstallingGlab}
+                          className="gap-2"
+                        >
+                          {isInstallingGlab ? (
+                            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+                          ) : (
+                            <Terminal className="h-4 w-4" strokeWidth={1.75} />
+                          )}
+                          {isInstallingGlab ? t('settings.cli.installing') : t('settings.cli.installButton')}
+                        </Button>
+                      )}
+                    </SettingsRow>
+                  )}
+
+                  <SettingsRow
+                    label={t('settings.oauth')}
+                    description={
+                      glabInstalled === true && glabVersion ? (
+                        <StatusIndicator state="success">
+                          {t('settings.cli.installed')} <span className="font-mono">{glabVersion}</span>
+                        </StatusIndicator>
+                      ) : (
+                        t('settings.oauthDescription')
+                      )
+                    }
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSwitchToOAuth}
+                      disabled={glabInstalled === false || isCheckingGlab}
+                      className="gap-2"
+                    >
+                      {isCheckingGlab ? (
+                        <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+                      ) : (
+                        <KeyRound className="h-4 w-4" strokeWidth={1.75} />
+                      )}
+                      {t('settings.useOAuth')}
+                    </Button>
+                  </SettingsRow>
+
+                  <SettingsRow
+                    stacked
+                    label={t('settings.personalAccessToken')}
+                    description={
+                      <>
+                        {t('settings.tokenScope')} <code className="font-mono">{t('settings.scopeApi')}</code>{' '}
+                        {t('settings.scopeFrom')}{' '}
+                        <a
+                          href={`${gitlabUrl}/-/user_settings/personal_access_tokens`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline underline-offset-2 hover:text-foreground"
+                        >
+                          {t('settings.gitlabSettings')}
+                        </a>
+                      </>
+                    }
+                  >
+                    <PasswordInput
+                      value={envConfig.gitlabToken || ''}
+                      onChange={(value) => updateEnvConfig({ gitlabToken: value })}
+                      placeholder="glpat-xxxxxxxxxxxxxxxxxxxx"
+                    />
+                  </SettingsRow>
+
+                  <SettingsRow
+                    stacked
+                    label={t('settings.project')}
+                    description={
+                      <>
+                        {t('settings.projectFormat')} <code className="font-mono">group/project</code>{' '}
+                        {t('settings.projectFormatExample')}
+                      </>
+                    }
+                  >
+                    <Input
+                      placeholder="group/project"
+                      value={envConfig.gitlabProject || ''}
+                      onChange={(e) => updateEnvConfig({ gitlabProject: e.target.value })}
+                    />
+                  </SettingsRow>
+                </>
+              )}
+
+              {envConfig.gitlabToken && envConfig.gitlabProject && (
+                <SettingsRow
+                  label={t('settings.connectionStatus')}
+                  description={
+                    gitLabConnectionStatus?.connected
+                      ? gitLabConnectionStatus.projectDescription || t('settings.issuesAvailableDescription')
+                      : undefined
+                  }
+                >
+                  <StatusIndicator
+                    state={isCheckingGitLab ? 'loading' : gitLabConnectionStatus?.connected ? 'success' : 'error'}
+                    className="max-w-[20rem]"
+                  >
+                    <span className="truncate">
+                      {isCheckingGitLab
+                        ? t('settings.checking')
+                        : gitLabConnectionStatus?.connected
+                          ? `${t('settings.connectedTo')} ${gitLabConnectionStatus.projectPathWithNamespace}`
+                          : gitLabConnectionStatus?.error || t('settings.notConnected')}
+                    </span>
+                  </StatusIndicator>
+                </SettingsRow>
+              )}
+            </SettingsRows>
+          </SettingsSection>
 
           {/* Default Branch Selector */}
           {projectPath && (
-            <BranchSelector
-              branches={branches}
-              selectedBranch={settings?.mainBranch || envConfig.defaultBranch || ''}
-              isLoading={isLoadingBranches}
-              error={branchesError}
-              onSelect={handleBranchChange}
-              onRefresh={fetchBranches}
-            />
+            <SettingsSection title={t('settings.branchesTitle')}>
+              <SettingsRows>
+                <BranchSelector
+                  branches={branches}
+                  selectedBranch={selectedBranch}
+                  isLoading={isLoadingBranches}
+                  error={branchesError}
+                  onSelect={handleBranchChange}
+                  onRefresh={fetchBranches}
+                />
+              </SettingsRows>
+            </SettingsSection>
           )}
-
-          <Separator />
-
-          <AutoSyncToggle
-            enabled={envConfig.gitlabAutoSync || false}
-            onToggle={(checked) => updateEnvConfig({ gitlabAutoSync: checked })}
-          />
         </>
       )}
-    </div>
-  );
-}
-
-interface InstanceUrlInputProps {
-  value: string;
-  onChange: (value: string) => void;
-}
-
-function InstanceUrlInput({ value, onChange }: InstanceUrlInputProps) {
-  const { t } = useTranslation('gitlab');
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <Server className="h-4 w-4 text-muted-foreground" />
-        <Label className="text-sm font-medium text-foreground">{t('settings.instance')}</Label>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        {t('settings.instanceDescription')}
-      </p>
-      <Input
-        placeholder="https://gitlab.com"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
+    </>
   );
 }
 
@@ -615,67 +597,66 @@ function ProjectDropdown({
   const selectedProjectData = projects.find(p => p.pathWithNamespace === selectedProject);
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <Label className="text-sm font-medium text-foreground">{t('settings.project')}</Label>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onRefresh}
-            disabled={isLoading}
-            className="h-7 px-2"
-          >
-            <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onManualEntry}
-            className="h-7 text-xs"
-          >
-            {t('settings.enterManually')}
-          </Button>
+    <SettingsRow
+      stacked
+      label={
+        <div className="flex items-center justify-between gap-2">
+          <span>{t('settings.project')}</span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onRefresh}
+              disabled={isLoading}
+              className="h-8 w-8 text-muted-foreground"
+              aria-label={t('settings.cli.refresh')}
+            >
+              <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} strokeWidth={1.75} />
+            </Button>
+            <Button variant="outline" size="sm" onClick={onManualEntry}>
+              {t('settings.enterManually')}
+            </Button>
+          </div>
         </div>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-xs text-destructive">
-          <AlertCircle className="h-3 w-3" />
-          {error}
-        </div>
-      )}
-
+      }
+      footer={
+        error ? (
+          <StatusIndicator state="error" tone="destructive">
+            {error}
+          </StatusIndicator>
+        ) : undefined
+      }
+    >
       <div className="relative">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           disabled={isLoading}
-          className="w-full flex items-center justify-between px-3 py-2 text-sm border border-input rounded-md bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          className="field-border flex h-8 w-full items-center justify-between rounded-lg px-3 text-sm text-foreground outline-none disabled:opacity-50"
         >
           {isLoading ? (
             <span className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
               {t('settings.loadingProjects')}
             </span>
           ) : selectedProject ? (
             <span className="flex items-center gap-2">
               {selectedProjectData?.visibility === 'private' ? (
-                <Lock className="h-3 w-3 text-muted-foreground" />
+                <Lock className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
               ) : (
-                <Globe className="h-3 w-3 text-muted-foreground" />
+                <Globe className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
               )}
               {selectedProject}
             </span>
           ) : (
             <span className="text-muted-foreground">{t('settings.selectProject')}</span>
           )}
-          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className={cn('h-4 w-4 text-muted-foreground transition-transform', isOpen && 'rotate-180')} />
         </button>
 
         {isOpen && !isLoading && (
-          <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-hidden">
-            <div className="p-2 border-b border-border">
+          <div className="absolute z-50 mt-1 max-h-64 w-full overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+            <div className="border-b border-border p-2">
               <Input
                 placeholder={t('settings.searchProjects')}
                 value={filter}
@@ -685,9 +666,9 @@ function ProjectDropdown({
               />
             </div>
 
-            <div className="max-h-48 overflow-y-auto">
+            <div className="max-h-48 overflow-y-auto p-1">
               {filteredProjects.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                   {filter ? t('settings.noMatchingProjects') : t('settings.noProjectsFound')}
                 </div>
               ) : (
@@ -700,19 +681,20 @@ function ProjectDropdown({
                       setIsOpen(false);
                       setFilter('');
                     }}
-                    className={`w-full px-3 py-2 text-left hover:bg-accent flex items-start gap-2 ${
-                      project.pathWithNamespace === selectedProject ? 'bg-accent' : ''
-                    }`}
+                    className={cn(
+                      'flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-nav-hover',
+                      project.pathWithNamespace === selectedProject && 'bg-nav-active'
+                    )}
                   >
                     {project.visibility === 'private' ? (
-                      <Lock className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <Lock className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
                     ) : (
-                      <Globe className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <Globe className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
                     )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{project.pathWithNamespace}</p>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-foreground">{project.pathWithNamespace}</p>
                       {project.description && (
-                        <p className="text-xs text-muted-foreground truncate">{project.description}</p>
+                        <p className="truncate text-xs text-muted-foreground">{project.description}</p>
                       )}
                     </div>
                   </button>
@@ -722,117 +704,7 @@ function ProjectDropdown({
           </div>
         )}
       </div>
-
-      {selectedProject && (
-        <p className="text-xs text-muted-foreground">
-          {t('settings.selected')}: <code className="px-1 bg-muted rounded">{selectedProject}</code>
-        </p>
-      )}
-    </div>
-  );
-}
-
-interface ProjectInputProps {
-  value: string;
-  onChange: (value: string) => void;
-}
-
-function ProjectInput({ value, onChange }: ProjectInputProps) {
-  const { t } = useTranslation('gitlab');
-
-  return (
-    <div className="space-y-2">
-      <Label className="text-sm font-medium text-foreground">{t('settings.project')}</Label>
-      <p className="text-xs text-muted-foreground">
-        {t('settings.projectFormat')} <code className="px-1 bg-muted rounded">group/project</code> {t('settings.projectFormatExample')}
-      </p>
-      <Input
-        placeholder="group/project"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-      />
-    </div>
-  );
-}
-
-interface ConnectionStatusProps {
-  isChecking: boolean;
-  connectionStatus: GitLabSyncStatus | null;
-}
-
-function ConnectionStatus({ isChecking, connectionStatus }: ConnectionStatusProps) {
-  const { t } = useTranslation('gitlab');
-
-  return (
-    <div className="rounded-lg border border-border bg-muted/30 p-3">
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-foreground">{t('settings.connectionStatus')}</p>
-          <p className="text-xs text-muted-foreground">
-            {isChecking ? t('settings.checking') :
-              connectionStatus?.connected
-                ? `${t('settings.connectedTo')} ${connectionStatus.projectPathWithNamespace}`
-                : connectionStatus?.error || t('settings.notConnected')}
-          </p>
-          {connectionStatus?.connected && connectionStatus.projectDescription && (
-            <p className="text-xs text-muted-foreground mt-1 italic">
-              {connectionStatus.projectDescription}
-            </p>
-          )}
-        </div>
-        {isChecking ? (
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        ) : connectionStatus?.connected ? (
-          <CheckCircle2 className="h-4 w-4 text-success" />
-        ) : (
-          <AlertCircle className="h-4 w-4 text-warning" />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function IssuesAvailableInfo() {
-  const { t } = useTranslation('gitlab');
-
-  return (
-    <div className="rounded-lg border border-info/30 bg-info/5 p-3">
-      <div className="flex items-start gap-3">
-        <svg className="h-5 w-5 text-info mt-0.5" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M22.65 14.39L12 22.13 1.35 14.39a.84.84 0 0 1-.3-.94l1.22-3.78 2.44-7.51A.42.42 0 0 1 4.82 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.49h8.1l2.44-7.51A.42.42 0 0 1 18.6 2a.43.43 0 0 1 .58 0 .42.42 0 0 1 .11.18l2.44 7.51L23 13.45a.84.84 0 0 1-.35.94z"/>
-        </svg>
-        <div className="flex-1">
-          <p className="text-sm font-medium text-foreground">{t('settings.issuesAvailable')}</p>
-          <p className="text-xs text-muted-foreground mt-1">
-            {t('settings.issuesAvailableDescription')}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface AutoSyncToggleProps {
-  enabled: boolean;
-  onToggle: (checked: boolean) => void;
-}
-
-function AutoSyncToggle({ enabled, onToggle }: AutoSyncToggleProps) {
-  const { t } = useTranslation('gitlab');
-
-  return (
-    <div className="flex items-center justify-between">
-      <div className="space-y-0.5">
-        <div className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-info" />
-          <Label className="font-normal text-foreground">{t('settings.autoSyncOnLoad')}</Label>
-        </div>
-        <p className="text-xs text-muted-foreground pl-6">
-          {t('settings.autoSyncDescription')}
-        </p>
-      </div>
-      <Switch checked={enabled} onCheckedChange={onToggle} />
-    </div>
+    </SettingsRow>
   );
 }
 
@@ -862,61 +734,51 @@ function BranchSelector({
   );
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="space-y-0.5">
-          <div className="flex items-center gap-2">
-            <GitBranch className="h-4 w-4 text-info" />
-            <Label className="text-sm font-medium text-foreground">{t('settings.defaultBranch')}</Label>
-          </div>
-          <p className="text-xs text-muted-foreground pl-6">
-            {t('settings.defaultBranchDescription')}
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={onRefresh}
-          disabled={isLoading}
-          className="h-7 px-2"
-        >
-          <RefreshCw className={`h-3 w-3 ${isLoading ? 'animate-spin' : ''}`} />
-        </Button>
-      </div>
-
-      {error && (
-        <div className="flex items-center gap-2 text-xs text-destructive pl-6">
-          <AlertCircle className="h-3 w-3" />
-          {error}
-        </div>
-      )}
-
-      <div className="relative pl-6">
+    <SettingsRow
+      label={t('settings.defaultBranch')}
+      description={
+        selectedBranch ? (
+          <>
+            {t('settings.branchFromNote')} <code className="font-mono">{selectedBranch}</code>
+          </>
+        ) : (
+          t('settings.defaultBranchDescription')
+        )
+      }
+      footer={
+        error ? (
+          <StatusIndicator state="error" tone="destructive">
+            {error}
+          </StatusIndicator>
+        ) : undefined
+      }
+    >
+      <div className="relative">
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
           disabled={isLoading}
-          className="w-full flex items-center justify-between px-3 py-2 text-sm border border-input rounded-md bg-background hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+          aria-expanded={isOpen}
+          className={cn(
+            'flex h-8 max-w-[16rem] items-center gap-1.5 rounded-lg px-2 text-sm text-foreground outline-none',
+            'hover:bg-nav-hover focus-visible:shadow-(--shadow-focus) disabled:opacity-50',
+            isOpen && 'bg-nav-hover'
+          )}
         >
           {isLoading ? (
             <span className="flex items-center gap-2 text-muted-foreground">
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
               {t('settings.loadingBranches')}
             </span>
-          ) : selectedBranch ? (
-            <span className="flex items-center gap-2">
-              <GitBranch className="h-3 w-3 text-muted-foreground" />
-              {selectedBranch}
-            </span>
           ) : (
-            <span className="text-muted-foreground">{t('settings.autoDetect')}</span>
+            <span className="truncate">{selectedBranch || t('settings.autoDetect')}</span>
           )}
-          <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
         </button>
 
         {isOpen && !isLoading && (
-          <div className="absolute z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg max-h-64 overflow-hidden">
-            <div className="p-2 border-b border-border">
+          <div className="absolute right-0 z-50 mt-1 max-h-64 w-64 overflow-hidden rounded-xl border border-border bg-popover shadow-lg">
+            <div className="border-b border-border p-2">
               <Input
                 placeholder={t('settings.searchBranches')}
                 value={filter}
@@ -926,23 +788,23 @@ function BranchSelector({
               />
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                onSelect('');
-                setIsOpen(false);
-                setFilter('');
-              }}
-              className={`w-full px-3 py-2 text-left hover:bg-accent flex items-center gap-2 ${
-                !selectedBranch ? 'bg-accent' : ''
-              }`}
-            >
-              <span className="text-sm text-muted-foreground italic">{t('settings.autoDetect')}</span>
-            </button>
-
-            <div className="max-h-40 overflow-y-auto border-t border-border">
+            <div className="max-h-48 overflow-y-auto p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect('');
+                  setIsOpen(false);
+                  setFilter('');
+                }}
+                className={cn(
+                  'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-nav-hover',
+                  !selectedBranch && 'bg-nav-active'
+                )}
+              >
+                {t('settings.autoDetect')}
+              </button>
               {filteredBranches.length === 0 ? (
-                <div className="px-3 py-4 text-sm text-muted-foreground text-center">
+                <div className="px-3 py-4 text-center text-sm text-muted-foreground">
                   {filter ? t('settings.noMatchingBranches') : t('settings.noBranchesFound')}
                 </div>
               ) : (
@@ -955,12 +817,13 @@ function BranchSelector({
                       setIsOpen(false);
                       setFilter('');
                     }}
-                    className={`w-full px-3 py-2 text-left hover:bg-accent flex items-center gap-2 ${
-                      branch === selectedBranch ? 'bg-accent' : ''
-                    }`}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-nav-hover',
+                      branch === selectedBranch && 'bg-nav-active'
+                    )}
                   >
-                    <GitBranch className="h-3 w-3 text-muted-foreground" />
-                    <span className="text-sm">{branch}</span>
+                    <GitBranch className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                    <span className="truncate text-sm text-foreground">{branch}</span>
                   </button>
                 ))
               )}
@@ -968,12 +831,16 @@ function BranchSelector({
           </div>
         )}
       </div>
-
-      {selectedBranch && (
-        <p className="text-xs text-muted-foreground pl-6">
-          {t('settings.branchFromNote')} <code className="px-1 bg-muted rounded">{selectedBranch}</code>
-        </p>
-      )}
-    </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        onClick={onRefresh}
+        disabled={isLoading}
+        className="h-8 w-8 text-muted-foreground"
+        aria-label={t('settings.refreshBranches')}
+      >
+        <RefreshCw className={cn('h-4 w-4', isLoading && 'animate-spin')} strokeWidth={1.75} />
+      </Button>
+    </SettingsRow>
   );
 }

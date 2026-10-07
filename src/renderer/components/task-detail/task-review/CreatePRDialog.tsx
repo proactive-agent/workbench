@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { GitPullRequest, Loader2, ExternalLink } from 'lucide-react';
+import { Check, Loader2, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -11,8 +11,8 @@ import {
 } from '../../ui/dialog';
 import { Button } from '../../ui/button';
 import { Input } from '../../ui/input';
-import { Label } from '../../ui/label';
-import { Checkbox } from '../../ui/checkbox';
+import { Switch } from '../../ui/switch';
+import { SettingsRow, SettingsRows } from '../../settings/SettingsRow';
 import type { Task, WorktreeStatus, WorktreeCreatePRResult } from '../../../../shared/types';
 
 interface CreatePRDialogProps {
@@ -137,8 +137,9 @@ export function CreatePRDialog({
         {/* Success State */}
         {result?.success && (
           <>
-            <div className="mt-4 rounded-lg border border-border px-4 py-3 text-sm">
-              <p className="text-sm text-success font-medium mb-2">
+            <div className="mt-4 space-y-1 text-sm">
+              <p className="flex items-center gap-1.5 text-foreground">
+                <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
                 {result.alreadyExists
                   ? t('taskReview:pr.success.alreadyExists')
                   : t('taskReview:pr.success.created')}
@@ -148,10 +149,10 @@ export function CreatePRDialog({
                   type="button"
                   data-testid="pr-link-button"
                   onClick={handleOpenPR}
-                  className="text-sm text-primary hover:underline flex items-center gap-1 bg-transparent border-none cursor-pointer p-0"
+                  className="flex cursor-pointer items-center gap-1 break-all border-none bg-transparent p-0 text-left font-mono text-xs text-(--nav-label-color) hover:text-foreground hover:underline"
                 >
                   {result.prUrl}
-                  <ExternalLink className="h-3 w-3" />
+                  <ExternalLink className="h-3 w-3 shrink-0" />
                 </button>
               )}
             </div>
@@ -166,9 +167,7 @@ export function CreatePRDialog({
         {/* Error State */}
         {error && !result?.success && (
           <>
-            <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
+            <p className="mt-4 text-sm text-destructive">{error}</p>
             <DialogFooter>
               <Button variant="ghost" size="sm" onClick={handleClose}>
                 {t('common:buttons.cancel')}
@@ -183,70 +182,71 @@ export function CreatePRDialog({
         {/* Form State */}
         {!result?.success && !error && (
           <>
-          <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
-            {/* Branch Info */}
-            <div className="rounded-lg border border-border px-4 py-3 text-sm" data-testid="pr-stats-container">
-              <div className="flex justify-between mb-1">
-                <span className="text-muted-foreground">{t('taskReview:pr.labels.sourceBranch')}:</span>
-                <span className="font-mono">{worktreeStatus?.branch || t('taskReview:pr.labels.unknown')}</span>
-              </div>
-              {worktreeStatus?.exists && (
-                <>
-                  <div className="flex justify-between mb-1">
-                    <span className="text-muted-foreground">{t('taskReview:pr.labels.commits')}:</span>
-                    <span>{worktreeStatus.commitCount || 0}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">{t('taskReview:pr.labels.changes')}:</span>
-                    <span>
-                      <span className="text-success">+{worktreeStatus.additions || 0}</span>
-                      {' / '}
-                      <span className="text-destructive">-{worktreeStatus.deletions || 0}</span>
+          <div className="-mx-6 mt-2 min-h-0 overflow-y-auto px-6">
+            <SettingsRows>
+              {/* Branch info */}
+              <div data-testid="pr-stats-container">
+                <SettingsRows>
+                  <SettingsRow label={t('taskReview:pr.labels.sourceBranch')}>
+                    <span className="font-mono text-xs text-(--nav-label-color)">
+                      {worktreeStatus?.branch || t('taskReview:pr.labels.unknown')}
                     </span>
-                  </div>
-                </>
-              )}
-            </div>
+                  </SettingsRow>
+                  {worktreeStatus?.exists && (
+                    <SettingsRow label={t('taskReview:pr.labels.commits')}>
+                      <span className="text-sm tabular-nums text-(--nav-label-color)">{worktreeStatus.commitCount || 0}</span>
+                    </SettingsRow>
+                  )}
+                  {worktreeStatus?.exists && (
+                    <SettingsRow label={t('taskReview:pr.labels.changes')}>
+                      <span className="flex gap-2 text-sm tabular-nums">
+                        <span className="text-success">+{worktreeStatus.additions || 0}</span>
+                        <span className="text-destructive">-{worktreeStatus.deletions || 0}</span>
+                      </span>
+                    </SettingsRow>
+                  )}
+                </SettingsRows>
+              </div>
 
-            {/* Target Branch */}
-            <div className="space-y-2">
-              <Label htmlFor="targetBranch">{t('taskReview:pr.labels.targetBranch')}</Label>
-              <Input
-                id="targetBranch"
-                value={targetBranch}
-                onChange={(e) => setTargetBranch(e.target.value)}
-                placeholder={worktreeStatus?.baseBranch || 'main'}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('taskReview:pr.hints.targetBranch')}
-              </p>
-            </div>
+              {/* Target Branch */}
+              <SettingsRow
+                stacked
+                htmlFor="targetBranch"
+                label={t('taskReview:pr.labels.targetBranch')}
+                description={t('taskReview:pr.hints.targetBranch')}
+              >
+                <Input
+                  id="targetBranch"
+                  value={targetBranch}
+                  onChange={(e) => setTargetBranch(e.target.value)}
+                  placeholder={worktreeStatus?.baseBranch || 'main'}
+                />
+              </SettingsRow>
 
-            {/* PR Title (optional) */}
-            <div className="space-y-2">
-              <Label htmlFor="prTitle">{t('taskReview:pr.labels.prTitle')}</Label>
-              <Input
-                id="prTitle"
-                value={prTitle}
-                onChange={(e) => setPrTitle(e.target.value)}
-                placeholder={task.title}
-              />
-              <p className="text-xs text-muted-foreground">
-                {t('taskReview:pr.hints.prTitle')}
-              </p>
-            </div>
+              {/* PR Title (optional) */}
+              <SettingsRow
+                stacked
+                htmlFor="prTitle"
+                label={t('taskReview:pr.labels.prTitle')}
+                description={t('taskReview:pr.hints.prTitle')}
+              >
+                <Input
+                  id="prTitle"
+                  value={prTitle}
+                  onChange={(e) => setPrTitle(e.target.value)}
+                  placeholder={task.title}
+                />
+              </SettingsRow>
 
-            {/* Draft PR Checkbox */}
-            <div className="flex items-center gap-2">
-              <Checkbox
-                id="draft-pr-checkbox"
-                checked={isDraft}
-                onCheckedChange={(checked) => setIsDraft(checked === true)}
-              />
-              <label htmlFor="draft-pr-checkbox" className="text-sm cursor-pointer">
-                {t('taskReview:pr.labels.draftPR')}
-              </label>
-            </div>
+              {/* Draft PR */}
+              <SettingsRow htmlFor="draft-pr-switch" label={t('taskReview:pr.labels.draftPR')}>
+                <Switch
+                  id="draft-pr-switch"
+                  checked={isDraft}
+                  onCheckedChange={setIsDraft}
+                />
+              </SettingsRow>
+            </SettingsRows>
           </div>
 
           <DialogFooter>
@@ -260,10 +260,7 @@ export function CreatePRDialog({
                   {t('taskReview:pr.actions.creating')}
                 </>
               ) : (
-                <>
-                  <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
-                  {t('taskReview:pr.actions.create')}
-                </>
+                t('taskReview:pr.actions.create')
               )}
             </Button>
           </DialogFooter>

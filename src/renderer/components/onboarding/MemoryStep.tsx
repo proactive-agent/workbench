@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Database, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { AppSettings } from '../../../shared/types';
@@ -99,10 +99,10 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
         updateSettings(storeUpdate);
         onNext();
       } else {
-        setError(result?.error || 'Failed to save memory configuration');
+        setError(result?.error || t('memory.saveFailed'));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+      setError(err instanceof Error ? err.message : t('memory.unknownError'));
     } finally {
       setIsSaving(false);
     }
@@ -113,12 +113,7 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
       <div className="w-full max-w-2xl">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="flex justify-center mb-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-primary/10 text-primary">
-              <Database className="h-7 w-7" />
-            </div>
-          </div>
-          <h1 className="text-2xl font-bold text-foreground tracking-tight">
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">
             {t('memory.title')}
           </h1>
           <p className="mt-2 text-muted-foreground">
@@ -128,9 +123,7 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
 
         {/* Error banner */}
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 mb-6">
-            <p className="text-sm text-destructive">{error}</p>
-          </div>
+          <p className="mb-6 text-sm text-destructive" role="alert">{error}</p>
         )}
 
         {/* Shared memory config panel */}
@@ -141,29 +134,31 @@ export function MemoryStep({ onNext, onBack }: MemoryStepProps) {
         />
 
         {/* Action Buttons */}
-        <div className="flex justify-between items-center mt-10 pt-6 border-t border-border">
+        <div className="flex justify-between items-center mt-10 pt-6 border-t border-settings-divider">
           <Button
             variant="ghost"
+            size="sm"
             onClick={onBack}
-            className="text-muted-foreground hover:text-foreground"
           >
             {t('memory.back')}
           </Button>
           <div className="flex gap-2">
             <Button
               variant="outline"
+              size="sm"
               onClick={onNext}
               disabled={isSaving}
             >
               {t('memory.skip')}
             </Button>
             <Button
+              size="sm"
               onClick={handleSave}
               disabled={!isConfigValid() || isSaving}
             >
               {isSaving ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
                   {t('memory.saving')}
                 </>
               ) : (

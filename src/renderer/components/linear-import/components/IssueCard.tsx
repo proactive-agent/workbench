@@ -3,15 +3,9 @@
  */
 
 import { useState } from 'react';
-import {
-  CheckSquare,
-  Square,
-  ExternalLink,
-  ChevronDown,
-  ChevronUp
-} from 'lucide-react';
-import { Badge } from '../../ui/badge';
-import { PRIORITY_COLORS, STATE_TYPE_COLORS } from '../types';
+import { useTranslation } from 'react-i18next';
+import { ExternalLink, ChevronDown, ChevronUp } from 'lucide-react';
+import { Checkbox } from '../../ui/checkbox';
 import type { LinearIssue } from '../types';
 
 interface IssueCardProps {
@@ -21,61 +15,44 @@ interface IssueCardProps {
 }
 
 export function IssueCard({ issue, isSelected, onToggle }: IssueCardProps) {
+  const { t } = useTranslation('dialogs');
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
     <div
       className={`
-        rounded-lg border border-border p-3 cursor-pointer transition-colors
-        ${isSelected ? 'bg-primary/5 border-primary/30' : 'hover:bg-muted/50'}
+        rounded-lg p-3 cursor-pointer transition-colors
+        ${isSelected ? 'bg-nav-active' : 'hover:bg-nav-hover'}
       `}
       onClick={() => onToggle(issue.id)}
     >
       <div className="flex items-start gap-3">
         {/* Checkbox */}
         <div className="mt-0.5">
-          {isSelected ? (
-            <CheckSquare className="h-5 w-5 text-primary" />
-          ) : (
-            <Square className="h-5 w-5 text-muted-foreground" />
-          )}
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={() => onToggle(issue.id)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={issue.title}
+          />
         </div>
 
         {/* Issue Content */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-mono text-muted-foreground">
-              {issue.identifier}
-            </span>
-            <Badge
-              variant="secondary"
-              className={`text-xs ${STATE_TYPE_COLORS[issue.state.type] || ''}`}
-            >
-              {issue.state.name}
-            </Badge>
-            <Badge
-              variant="secondary"
-              className={`text-xs ${PRIORITY_COLORS[issue.priority] || ''}`}
-            >
-              {issue.priorityLabel}
-            </Badge>
+          <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+            <span className="font-mono">{issue.identifier}</span>
+            <span aria-hidden="true">·</span>
+            <span>{issue.state.name}</span>
+            <span aria-hidden="true">·</span>
+            <span>{issue.priorityLabel}</span>
             {issue.labels.slice(0, 2).map(label => (
-              <Badge
-                key={label.id}
-                variant="outline"
-                className="text-xs"
-                style={{
-                  borderColor: label.color,
-                  color: label.color
-                }}
-              >
+              <span key={label.id}>
+                <span aria-hidden="true">· </span>
                 {label.name}
-              </Badge>
+              </span>
             ))}
             {issue.labels.length > 2 && (
-              <span className="text-xs text-muted-foreground">
-                +{issue.labels.length - 2} more
-              </span>
+              <span>{t('linearImport.moreLabels', { count: issue.labels.length - 2 })}</span>
             )}
           </div>
 
@@ -95,19 +72,19 @@ export function IssueCard({ issue, isSelected, onToggle }: IssueCardProps) {
               {isExpanded ? (
                 <>
                   <ChevronUp className="h-3 w-3" />
-                  Hide description
+                  {t('linearImport.hideDescription')}
                 </>
               ) : (
                 <>
                   <ChevronDown className="h-3 w-3" />
-                  Show description
+                  {t('linearImport.showDescription')}
                 </>
               )}
             </button>
           )}
 
           {isExpanded && issue.description && (
-            <div className="mt-2 text-xs text-muted-foreground bg-muted/50 rounded p-2 max-h-32 overflow-auto">
+            <div className="mt-2 text-xs text-muted-foreground rounded-lg bg-segment-track px-3 py-2 max-h-32 overflow-auto">
               {issue.description}
             </div>
           )}
@@ -115,20 +92,20 @@ export function IssueCard({ issue, isSelected, onToggle }: IssueCardProps) {
           {/* Meta info */}
           <div className="flex items-center gap-4 mt-2 text-xs text-muted-foreground">
             {issue.assignee && (
-              <span>Assigned to {issue.assignee.name}</span>
+              <span>{t('linearImport.assignedTo', { name: issue.assignee.name })}</span>
             )}
             {issue.project && (
-              <span>Project: {issue.project.name}</span>
+              <span>{t('linearImport.projectLabel', { name: issue.project.name })}</span>
             )}
             <a
               href={issue.url}
               target="_blank"
               rel="noopener noreferrer"
               onClick={e => e.stopPropagation()}
-              className="flex items-center gap-1 hover:text-primary"
+              className="flex items-center gap-1 hover:text-foreground"
             >
               <ExternalLink className="h-3 w-3" />
-              View in Linear
+              {t('linearImport.viewInLinear')}
             </a>
           </div>
         </div>

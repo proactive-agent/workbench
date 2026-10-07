@@ -69,7 +69,7 @@ const FullScreenDialogHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     // pr-14 keeps the title clear of the close button
-    className={cn('flex flex-col gap-1 border-b border-border px-6 pb-4 pr-14 pt-6', className)}
+    className={cn('flex flex-col gap-1 px-6 pb-4 pr-14 pt-6', className)}
     {...props}
   />
 );
@@ -88,7 +88,7 @@ const FullScreenDialogFooter = ({
   ...props
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn('flex items-center justify-end gap-2', DIALOG_FOOTER_BAR_CLASS, className)}
+    className={cn('flex items-center justify-end gap-2 px-6 pb-6', DIALOG_FOOTER_BAR_CLASS, className)}
     {...props}
   />
 );

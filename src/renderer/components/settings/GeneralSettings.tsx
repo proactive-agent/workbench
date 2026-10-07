@@ -1,8 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useState } from 'react';
 import { Input } from '../ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ProviderAgentTabs } from './ProviderAgentTabs';
@@ -16,7 +14,7 @@ import type {
 interface GeneralSettingsProps {
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
-  section: 'agent' | 'paths';
+  section: 'agent' | 'terminal' | 'paths';
 }
 
 /**
@@ -29,20 +27,14 @@ interface ToolDetectionDisplayProps {
 }
 
 function ToolDetectionDisplay({ info, isLoading, t }: ToolDetectionDisplayProps) {
+  const className = 'text-xs text-(--nav-label-color)';
+
   if (isLoading) {
-    return (
-      <div className="text-xs text-muted-foreground">
-        {t('general.detecting')}
-      </div>
-    );
+    return <div className={className}>{t('general.detecting')}</div>;
   }
 
   if (!info || !info.found) {
-    return (
-      <div className="text-xs text-muted-foreground">
-        {t('general.notDetected')}
-      </div>
-    );
+    return <div className={className}>{t('general.notDetected')}</div>;
   }
 
   const getSourceLabel = (source: ToolDetectionResult['source']): string => {
@@ -58,22 +50,12 @@ function ToolDetectionDisplay({ info, isLoading, t }: ToolDetectionDisplayProps)
     return sourceMap[source] || source;
   };
 
+  // One muted line: "Auto-detected: /usr/bin/git · Version 2.43.0 · System PATH"
   return (
-    <div className="text-xs text-muted-foreground space-y-0.5">
-      <div>
-        <span className="font-medium">{t('general.detectedPath')}:</span>{' '}
-        <code className="bg-muted px-1 py-0.5 rounded">{info.path}</code>
-      </div>
-      {info.version && (
-        <div>
-          <span className="font-medium">{t('general.detectedVersion')}:</span>{' '}
-          {info.version}
-        </div>
-      )}
-      <div>
-        <span className="font-medium">{t('general.detectedSource')}:</span>{' '}
-        {getSourceLabel(info.source)}
-      </div>
+    <div className={`${className} truncate`} title={info.path}>
+      {t('general.detectedPath')}: <span className="font-mono">{info.path}</span>
+      {info.version && ` · ${t('general.detectedVersion')} ${info.version}`}
+      {` · ${getSourceLabel(info.source)}`}
     </div>
   );
 }
@@ -114,70 +96,42 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
 
   if (section === 'agent') {
     return (
-      <div className="space-y-8">
+      <>
         {/* Provider-tabbed agent settings (profiles, features, model overrides) */}
         <ProviderAgentTabs />
 
         {/* Claude Code CLI (status, install/update, version and installation switching) */}
         <ClaudeCodeSettings />
+      </>
+    );
+  }
 
-        {/* Other Agent Settings */}
-        <SettingsSection
-          title={t('general.otherAgentSettings')}
-          description={t('general.otherAgentSettingsDescription')}
-        >
-          <SettingsRows>
-            <SettingsRow
-              label={t('general.agentFramework')}
-              description={t('general.agentFrameworkDescription')}
-              htmlFor="agentFramework"
-            >
-              <Select
-                value={settings.agentFramework}
-                onValueChange={(value) => onSettingsChange({ ...settings, agentFramework: value })}
-              >
-                <SelectTrigger id="agentFramework" className="h-8 w-56">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="auto-claude">{t('general.agentFrameworkAutoClaude')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </SettingsRow>
-            <SettingsRow
-              label={t('general.aiTerminalNaming')}
-              description={t('general.aiTerminalNamingDescription')}
-              htmlFor="autoNameTerminals"
-            >
-              <Switch
-                id="autoNameTerminals"
-                checked={settings.autoNameTerminals}
-                onCheckedChange={(checked) => onSettingsChange({ ...settings, autoNameTerminals: checked })}
-              />
-            </SettingsRow>
-            <SettingsRow
-              label={t('general.maxTerminals')}
-              description={t('general.maxTerminalsDescription', { min: MIN_TERMINALS, max: MAX_TERMINALS_LIMIT })}
-              htmlFor="maxTerminals"
-            >
-              <Input
-                id="maxTerminals"
-                type="number"
-                min={MIN_TERMINALS}
-                max={MAX_TERMINALS_LIMIT}
-                className="w-20"
-                value={settings.maxTerminals ?? DEFAULT_MAX_TERMINALS}
-                onChange={(e) => {
-                  const value = Number(e.target.value);
-                  if (e.target.value === '' || !Number.isFinite(value)) return;
-                  const clamped = Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(value)));
-                  onSettingsChange({ ...settings, maxTerminals: clamped });
-                }}
-              />
-            </SettingsRow>
-          </SettingsRows>
-        </SettingsSection>
-      </div>
+  if (section === 'terminal') {
+    return (
+      <SettingsSection title={t('general.terminals')}>
+        <SettingsRows>
+          <SettingsRow
+            label={t('general.maxTerminals')}
+            description={t('general.maxTerminalsDescription', { min: MIN_TERMINALS, max: MAX_TERMINALS_LIMIT })}
+            htmlFor="maxTerminals"
+          >
+            <Input
+              id="maxTerminals"
+              type="number"
+              min={MIN_TERMINALS}
+              max={MAX_TERMINALS_LIMIT}
+              className="w-20"
+              value={settings.maxTerminals ?? DEFAULT_MAX_TERMINALS}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                if (e.target.value === '' || !Number.isFinite(value)) return;
+                const clamped = Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(value)));
+                onSettingsChange({ ...settings, maxTerminals: clamped });
+              }}
+            />
+          </SettingsRow>
+        </SettingsRows>
+      </SettingsSection>
     );
   }
 
@@ -204,7 +158,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="pythonPath"
             placeholder={t('general.pythonPathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.pythonPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, pythonPath: e.target.value })}
           />
@@ -225,7 +179,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="gitPath"
             placeholder={t('general.gitPathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.gitPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, gitPath: e.target.value })}
           />
@@ -246,7 +200,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="githubCLIPath"
             placeholder={t('general.githubCLIPathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.githubCLIPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, githubCLIPath: e.target.value })}
           />
@@ -267,7 +221,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="gitlabCLIPath"
             placeholder={t('general.gitlabCLIPathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.gitlabCLIPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, gitlabCLIPath: e.target.value })}
           />
@@ -288,7 +242,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="claudePath"
             placeholder={t('general.claudePathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.claudePath || ''}
             onChange={(e) => onSettingsChange({ ...settings, claudePath: e.target.value })}
           />
@@ -302,7 +256,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           <Input
             id="autoBuildPath"
             placeholder={t('general.autoClaudePathPlaceholder')}
-            className="h-9 w-full"
+            className="w-full"
             value={settings.autoBuildPath || ''}
             onChange={(e) => onSettingsChange({ ...settings, autoBuildPath: e.target.value })}
           />

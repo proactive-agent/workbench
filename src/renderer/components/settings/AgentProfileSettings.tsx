@@ -1,9 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useActiveProvider } from '../../hooks/useActiveProvider';
 import { getProviderModelLabel } from '../../../shared/utils/model-display';
-import { Brain, Scale, Zap, Check, Sparkles, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react';
-import { cn } from '../../lib/utils';
+import { RotateCcw } from 'lucide-react';
 import {
   DEFAULT_AGENT_PROFILES,
   AVAILABLE_MODELS,
@@ -15,21 +14,12 @@ import {
 } from '../../../shared/constants';
 import { useSettingsStore, saveSettings, saveProviderAgentConfig } from '../../stores/settings-store';
 import { MultiProviderModelSelect } from './MultiProviderModelSelect';
-import { ThinkingLevelSelect } from './ThinkingLevelSelect';
-import { Label } from '../ui/label';
+import { ReasoningTypeHint, ThinkingLevelSelect } from './ThinkingLevelSelect';
+import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows, SegmentedControl } from './SettingsRow';
 import { Button } from '../ui/button';
-import type { AgentProfile, PhaseModelConfig, PhaseThinkingConfig, ThinkingLevel } from '../../../shared/types/settings';
+import type { PhaseModelConfig, PhaseThinkingConfig, ThinkingLevel } from '../../../shared/types/settings';
 import type { BuiltinProvider } from '../../../shared/types/provider-account';
-
-/**
- * Icon mapping for agent profile icons
- */
-const iconMap: Record<string, React.ElementType> = {
-  Brain,
-  Scale,
-  Zap,
-  Sparkles,
-};
 
 /**
  * Agent Profile Settings component
@@ -38,16 +28,17 @@ const iconMap: Record<string, React.ElementType> = {
  */
 interface AgentProfileSettingsProps {
   provider?: BuiltinProvider;
+  /** Rows rendered above the profile row in the "Agent profile" section (e.g. the provider switch) */
+  leadingRows?: React.ReactNode;
 }
 
-export function AgentProfileSettings({ provider }: AgentProfileSettingsProps) {
+export function AgentProfileSettings({ provider, leadingRows }: AgentProfileSettingsProps) {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((state) => state.settings);
   const { provider: activeProvider } = useActiveProvider();
   // Read per-provider config with fallback to global
   const providerConfig = provider ? settings.providerAgentConfig?.[provider] : undefined;
   const selectedProfileId = providerConfig?.selectedAgentProfile ?? settings.selectedAgentProfile ?? 'auto';
-  const [showPhaseConfig, setShowPhaseConfig] = useState(true);
 
   // Find the selected profile
   const selectedProfile = useMemo(() =>
@@ -167,190 +158,95 @@ export function AgentProfileSettings({ provider }: AgentProfileSettingsProps) {
     return level?.label || thinkingValue;
   };
 
-  /**
-   * Render a single profile card
-   */
-  const renderProfileCard = (profile: AgentProfile) => {
-    const isSelected = selectedProfileId === profile.id;
-    const isCustomized = isSelected && hasCustomConfig;
-    const Icon = iconMap[profile.icon || 'Brain'] || Brain;
-
-    // Get provider-specific preset for badge display
-    const cardProviderPreset = provider ? getProviderPreset(provider, profile.id) : null;
-    const displayModel = cardProviderPreset?.primaryModel ?? profile.model;
-    const displayThinking = cardProviderPreset?.primaryThinking ?? profile.thinkingLevel;
-
-    return (
-      <button
-        key={profile.id}
-        onClick={() => handleSelectProfile(profile.id)}
-        className={cn(
-          'relative w-full rounded-lg border p-4 text-left transition-all duration-200',
-          'hover:border-primary/50 hover:shadow-sm',
-          isSelected
-            ? 'border-primary bg-primary/5'
-            : 'border-border bg-card'
-        )}
-      >
-        {/* Selected indicator */}
-        {isSelected && (
-          <div className="absolute right-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Check className="h-3 w-3 text-primary-foreground" />
-          </div>
-        )}
-
-        {/* Profile content */}
-        <div className="flex items-start gap-3">
-          <div
-            className={cn(
-              'flex h-10 w-10 items-center justify-center rounded-lg shrink-0',
-              isSelected ? 'bg-primary/10' : 'bg-muted'
-            )}
-          >
-            <Icon
-              className={cn(
-                'h-5 w-5',
-                isSelected ? 'text-primary' : 'text-muted-foreground'
-              )}
-            />
-          </div>
-
-          <div className="flex-1 min-w-0 pr-6">
-            <div className="flex items-center gap-2">
-              <h3 className="font-medium text-sm text-foreground">{profile.name}</h3>
-              {isCustomized && (
-                <span className="inline-flex items-center rounded bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-medium text-amber-600 dark:text-amber-400">
-                  {t('agentProfile.customized')}
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
-              {profile.description}
-            </p>
-
-            {/* Model and thinking level badges */}
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {displayModel === '' ? (
-                <span className="inline-flex items-center rounded bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
-                  {(() => {
-                    const customModels = providerConfig?.customPhaseModels;
-                    if (customModels) {
-                      const firstConfigured = PHASE_KEYS.find(k => customModels[k]);
-                      if (firstConfigured) return customModels[firstConfigured];
-                    }
-                    return t('agentProfile.ollamaNotConfigured');
-                  })()}
-                </span>
-              ) : (
-                <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                  {getModelLabel(displayModel)}
-                </span>
-              )}
-              <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-                {getThinkingLabel(displayThinking)} {t('agentProfile.thinking')}
-              </span>
-            </div>
-          </div>
-        </div>
-      </button>
-    );
-  };
+  // Summary of the selected profile shown under the profile switch:
+  // "<description> · <model> · <thinking> thinking"
+  const displayModel = providerPreset?.primaryModel ?? selectedProfile.model;
+  const displayThinking = providerPreset?.primaryThinking ?? selectedProfile.thinkingLevel;
+  const displayModelLabel = (() => {
+    if (displayModel !== '') return getModelLabel(displayModel);
+    // Ollama presets have no model until the user picks one
+    const customModels = providerConfig?.customPhaseModels;
+    const firstConfigured = customModels ? PHASE_KEYS.find((k) => customModels[k]) : undefined;
+    return firstConfigured && customModels ? customModels[firstConfigured] : t('agentProfile.ollamaNotConfigured');
+  })();
+  const profileSummary = [
+    selectedProfile.description,
+    displayModelLabel,
+    `${getThinkingLabel(displayThinking)} ${t('agentProfile.thinking').toLowerCase()}`,
+    hasCustomConfig ? t('agentProfile.customized') : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-      <div className="space-y-4">
-        {/* Description */}
-        <div className="rounded-lg bg-muted/50 p-3">
-          <p className="text-xs text-muted-foreground">
-            {t('agentProfile.profilesInfo')}
-          </p>
-        </div>
+    <>
+      <SettingsSection title={t('agentProfile.title')}>
+        <SettingsRows>
+          {leadingRows}
+          <SettingsRow label={t('agentProfile.profileRow')} description={profileSummary}>
+            <SegmentedControl
+              value={selectedProfile.id}
+              options={DEFAULT_AGENT_PROFILES.map((profile) => ({ value: profile.id, label: profile.name }))}
+              onValueChange={(profileId) => void handleSelectProfile(profileId)}
+              ariaLabel={t('agentProfile.profileRow')}
+            />
+          </SettingsRow>
+        </SettingsRows>
+      </SettingsSection>
 
-        {/* Profile cards - 2 column grid on larger screens */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {DEFAULT_AGENT_PROFILES.map(renderProfileCard)}
-        </div>
+      {/* Phase configuration: one row per phase, shared between all profiles */}
+      <SettingsSection
+        title={t('agentProfile.phaseConfiguration')}
+        description={t('agentProfile.phaseConfigurationDescription')}
+      >
+        <SettingsRows>
+          {PHASE_KEYS.map((phase) => (
+            <SettingsRow
+              key={phase}
+              label={t(`agentProfile.phases.${phase}.label`)}
+              description={
+                <>
+                  {t(`agentProfile.phases.${phase}.description`)}
+                  <ReasoningTypeHint
+                    withSeparator
+                    modelValue={currentPhaseModels[phase]}
+                    provider={provider ?? 'anthropic'}
+                  />
+                </>
+              }
+            >
+              <MultiProviderModelSelect
+                variant="inline"
+                ariaLabel={t('agentProfile.model')}
+                value={currentPhaseModels[phase]}
+                onChange={(value) => handlePhaseModelChange(phase, value)}
+                filterProvider={provider}
+              />
+              <ThinkingLevelSelect
+                inline
+                value={currentPhaseThinking[phase]}
+                onChange={(value) => handlePhaseThinkingChange(phase, value as ThinkingLevel)}
+                modelValue={currentPhaseModels[phase]}
+                provider={provider ?? 'anthropic'}
+              />
+            </SettingsRow>
+          ))}
 
-        {/* Phase Configuration - collapsible card, shared between all profiles */}
-        <div className="mt-6 rounded-lg border border-border bg-card">
-          {/* Header - Collapsible */}
-          <button
-            type="button"
-            onClick={() => setShowPhaseConfig(!showPhaseConfig)}
-            className="flex w-full items-center justify-between p-4 text-left hover:bg-muted/50 transition-colors rounded-t-lg"
-          >
-            <div>
-              <h4 className="font-medium text-sm text-foreground">{t('agentProfile.phaseConfiguration')}</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {t('agentProfile.phaseConfigurationDescription')}
-              </p>
-            </div>
-            {showPhaseConfig ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-          </button>
-
-          {/* Phase Configuration Content */}
-          {showPhaseConfig && (
-            <div className="border-t border-border p-4 space-y-4">
-              {/* Reset button - shown when customized */}
-              {hasCustomConfig && (
-                <div className="flex justify-end">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={handleResetToProfileDefaults}
-                    className="text-xs h-7"
-                  >
-                    <RotateCcw className="h-3 w-3 mr-1.5" />
-                    {t('agentProfile.resetToProfileDefaults', { profile: selectedProfile.name })}
-                  </Button>
-                </div>
-              )}
-
-              {/* Standard per-provider phase config */}
-              <div className="space-y-4">
-                {PHASE_KEYS.map((phase) => (
-                  <div key={phase} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium text-foreground">
-                        {t(`agentProfile.phases.${phase}.label`)}
-                      </Label>
-                      <span className="text-xs text-muted-foreground">
-                        {t(`agentProfile.phases.${phase}.description`)}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Model Select */}
-                      <div className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">{t('agentProfile.model')}</Label>
-                        <MultiProviderModelSelect
-                          value={currentPhaseModels[phase]}
-                          onChange={(value) => handlePhaseModelChange(phase, value)}
-                          filterProvider={provider}
-                        />
-                      </div>
-                      {/* Thinking Level Select (provider-aware) */}
-                      <ThinkingLevelSelect
-                        value={currentPhaseThinking[phase]}
-                        onChange={(value) => handlePhaseThinkingChange(phase, value as ThinkingLevel)}
-                        modelValue={currentPhaseModels[phase]}
-                        provider={provider ?? 'anthropic'}
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Info note */}
-              <p className="text-[10px] text-muted-foreground mt-4 pt-3 border-t border-border">
-                {t('agentProfile.phaseConfigNote')}
-              </p>
-            </div>
+          {/* Reset - shown when the phases deviate from the selected profile */}
+          {hasCustomConfig && (
+            <SettingsRow
+              label={t('agentProfile.customized')}
+              description={t('agentProfile.customizedDescription', { profile: selectedProfile.name })}
+            >
+              <Button variant="outline" size="sm" className="gap-1.5" onClick={handleResetToProfileDefaults}>
+                <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+                {t('agentProfile.resetToDefaults')}
+              </Button>
+            </SettingsRow>
           )}
-        </div>
-
-      </div>
+        </SettingsRows>
+        <p className="mt-3 text-xs text-(--nav-label-color)">{t('agentProfile.phaseConfigNote')}</p>
+      </SettingsSection>
+    </>
   );
 }

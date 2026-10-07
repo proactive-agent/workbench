@@ -1,3 +1,5 @@
+import { X } from 'lucide-react';
+
 interface ErrorDisplayProps {
   error: string | null;
   envError?: string | null;
@@ -15,8 +17,9 @@ export function ErrorDisplay({ error, envError }: ErrorDisplayProps) {
   }
 
   return (
-    <div className="mt-4 rounded-lg bg-destructive/10 border border-destructive/30 p-3 text-sm text-destructive">
-      {displayError}
+    <div role="alert" className="mt-6 flex items-start gap-2 text-sm text-destructive">
+      <X className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.75} />
+      <span className="min-w-0">{displayError}</span>
     </div>
   );
 }

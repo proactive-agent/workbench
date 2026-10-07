@@ -53,6 +53,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
+        // Exposed for scoped restyling (e.g. claude.ai-style buttons inside the settings dialog)
+        data-variant={variant ?? 'default'}
+        data-size={size ?? 'default'}
         ref={ref}
         {...props}
       />

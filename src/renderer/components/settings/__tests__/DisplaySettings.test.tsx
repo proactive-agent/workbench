@@ -8,6 +8,29 @@ import '../../../../shared/i18n';
 import { DisplaySettings } from '../DisplaySettings';
 import type { AppSettings } from '../../../../shared/types';
 
+// jsdom has no matchMedia (used by SegmentedControl's thumb animation)
+if (!window.matchMedia) {
+  window.matchMedia = ((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia;
+}
+
+// jsdom has no ResizeObserver (used by SegmentedControl)
+if (!window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe = vi.fn();
+    unobserve = vi.fn();
+    disconnect = vi.fn();
+  } as unknown as typeof ResizeObserver;
+}
+
 // Mock the settings store
 vi.mock('../../../stores/settings-store', () => ({
   useSettingsStore: vi.fn(() => ({
@@ -66,7 +89,7 @@ describe('DisplaySettings - GPU Acceleration Dropdown', () => {
       <DisplaySettings settings={defaultSettings} onSettingsChange={mockOnSettingsChange} />
     );
 
-    expect(screen.getByText('GPU Acceleration')).toBeInTheDocument();
+    expect(screen.getByText('GPU acceleration')).toBeInTheDocument();
     expect(screen.getByTestId('select-item-auto')).toBeInTheDocument();
     expect(screen.getByTestId('select-item-on')).toBeInTheDocument();
     expect(screen.getByTestId('select-item-off')).toBeInTheDocument();

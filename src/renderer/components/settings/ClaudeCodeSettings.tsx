@@ -328,6 +328,12 @@ export function ClaudeCodeSettings() {
     error: t("navigation:claudeCode.error"),
   }[status];
 
+  // The version list entry matching the installed version (entries may carry a "v" prefix)
+  const currentVersionOption = versionInfo?.installed
+    ? availableVersions.find((v) => normalizeVersion(v) === normalizeVersion(versionInfo.installed || "")) ?? versionInfo.installed
+    : "";
+  const activeInstallation = installations.find((i) => i.isActive);
+
   return (
     <SettingsSection
       title={t("navigation:claudeCode.title")}
@@ -355,7 +361,7 @@ export function ClaudeCodeSettings() {
             </Button>
           )}
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             className="gap-1.5"
             onClick={() => checkVersion(true)}
@@ -371,44 +377,35 @@ export function ClaudeCodeSettings() {
           <SettingsRow
             label={t("navigation:claudeCode.version")}
             description={
-              <span className="font-mono text-[0.8125rem]">
-                {versionInfo.installed}
-                {versionInfo.latest && versionInfo.latest !== "unknown" && (
-                  <span className="font-sans">
-                    {" · "}
-                    {t("navigation:claudeCode.latest")} {versionInfo.latest}
-                  </span>
-                )}
-                {lastChecked && (
-                  <span className="font-sans">
-                    {" · "}
-                    {t("navigation:claudeCode.lastChecked")} {lastChecked.toLocaleTimeString()}
-                  </span>
-                )}
+              <span>
+                {[
+                  versionInfo.latest && versionInfo.latest !== "unknown"
+                    ? `${t("navigation:claudeCode.latest")} ${versionInfo.latest}`
+                    : null,
+                  lastChecked ? `${t("navigation:claudeCode.lastChecked")} ${lastChecked.toLocaleTimeString()}` : null,
+                  versionsError ? t("navigation:claudeCode.failedToLoadVersions") : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             }
           >
+            {/* Shows the installed version; picking another one asks for confirmation before switching */}
             <Select
-              value={selectedVersion || ""}
+              value={selectedVersion ?? currentVersionOption}
               onValueChange={handleVersionSelect}
               disabled={isLoadingVersions || isInstalling}
             >
               <SelectTrigger className="w-48" aria-label={t("navigation:claudeCode.switchVersion")}>
-                <SelectValue
-                  placeholder={
-                    isLoadingVersions
-                      ? t("navigation:claudeCode.loadingVersions")
-                      : versionsError
-                        ? t("navigation:claudeCode.failedToLoadVersions")
-                        : t("navigation:claudeCode.switchVersion")
-                  }
-                />
+                <SelectValue>
+                  <span className="font-mono">{selectedVersion ?? versionInfo.installed}</span>
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {availableVersions.map((version) => {
                   const isCurrentVersion = normalizeVersion(version) === normalizeVersion(versionInfo.installed || "");
                   return (
-                    <SelectItem key={version} value={version} disabled={isCurrentVersion}>
+                    <SelectItem key={version} value={version}>
                       <span className="font-mono">{version}</span>
                       {isCurrentVersion && (
                         <span className="ml-2 text-muted-foreground">
@@ -428,27 +425,29 @@ export function ClaudeCodeSettings() {
           <SettingsRow
             label={t("navigation:claudeCode.path")}
             description={
-              <span className="block truncate font-mono text-[0.8125rem]" title={versionInfo.path}>
-                {versionInfo.path}
-              </span>
+              <>
+                <span className="block truncate font-mono text-[0.8125rem]" title={versionInfo.path}>
+                  {versionInfo.path}
+                </span>
+                {installationsError && <span className="block">{t("navigation:claudeCode.failedToLoadInstallations")}</span>}
+              </>
             }
           >
             {installations.length > 1 && (
               <Select
-                value={selectedInstallation || ""}
+                value={selectedInstallation ?? activeInstallation?.path ?? ""}
                 onValueChange={handleInstallationSelect}
                 disabled={isLoadingInstallations || isInstalling}
               >
                 <SelectTrigger className="w-48" aria-label={t("navigation:claudeCode.switchInstallation")}>
-                  <SelectValue
-                    placeholder={
-                      isLoadingInstallations
-                        ? t("navigation:claudeCode.loadingInstallations")
-                        : installationsError
-                          ? t("navigation:claudeCode.failedToLoadInstallations")
-                          : t("navigation:claudeCode.switchInstallation")
-                    }
-                  />
+                  <SelectValue placeholder={t("navigation:claudeCode.switchInstallation")}>
+                    {(() => {
+                      const shown = selectedInstallation ?? activeInstallation?.path;
+                      return shown ? (
+                        <span className="font-mono">{shown.split(/[/\\]/).slice(-2).join("/") || shown}</span>
+                      ) : undefined;
+                    })()}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {installations.map((installation) => (
@@ -474,7 +473,7 @@ export function ClaudeCodeSettings() {
         {/* Changelog */}
         <SettingsRow label={t("navigation:claudeCode.changelog")}>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             className="gap-1.5"
             onClick={() =>
@@ -490,8 +489,8 @@ export function ClaudeCodeSettings() {
 
       {/* Install/Update error display */}
       {installError && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-          <AlertTriangle className="h-4 w-4 shrink-0" />
+        <div className="mt-3 flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm text-foreground">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-[var(--error)]" strokeWidth={1.75} />
           <span>{installError}</span>
         </div>
       )}

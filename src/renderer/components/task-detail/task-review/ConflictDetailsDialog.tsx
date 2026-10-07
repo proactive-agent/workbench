@@ -1,4 +1,4 @@
-import { AlertTriangle, GitMerge } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -9,9 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../ui/alert-dialog';
-import { Badge } from '../../ui/badge';
-import { cn } from '../../../lib/utils';
-import { getSeverityIcon, getSeverityVariant } from './utils';
+import { getSeverityIcon } from './utils';
 import type { MergeConflict, MergeStats, GitConflictInfo } from '../../../../shared/types';
 
 interface ConflictDetailsDialogProps {
@@ -32,79 +30,61 @@ export function ConflictDetailsDialog({
   onOpenChange,
   onMerge
 }: ConflictDetailsDialogProps) {
+  const { t } = useTranslation(['taskReview', 'common']);
+  const conflictCount = mergePreview?.conflicts.length || 0;
+  const autoMergeable = mergePreview?.summary.autoMergeable || 0;
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            Merge Conflicts Preview
-          </AlertDialogTitle>
+          <AlertDialogTitle>{t('taskReview:conflicts.title')}</AlertDialogTitle>
           <AlertDialogDescription>
-            {mergePreview?.conflicts.length || 0} potential conflict{(mergePreview?.conflicts.length || 0) !== 1 ? 's' : ''} detected.
-            {mergePreview && mergePreview.summary.autoMergeable > 0 && (
-              <span className="text-success ml-1">
-                {mergePreview.summary.autoMergeable} can be auto-merged.
-              </span>
-            )}
+            {t('taskReview:conflicts.detected', { count: conflictCount })}
+            {autoMergeable > 0 && <> {t('taskReview:conflicts.autoMergeable', { count: autoMergeable })}</>}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="mt-4 flex-1 overflow-auto min-h-0 -mx-6 px-6">
           {mergePreview?.conflicts && mergePreview.conflicts.length > 0 ? (
-            <div className="space-y-3">
+            <div className="[&>*+*]:border-t [&>*+*]:border-settings-divider">
               {mergePreview.conflicts.map((conflict, idx) => (
-                <div
-                  key={idx}
-                  className={cn(
-                    "rounded-lg border px-4 py-3 text-sm",
-                    conflict.canAutoMerge
-                      ? "border-border"
-                      : conflict.severity === 'high' || conflict.severity === 'critical'
-                        ? "border-destructive/30 bg-destructive/5"
-                        : "border-warning/30 bg-warning/5"
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                <div key={idx} className="py-3 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex min-w-0 flex-1 items-center gap-2">
                       {getSeverityIcon(conflict.severity)}
-                      <span className="text-sm font-mono truncate">{conflict.file}</span>
+                      <span className="truncate font-mono text-xs text-foreground" title={conflict.file}>
+                        {conflict.file}
+                      </span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Badge
-                        variant="secondary"
-                        className={cn('text-xs', getSeverityVariant(conflict.severity))}
-                      >
-                        {conflict.severity}
-                      </Badge>
-                      {conflict.canAutoMerge && (
-                        <Badge variant="secondary" className="text-xs bg-success/10 text-success">
-                          auto-merge
-                        </Badge>
+                    <span className="shrink-0 text-xs text-(--nav-label-color)">
+                      {conflict.severity}
+                      {conflict.canAutoMerge && <> · {t('taskReview:conflicts.autoMerge')}</>}
+                    </span>
+                  </div>
+                  {(conflict.location || conflict.reason || conflict.strategy) && (
+                    <div className="mt-1.5 space-y-0.5 pl-6 text-xs text-(--nav-label-color)">
+                      {conflict.location && (
+                        <p><span className="text-foreground/80">{t('taskReview:conflicts.location')}:</span> {conflict.location}</p>
+                      )}
+                      {conflict.reason && (
+                        <p><span className="text-foreground/80">{t('taskReview:conflicts.reason')}:</span> {conflict.reason}</p>
+                      )}
+                      {conflict.strategy && (
+                        <p><span className="text-foreground/80">{t('taskReview:conflicts.strategy')}:</span> {conflict.strategy}</p>
                       )}
                     </div>
-                  </div>
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    {conflict.location && (
-                      <div><span className="text-foreground/70">Location:</span> {conflict.location}</div>
-                    )}
-                    {conflict.reason && (
-                      <div><span className="text-foreground/70">Reason:</span> {conflict.reason}</div>
-                    )}
-                    {conflict.strategy && (
-                      <div><span className="text-foreground/70">Strategy:</span> {conflict.strategy}</div>
-                    )}
-                  </div>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No conflicts detected
-            </div>
+            <p className="py-8 text-center text-sm text-(--nav-label-color)">
+              {t('taskReview:conflicts.none')}
+            </p>
           )}
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>Close</AlertDialogCancel>
+          <AlertDialogCancel>{t('common:buttons.close')}</AlertDialogCancel>
           <AlertDialogAction
             onClick={(e) => {
               e.preventDefault();
@@ -112,8 +92,7 @@ export function ConflictDetailsDialog({
               onMerge();
             }}
           >
-            <GitMerge className="mr-1.5 h-3.5 w-3.5" />
-            {stageOnly ? 'Stage with AI Merge' : 'Merge with AI'}
+            {stageOnly ? t('taskReview:merge.buttons.stageWithAIMerge') : t('taskReview:merge.buttons.mergeWithAI')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

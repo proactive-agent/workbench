@@ -1,24 +1,19 @@
 interface SettingsSectionProps {
   title: string;
-  /** Optional supporting text, rendered as subtle muted copy under the heading */
+  /** Kept for context in code; claude.ai section headings have no subtitle, so it is not rendered */
   description?: string;
   children: React.ReactNode;
 }
 
 /**
- * Reusable wrapper component for settings sections.
- * Renders a compact section heading (claude.ai style) followed by its content.
+ * A settings section (claude.ai): a 15px semibold heading followed by its rows;
+ * sections are spaced 40px apart.
  */
-export function SettingsSection({ title, description, children }: SettingsSectionProps) {
+export function SettingsSection({ title, children }: SettingsSectionProps) {
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-[1.0625rem] font-semibold leading-6 text-foreground">{title}</h2>
-        {description && (
-          <p className="mt-0.5 text-[0.8125rem] leading-5 text-muted-foreground">{description}</p>
-        )}
-      </div>
-      {children}
+    <section className="mb-10 last:mb-0">
+      <h3 className="text-[0.9375rem] font-semibold leading-5 text-foreground">{title}</h3>
+      <div className="mt-4">{children}</div>
     </section>
   );
 }

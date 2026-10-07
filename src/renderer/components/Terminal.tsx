@@ -9,7 +9,6 @@ import { CreateWorktreeDialog } from './terminal/CreateWorktreeDialog';
 import { useXterm } from './terminal/useXterm';
 import { usePtyProcess } from './terminal/usePtyProcess';
 import { useTerminalEvents } from './terminal/useTerminalEvents';
-import { useAutoNaming } from './terminal/useAutoNaming';
 import { debugLog } from '../../shared/utils/debug-logger';
 import { isWindows as checkIsWindows } from '../lib/os-detection';
 
@@ -115,12 +114,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     data: { type: 'terminal', terminalId: id }
   });
 
-
-  // Auto-naming functionality
-  const { handleCommandEnter, cleanup: cleanupAutoNaming } = useAutoNaming({
-    terminalId: id,
-    cwd: effectiveCwd,
-  });
 
   // Track when xterm dimensions are ready for PTY creation
   const [readyDimensions, setReadyDimensions] = useState<{ cols: number; rows: number } | null>(null);
@@ -259,7 +252,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
     rows,
   } = useXterm({
     terminalId: id,
-    onCommandEnter: handleCommandEnter,
     onResize: (cols, rows) => {
       // PTY dimension sync validation:
       // 1. Only resize if PTY is created
@@ -590,8 +582,6 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
     return () => {
       isMountedRef.current = false;
-      cleanupAutoNaming();
-
       // Clear post-creation dimension check timeout to prevent operations on unmounted component
       if (postCreationTimeoutRef.current !== null) {
         clearTimeout(postCreationTimeoutRef.current);
@@ -604,7 +594,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       dispose();
       isCreatedRef.current = false;
     };
-  }, [id, dispose, cleanupAutoNaming]);
+  }, [id, dispose]);
 
 
 
@@ -703,9 +693,8 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
   return (
     <div
       ref={setDropRef}
-      // Same surface as the xterm theme background (DEFAULT_TERMINAL_THEME) and the same
-      // background and border as the sidebar
-      className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-[#111111]"
+      // Same background and border as the sidebar (the xterm themes in lib/terminal-theme.ts match it)
+      className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-sidebar"
       onClick={handleClick}
     >
 

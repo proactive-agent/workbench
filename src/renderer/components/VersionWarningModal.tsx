@@ -1,6 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, ChevronRight } from 'lucide-react';
-import { SettingsIcon as Settings } from './icons/app-icons';
 import {
   Dialog,
   DialogContent,
@@ -37,8 +35,7 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="sm:max-w-md" hideCloseButton>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" />
+          <DialogTitle>
             {t('versionWarning.title')}
           </DialogTitle>
           <DialogDescription>
@@ -46,28 +43,19 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 pt-4">
           <p className="text-sm text-foreground">
             {t('versionWarning.description')}
           </p>
 
-          <div className="rounded-lg border border-border px-4 py-3 text-sm">
-            <p className="text-sm font-medium mb-3">
+          <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+            <p className="text-sm text-foreground mb-2">
               {t('versionWarning.instructions')}
             </p>
-            <ol className="space-y-2 text-sm text-muted-foreground">
-              <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">1</span>
-                {t('versionWarning.step1')}
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">2</span>
-                {t('versionWarning.step2')}
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary/10 text-xs font-medium text-primary">3</span>
-                {t('versionWarning.step3')}
-              </li>
+            <ol className="list-decimal list-inside space-y-1 text-sm text-muted-foreground">
+              <li>{t('versionWarning.step1')}</li>
+              <li>{t('versionWarning.step2')}</li>
+              <li>{t('versionWarning.step3')}</li>
             </ol>
           </div>
         </div>
@@ -76,10 +64,8 @@ export function VersionWarningModal({ isOpen, onClose, onOpenSettings }: Version
           <Button variant="ghost" size="sm" onClick={handleDismiss}>
             {t('versionWarning.gotIt')}
           </Button>
-          <Button size="sm" onClick={handleGoToSettings} className="gap-1.5">
-            <Settings className="h-3.5 w-3.5" />
+          <Button size="sm" onClick={handleGoToSettings}>
             {t('versionWarning.goToSettings')}
-            <ChevronRight className="h-3.5 w-3.5" />
           </Button>
         </DialogFooter>
       </DialogContent>

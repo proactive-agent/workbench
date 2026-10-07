@@ -104,9 +104,7 @@ export function TaskReview({
   onCreatePR
 }: TaskReviewProps) {
   return (
-    <div className="space-y-4">
-      {/* Section divider */}
-      <div className="section-divider-gradient" />
+    <div className="space-y-6">
 
       {/* Workspace Status - priority: loading > staged fresh > staged persisted > worktree exists > no workspace */}
       {isLoadingWorktree ? (

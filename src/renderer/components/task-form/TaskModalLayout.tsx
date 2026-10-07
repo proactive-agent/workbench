@@ -17,7 +17,6 @@ import {
   DIALOG_CLOSE_ICON_CLASS,
   DIALOG_CLOSE_ICON_STROKE,
   DIALOG_DESCRIPTION_CLASS,
-  DIALOG_FOOTER_BAR_CLASS,
   DIALOG_OVERLAY_CLASS,
   DIALOG_SURFACE_CLASS,
   DIALOG_TITLE_CLASS
@@ -82,7 +81,7 @@ export function TaskModalLayout({
             {/* Main content area */}
             <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
               {/* Header */}
-              <div className="relative shrink-0 border-b border-border px-6 pb-4 pr-14 pt-6">
+              <div className="relative shrink-0 px-6 pb-4 pr-14 pt-6">
                 <DialogPrimitive.Title className={DIALOG_TITLE_CLASS}>
                   {title}
                 </DialogPrimitive.Title>
@@ -100,17 +99,13 @@ export function TaskModalLayout({
                 </DialogPrimitive.Close>
               </div>
 
-              {/* Scrollable body */}
+              {/* Scrollable body; the actions flow after the content (no fixed footer) */}
               <ScrollArea className="flex-1 min-h-0">
-                <div className="p-6">
+                <div className="px-6 pb-6 pt-2">
                   {children}
+                  <div className="mt-8">{footer}</div>
                 </div>
               </ScrollArea>
-
-              {/* Footer */}
-              <div className={cn('shrink-0', DIALOG_FOOTER_BAR_CLASS)}>
-                {footer}
-              </div>
             </div>
           </div>
         </DialogPrimitive.Content>

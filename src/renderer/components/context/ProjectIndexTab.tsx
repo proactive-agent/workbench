@@ -1,12 +1,13 @@
-import { RefreshCw, AlertCircle, FolderTree } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { ScrollArea } from '../ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '../../lib/utils';
+import { SettingsSection } from '../settings/SettingsSection';
+import { SettingsRow, SettingsRows } from '../settings/SettingsRow';
+import { StatusIndicator } from '../settings/common/StatusIndicator';
 import { ServiceCard } from './ServiceCard';
-import { InfoItem } from './InfoItem';
 import type { ProjectIndex } from '../../../shared/types';
 
 interface ProjectIndexTabProps {
@@ -16,179 +17,133 @@ interface ProjectIndexTabProps {
   onRefresh: () => void;
 }
 
+/** A row with a label on the left and a muted value on the right */
+function ValueRow({ label, value, mono = false }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <SettingsRow label={label}>
+      <span className={cn('max-w-[28rem] truncate text-sm text-(--nav-label-color)', mono && 'font-mono text-[0.8125rem]')}>
+        {value}
+      </span>
+    </SettingsRow>
+  );
+}
+
 export function ProjectIndexTab({
   projectIndex,
   indexLoading,
   indexError,
   onRefresh
 }: ProjectIndexTabProps) {
+  const { t } = useTranslation('settings');
+  const serviceCount = projectIndex ? Object.keys(projectIndex.services).length : 0;
+
   return (
     <ScrollArea className="h-full">
-      <div className="p-6 space-y-6">
-        {/* Header with refresh */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">Project Structure</h2>
-            <p className="text-sm text-muted-foreground">
-              AI-discovered knowledge about your codebase
-            </p>
-          </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onRefresh}
-                disabled={indexLoading}
-              >
-                <RefreshCw className={cn('h-4 w-4 mr-2', indexLoading && 'animate-spin')} />
-                Refresh
+      <div className="mx-auto w-full max-w-[832px] px-7 pb-10">
+        <SettingsSection title={t('projectPages.context.structureTitle')}>
+          <SettingsRows>
+            <SettingsRow
+              label={t('projectPages.context.index')}
+              description={
+                !indexLoading && !projectIndex && !indexError
+                  ? t('projectPages.context.noIndex')
+                  : t('projectPages.context.indexDescription')
+              }
+            >
+              <Button variant="outline" size="sm" onClick={onRefresh} disabled={indexLoading} className="gap-2">
+                <RefreshCw className={cn('h-4 w-4', indexLoading && 'animate-spin')} strokeWidth={1.75} />
+                {projectIndex ? t('projectPages.context.refresh') : t('projectPages.context.analyze')}
               </Button>
-            </TooltipTrigger>
-            <TooltipContent>Re-analyze project structure</TooltipContent>
-          </Tooltip>
-        </div>
+            </SettingsRow>
 
-        {/* Error state */}
-        {indexError && (
-          <div className="flex items-center gap-3 p-4 rounded-lg bg-destructive/10 text-destructive">
-            <AlertCircle className="h-5 w-5 shrink-0" />
-            <div>
-              <p className="font-medium">Failed to load project index</p>
-              <p className="text-sm opacity-80">{indexError}</p>
+            {indexError && (
+              <SettingsRow
+                label={
+                  <StatusIndicator state="error" tone="foreground">
+                    {t('projectPages.context.loadFailed')}
+                  </StatusIndicator>
+                }
+                description={indexError}
+              />
+            )}
+
+            {indexLoading && !projectIndex && (
+              <SettingsRow
+                label={<StatusIndicator state="loading">{t('projectPages.context.analyzing')}</StatusIndicator>}
+              />
+            )}
+
+            {projectIndex && (
+              <>
+                <ValueRow
+                  label={t('projectPages.context.projectType')}
+                  value={<span className="capitalize">{projectIndex.project_type}</span>}
+                />
+                <ValueRow label={t('projectPages.context.services')} value={String(serviceCount)} />
+                <ValueRow label={t('projectPages.context.root')} value={projectIndex.project_root} mono />
+              </>
+            )}
+          </SettingsRows>
+        </SettingsSection>
+
+        {projectIndex && serviceCount > 0 && (
+          <SettingsSection title={t('projectPages.context.services')}>
+            <div className="grid gap-3 md:grid-cols-2">
+              {Object.entries(projectIndex.services).map(([name, service]) => (
+                <ServiceCard key={name} name={name} service={service} />
+              ))}
             </div>
-          </div>
+          </SettingsSection>
         )}
 
-        {/* Loading state */}
-        {indexLoading && !projectIndex && (
-          <div className="flex items-center justify-center py-12">
-            <RefreshCw className="h-8 w-8 animate-spin text-muted-foreground" />
-          </div>
-        )}
-
-        {/* No index state */}
-        {!indexLoading && !projectIndex && !indexError && (
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <FolderTree className="h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-medium text-foreground">No Project Index Found</h3>
-            <p className="text-sm text-muted-foreground mt-2 max-w-sm">
-              Click the Refresh button to analyze your project structure and create an index.
-            </p>
-            <Button onClick={onRefresh} className="mt-4">
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Analyze Project
-            </Button>
-          </div>
-        )}
-
-        {/* Project index content */}
-        {projectIndex && (
-          <div className="space-y-6">
-            {/* Project Overview */}
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Overview</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="capitalize">
-                    {projectIndex.project_type}
-                  </Badge>
-                  {Object.keys(projectIndex.services).length > 0 && (
-                    <Badge variant="secondary">
-                      {Object.keys(projectIndex.services).length} service
-                      {Object.keys(projectIndex.services).length !== 1 ? 's' : ''}
-                    </Badge>
-                  )}
-                </div>
-                <p className="text-sm text-muted-foreground font-mono truncate">
-                  {projectIndex.project_root}
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Services */}
-            {Object.keys(projectIndex.services).length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Services
-                </h3>
-                <div className="grid gap-4 md:grid-cols-2">
-                  {Object.entries(projectIndex.services).map(([name, service]) => (
-                    <ServiceCard key={name} name={name} service={service} />
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Infrastructure */}
-            {Object.keys(projectIndex.infrastructure).length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Infrastructure
-                </h3>
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      {projectIndex.infrastructure.docker_compose && (
-                        <InfoItem label="Docker Compose" value={projectIndex.infrastructure.docker_compose} />
-                      )}
-                      {projectIndex.infrastructure.ci && (
-                        <InfoItem label="CI/CD" value={projectIndex.infrastructure.ci} />
-                      )}
-                      {projectIndex.infrastructure.deployment && (
-                        <InfoItem label="Deployment" value={projectIndex.infrastructure.deployment} />
-                      )}
-                      {projectIndex.infrastructure.docker_services &&
-                        projectIndex.infrastructure.docker_services.length > 0 && (
-                          <div className="sm:col-span-2">
-                            <span className="text-xs text-muted-foreground">Docker Services</span>
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {projectIndex.infrastructure.docker_services.map((svc) => (
-                                <Badge key={svc} variant="secondary" className="text-xs">
-                                  {svc}
-                                </Badge>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+        {projectIndex && Object.keys(projectIndex.infrastructure).length > 0 && (
+          <SettingsSection title={t('projectPages.context.infrastructure')}>
+            <SettingsRows>
+              {projectIndex.infrastructure.docker_compose && (
+                <ValueRow label="Docker Compose" value={projectIndex.infrastructure.docker_compose} mono />
+              )}
+              {projectIndex.infrastructure.ci && <ValueRow label="CI/CD" value={projectIndex.infrastructure.ci} />}
+              {projectIndex.infrastructure.deployment && (
+                <ValueRow label={t('projectPages.context.deployment')} value={projectIndex.infrastructure.deployment} />
+              )}
+              {projectIndex.infrastructure.docker_services &&
+                projectIndex.infrastructure.docker_services.length > 0 && (
+                  <SettingsRow label={t('projectPages.context.dockerServices')}>
+                    <div className="flex max-w-[28rem] flex-wrap justify-end gap-1">
+                      {projectIndex.infrastructure.docker_services.map((svc) => (
+                        <Badge key={svc} variant="secondary" className="text-xs font-normal">
+                          {svc}
+                        </Badge>
+                      ))}
                     </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
+                  </SettingsRow>
+                )}
+            </SettingsRows>
+          </SettingsSection>
+        )}
 
-            {/* Conventions */}
-            {Object.keys(projectIndex.conventions).length > 0 && (
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                  Conventions
-                </h3>
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                      {projectIndex.conventions.python_linting && (
-                        <InfoItem label="Python Linting" value={projectIndex.conventions.python_linting} />
-                      )}
-                      {projectIndex.conventions.js_linting && (
-                        <InfoItem label="JS Linting" value={projectIndex.conventions.js_linting} />
-                      )}
-                      {projectIndex.conventions.formatting && (
-                        <InfoItem label="Formatting" value={projectIndex.conventions.formatting} />
-                      )}
-                      {projectIndex.conventions.git_hooks && (
-                        <InfoItem label="Git Hooks" value={projectIndex.conventions.git_hooks} />
-                      )}
-                      {projectIndex.conventions.typescript && (
-                        <InfoItem label="TypeScript" value="Enabled" />
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            )}
-          </div>
+        {projectIndex && Object.keys(projectIndex.conventions).length > 0 && (
+          <SettingsSection title={t('projectPages.context.conventions')}>
+            <SettingsRows>
+              {projectIndex.conventions.python_linting && (
+                <ValueRow label={t('projectPages.context.pythonLinting')} value={projectIndex.conventions.python_linting} />
+              )}
+              {projectIndex.conventions.js_linting && (
+                <ValueRow label={t('projectPages.context.jsLinting')} value={projectIndex.conventions.js_linting} />
+              )}
+              {projectIndex.conventions.formatting && (
+                <ValueRow label={t('projectPages.context.formatting')} value={projectIndex.conventions.formatting} />
+              )}
+              {projectIndex.conventions.git_hooks && (
+                <ValueRow label={t('projectPages.context.gitHooks')} value={projectIndex.conventions.git_hooks} />
+              )}
+              {projectIndex.conventions.typescript && (
+                <SettingsRow label="TypeScript">
+                  <StatusIndicator state="success">{t('projectPages.context.enabled')}</StatusIndicator>
+                </SettingsRow>
+              )}
+            </SettingsRows>
+          </SettingsSection>
         )}
       </div>
     </ScrollArea>

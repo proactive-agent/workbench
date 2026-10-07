@@ -39,7 +39,7 @@ export function EnvironmentSection({ environment }: EnvironmentSectionProps) {
               {envVar.type}
             </Badge>
             <code className="flex-1 font-mono text-muted-foreground truncate">{key}</code>
-            {envVar.required && <span className="text-orange-500 shrink-0">*</span>}
+            {envVar.required && <span className="text-muted-foreground shrink-0">*</span>}
           </div>
         ))}
       </CollapsibleContent>

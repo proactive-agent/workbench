@@ -1,4 +1,4 @@
-import { FileCode } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -8,8 +8,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../ui/alert-dialog';
-import { Badge } from '../../ui/badge';
-import { cn } from '../../../lib/utils';
 import type { WorktreeDiff } from '../../../../shared/types';
 
 interface DiffViewDialogProps {
@@ -17,6 +15,8 @@ interface DiffViewDialogProps {
   worktreeDiff: WorktreeDiff | null;
   onOpenChange: (open: boolean) => void;
 }
+
+const FILE_STATUSES = ['added', 'deleted', 'modified', 'renamed'] as const;
 
 /**
  * Dialog displaying the list of changed files with their status and line changes
@@ -26,62 +26,45 @@ export function DiffViewDialog({
   worktreeDiff,
   onOpenChange
 }: DiffViewDialogProps) {
+  const { t } = useTranslation(['taskReview', 'common']);
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
         <AlertDialogHeader>
-          <AlertDialogTitle>
-            Changed Files
-          </AlertDialogTitle>
+          <AlertDialogTitle>{t('taskReview:diff.title')}</AlertDialogTitle>
           <AlertDialogDescription>
-            {worktreeDiff?.summary || 'No changes found'}
+            {worktreeDiff?.summary || t('taskReview:diff.noChanges')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="mt-4 flex-1 overflow-auto min-h-0 -mx-6 px-6">
           {worktreeDiff?.files && worktreeDiff.files.length > 0 ? (
-            <div className="space-y-2">
+            <div className="[&>*+*]:border-t [&>*+*]:border-settings-divider">
               {worktreeDiff.files.map((file, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-2 rounded-lg bg-secondary/30 hover:bg-secondary/50 transition-colors"
-                >
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <FileCode className={cn(
-                      'h-4 w-4 shrink-0',
-                      file.status === 'added' && 'text-success',
-                      file.status === 'deleted' && 'text-destructive',
-                      file.status === 'modified' && 'text-info',
-                      file.status === 'renamed' && 'text-warning'
-                    )} />
-                    <span className="text-sm font-mono truncate">{file.path}</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0 ml-2">
-                    <Badge
-                      variant="secondary"
-                      className={cn(
-                        'text-xs',
-                        file.status === 'added' && 'bg-success/10 text-success',
-                        file.status === 'deleted' && 'bg-destructive/10 text-destructive',
-                        file.status === 'modified' && 'bg-info/10 text-info',
-                        file.status === 'renamed' && 'bg-warning/10 text-warning'
-                      )}
-                    >
-                      {file.status}
-                    </Badge>
-                    <span className="text-xs text-success">+{file.additions}</span>
-                    <span className="text-xs text-destructive">-{file.deletions}</span>
+                <div key={idx} className="flex items-center justify-between gap-4 py-2.5">
+                  <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground" title={file.path}>
+                    {file.path}
+                  </span>
+                  <div className="flex shrink-0 items-center gap-3 text-xs tabular-nums">
+                    <span className="text-(--nav-label-color)">
+                      {(FILE_STATUSES as readonly string[]).includes(file.status)
+                        ? t(`taskReview:diff.status.${file.status}`)
+                        : file.status}
+                    </span>
+                    <span className="text-success">+{file.additions}</span>
+                    <span className="text-destructive">-{file.deletions}</span>
                   </div>
                 </div>
               ))}
             </div>
           ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              No changed files found
-            </div>
+            <p className="py-8 text-center text-sm text-(--nav-label-color)">
+              {t('taskReview:diff.noFiles')}
+            </p>
           )}
         </div>
         <AlertDialogFooter>
-          <AlertDialogCancel>Close</AlertDialogCancel>
+          <AlertDialogCancel>{t('common:buttons.close')}</AlertDialogCancel>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>

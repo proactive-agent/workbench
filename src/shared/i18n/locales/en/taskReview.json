@@ -31,10 +31,10 @@
     "supersededCompareTooltip": "View a detailed comparison to see how the current branch differs from this task's changes.",
     "supersededDiscardTooltip": "Remove this task's worktree since the changes are no longer needed.",
     "status": {
-      "branchDiverged": "Branch Diverged",
+      "branchDiverged": "Branch diverged",
       "aiWillResolve": "AI will resolve",
-      "filesRenamed": "Files Renamed",
-      "branchBehind": "Branch Behind",
+      "filesRenamed": "Files renamed",
+      "branchBehind": "Branch behind",
       "readyToMerge": "Ready to merge",
       "files": "files",
       "file": "file",
@@ -42,11 +42,12 @@
       "conflicts": "conflicts",
       "details": "Details",
       "refresh": "Refresh",
-      "stageOnly": "Stage only (review in IDE before committing)",
-      "discardBuild": "Discard build"
+      "stageOnly": "Stage only",
+      "discardBuild": "Discard build",
+      "stageOnlyDescription": "Stage the changes so you can review them in your IDE before committing"
     },
     "buttons": {
-      "stageWithAIMerge": "Stage with AI Merge",
+      "stageWithAIMerge": "Stage with AI merge",
       "mergeWithAI": "Merge with AI",
       "stageTo": "Stage to {{branch}}",
       "mergeTo": "Merge to {{branch}}",
@@ -56,13 +57,13 @@
       "completing": "Completing..."
     },
     "actions": {
-      "markAsDone": "Mark as Done",
-      "discardTask": "Discard Task",
-      "viewComparison": "View Comparison"
+      "markAsDone": "Mark as done",
+      "discardTask": "Discard task",
+      "viewComparison": "View comparison"
     }
   },
   "pr": {
-    "title": "Create Pull Request",
+    "title": "Create pull request",
     "description": "Push branch and create a pull request for \"{{taskTitle}}\"",
     "errors": {
       "unknown": "An unknown error occurred while creating the pull request",
@@ -76,14 +77,14 @@
     "actions": {
       "retry": "Retry",
       "creating": "Creating PR...",
-      "create": "Create Pull Request"
+      "create": "Create pull request"
     },
     "labels": {
       "sourceBranch": "Source branch",
       "targetBranch": "Target branch",
       "commits": "Commits",
       "changes": "Changes",
-      "prTitle": "PR Title (optional)",
+      "prTitle": "PR title (optional)",
       "draftPR": "Create as draft PR",
       "unknown": "Unknown"
     },
@@ -117,30 +118,31 @@
     "errorMessage": "An error occurred during the merge process."
   },
   "stagedSuccess": {
-    "title": "Changes Staged Successfully",
+    "title": "Changes staged",
     "aiCommitMessage": "AI-generated commit message",
     "copied": "Copied!",
     "copy": "Copy",
     "editHint": "Edit as needed, then copy and use with",
-    "nextSteps": "Next steps:",
+    "nextSteps": "Next steps",
     "reviewChanges": "Review staged changes with",
     "commitWhenReady": "Commit when ready:",
     "pushToRemote": "Push to remote when satisfied",
     "cleaningUp": "Cleaning up...",
     "markingDone": "Marking done...",
     "resetting": "Resetting...",
-    "deleteWorktreeAndMarkDone": "Delete Worktree & Mark Done",
-    "markDoneOnly": "Mark Done Only",
-    "markAsDone": "Mark as Done",
-    "reviewAgain": "Review Again",
+    "deleteWorktreeAndMarkDone": "Delete worktree and mark done",
+    "markDoneOnly": "Mark done only",
+    "markAsDone": "Mark as done",
+    "reviewAgain": "Review again",
     "commitMessagePlaceholder": "Commit message...",
-    "worktreeExplanation": "\"Delete Worktree & Mark Done\" cleans up the isolated workspace. \"Mark Done Only\" keeps it for reference.",
+    "worktreeExplanation": "\"Delete worktree and mark done\" cleans up the isolated workspace. \"Mark done only\" keeps it for reference.",
     "errors": {
       "failedToDeleteWorktree": "Failed to delete worktree",
       "worktreeDeletedButStatusFailed": "Worktree deleted but failed to update task status: {{error}}",
       "failedToMarkAsDone": "Failed to mark as done",
       "failedToResetStagedState": "Failed to reset staged state"
-    }
+    },
+    "and": "and"
   },
   "bulkPR": {
     "title": "Create Pull Requests",
@@ -158,5 +160,67 @@
     "alreadyExisted": "already existed",
     "noWorktree": "No worktree found for this task",
     "resultsDescriptionWithSkipped": "{{success}} succeeded, {{skipped}} skipped, {{failed}} failed"
+  },
+  "workspace": {
+    "title": "Build ready for review",
+    "loading": "Loading workspace info...",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "commitCount_one": "{{count}} commit",
+    "commitCount_other": "{{count}} commits",
+    "viewChanges": "View changes",
+    "branch": "Branch",
+    "worktree": "Worktree",
+    "openIn": "Open in {{app}}",
+    "uncommittedChanges_one": "{{count}} uncommitted change in the main project",
+    "uncommittedChanges_other": "{{count}} uncommitted changes in the main project",
+    "uncommittedChangesHint": "Commit or stash them in your terminal before staging to avoid conflicts.",
+    "checkConflicts": "Check for conflicts",
+    "checkingConflicts": "Checking for conflicts..."
+  },
+  "noWorkspace": {
+    "title": "No workspace found",
+    "description": "No isolated workspace was found for this task. The changes may have been made directly in your project.",
+    "planReviewTitle": "Human review required",
+    "planReviewDescription": "Human review required prior to coding. Review your spec.md for any necessary changes.",
+    "proceedToCoding": "Proceed to coding",
+    "updating": "Updating..."
+  },
+  "stagedInProject": {
+    "title": "Changes staged in project",
+    "description": "This task's changes have been staged in your main project.",
+    "descriptionOn": "This task's changes have been staged in your main project on {{date}}."
+  },
+  "discard": {
+    "title": "Discard build",
+    "confirmMessage": "Are you sure you want to discard all changes for",
+    "warning": "This will permanently delete the isolated workspace and all uncommitted changes. The task will be moved back to Planning.",
+    "filesChanged": "Files changed",
+    "lines": "Lines",
+    "discarding": "Discarding...",
+    "confirm": "Discard build"
+  },
+  "diff": {
+    "title": "Changed files",
+    "noChanges": "No changes found",
+    "noFiles": "No changed files found",
+    "status": {
+      "added": "Added",
+      "deleted": "Deleted",
+      "modified": "Modified",
+      "renamed": "Renamed"
+    }
+  },
+  "conflicts": {
+    "title": "Merge conflicts preview",
+    "detected_one": "{{count}} potential conflict detected.",
+    "detected_other": "{{count}} potential conflicts detected.",
+    "autoMergeable_one": "{{count}} can be auto-merged.",
+    "autoMergeable_other": "{{count}} can be auto-merged.",
+    "autoMerge": "auto-merge",
+    "location": "Location",
+    "reason": "Reason",
+    "strategy": "Strategy",
+    "none": "No conflicts detected"
   }
 }

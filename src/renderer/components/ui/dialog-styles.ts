@@ -1,7 +1,9 @@
 /**
- * Shared dialog look (taken from the Settings dialog) so every modal in the app matches:
- * light backdrop, rounded-xl panel on the page background, a ghost close button in the
- * top-right corner, a 17px title with 13px muted copy, and a slim full-width footer bar.
+ * Shared dialog look (claude.ai settings dialog) so every modal in the app matches: light
+ * backdrop, 12px panel on the settings surface with a hairline border, a ghost close button in
+ * the top-right corner, a 17px title with muted copy, and actions that flow with the content
+ * (no fixed footer bar). The `claude-dialog` class also gives inputs, dropdowns and buttons
+ * inside the panel their claude.ai look (see globals.css).
  */
 
 /** Backdrop behind every dialog */
@@ -12,7 +14,7 @@ export const DIALOG_OVERLAY_CLASS = [
 ].join(' ');
 
 /** Panel surface: rounded corners, hairline border, page background, soft shadow */
-export const DIALOG_SURFACE_CLASS = 'rounded-xl border border-border bg-background text-foreground shadow-2xl';
+export const DIALOG_SURFACE_CLASS = 'claude-dialog rounded-xl border border-border bg-settings-surface text-foreground shadow-2xl';
 
 /** Open/close animation (fade with a subtle zoom) */
 export const DIALOG_ANIMATION_CLASS = [
@@ -37,8 +39,8 @@ export const DIALOG_CLOSE_ICON_STROKE = 1.75;
 export const DIALOG_TITLE_CLASS = 'text-[1.0625rem] font-semibold leading-6 text-foreground';
 
 /** Supporting copy under a dialog title */
-export const DIALOG_DESCRIPTION_CLASS = 'text-[0.8125rem] leading-5 text-muted-foreground';
+export const DIALOG_DESCRIPTION_CLASS = 'text-sm leading-5 text-(--nav-label-color)';
 
-/** Footer bar: hairline divider, compact padding, actions right-aligned */
-export const DIALOG_FOOTER_BAR_CLASS = 'border-t border-border px-6 py-3';
+/** Footer: actions right-aligned below the content, no divider or fixed bar */
+export const DIALOG_FOOTER_BAR_CLASS = 'pt-2';
 export const DIALOG_FOOTER_ACTIONS_CLASS = 'flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-end';

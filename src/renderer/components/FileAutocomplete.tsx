@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { File, Folder, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useFileExplorerStore } from '../stores/file-explorer-store';
@@ -25,6 +26,7 @@ export function FileAutocomplete({
   onClose,
   maxResults = 10
 }: FileAutocompleteProps) {
+  const { t } = useTranslation(['tasks']);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
   const { files, loadDirectory } = useFileExplorerStore();
@@ -174,21 +176,21 @@ export function FileAutocomplete({
   if (filteredFiles.length === 0) {
     return (
       <div
-        className="absolute z-50 bg-popover border border-border rounded-md shadow-lg p-3 text-sm text-muted-foreground"
+        className="absolute z-50 rounded-xl border border-border bg-popover p-3 text-sm text-muted-foreground shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
         style={{
           top: position.top,
           left: position.left,
           minWidth: '200px'
         }}
       >
-        No files found
+        {t('tasks:fileAutocomplete.noFiles')}
       </div>
     );
   }
 
   return (
     <div
-      className="absolute z-50 bg-popover border border-border rounded-md shadow-lg overflow-hidden"
+      className="absolute z-50 overflow-hidden rounded-xl border border-border bg-popover shadow-[0_8px_24px_rgba(0,0,0,0.24)]"
       style={{
         top: position.top,
         left: position.left,
@@ -199,27 +201,27 @@ export function FileAutocomplete({
     >
       <div
         ref={listRef}
-        className="overflow-y-auto max-h-[240px]"
+        className="overflow-y-auto max-h-[240px] p-1"
       >
         {filteredFiles.map((file, index) => (
           <button
             key={file.path}
             className={cn(
-              'w-full flex items-center gap-2 px-3 py-2 text-left text-sm',
-              'hover:bg-accent hover:text-accent-foreground',
+              'w-full flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground',
+              'hover:bg-nav-hover',
               'focus:outline-none transition-colors',
-              index === selectedIndex && 'bg-accent text-accent-foreground'
+              index === selectedIndex && 'bg-nav-hover'
             )}
             onClick={() => onSelect(file.name, file.path)}
             onMouseEnter={() => setSelectedIndex(index)}
           >
             {file.isDirectory ? (
-              <Folder className="h-4 w-4 text-muted-foreground shrink-0" />
+              <Folder className="h-4 w-4 text-muted-foreground shrink-0" strokeWidth={1.75} />
             ) : (
-              <File className="h-4 w-4 text-muted-foreground shrink-0" />
+              <File className="h-4 w-4 text-muted-foreground shrink-0" strokeWidth={1.75} />
             )}
             <div className="flex-1 min-w-0">
-              <div className="font-medium truncate">{file.name}</div>
+              <div className="truncate">{file.name}</div>
               <div className="text-xs text-muted-foreground truncate flex items-center gap-1">
                 <ChevronRight className="h-3 w-3 shrink-0" />
                 {getRelativePath(file.path)}
@@ -228,8 +230,8 @@ export function FileAutocomplete({
           </button>
         ))}
       </div>
-      <div className="border-t border-border px-3 py-1.5 text-[10px] text-muted-foreground bg-muted/30">
-        <span className="font-medium">↑↓</span> navigate · <span className="font-medium">Enter</span> select · <span className="font-medium">Esc</span> close
+      <div className="border-t border-border px-3 py-1.5 text-xs text-(--nav-label-color)">
+        {t('tasks:fileAutocomplete.keyboardHint')}
       </div>
     </div>
   );

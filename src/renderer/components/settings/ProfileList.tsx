@@ -8,7 +8,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, Check, Server, Globe, Pencil } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Button } from '../ui/button';
+import { Button, buttonVariants } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useSettingsStore } from '../../stores/settings-store';
 import { ProfileEditDialog } from './ProfileEditDialog';
@@ -322,7 +322,7 @@ export function ProfileList({ onProfileSaved }: ProfileListProps) {
             <AlertDialogAction
               onClick={handleDeleteProfile}
               disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={buttonVariants({ variant: 'destructive', size: 'sm' })}
             >
               {isDeleting
                 ? t('settings:apiProfiles.dialog.deleting')

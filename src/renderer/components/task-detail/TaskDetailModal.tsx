@@ -3,10 +3,12 @@ import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { useToast } from '../../hooks/use-toast';
 import { Separator } from '../ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { Tabs, TabsContent } from '../ui/tabs';
+import { SegmentedControl } from '../settings/SettingsRow';
 import { ScrollArea } from '../ui/scroll-area';
 import { TooltipProvider } from '../ui/tooltip';
 import { Badge } from '../ui/badge';
+import { buttonVariants } from '../ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,8 +107,8 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
         const isValid = await state.reloadPlanForIncompleteTask();
         if (!isValid) {
           toast({
-            title: 'Cannot Resume Task',
-            description: 'Failed to load implementation plan. Please try again or check the task files.',
+            title: t('tasks:detail.resumeFailedTitle'),
+            description: t('tasks:detail.resumeFailedDescription'),
             variant: 'destructive',
             duration: 5000,
           });
@@ -156,7 +158,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
       state.setShowDeleteDialog(false);
       onOpenChange(false);
     } else {
-      state.setDeleteError(result.error || 'Failed to delete task');
+      state.setDeleteError(result.error || t('tasks:deleteDialog.failed'));
     }
     state.setIsDeleting(false);
   };
@@ -271,7 +273,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
           >
             {/* Header */}
             {/* pr-32 keeps the title clear of the header action buttons */}
-            <div className="relative shrink-0 border-b border-border px-6 pb-4 pr-32 pt-6">
+            <div className="relative shrink-0 px-6 pb-4 pr-32 pt-6">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0 overflow-hidden">
                   <DialogPrimitive.Title className={cn(DIALOG_TITLE_CLASS, 'truncate')}>
@@ -285,12 +287,12 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                       {state.isStuck ? (
                         <Badge variant="warning" className="text-xs flex items-center gap-1 animate-pulse">
                           <AlertTriangle className="h-3 w-3" />
-                          Stuck
+                          {t('tasks:detailHeader.stuck')}
                         </Badge>
                       ) : state.isIncomplete ? (
                         <Badge variant="warning" className="text-xs flex items-center gap-1">
                             <AlertTriangle className="h-3 w-3" />
-                            Incomplete
+                            {t('tasks:detailHeader.incomplete')}
                           </Badge>
                       ) : (
                         <>
@@ -305,10 +307,12 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                               variant={task.reviewReason === 'completed' ? 'success' : task.reviewReason === 'errors' ? 'destructive' : 'warning'}
                               className="text-xs"
                             >
-                              {task.reviewReason === 'completed' ? 'Completed' :
-                               task.reviewReason === 'errors' ? 'Has Errors' :
-                               task.reviewReason === 'plan_review' ? 'Approve Plan' :
-                               task.reviewReason === 'stopped' ? 'Stopped' : 'QA Issues'}
+                              {t(`tasks:detailHeader.reviewReason.${
+                                task.reviewReason === 'completed' || task.reviewReason === 'errors' ||
+                                task.reviewReason === 'plan_review' || task.reviewReason === 'stopped'
+                                  ? task.reviewReason
+                                  : 'qa'
+                              }`)}
                             </Badge>
                           )}
                         </>
@@ -316,7 +320,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                       {/* Compact progress indicator */}
                       {totalSubtasks > 0 && (
                         <span className="text-xs text-muted-foreground ml-1">
-                          {completedSubtasks}/{totalSubtasks} subtasks
+                          {t('tasks:detailHeader.subtaskProgress', { completed: completedSubtasks, total: totalSubtasks })}
                         </span>
                       )}
                     </div>
@@ -394,26 +398,19 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
             {/* Body - Single Column with Tabs */}
             <div className="flex-1 min-h-0 overflow-hidden">
               <Tabs value={state.activeTab} onValueChange={state.setActiveTab} className="flex flex-col h-full">
-                <TabsList className="w-full justify-start rounded-none border-b border-border bg-transparent px-6 h-auto shrink-0">
-                  <TabsTrigger
-                    value="overview"
-                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
-                  >
-                    Overview
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="subtasks"
-                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
-                  >
-                    Subtasks ({task.subtasks.length})
-                  </TabsTrigger>
-                  <TabsTrigger
-                    value="logs"
-                    className="rounded-none data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2.5 text-sm"
-                  >
-                    Logs
-                  </TabsTrigger>
-                </TabsList>
+                {/* Tabs as a segmented control, like the settings dialog */}
+                <div className="shrink-0 px-6 pb-3">
+                  <SegmentedControl
+                    value={state.activeTab}
+                    onValueChange={state.setActiveTab}
+                    ariaLabel={t('tasks:detailTabs.label')}
+                    options={[
+                      { value: 'overview', label: t('tasks:detailTabs.overview') },
+                      { value: 'subtasks', label: t('tasks:detailTabs.subtasks', { count: task.subtasks.length }) },
+                      { value: 'logs', label: t('tasks:detailTabs.logs') }
+                    ]}
+                  />
+                </div>
 
                 {/* Overview Tab */}
                 <TabsContent value="overview" className="flex-1 min-h-0 overflow-hidden mt-0">
@@ -508,39 +505,29 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
       <AlertDialog open={state.showDeleteDialog} onOpenChange={state.setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
-              {t('tasks:deleteDialog.title')}
-            </AlertDialogTitle>
+            <AlertDialogTitle>{t('tasks:deleteDialog.title')}</AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="text-sm text-muted-foreground space-y-3">
+              <div className="space-y-3">
                 <p>
-                  {t('tasks:deleteDialog.confirmMessage')} <strong className="text-foreground">"{task.title}"</strong>?
+                  {t('tasks:deleteDialog.confirmMessage')} <span className="text-foreground">"{task.title}"</span>?
                 </p>
                 {state.isCheckingChanges && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <p className="flex items-center gap-2">
                     <Loader2 className="h-4 w-4 animate-spin" />
                     {t('tasks:deleteDialog.checkingChanges')}
-                  </div>
+                  </p>
                 )}
                 {state.worktreeChangesInfo?.hasChanges && (
-                  <div className="rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm space-y-1">
-                    <p className="font-medium text-foreground flex items-center gap-1.5">
-                      <AlertTriangle className="h-4 w-4 text-warning" />
-                      {t('tasks:deleteDialog.uncommittedChanges', { count: state.worktreeChangesInfo.changedFileCount })}
-                    </p>
-                    <p className="text-muted-foreground text-xs">
-                      {t('tasks:deleteDialog.uncommittedChangesHint')}
-                    </p>
-                  </div>
+                  <p className="text-destructive">
+                    {t('tasks:deleteDialog.uncommittedChanges', { count: state.worktreeChangesInfo.changedFileCount })}.{' '}
+                    {t('tasks:deleteDialog.uncommittedChangesHint')}
+                  </p>
                 )}
-                <p className="text-destructive">
+                <p className="rounded-xl bg-segment-track px-4 py-3 text-foreground">
                   {t('tasks:deleteDialog.destructiveWarning')}
                 </p>
                 {state.deleteError && (
-                  <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                    {state.deleteError}
-                  </p>
+                  <p className="text-destructive">{state.deleteError}</p>
                 )}
               </div>
             </AlertDialogDescription>
@@ -553,7 +540,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                 handleDelete();
               }}
               disabled={state.isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className={buttonVariants({ variant: 'destructive', size: 'sm' })}
             >
               {state.isDeleting ? (
                 <>
@@ -561,10 +548,7 @@ function TaskDetailModalContent({ open, task, onOpenChange, onSwitchToTerminals,
                   {t('tasks:deleteDialog.deleting')}
                 </>
               ) : (
-                <>
-                  <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                  {t('tasks:deleteDialog.deletePermanently')}
-                </>
+                t('tasks:deleteDialog.deletePermanently')
               )}
             </AlertDialogAction>
           </AlertDialogFooter>

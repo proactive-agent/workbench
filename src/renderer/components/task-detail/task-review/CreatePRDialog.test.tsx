@@ -322,7 +322,7 @@ describe('CreatePRDialog', () => {
     });
   });
 
-  it('should call onCreatePR with draft: true when draft checkbox is checked', async () => {
+  it('should call onCreatePR with draft: true when draft switch is on', async () => {
     render(
       <CreatePRDialog
         open={true}
@@ -337,9 +337,9 @@ describe('CreatePRDialog', () => {
       expect(screen.getByLabelText(/pr title/i)).toHaveValue('Implement user authentication');
     });
 
-    // Find and click the draft checkbox
-    const draftCheckbox = screen.getByRole('checkbox');
-    fireEvent.click(draftCheckbox);
+    // Find and click the draft switch
+    const draftSwitch = screen.getByRole('switch');
+    fireEvent.click(draftSwitch);
 
     // Create the PR
     const createButton = screen.getByRole('button', { name: /create pull request/i });

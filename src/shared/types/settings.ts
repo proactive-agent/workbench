@@ -7,7 +7,7 @@ import type { ProviderAccount, BuiltinProvider } from './provider-account';
 import type { ProviderModelSpec } from '../constants/models';
 
 // Color theme types for multi-theme support
-export type ColorTheme = 'default' | 'lime';
+export type ColorTheme = 'default';
 
 // Developer tools preferences - IDE and terminal selection
 // Comprehensive list based on Stack Overflow Developer Survey 2024, JetBrains Survey, and market research
@@ -255,7 +255,6 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
   defaultModel: string;
-  agentFramework: string;
   pythonPath?: string;
   gitPath?: string;
   githubCLIPath?: string;
@@ -263,7 +262,6 @@ export interface AppSettings {
   claudePath?: string;
   autoBuildPath?: string;
   autoUpdateAutoBuild: boolean;
-  autoNameTerminals: boolean;
   // Maximum agent terminals per project (MIN_TERMINALS..MAX_TERMINALS_LIMIT)
   maxTerminals?: number;
   notifications: NotificationSettings;
@@ -338,8 +336,6 @@ export interface AppSettings {
   dangerouslySkipPermissions?: boolean;
   // Anonymous error reporting (Sentry) - enabled by default to help improve the app
   sentryEnabled?: boolean;
-  // Auto-name Claude terminals based on initial message (only triggers once per session)
-  autoNameClaudeTerminals?: boolean;
   // Track which version warnings have been shown (e.g., ["2.7.5"])
   seenVersionWarnings?: string[];
   // Version the user has permanently skipped for update notifications

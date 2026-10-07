@@ -8,7 +8,8 @@ import { AgentProfileSettings } from './AgentProfileSettings';
 import { FeatureModelSettings } from './FeatureModelSettings';
 import { CrossProviderTabContent } from './CrossProviderTabContent';
 import { OllamaModelManager } from './OllamaModelManager';
-import { Separator } from '../ui/separator';
+import { SettingsSection } from './SettingsSection';
+import { SettingsRow } from './SettingsRow';
 import { saveSettings, useSettingsStore } from '../../stores/settings-store';
 
 /**
@@ -63,11 +64,11 @@ export function ProviderAgentTabs() {
 
   if (orderedProviders.length === 0) {
     return (
-      <div className="rounded-lg bg-muted/50 p-6 text-center">
-        <p className="text-sm text-muted-foreground">
+      <SettingsSection title={t('agentProfile.title')}>
+        <p className="rounded-xl bg-segment-track px-4 py-3 text-sm text-(--nav-label-color)">
           {t('agentProfile.providerTabs.noProviders')}
         </p>
-      </div>
+      </SettingsSection>
     );
   }
 
@@ -76,16 +77,16 @@ export function ProviderAgentTabs() {
       ? (PROVIDER_REGISTRY.find((p) => p.id === resolvedTab)?.name ?? resolvedTab)
       : '';
 
-  return (
-    <div className="space-y-6">
-      {/* Section heading */}
-      <div>
-        <h3 className="text-lg font-semibold text-foreground mb-1">{t('agentProfile.title')}</h3>
-        <p className="text-sm text-muted-foreground">{t('agentProfile.sectionDescription')}</p>
-      </div>
-      <Separator />
-
-      {/* Tab strip (below heading) */}
+  // Provider switch: the first row of the "Agent profile" section
+  const providerRow = (
+    <SettingsRow
+      label={t('agentProfile.providerTabs.label')}
+      description={
+        isCrossProviderActive
+          ? t('agentProfile.customProfile.description')
+          : t('agentProfile.providerTabs.configureFor', { provider: providerDisplayName })
+      }
+    >
       <ProviderTabBar
         providers={orderedProviders}
         activeProvider={resolvedTab}
@@ -101,28 +102,23 @@ export function ProviderAgentTabs() {
         crossProviderDisabled={connectedProviders.length < 2}
         needsSetup={needsSetup}
       />
+    </SettingsRow>
+  );
 
-      {isCrossProviderActive ? (
-        <CrossProviderTabContent />
-      ) : (
-        <>
-          {/* Subtitle */}
-          {resolvedTab !== null && (
-            <p className="text-sm text-muted-foreground">
-              {t('agentProfile.providerTabs.configureFor', { provider: providerDisplayName })}
-            </p>
-          )}
+  if (isCrossProviderActive) {
+    return <CrossProviderTabContent leadingRows={providerRow} />;
+  }
 
-          {/* Provider-scoped agent profile settings */}
-          <AgentProfileSettings provider={resolvedTab ?? undefined} />
+  return (
+    <>
+      {/* Provider-scoped agent profile + phase settings */}
+      <AgentProfileSettings provider={resolvedTab ?? undefined} leadingRows={providerRow} />
 
-          {/* Provider-scoped feature model settings */}
-          {resolvedTab && <FeatureModelSettings provider={resolvedTab} />}
+      {/* Provider-scoped feature model settings */}
+      {resolvedTab && <FeatureModelSettings provider={resolvedTab} />}
 
-          {/* Ollama model management */}
-          {resolvedTab === 'ollama' && <OllamaModelManager />}
-        </>
-      )}
-    </div>
+      {/* Ollama model management */}
+      {resolvedTab === 'ollama' && <OllamaModelManager />}
+    </>
   );
 }

@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { FolderTree, Brain } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
+import { SegmentedControl } from '../settings/SettingsRow';
 import { useContextStore } from '../../stores/context-store';
 import { verifyMemory, pinMemory, deprecateMemory } from '../../stores/context-store';
 import { useProjectContext, useRefreshIndex, useMemorySearch } from './hooks';
@@ -10,7 +9,7 @@ import { MemoriesTab } from './MemoriesTab';
 import type { ContextProps } from './types';
 
 export function Context({ projectId }: ContextProps) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'settings']);
   const {
     projectIndex,
     indexLoading,
@@ -23,7 +22,7 @@ export function Context({ projectId }: ContextProps) {
     searchLoading
   } = useContextStore();
 
-  const [activeTab, setActiveTab] = useState('index');
+  const [activeTab, setActiveTab] = useState<'index' | 'memories'>('index');
 
   // Custom hooks
   useProjectContext(projectId);
@@ -44,32 +43,27 @@ export function Context({ projectId }: ContextProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
-        <div className="border-b border-border px-6 py-3">
-          <TabsList className="grid w-full max-w-md grid-cols-2">
-            <TabsTrigger value="index" className="gap-2">
-              <FolderTree className="h-4 w-4" />
-              {t('context.tabs.projectIndex')}
-            </TabsTrigger>
-            <TabsTrigger value="memories" className="gap-2">
-              <Brain className="h-4 w-4" />
-              {t('context.tabs.memories')}
-            </TabsTrigger>
-          </TabsList>
-        </div>
+      <div className="mx-auto w-full max-w-[832px] shrink-0 px-7 pb-6 pt-4">
+        <SegmentedControl
+          value={activeTab}
+          onValueChange={setActiveTab}
+          ariaLabel={t('settings:projectSections.context.title')}
+          options={[
+            { value: 'index', label: t('context.tabs.projectIndex') },
+            { value: 'memories', label: t('context.tabs.memories') }
+          ]}
+        />
+      </div>
 
-        {/* Project Index Tab */}
-        <TabsContent value="index" className="flex-1 overflow-hidden m-0">
+      <div className="min-h-0 flex-1">
+        {activeTab === 'index' ? (
           <ProjectIndexTab
             projectIndex={projectIndex}
             indexLoading={indexLoading}
             indexError={indexError}
             onRefresh={handleRefreshIndex}
           />
-        </TabsContent>
-
-        {/* Memories Tab */}
-        <TabsContent value="memories" className="flex-1 overflow-hidden m-0">
+        ) : (
           <MemoriesTab
             memoryStatus={memoryStatus}
             memoryState={memoryState}
@@ -82,8 +76,8 @@ export function Context({ projectId }: ContextProps) {
             onPin={handlePin}
             onDeprecate={handleDeprecate}
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
     </div>
   );
 }

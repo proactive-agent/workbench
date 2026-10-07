@@ -94,31 +94,31 @@ export function TaskSelector({
         {/* Same neutral trigger as the worktree selector */}
         <button
           type="button"
-          className="flex h-6 items-center gap-1 rounded px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground"
+          className="flex h-8 items-center gap-1.5 rounded-lg px-2 text-sm text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground"
           onClick={(e) => e.stopPropagation()}
           title={associatedTask?.title}
         >
           {associatedTask ? (
             <>
               {isPhaseActive ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <PhaseIcon className="h-3 w-3" />
+                <PhaseIcon className="h-4 w-4" strokeWidth={1.75} />
               )}
               <span>{phaseConfig.label}</span>
             </>
           ) : (
             <>
-              <TaskListIcon className="h-3 w-3 shrink-0" />
+              <TaskListIcon className="h-4 w-4 shrink-0" />
               <span>{t('taskSelector.selectTask')}</span>
             </>
           )}
-          <ChevronDown className="h-2.5 w-2.5 opacity-60" />
+          <ChevronDown className="h-3.5 w-3.5 opacity-60" />
         </button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-56 p-0"
+        className="w-auto min-w-[15rem] max-w-[22rem] p-1.5"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           searchInputRef.current?.focus();
@@ -127,25 +127,25 @@ export function TaskSelector({
         {/* Pinned actions: new task, and clearing the linked task */}
         {(onNewTaskClick || associatedTask) && (
           <>
-            <div className="p-1">
+            <div>
               {onNewTaskClick && (
                 <button
                   type="button"
-                  className="flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-nav-hover"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-nav-hover"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsOpen(false);
                     onNewTaskClick();
                   }}
                 >
-                  <Plus className="mr-2 h-3 w-3" />
+                  <Plus className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
                   {t('taskSelector.newTask')}
                 </button>
               )}
               {associatedTask && (
                 <button
                   type="button"
-                  className="flex w-full cursor-pointer items-center rounded-sm px-2 py-1.5 text-left text-xs text-foreground hover:bg-nav-hover"
+                  className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-foreground hover:bg-nav-hover"
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsOpen(false);
@@ -153,18 +153,18 @@ export function TaskSelector({
                   }}
                   title={associatedTask.title}
                 >
-                  <X className="mr-2 h-3 w-3 shrink-0" />
+                  <X className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
                   <span className="truncate">{t('taskSelector.clearTask')}</span>
                 </button>
               )}
             </div>
-            <div className="border-t border-border" />
+            <div className="-mx-1.5 my-1.5 h-px bg-border" />
           </>
         )}
 
         {/* Search input */}
-        <div className="flex items-center px-2 py-1.5">
-          <Search className="mr-2 h-3 w-3 shrink-0 text-muted-foreground" />
+        <div className="flex items-center gap-2 px-3 py-1.5">
+          <Search className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
           <input
             ref={searchInputRef}
             type="search"
@@ -180,17 +180,17 @@ export function TaskSelector({
             }}
             onKeyDown={handleKeyDown}
             placeholder={t('taskSelector.searchPlaceholder')}
-            className="flex-1 bg-transparent text-xs outline-none placeholder:text-muted-foreground"
+            className="flex-1 bg-transparent text-sm outline-none placeholder:text-(--nav-label-color)"
           />
         </div>
 
-        <div className="border-t border-border" />
+        <div className="-mx-1.5 my-1.5 h-px bg-border" />
 
         {/* Matching tasks */}
         <div className="max-h-[min(500px,60vh)] overflow-y-auto">
-          <div id={listboxId} role="listbox" aria-label={t('taskSelector.availableTasks')} className="p-1">
+          <div id={listboxId} role="listbox" aria-label={t('taskSelector.availableTasks')}>
             {filteredTasks.length === 0 ? (
-              <div className="py-2 text-center text-xs text-muted-foreground">
+              <div className="px-3 py-2 text-sm text-(--nav-label-color)">
                 {backlogTasks.length === 0 ? t('taskSelector.noTasks') : t('taskSelector.noResults')}
               </div>
             ) : (
@@ -206,8 +206,8 @@ export function TaskSelector({
                   tabIndex={-1}
                   aria-selected={focusedIndex === index}
                   className={cn(
-                    'cursor-pointer truncate rounded-sm px-2 py-1.5 text-xs',
-                    focusedIndex === index ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/50'
+                    'cursor-pointer truncate rounded-lg px-3 py-2 text-sm text-foreground',
+                    focusedIndex === index ? 'bg-nav-hover' : 'hover:bg-nav-hover'
                   )}
                   onClick={(e) => {
                     e.stopPropagation();

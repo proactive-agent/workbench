@@ -1,14 +1,7 @@
 import { useState, useEffect } from 'react';
-import {
-  Database,
-  Eye,
-  EyeOff,
-  ChevronDown,
-  ChevronUp,
-  Globe
-} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Eye, EyeOff } from 'lucide-react';
 import { Input } from '../ui/input';
-import { Label } from '../ui/label';
 import { Switch } from '../ui/switch';
 import {
   Select,
@@ -17,7 +10,8 @@ import {
   SelectTrigger,
   SelectValue
 } from '../ui/select';
-import { Separator } from '../ui/separator';
+import { SettingsSection } from '../settings/SettingsSection';
+import { SettingsRow, SettingsRows } from '../settings/SettingsRow';
 import { OllamaModelSelector } from '../onboarding/OllamaModelSelector';
 import type { ProjectEnvConfig, ProjectSettings as ProjectSettingsType, MemoryEmbeddingProvider } from '../../../shared/types';
 
@@ -31,11 +25,54 @@ interface SecuritySettingsProps {
   showOpenAIKey: boolean;
   setShowOpenAIKey: React.Dispatch<React.SetStateAction<boolean>>;
 
-  // Collapsible section
+  // Kept for API compatibility; the page is always expanded now
   expanded: boolean;
   onToggle: () => void;
 }
 
+interface SecretInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  visible: boolean;
+  onToggleVisible: () => void;
+  showLabel: string;
+  hideLabel: string;
+}
+
+function SecretInput({ value, onChange, placeholder, visible, onToggleVisible, showLabel, hideLabel }: SecretInputProps) {
+  return (
+    <div className="relative">
+      <Input
+        type={visible ? 'text' : 'password'}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="pr-10"
+      />
+      <button
+        type="button"
+        onClick={onToggleVisible}
+        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+        aria-label={visible ? hideLabel : showLabel}
+      >
+        {visible ? <EyeOff className="h-4 w-4" strokeWidth={1.75} /> : <Eye className="h-4 w-4" strokeWidth={1.75} />}
+      </button>
+    </div>
+  );
+}
+
+function KeyLink({ href, children }: { href: string; children: React.ReactNode }) {
+  return (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
+      {children}
+    </a>
+  );
+}
+
+/**
+ * Project "Memory" page: memory toggle, embedding provider and storage, as claude.ai sections.
+ */
 export function SecuritySettings({
   envConfig,
   settings,
@@ -43,9 +80,11 @@ export function SecuritySettings({
   updateEnvConfig,
   showOpenAIKey,
   setShowOpenAIKey,
-  expanded,
-  onToggle
+  expanded: _expanded,
+  onToggle: _onToggle
 }: SecuritySettingsProps) {
+  const { t } = useTranslation('settings');
+
   // Password visibility for multiple providers
   const [showApiKey, setShowApiKey] = useState<Record<string, boolean>>({
     openai: showOpenAIKey,
@@ -85,246 +124,159 @@ export function SecuritySettings({
 
   if (!envConfig) return null;
 
-  // Render provider-specific configuration fields
+  const updateProviderConfig = (
+    provider: MemoryEmbeddingProvider,
+    updates: Partial<NonNullable<ProjectEnvConfig['memoryProviderConfig']>>
+  ) => {
+    updateEnvConfig({
+      memoryProviderConfig: {
+        ...envConfig.memoryProviderConfig,
+        embeddingProvider: provider,
+        ...updates,
+      }
+    });
+  };
+
+  const secretProps = (key: string, name: string) => ({
+    visible: !!showApiKey[key],
+    onToggleVisible: () => toggleShowApiKey(key),
+    showLabel: t('projectPages.memory.showKey', { name }),
+    hideLabel: t('projectPages.memory.hideKey', { name })
+  });
+
+  // Render provider-specific configuration rows
   const renderProviderFields = () => {
     // OpenAI
     if (embeddingProvider === 'openai') {
       return (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium text-foreground">
-              OpenAI API Key {envConfig.openaiKeyIsGlobal ? '(Override)' : ''}
-            </Label>
-            {envConfig.openaiKeyIsGlobal && (
-              <span className="flex items-center gap-1 text-xs text-info">
-                <Globe className="h-3 w-3" />
-                Using global key
-              </span>
-            )}
-          </div>
-          {envConfig.openaiKeyIsGlobal ? (
-            <p className="text-xs text-muted-foreground">
-              Using key from App Settings. Enter a project-specific key below to override.
-            </p>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Required for OpenAI embeddings
-            </p>
-          )}
-          <div className="relative">
-            <Input
-              type={showApiKey['openai'] ? 'text' : 'password'}
-              placeholder={envConfig.openaiKeyIsGlobal ? 'Enter to override global key...' : 'sk-xxxxxxxx'}
-              value={envConfig.openaiKeyIsGlobal ? '' : (envConfig.openaiApiKey || '')}
-              onChange={(e) => updateEnvConfig({ openaiApiKey: e.target.value || undefined })}
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => toggleShowApiKey('openai')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={showApiKey['openai'] ? 'Hide OpenAI API key' : 'Show OpenAI API key'}
-            >
-              {showApiKey['openai'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Get your key from{' '}
-            <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-              OpenAI
-            </a>
-          </p>
-        </div>
+        <SettingsRow
+          stacked
+          label={envConfig.openaiKeyIsGlobal ? t('projectPages.memory.openaiKeyOverride') : t('projectPages.memory.openaiKey')}
+          description={
+            <>
+              {envConfig.openaiKeyIsGlobal
+                ? t('projectPages.memory.usingGlobalKey')
+                : t('projectPages.memory.requiredFor', { name: 'OpenAI' })}{' '}
+              <KeyLink href="https://platform.openai.com/api-keys">{t('projectPages.memory.getKey', { name: 'OpenAI' })}</KeyLink>
+            </>
+          }
+        >
+          <SecretInput
+            value={envConfig.openaiKeyIsGlobal ? '' : (envConfig.openaiApiKey || '')}
+            onChange={(value) => updateEnvConfig({ openaiApiKey: value || undefined })}
+            placeholder={envConfig.openaiKeyIsGlobal ? t('projectPages.memory.overridePlaceholder') : 'sk-xxxxxxxx'}
+            {...secretProps('openai', 'OpenAI')}
+          />
+        </SettingsRow>
       );
     }
 
     // Voyage AI
     if (embeddingProvider === 'voyage') {
       return (
-        <div className="space-y-2">
-          <Label className="text-sm font-medium text-foreground">Voyage AI API Key</Label>
-          <p className="text-xs text-muted-foreground">
-            Required for Voyage AI embeddings
-          </p>
-          <div className="relative">
-            <Input
-              type={showApiKey['voyage'] ? 'text' : 'password'}
+        <>
+          <SettingsRow
+            stacked
+            label={t('projectPages.memory.apiKey', { name: 'Voyage AI' })}
+            description={
+              <>
+                {t('projectPages.memory.requiredFor', { name: 'Voyage AI' })}{' '}
+                <KeyLink href="https://dash.voyageai.com/api-keys">{t('projectPages.memory.getKey', { name: 'Voyage AI' })}</KeyLink>
+              </>
+            }
+          >
+            <SecretInput
               value={envConfig.memoryProviderConfig?.voyageApiKey || ''}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'voyage',
-                  voyageApiKey: e.target.value || undefined,
-                }
-              })}
+              onChange={(value) => updateProviderConfig('voyage', { voyageApiKey: value || undefined })}
               placeholder="pa-xxxxxxxx"
-              className="pr-10"
+              {...secretProps('voyage', 'Voyage AI')}
             />
-            <button
-              type="button"
-              onClick={() => toggleShowApiKey('voyage')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={showApiKey['voyage'] ? 'Hide Voyage AI API key' : 'Show Voyage AI API key'}
-            >
-              {showApiKey['voyage'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Get your key from{' '}
-            <a href="https://dash.voyageai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-              Voyage AI
-            </a>
-          </p>
-          <div className="space-y-1 mt-3">
-            <Label className="text-xs text-muted-foreground">Embedding Model (optional)</Label>
+          </SettingsRow>
+          <SettingsRow stacked label={t('projectPages.memory.embeddingModelOptional')}>
             <Input
               placeholder="voyage-3"
               value={envConfig.memoryProviderConfig?.voyageEmbeddingModel || ''}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'voyage',
-                  voyageEmbeddingModel: e.target.value || undefined,
-                }
-              })}
+              onChange={(e) => updateProviderConfig('voyage', { voyageEmbeddingModel: e.target.value || undefined })}
             />
-          </div>
-        </div>
+          </SettingsRow>
+        </>
       );
     }
 
     // Google AI
     if (embeddingProvider === 'google') {
       return (
-        <div className="space-y-2">
-          <Label className="text-sm font-medium text-foreground">Google AI API Key</Label>
-          <p className="text-xs text-muted-foreground">
-            Required for Google AI embeddings
-          </p>
-          <div className="relative">
-            <Input
-              type={showApiKey['google'] ? 'text' : 'password'}
-              value={envConfig.memoryProviderConfig?.googleApiKey || ''}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'google',
-                  googleApiKey: e.target.value || undefined,
-                }
-              })}
-              placeholder="AIzaSy..."
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => toggleShowApiKey('google')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              aria-label={showApiKey['google'] ? 'Hide Google API key' : 'Show Google API key'}
-            >
-              {showApiKey['google'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Get your key from{' '}
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-primary hover:text-primary/80">
-              Google AI Studio
-            </a>
-          </p>
-        </div>
+        <SettingsRow
+          stacked
+          label={t('projectPages.memory.apiKey', { name: 'Google AI' })}
+          description={
+            <>
+              {t('projectPages.memory.requiredFor', { name: 'Google AI' })}{' '}
+              <KeyLink href="https://aistudio.google.com/apikey">{t('projectPages.memory.getKey', { name: 'Google AI Studio' })}</KeyLink>
+            </>
+          }
+        >
+          <SecretInput
+            value={envConfig.memoryProviderConfig?.googleApiKey || ''}
+            onChange={(value) => updateProviderConfig('google', { googleApiKey: value || undefined })}
+            placeholder="AIzaSy..."
+            {...secretProps('google', 'Google')}
+          />
+        </SettingsRow>
       );
     }
 
     // Azure OpenAI
     if (embeddingProvider === 'azure_openai') {
       return (
-        <div className="space-y-3 p-3 rounded-md bg-muted/50">
-          <Label className="text-sm font-medium text-foreground">Azure OpenAI Configuration</Label>
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">API Key</Label>
-            <div className="relative">
-              <Input
-                type={showApiKey['azure'] ? 'text' : 'password'}
-                value={envConfig.memoryProviderConfig?.azureOpenaiApiKey || ''}
-                onChange={(e) => updateEnvConfig({
-                  memoryProviderConfig: {
-                    ...envConfig.memoryProviderConfig,
-                    embeddingProvider: 'azure_openai',
-                    azureOpenaiApiKey: e.target.value || undefined,
-                  }
-                })}
-                placeholder="Azure API Key"
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => toggleShowApiKey('azure')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                aria-label={showApiKey['azure'] ? 'Hide Azure OpenAI API key' : 'Show Azure OpenAI API key'}
-              >
-                {showApiKey['azure'] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Base URL</Label>
+        <>
+          <SettingsRow stacked label={t('projectPages.memory.apiKey', { name: 'Azure OpenAI' })}>
+            <SecretInput
+              value={envConfig.memoryProviderConfig?.azureOpenaiApiKey || ''}
+              onChange={(value) => updateProviderConfig('azure_openai', { azureOpenaiApiKey: value || undefined })}
+              placeholder={t('projectPages.memory.azureKeyPlaceholder')}
+              {...secretProps('azure', 'Azure OpenAI')}
+            />
+          </SettingsRow>
+          <SettingsRow stacked label={t('projectPages.memory.baseUrl')}>
             <Input
               placeholder="https://your-resource.openai.azure.com"
               value={envConfig.memoryProviderConfig?.azureOpenaiBaseUrl || ''}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'azure_openai',
-                  azureOpenaiBaseUrl: e.target.value || undefined,
-                }
-              })}
+              onChange={(e) => updateProviderConfig('azure_openai', { azureOpenaiBaseUrl: e.target.value || undefined })}
             />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Embedding Deployment Name</Label>
+          </SettingsRow>
+          <SettingsRow stacked label={t('projectPages.memory.azureDeployment')}>
             <Input
               placeholder="text-embedding-ada-002"
               value={envConfig.memoryProviderConfig?.azureOpenaiEmbeddingDeployment || ''}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'azure_openai',
-                  azureOpenaiEmbeddingDeployment: e.target.value || undefined,
-                }
-              })}
+              onChange={(e) =>
+                updateProviderConfig('azure_openai', { azureOpenaiEmbeddingDeployment: e.target.value || undefined })
+              }
             />
-          </div>
-        </div>
+          </SettingsRow>
+        </>
       );
     }
 
     // Ollama (Local) - uses OllamaModelSelector component
     if (embeddingProvider === 'ollama') {
       return (
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-xs text-muted-foreground">Base URL</Label>
+        <>
+          <SettingsRow stacked label={t('projectPages.memory.baseUrl')}>
             <Input
               placeholder="http://localhost:11434"
               value={envConfig.memoryProviderConfig?.ollamaBaseUrl || 'http://localhost:11434'}
-              onChange={(e) => updateEnvConfig({
-                memoryProviderConfig: {
-                  ...envConfig.memoryProviderConfig,
-                  embeddingProvider: 'ollama',
-                  ollamaBaseUrl: e.target.value,
-                }
-              })}
+              onChange={(e) => updateProviderConfig('ollama', { ollamaBaseUrl: e.target.value })}
             />
-          </div>
-
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">Select Embedding Model</Label>
+          </SettingsRow>
+          <SettingsRow stacked label={t('projectPages.memory.embeddingModel')}>
             <OllamaModelSelector
               selectedModel={envConfig.memoryProviderConfig?.ollamaEmbeddingModel || ''}
               baseUrl={envConfig.memoryProviderConfig?.ollamaBaseUrl}
               onModelSelect={handleOllamaModelSelect}
             />
-          </div>
-        </div>
+          </SettingsRow>
+        </>
       );
     }
 
@@ -332,121 +284,87 @@ export function SecuritySettings({
   };
 
   return (
-    <section className="space-y-3">
-      <button
-        onClick={onToggle}
-        className="w-full flex items-center justify-between text-sm font-semibold text-foreground hover:text-foreground/80"
-      >
-        <div className="flex items-center gap-2">
-          <Database className="h-4 w-4" />
-          Memory
-          <span className={`px-2 py-0.5 text-xs rounded-full ${
-            envConfig.memoryEnabled
-              ? 'bg-success/10 text-success'
-              : 'bg-muted text-muted-foreground'
-          }`}>
-            {envConfig.memoryEnabled ? 'Enabled' : 'Disabled'}
-          </span>
-        </div>
-        {expanded ? (
-          <ChevronUp className="h-4 w-4" />
-        ) : (
-          <ChevronDown className="h-4 w-4" />
-        )}
-      </button>
-
-      {expanded && (
-        <div className="space-y-4 pl-6 pt-2">
-          <div className="flex items-center justify-between">
-            <div className="space-y-0.5">
-              <Label className="font-normal text-foreground">Enable Memory</Label>
-              <p className="text-xs text-muted-foreground">
-                Persistent cross-session memory using LadybugDB (embedded database)
-              </p>
-            </div>
+    <>
+      <SettingsSection title={t('projectSections.memory.title')}>
+        <SettingsRows>
+          <SettingsRow
+            label={t('projectPages.memory.enable')}
+            description={
+              envConfig.memoryEnabled
+                ? t('projectPages.memory.enableDescription')
+                : t('projectPages.memory.fileBasedDescription')
+            }
+          >
             <Switch
               checked={envConfig.memoryEnabled}
               onCheckedChange={(checked) => {
                 updateEnvConfig({ memoryEnabled: checked });
                 setSettings({ ...settings, memoryBackend: checked ? 'memory' : 'file' });
               }}
+              aria-label={t('projectPages.memory.enable')}
             />
-          </div>
+          </SettingsRow>
+        </SettingsRows>
+      </SettingsSection>
 
-          {!envConfig.memoryEnabled && (
-            <div className="rounded-lg border border-border bg-muted/30 p-3">
-              <p className="text-xs text-muted-foreground">
-                Using file-based memory. Session insights are stored locally in JSON files.
-                Enable Memory for persistent cross-session context with semantic search.
-              </p>
-            </div>
-          )}
-
-          {envConfig.memoryEnabled && (
-            <>
-              {/* Embedding Provider Selection */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Embedding Provider</Label>
-                <p className="text-xs text-muted-foreground">
-                  Provider for semantic search (optional - keyword search works without)
-                </p>
+      {envConfig.memoryEnabled && (
+        <>
+          <SettingsSection title={t('projectPages.memory.embeddingsTitle')}>
+            <SettingsRows>
+              <SettingsRow
+                label={t('projectPages.memory.provider')}
+                description={t('projectPages.memory.providerDescription')}
+              >
                 <Select
                   value={embeddingProvider}
-                  onValueChange={(value: MemoryEmbeddingProvider) => {
-                    updateEnvConfig({
-                      memoryProviderConfig: {
-                        ...envConfig.memoryProviderConfig,
-                        embeddingProvider: value,
-                      }
-                    });
-                  }}
+                  onValueChange={(value: MemoryEmbeddingProvider) => updateProviderConfig(value, {})}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select embedding provider" />
+                  <SelectTrigger aria-label={t('projectPages.memory.provider')}>
+                    <SelectValue placeholder={t('projectPages.memory.providerPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="ollama">Ollama (Local - Free)</SelectItem>
+                    <SelectItem value="ollama">{t('projectPages.memory.providers.ollama')}</SelectItem>
                     <SelectItem value="openai">OpenAI</SelectItem>
                     <SelectItem value="voyage">Voyage AI</SelectItem>
                     <SelectItem value="google">Google AI</SelectItem>
                     <SelectItem value="azure_openai">Azure OpenAI</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </SettingsRow>
 
               {/* Provider-specific fields */}
               {renderProviderFields()}
+            </SettingsRows>
+          </SettingsSection>
 
-              <Separator />
-
-              {/* Database Settings */}
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Database Name</Label>
-                <p className="text-xs text-muted-foreground">
-                  Stored in ~/.auto-claude/memories/
-                </p>
+          <SettingsSection title={t('projectPages.memory.storageTitle')}>
+            <SettingsRows>
+              <SettingsRow
+                stacked
+                label={t('projectPages.memory.databaseName')}
+                description={t('projectPages.memory.databaseNameDescription')}
+              >
                 <Input
                   placeholder="auto_claude_memory"
                   value={envConfig.memoryDatabase || ''}
                   onChange={(e) => updateEnvConfig({ memoryDatabase: e.target.value })}
                 />
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-sm font-medium text-foreground">Database Path (Optional)</Label>
-                <p className="text-xs text-muted-foreground">
-                  Custom storage location. Default: ~/.auto-claude/memories/
-                </p>
+              </SettingsRow>
+              <SettingsRow
+                stacked
+                label={t('projectPages.memory.databasePath')}
+                description={t('projectPages.memory.databasePathDescription')}
+              >
                 <Input
                   placeholder="~/.auto-claude/memories"
                   value={envConfig.memoryDbPath || ''}
                   onChange={(e) => updateEnvConfig({ memoryDbPath: e.target.value || undefined })}
                 />
-              </div>
-            </>
-          )}
-        </div>
+              </SettingsRow>
+            </SettingsRows>
+          </SettingsSection>
+        </>
       )}
-    </section>
+    </>
   );
 }

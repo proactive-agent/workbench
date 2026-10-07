@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { RefreshCw, Loader2, Check, FolderOpen, AlertTriangle } from 'lucide-react';
+import { RefreshCw, Loader2, FolderOpen } from 'lucide-react';
 import { Label } from '../ui/label';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
@@ -272,14 +272,10 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
 
   return (
     <SettingsSection
-      title={t('devtools.title', 'Developer Tools')}
+      title={t('devtools.title', 'Developer tools')}
       description={t('devtools.description', 'Configure your preferred IDE and terminal for working with worktrees')}
     >
-      {detectError && (
-        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-          {detectError}
-        </div>
-      )}
+      {detectError && <p className="mb-2 text-sm text-destructive">{detectError}</p>}
 
       <SettingsRows>
         <SettingsRow
@@ -298,12 +294,12 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     value={settings.customIDEPath || ''}
                     onChange={(e) => handleCustomIDEPathChange(e.target.value)}
                     placeholder="/path/to/your/ide"
-                    className="h-9 flex-1"
+                    className="h-8 flex-1"
                   />
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-9 w-9"
+                    size="sm"
+                    className="w-8 px-0"
                     onClick={async () => {
                       const result = await window.electronAPI.selectDirectory();
                       if (result) {
@@ -312,7 +308,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     }}
                     aria-label={t('common:accessibility.browseFilesAriaLabel')}
                   >
-                    <FolderOpen className="h-4 w-4" />
+                    <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
                   </Button>
                 </div>
               </div>
@@ -328,13 +324,13 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
             </SelectTrigger>
             <SelectContent>
               {ideOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <div className="flex items-center gap-2">
-                    <span>{option.label}</span>
-                    {option.detected && (
-                      <Check className="h-3 w-3 text-success" />
-                    )}
-                  </div>
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  // Tools that weren't detected can't be picked ("Custom..." always can)
+                  disabled={!option.detected && option.value !== 'custom'}
+                >
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -342,7 +338,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
         </SettingsRow>
 
         <SettingsRow
-          label={t('devtools.terminal.label', 'Preferred Terminal')}
+          label={t('devtools.terminal.label', 'Preferred terminal')}
           description={t('devtools.terminal.description', 'Auto Claude will open terminal sessions here')}
           htmlFor="preferred-terminal"
           footer={
@@ -357,12 +353,12 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     value={settings.customTerminalPath || ''}
                     onChange={(e) => handleCustomTerminalPathChange(e.target.value)}
                     placeholder="/path/to/your/terminal"
-                    className="h-9 flex-1"
+                    className="h-8 flex-1"
                   />
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-9 w-9"
+                    size="sm"
+                    className="w-8 px-0"
                     onClick={async () => {
                       const result = await window.electronAPI.selectDirectory();
                       if (result) {
@@ -371,7 +367,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     }}
                     aria-label={t('common:accessibility.browseFilesAriaLabel')}
                   >
-                    <FolderOpen className="h-4 w-4" />
+                    <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
                   </Button>
                 </div>
               </div>
@@ -387,13 +383,13 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
             </SelectTrigger>
             <SelectContent>
               {terminalOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <div className="flex items-center gap-2">
-                    <span>{option.label}</span>
-                    {option.detected && (
-                      <Check className="h-3 w-3 text-success" />
-                    )}
-                  </div>
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  // Tools that weren't detected can't be picked ("Custom..." always can)
+                  disabled={!option.detected && option.value !== 'custom'}
+                >
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -416,12 +412,12 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     value={settings.customCLIPath || ''}
                     onChange={(e) => handleCustomCLIPathChange(e.target.value)}
                     placeholder="/path/to/your/cli"
-                    className="h-9 flex-1"
+                    className="h-8 flex-1"
                   />
                   <Button
                     variant="outline"
-                    size="icon"
-                    className="h-9 w-9"
+                    size="sm"
+                    className="w-8 px-0"
                     onClick={async () => {
                       const result = await window.electronAPI.selectDirectory();
                       if (result) {
@@ -430,7 +426,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
                     }}
                     aria-label={t('common:accessibility.browseFilesAriaLabel')}
                   >
-                    <FolderOpen className="h-4 w-4" />
+                    <FolderOpen className="h-4 w-4" strokeWidth={1.75} />
                   </Button>
                 </div>
               </div>
@@ -446,54 +442,33 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
             </SelectTrigger>
             <SelectContent>
               {cliOptions.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  <div className="flex items-center gap-2">
-                    <span>{option.label}</span>
-                    {option.detected && (
-                      <Check className="h-3 w-3 text-success" />
-                    )}
-                  </div>
+                <SelectItem
+                  key={option.value}
+                  value={option.value}
+                  // Tools that weren't detected can't be picked ("Custom..." always can)
+                  disabled={!option.detected && option.value !== 'custom'}
+                >
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </SettingsRow>
 
-        {/* Auto-name Claude Terminals Toggle */}
-        <SettingsRow
-          label={t('devtools.autoNameClaude.label', 'Auto-name Claude terminals')}
-          description={t('devtools.autoNameClaude.description', 'Use AI to generate a descriptive name for Claude terminals based on your first message')}
-          htmlFor="auto-name-claude-terminals"
-        >
-          {/* Fallback to true for existing users who don't have this setting in persisted config */}
-          <Switch
-            id="auto-name-claude-terminals"
-            checked={settings.autoNameClaudeTerminals ?? true}
-            onCheckedChange={(checked) => {
-              onSettingsChange({
-                ...settings,
-                autoNameClaudeTerminals: checked
-              });
-            }}
-          />
-        </SettingsRow>
-
         {/* YOLO Mode Toggle */}
         <SettingsRow
-          label={
-            <span className="flex items-center gap-1.5">
-              <AlertTriangle className="h-4 w-4 text-warning" strokeWidth={1.75} />
-              {t('devtools.yoloMode.label', 'YOLO Mode')}
-            </span>
+          label={t('devtools.yoloMode.label', 'YOLO mode')}
+          description={
+            <>
+              {t('devtools.yoloMode.description', 'Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.')}
+              {settings.dangerouslySkipPermissions && (
+                <span className="mt-1 block text-xs text-destructive">
+                  {t('devtools.yoloMode.warning', 'This mode bypasses Claude\'s permission system. Only enable if you fully trust the code being executed.')}
+                </span>
+              )}
+            </>
           }
-          description={t('devtools.yoloMode.description', 'Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.')}
           htmlFor="yolo-mode"
-          footer={settings.dangerouslySkipPermissions ? (
-            <p className="flex items-center gap-1 text-xs font-medium text-warning">
-              <AlertTriangle className="h-3 w-3" />
-              {t('devtools.yoloMode.warning', 'This mode bypasses Claude\'s permission system. Only enable if you fully trust the code being executed.')}
-            </p>
-          ) : undefined}
         >
           <Switch
             id="yolo-mode"
@@ -531,9 +506,9 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
             {isDetecting ? (
               <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
             ) : (
-              <RefreshCw className="mr-1.5 h-3.5 w-3.5" />
+              <RefreshCw className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
             )}
-            {t('devtools.detectAgain', 'Detect Again')}
+            {t('devtools.detectAgain', 'Detect again')}
           </Button>
         </SettingsRow>
       </SettingsRows>

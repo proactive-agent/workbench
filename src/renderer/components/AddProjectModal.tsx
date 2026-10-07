@@ -4,6 +4,8 @@ import { FolderOpen, FolderPlus, ChevronRight } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
+import { SettingsRow } from './settings/SettingsRow';
 import {
   Dialog,
   DialogContent,
@@ -161,6 +163,32 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialSte
     }
   };
 
+  const renderChooseOption = (
+    Icon: typeof FolderOpen,
+    title: string,
+    description: string,
+    ariaLabel: string,
+    onClick: () => void
+  ) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'w-full flex items-center gap-3 px-3 py-3 rounded-lg',
+        'hover:bg-nav-hover transition-colors',
+        'text-left group'
+      )}
+      aria-label={ariaLabel}
+    >
+      <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+      <div className="flex-1 min-w-0">
+        <div className="text-sm text-foreground">{title}</div>
+        <div className="text-sm text-(--nav-label-color)">{description}</div>
+      </div>
+      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" strokeWidth={1.75} />
+    </button>
+  );
+
   const renderChooseStep = () => (
     <>
       <DialogHeader>
@@ -170,56 +198,27 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialSte
         </DialogDescription>
       </DialogHeader>
 
-      <div className="py-4 space-y-3">
-        {/* Open Existing Option */}
-        <button
-          onClick={handleOpenExisting}
-          className={cn(
-            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border',
-            'hover:bg-nav-hover transition-colors',
-            'text-left group'
-          )}
-          aria-label={t('addProject.openExistingAriaLabel')}
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border">
-            <FolderOpen className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-foreground">{t('addProject.openExisting')}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {t('addProject.openExistingDescription')}
-            </p>
-          </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        </button>
-
-        {/* Create New Option */}
-        <button
-          onClick={() => setStep('create-form')}
-          className={cn(
-            'w-full flex items-center gap-3 px-4 py-3 rounded-lg border border-border',
-            'hover:bg-nav-hover transition-colors',
-            'text-left group'
-          )}
-          aria-label={t('addProject.createNewAriaLabel')}
-        >
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border">
-            <FolderPlus className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="text-sm font-medium text-foreground">{t('addProject.createNew')}</h3>
-            <p className="text-sm text-muted-foreground mt-0.5">
-              {t('addProject.createNewDescription')}
-            </p>
-          </div>
-          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors" />
-        </button>
+      <div className="-mx-3 pt-4 space-y-1">
+        {renderChooseOption(
+          FolderOpen,
+          t('addProject.openExisting'),
+          t('addProject.openExistingDescription'),
+          t('addProject.openExistingAriaLabel'),
+          handleOpenExisting
+        )}
+        {renderChooseOption(
+          FolderPlus,
+          t('addProject.createNew'),
+          t('addProject.createNewDescription'),
+          t('addProject.createNewAriaLabel'),
+          () => setStep('create-form')
+        )}
       </div>
 
       {error && (
-        <div className="mt-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
+        <p className="mt-3 text-sm text-destructive" role="alert">
           {error}
-        </div>
+        </p>
       )}
     </>
   );
@@ -233,8 +232,8 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialSte
         </DialogDescription>
       </DialogHeader>
 
-      <div className="py-4 space-y-4">
-        {/* Project Name */}
+      <div className="pt-4 space-y-4">
+        {/* Project name */}
         <div className="space-y-2">
           <Label htmlFor="project-name">{t('addProject.projectName')}</Label>
           <Input
@@ -244,7 +243,7 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialSte
             onChange={(e) => setProjectName(e.target.value)}
             autoFocus
           />
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-(--nav-label-color)">
             {t('addProject.projectNameHelp')}
           </p>
         </div>
@@ -260,35 +259,26 @@ export function AddProjectModal({ open, onOpenChange, onProjectAdded, initialSte
               onChange={(e) => setProjectLocation(e.target.value)}
               className="flex-1"
             />
-            <Button variant="outline" onClick={handleSelectLocation}>
+            <Button variant="outline" size="sm" onClick={handleSelectLocation}>
               {t('addProject.browse')}
             </Button>
           </div>
           {projectLocation && projectName && (
-            <p className="text-xs text-muted-foreground">
-              {t('addProject.willCreate')} <code className="bg-muted px-1 py-0.5 rounded">{projectLocation}/{projectName}</code>
+            <p className="text-sm text-(--nav-label-color) break-all">
+              {t('addProject.willCreate')} <span className="font-mono text-foreground">{projectLocation}/{projectName}</span>
             </p>
           )}
         </div>
 
-        {/* Git Init Checkbox */}
-        <div className="flex items-center gap-2">
-          <input
-            type="checkbox"
-            id="init-git"
-            checked={initGit}
-            onChange={(e) => setInitGit(e.target.checked)}
-            className="h-4 w-4 rounded border-border bg-background"
-          />
-          <Label htmlFor="init-git" className="text-sm font-normal cursor-pointer">
-            {t('addProject.initGit')}
-          </Label>
-        </div>
+        {/* Git init */}
+        <SettingsRow label={t('addProject.initGit')} htmlFor="init-git" className="pb-0">
+          <Switch id="init-git" checked={initGit} onCheckedChange={setInitGit} />
+        </SettingsRow>
 
         {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive" role="alert">
+          <p className="text-sm text-destructive" role="alert">
             {error}
-          </div>
+          </p>
         )}
       </div>
 

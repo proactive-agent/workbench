@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Info } from 'lucide-react';
 import { useSettingsStore, saveSettings } from '../../stores/settings-store';
 import { MixedPhaseEditor } from './MixedPhaseEditor';
 import { MixedFeatureEditor } from './MixedFeatureEditor';
+import { SettingsSection } from './SettingsSection';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 
 /**
  * CrossProviderTabContent — rendered when the user selects the "Cross-Provider" tab
@@ -13,7 +14,12 @@ import { MixedFeatureEditor } from './MixedFeatureEditor';
  * pipeline phase configuration (MixedPhaseEditor) and feature model configuration
  * (MixedFeatureEditor).
  */
-export function CrossProviderTabContent() {
+interface CrossProviderTabContentProps {
+  /** Rows rendered at the top of the "Agent profile" section (e.g. the provider switch) */
+  leadingRows?: React.ReactNode;
+}
+
+export function CrossProviderTabContent({ leadingRows }: CrossProviderTabContentProps) {
   const { t } = useTranslation('settings');
   const settings = useSettingsStore((s) => s.settings);
 
@@ -25,46 +31,32 @@ export function CrossProviderTabContent() {
   }, []); // Only on mount
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="space-y-2">
-        <h4 className="font-medium text-sm text-foreground">
-          {t('agentProfile.crossProviderTab.title')}
-        </h4>
-        <p className="text-sm text-muted-foreground">
-          {t('agentProfile.crossProviderTab.description')}
-        </p>
-      </div>
-
-      {/* Info banner */}
-      <div className="flex items-start gap-2 rounded-lg bg-primary/5 border border-primary/20 p-3">
-        <Info className="h-4 w-4 text-primary mt-0.5 shrink-0" />
-        <p className="text-xs text-primary/80">
-          {t('agentProfile.crossProviderTab.activateInfo')}
-        </p>
-      </div>
+    <>
+      <SettingsSection title={t('agentProfile.title')}>
+        <SettingsRows>
+          {leadingRows}
+          <SettingsRow
+            label={t('agentProfile.crossProviderTab.title')}
+            description={`${t('agentProfile.crossProviderTab.description')} ${t('agentProfile.crossProviderTab.activateInfo')}`}
+          />
+        </SettingsRows>
+      </SettingsSection>
 
       {/* Pipeline Phase Configuration */}
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h4 className="font-medium text-sm text-foreground mb-1">
-          {t('agentProfile.phaseConfiguration')}
-        </h4>
-        <p className="text-xs text-muted-foreground mb-4">
-          {t('agentProfile.phaseConfigurationDescription')}
-        </p>
+      <SettingsSection
+        title={t('agentProfile.phaseConfiguration')}
+        description={t('agentProfile.phaseConfigurationDescription')}
+      >
         <MixedPhaseEditor />
-      </div>
+      </SettingsSection>
 
       {/* Feature Model Configuration */}
-      <div className="rounded-lg border border-border bg-card p-4">
-        <h4 className="font-medium text-sm text-foreground mb-1">
-          {t('agentProfile.crossProviderTab.featureModelsTitle')}
-        </h4>
-        <p className="text-xs text-muted-foreground mb-4">
-          {t('agentProfile.crossProviderTab.featureModelsDescription')}
-        </p>
+      <SettingsSection
+        title={t('agentProfile.crossProviderTab.featureModelsTitle')}
+        description={t('agentProfile.crossProviderTab.featureModelsDescription')}
+      >
         <MixedFeatureEditor />
-      </div>
-    </div>
+      </SettingsSection>
+    </>
   );
 }

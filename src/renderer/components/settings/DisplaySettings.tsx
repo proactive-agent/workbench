@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { ZoomIn, ZoomOut, RotateCcw, Check } from 'lucide-react';
+import { RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows, SegmentedControl, type SegmentedOption } from './SettingsRow';
+import { NEUTRAL_SLIDER_CLASSES, StepperButton } from './terminal-font-settings/SettingsSlider';
 import { useSettingsStore } from '../../stores/settings-store';
 import { UI_SCALE_MIN, UI_SCALE_MAX, UI_SCALE_DEFAULT, UI_SCALE_STEP } from '../../../shared/constants';
 import type { AppSettings, GpuAcceleration } from '../../../shared/types';
@@ -92,13 +93,6 @@ export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsP
     handlePresetChange(UI_SCALE_DEFAULT);
   };
 
-  const iconButtonClass = cn(
-    'flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors',
-    'text-muted-foreground hover:bg-nav-hover hover:text-foreground',
-    'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
-    'disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent'
-  );
-
   const presetOptions: SegmentedOption<string>[] = SCALE_PRESETS.map((preset) => ({
     value: String(preset.value),
     label: preset.label
@@ -121,79 +115,44 @@ export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsP
         </SettingsRow>
 
         {/* Fine-tune Slider */}
-        <SettingsRow
-          label={t('scale.fineTune')}
-          description={t('scale.fineTuneDescription')}
-          footer={
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={handleZoomOut}
-                  disabled={displayScale <= UI_SCALE_MIN}
-                  className={iconButtonClass}
-                  title={t('scale.decrease')}
-                  aria-label={t('scale.decrease')}
-                >
-                  <ZoomOut className="h-4 w-4" strokeWidth={1.75} />
-                </button>
-                <input
-                  type="range"
-                  min={UI_SCALE_MIN}
-                  max={UI_SCALE_MAX}
-                  step={UI_SCALE_STEP}
-                  value={displayScale}
-                  aria-label={t('scale.fineTune')}
-                  onChange={(e) => handleSliderChange(parseInt(e.target.value, 10))}
-                  className={cn(
-                    'h-1.5 flex-1 cursor-pointer appearance-none rounded-full bg-muted',
-                    'focus-visible:outline-none focus-visible:shadow-(--shadow-focus)',
-                    // Webkit (Chrome, Safari, Edge)
-                    '[&::-webkit-slider-thumb]:appearance-none',
-                    '[&::-webkit-slider-thumb]:h-4',
-                    '[&::-webkit-slider-thumb]:w-4',
-                    '[&::-webkit-slider-thumb]:rounded-full',
-                    '[&::-webkit-slider-thumb]:bg-foreground',
-                    '[&::-webkit-slider-thumb]:cursor-pointer',
-                    // Firefox
-                    '[&::-moz-range-thumb]:h-4',
-                    '[&::-moz-range-thumb]:w-4',
-                    '[&::-moz-range-thumb]:rounded-full',
-                    '[&::-moz-range-thumb]:border-0',
-                    '[&::-moz-range-thumb]:bg-foreground',
-                    '[&::-moz-range-thumb]:cursor-pointer'
-                  )}
-                />
-                <button
-                  type="button"
-                  onClick={handleZoomIn}
-                  disabled={displayScale >= UI_SCALE_MAX}
-                  className={iconButtonClass}
-                  title={t('scale.increase')}
-                  aria-label={t('scale.increase')}
-                >
-                  <ZoomIn className="h-4 w-4" strokeWidth={1.75} />
-                </button>
-              </div>
-              <div className="flex justify-between px-9 text-xs text-muted-foreground">
-                <span>{UI_SCALE_MIN}%</span>
-                <span>{UI_SCALE_MAX}%</span>
-              </div>
-            </div>
-          }
-        >
-          <span className="font-mono text-sm text-muted-foreground">{displayScale}%</span>
-          {displayScale !== UI_SCALE_DEFAULT && (
-            <button
-              type="button"
-              onClick={handleReset}
-              className={iconButtonClass}
-              title={t('scale.reset')}
-              aria-label={t('scale.reset')}
-            >
-              <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
-          )}
+        <SettingsRow label={t('scale.fineTune')} description={t('scale.fineTuneDescription')}>
+          <input
+            type="range"
+            min={UI_SCALE_MIN}
+            max={UI_SCALE_MAX}
+            step={UI_SCALE_STEP}
+            value={displayScale}
+            aria-label={t('scale.fineTune')}
+            onChange={(e) => handleSliderChange(parseInt(e.target.value, 10))}
+            className={cn(NEUTRAL_SLIDER_CLASSES, 'w-40')}
+          />
+          <div className="flex items-center gap-0.5">
+            <StepperButton
+              direction="decrease"
+              onClick={handleZoomOut}
+              disabled={displayScale <= UI_SCALE_MIN}
+              title={t('scale.decrease')}
+            />
+            <span className="w-12 text-center font-mono text-sm text-foreground">{displayScale}%</span>
+            <StepperButton
+              direction="increase"
+              onClick={handleZoomIn}
+              disabled={displayScale >= UI_SCALE_MAX}
+              title={t('scale.increase')}
+            />
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={handleReset}
+            disabled={displayScale === UI_SCALE_DEFAULT}
+            title={t('scale.reset')}
+            aria-label={t('scale.reset')}
+            className="w-8 px-0"
+          >
+            <RotateCcw className="h-3.5 w-3.5" strokeWidth={1.75} />
+          </Button>
           <Button
             type="button"
             size="sm"
@@ -202,7 +161,6 @@ export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsP
             disabled={!hasPendingChanges}
             title={t('scale.applyTitle')}
           >
-            <Check className="mr-1 h-3.5 w-3.5" />
             {t('scale.apply')}
           </Button>
         </SettingsRow>
@@ -237,12 +195,12 @@ export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsP
         {/* GPU Acceleration Setting */}
         <SettingsRow
           label={t('gpuAcceleration.label')}
-          description={t('gpuAcceleration.description')}
           htmlFor="gpuAcceleration"
-          footer={
-            <p className="text-xs text-muted-foreground">
-              {t('gpuAcceleration.helperText')}
-            </p>
+          description={
+            <>
+              {t('gpuAcceleration.description')}
+              <span className="mt-0.5 block text-xs">{t('gpuAcceleration.helperText')}</span>
+            </>
           }
         >
           <Select

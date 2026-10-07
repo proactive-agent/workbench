@@ -56,6 +56,20 @@
   --color-segment: var(--segment);
   --color-segment-active: var(--segment-active);
   --color-nav-hover: var(--nav-hover);
+  --color-switch-track: var(--switch-track);
+  --color-switch-track-hover: var(--switch-track-hover);
+  --color-switch-on: var(--switch-on);
+  --color-switch-on-hover: var(--switch-on-hover);
+  --color-switch-knob: var(--switch-knob);
+  --color-segment-track: var(--segment-track);
+  --color-segment-thumb: var(--segment-thumb);
+  --color-settings-surface: var(--settings-surface);
+  --color-settings-nav: var(--settings-nav);
+  --color-settings-divider: var(--settings-divider);
+  --color-fill-control: var(--fill-control);
+  --color-fill-control-hover: var(--fill-control-hover);
+  --ease-snap: cubic-bezier(.32, .72, 0, 1);
+  --ease-overshoot: cubic-bezier(.34, 1.3, .64, 1);
   --color-nav-hover-foreground: var(--nav-hover-foreground);
   --color-nav-active: var(--nav-active);
   --color-nav-active-foreground: var(--nav-active-foreground);
@@ -228,6 +242,22 @@
   --segment: #F0EFEC;
   --segment-active: #FFFFFF;
 
+  /* claude.ai settings controls (switch, segmented control, settings dialog surfaces) */
+  --switch-track: rgba(11, 11, 11, 0.12);
+  --switch-track-hover: rgba(11, 11, 11, 0.2);
+  --switch-on: #2A78D6;
+  --switch-on-hover: #3987E5;
+  --menu-check: #2A78D6;
+  --switch-knob: #FFFFFF;
+  --segment-track: rgba(11, 11, 11, 0.05);
+  --segment-thumb: #FFFFFF;
+  --segment-thumb-ring: rgba(11, 11, 11, 0.1);
+  --settings-surface: #FFFFFF;
+  --settings-nav: #F9F9F7;
+  --settings-divider: rgba(11, 11, 11, 0.06);
+  --fill-control: rgba(11, 11, 11, 0.06);
+  --fill-control-hover: rgba(11, 11, 11, 0.1);
+
   /* Sidebar navigation */
   --nav-item-py: 0.375rem;
   --nav-item-gap: 0.5rem;
@@ -353,6 +383,22 @@
   --segment: #1A1A19;
   --segment-active: #343434;
 
+  /* claude.ai settings controls (values measured from claude.ai dark mode) */
+  --switch-track: rgba(255, 255, 255, 0.1);
+  --switch-track-hover: rgba(255, 255, 255, 0.2);
+  --switch-on: #2A78D6;
+  --switch-on-hover: #3987E5;
+  --menu-check: #6DA7EC;
+  --switch-knob: #FFFFFF;
+  --segment-track: rgba(255, 255, 255, 0.05);
+  --segment-thumb: rgba(255, 255, 255, 0.1);
+  --segment-thumb-ring: rgba(255, 255, 255, 0.1);
+  --settings-surface: #1A1A19;
+  --settings-nav: #151515;
+  --settings-divider: rgba(255, 255, 255, 0.05);
+  --fill-control: rgba(255, 255, 255, 0.1);
+  --fill-control-hover: rgba(255, 255, 255, 0.2);
+
   /* Sidebar navigation */
   --nav-item-py: 0.375rem;
   --nav-item-gap: 0.5rem;
@@ -392,220 +438,9 @@
   --review-highlight-bg: var(--muted);
 }
 
-/* ============================================
-   LIME THEME (Light)
-   Oscura-inspired warm off-white with olive/yellow accent (former default)
-   ============================================ */
-[data-theme="lime"] {
-  /* Light Mode - Warm off-white tones */
-  --background: #F2F2ED;
-  --foreground: #0B0B0F;
-
-  --card: #FFFFFF;
-  --card-foreground: #0B0B0F;
-
-  /* Accent - Muted olive/yellow for light mode */
-  --primary: #A5A66A;
-  --primary-foreground: #0B0B0F;
-
-  --secondary: #E8E8E3;
-  --secondary-foreground: #0B0B0F;
-
-  --muted: #EDEDE8;
-  --muted-foreground: #5C6974;
-
-  --accent: #EFEFE0;
-  --accent-foreground: #A5A66A;
-
-  --destructive: #D84F68;
-  --destructive-foreground: #FFFFFF;
-
-  --border: #DEDED9;
-  --input: #DEDED9;
-  --ring: #A5A66A;
-
-  --sidebar: #FFFFFF;
-  --sidebar-foreground: #0B0B0F;
-
-  --popover: #FFFFFF;
-  --popover-foreground: #0B0B0F;
-
-  /* Semantic colors */
-  --success: #4EBE96;
-  --success-foreground: #FFFFFF;
-  --success-light: #E0F5ED;
-  --warning: #D2D714;
-  --warning-foreground: #0B0B0F;
-  --warning-light: #F5F5D0;
-  --info: #479FFA;
-  --info-foreground: #FFFFFF;
-  --info-light: #E8F4FF;
-  --error: #D84F68;
-  --error-light: #FCE8EC;
-
-  /* Shadows - soft and diffused for light mode */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.05);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.08), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
-  --shadow-focus: 0 0 0 3px rgba(165, 166, 106, 0.2);
-
-  /* Border radius */
-  --radius: 12px;
-
-  /* Shared design tokens */
-  /* Tailwind shadow utilities (shadow-sm … shadow-2xl) resolve to these.
-     Defaults equal Tailwind's built-in shadow scale. */
-  --elevation-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --elevation-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-  --elevation-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
-  --elevation-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
-  --elevation-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
-
-  /* Surfaces */
-  --card-border: var(--border);
-  --field: var(--card);
-  --field-border: var(--border);
-  --radius-composer: var(--radius-lg);
-  --segment: var(--secondary);
-  --segment-active: var(--card);
-
-  /* Sidebar navigation */
-  --nav-item-py: 0.625rem;
-  --nav-item-gap: 0.75rem;
-  --nav-item-radius: var(--radius-lg);
-  --nav-hover: var(--accent);
-  --nav-hover-foreground: var(--accent-foreground);
-  --nav-active: var(--accent);
-  --nav-active-foreground: var(--accent-foreground);
-  --nav-label-color: var(--muted-foreground);
-  --nav-label-weight: 600;
-  --nav-label-transform: uppercase;
-  --nav-label-tracking: 0.05em;
-
-  /* Kanban columns */
-  --column-bg: linear-gradient(to bottom in oklab, color-mix(in oklab, var(--secondary) 30%, transparent) 0%, transparent 100%);
-  --column-top-width: 2px;
-
-  /* Glows, gradients and decorative shadows */
-  --accent-glow-rgb: 214, 216, 118;
-  --warning-glow-rgb: 210, 215, 20;
-  --card-surface-shadow: var(--shadow-md);
-  --card-hover-border: var(--primary);
-  --surface-elevated: var(--card);
-  --scrollbar-thumb: var(--muted-foreground);
-  --scrollbar-thumb-hover: var(--muted-foreground);
-  --progress-sweep-gradient: linear-gradient(
-    90deg,
-    transparent 0%,
-    rgba(165, 166, 106, 0.3) 25%,
-    rgba(165, 166, 106, 0.6) 50%,
-    rgba(165, 166, 106, 0.3) 75%,
-    transparent 100%
-  );
-  --task-card-hover-shadow: 0 0 0 1px var(--primary), var(--shadow-lg);
-  --task-card-hover-border: rgba(214, 216, 118, 0.4);
-  --task-card-enhanced-shadow: 0 0 0 1px rgba(214, 216, 118, 0.1), 0 4px 12px rgba(0, 0, 0, 0.15);
-  --task-card-hover-lift: translateY(-1px);
-  --drag-overlay-shadow:
-    0 20px 25px -5px rgba(0, 0, 0, 0.25),
-    0 10px 10px -5px rgba(0, 0, 0, 0.15),
-    0 0 0 1px var(--primary);
-  --drag-overlay-card-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-  --drag-overlay-transform: rotate(2deg) scale(1.02);
-  --tooltip-bg: var(--card);
-  --tooltip-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  --review-highlight-border: rgba(168, 85, 247, 0.3);
-  --review-highlight-bg: linear-gradient(
-    135deg,
-    rgba(168, 85, 247, 0.08) 0%,
-    rgba(168, 85, 247, 0.02) 100%
-  );
-
-  /* Border radius scale and heading font (Tailwind @theme defaults) */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
-  --radius-3xl: 24px;
-  --font-heading: var(--font-sans);
-}
-
-/* ============================================
-   LIME THEME (Dark)
-   Oscura Midnight: near-black with saturated yellow accent
-   ============================================ */
-[data-theme="lime"].dark {
-  /* Near-black backgrounds - OLED optimized */
-  --background: #0B0B0F;
-  --foreground: #E6E6E6;
-
-  /* Card surfaces - subtle elevation */
-  --card: #121216;
-  --card-foreground: #E6E6E6;
-
-  /* Accent - Saturated yellow for vibrant contrast */
-  --primary: #D6D876;
-  --primary-foreground: #0B0B0F;
-
-  --secondary: #1A1A1F;
-  --secondary-foreground: #E6E6E6;
-
-  --muted: #1A1A1F;
-  --muted-foreground: #868F97;
-
-  --accent: #2A2A1F;
-  --accent-foreground: #D6D876;
-
-  --destructive: #FF5C5C;
-  --destructive-foreground: #0B0B0F;
-
-  /* Subtle dark borders for card definition */
-  --border: #232323;
-  --input: #232323;
-  --ring: #D6D876;
-
-  --sidebar: #0E0E12;
-  --sidebar-foreground: #E6E6E6;
-
-  --popover: #1A1A1F;
-  --popover-foreground: #E6E6E6;
-
-  /* Semantic colors - muted for dark mode */
-  --success: #4EBE96;
-  --success-foreground: #0B0B0F;
-  --success-light: #1A2924;
-  --warning: #D2D714;
-  --warning-foreground: #0B0B0F;
-  --warning-light: #262618;
-  --info: #479FFA;
-  --info-foreground: #0B0B0F;
-  --info-light: #1A2230;
-  --error: #FF5C5C;
-  --error-light: #2A1A1A;
-
-  /* Shadows - deeper for dark mode, but cards use borders primarily */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.7);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.8);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.9);
-  --shadow-focus: 0 0 0 2px rgba(214, 216, 118, 0.2);
-
-  /* Shared design tokens (dark overrides) */
-  --card-hover-border: rgba(214, 216, 118, 0.5);
-  --surface-elevated: #1A1A1F;
-  --scrollbar-thumb: rgba(134, 143, 151, 0.3);
-  --scrollbar-thumb-hover: rgba(134, 143, 151, 0.5);
-  --task-card-enhanced-shadow: 0 0 0 1px rgba(214, 216, 118, 0.15), 0 4px 20px rgba(0, 0, 0, 0.4);
-  --drag-overlay-card-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
-  --tooltip-bg: #1A1A1F;
-  --tooltip-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
 /* Default theme: serif display headings use a lighter weight, like Claude Desktop */
-html:not([data-theme="lime"]) h1,
-html:not([data-theme="lime"]) .font-heading {
+:root h1,
+:root .font-heading {
   font-weight: 500;
   letter-spacing: -0.01em;
 }
@@ -1270,3 +1105,62 @@ body {
 [data-ui-scale="190"] { font-size: 30.4px; }
 [data-ui-scale="195"] { font-size: 31.2px; }
 [data-ui-scale="200"] { font-size: 32px; }
+
+/* ============================================
+   Dialog controls (claude.ai settings look)
+   Scoped to dialogs (DIALOG_SURFACE_CLASS adds `claude-dialog`) so pages keep their own controls.
+   ============================================ */
+
+/* Fields: translucent fill with an inset hairline instead of a border, 32px tall */
+.claude-dialog .field-border {
+  height: 2rem;
+  border-color: transparent;
+  background-color: var(--segment-track);
+  box-shadow: inset 0 0 0 1px var(--segment-thumb-ring);
+  border-radius: 8px;
+}
+.claude-dialog textarea.field-border {
+  height: auto;
+}
+.claude-dialog .field-border:focus,
+.claude-dialog .field-border:focus-visible {
+  border-color: transparent;
+  box-shadow: var(--shadow-focus);
+}
+
+/* Dropdowns in a row's control slot: borderless "Value ⌄" trigger, like claude.ai's settings */
+.claude-dialog [data-settings-control] button[role='combobox'].field-border {
+  width: auto;
+  gap: 0.375rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  background-color: transparent;
+  box-shadow: none;
+}
+.claude-dialog [data-settings-control] button[role='combobox'].field-border:hover,
+.claude-dialog [data-settings-control] button[role='combobox'][data-state='open'] {
+  background-color: var(--nav-hover);
+}
+.claude-dialog [data-settings-control] button[role='combobox'].field-border:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+/* Buttons: claude.ai's soft filled secondary button and 14px small buttons */
+.claude-dialog [data-variant='outline'] {
+  border-color: transparent;
+  background-color: var(--fill-control);
+}
+.claude-dialog [data-variant='outline']:hover {
+  background-color: var(--fill-control-hover);
+  color: var(--foreground);
+}
+.claude-dialog [data-variant='outline'],
+.claude-dialog [data-variant='secondary'],
+.claude-dialog [data-variant='default'],
+.claude-dialog [data-variant='ghost'] {
+  border-radius: 8px;
+}
+.claude-dialog [data-size='sm'] {
+  height: 2rem;
+  font-size: 0.875rem;
+}

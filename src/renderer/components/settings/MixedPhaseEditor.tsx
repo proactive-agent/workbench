@@ -1,11 +1,11 @@
 import { useTranslation } from 'react-i18next';
 import { useSettingsStore, saveSettings } from '../../stores/settings-store';
 import { MultiProviderModelSelect } from './MultiProviderModelSelect';
-import { ThinkingLevelSelect } from './ThinkingLevelSelect';
+import { ReasoningTypeHint, ThinkingLevelSelect } from './ThinkingLevelSelect';
+import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ALL_AVAILABLE_MODELS } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import { PHASE_KEYS } from '@shared/constants/models';
-import { Label } from '../ui/label';
 import type { MixedPhaseConfig, MixedPhaseEntry, PipelinePhase, ThinkingLevel } from '@shared/types/settings';
 import type { BuiltinProvider } from '@shared/types/provider-account';
 
@@ -34,17 +34,6 @@ function resolveProviderForModel(modelId: string): BuiltinProvider {
  */
 function getProviderName(provider: BuiltinProvider): string {
   return PROVIDER_REGISTRY.find((p) => p.id === provider)?.name ?? provider;
-}
-
-/**
- * Provider badge shown next to each phase row.
- */
-function ProviderBadge({ provider }: { provider: BuiltinProvider }) {
-  return (
-    <span className="inline-flex items-center rounded bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground whitespace-nowrap">
-      {getProviderName(provider)}
-    </span>
-  );
 }
 
 /**
@@ -91,51 +80,42 @@ export function MixedPhaseEditor() {
   };
 
   return (
-    <div className="space-y-6">
+    <SettingsRows>
       {(PHASE_KEYS as readonly PipelinePhase[]).map((phase) => {
         const entry = config[phase];
 
         return (
-          <div key={phase} className="space-y-3">
-            {/* Phase label + description */}
-            <div>
-              <Label className="text-sm font-medium text-foreground">
-                {t(`agentProfile.phases.${phase}.label` as Parameters<typeof t>[0])}
-              </Label>
-              <p className="mt-0.5 text-xs text-muted-foreground">
+          <SettingsRow
+            key={phase}
+            label={t(`agentProfile.phases.${phase}.label` as Parameters<typeof t>[0])}
+            description={
+              <>
                 {t(`agentProfile.phases.${phase}.description` as Parameters<typeof t>[0])}
-              </p>
-            </div>
+                {' · '}
+                {getProviderName(entry.provider)}
+                <ReasoningTypeHint withSeparator modelValue={entry.modelId} provider={entry.provider} />
+              </>
+            }
+          >
+            {/* Model selector (all providers, no filtering) */}
+            <MultiProviderModelSelect
+              variant="inline"
+              ariaLabel={t('agentProfile.model')}
+              value={entry.modelId}
+              onChange={(modelId) => handleModelChange(phase, modelId)}
+            />
 
-            {/* 3-column grid: Model | Thinking | Provider badge */}
-            <div className="grid grid-cols-[1fr_1fr_auto] gap-3 items-end">
-              {/* Model selector (all providers, no filtering) */}
-              <div className="space-y-1">
-                <span className="text-xs text-muted-foreground">
-                  {t('agentProfile.model', { defaultValue: 'Model' })}
-                </span>
-                <MultiProviderModelSelect
-                  value={entry.modelId}
-                  onChange={(modelId) => handleModelChange(phase, modelId)}
-                />
-              </div>
-
-              {/* Thinking level selector, adapted to provider */}
-              <ThinkingLevelSelect
-                value={entry.thinkingLevel}
-                onChange={(level) => handleThinkingChange(phase, level as ThinkingLevel)}
-                modelValue={entry.modelId}
-                provider={entry.provider}
-              />
-
-              {/* Provider badge */}
-              <div className="pb-0.5">
-                <ProviderBadge provider={entry.provider} />
-              </div>
-            </div>
-          </div>
+            {/* Thinking level selector, adapted to provider */}
+            <ThinkingLevelSelect
+              inline
+              value={entry.thinkingLevel}
+              onChange={(level) => handleThinkingChange(phase, level as ThinkingLevel)}
+              modelValue={entry.modelId}
+              provider={entry.provider}
+            />
+          </SettingsRow>
         );
       })}
-    </div>
+    </SettingsRows>
   );
 }

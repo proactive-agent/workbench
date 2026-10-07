@@ -13,7 +13,6 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Card, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import type { MemoryEpisode } from '../../../shared/types';
 import { formatDate } from './utils';
@@ -61,21 +60,21 @@ function VerdictBadge({ verdict }: { verdict: string }) {
   switch (verdict) {
     case 'approve':
       return (
-        <Badge className="bg-green-500/10 text-green-400 border-green-500/30 gap-1">
+        <Badge className="bg-segment-track text-muted-foreground border-transparent gap-1">
           <CheckCircle className="h-3 w-3" />
           Approved
         </Badge>
       );
     case 'request_changes':
       return (
-        <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/30 gap-1">
+        <Badge className="bg-segment-track text-muted-foreground border-transparent gap-1">
           <XCircle className="h-3 w-3" />
           Changes Requested
         </Badge>
       );
     case 'comment':
       return (
-        <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/30 gap-1">
+        <Badge className="bg-segment-track text-muted-foreground border-transparent gap-1">
           <MessageSquare className="h-3 w-3" />
           Commented
         </Badge>
@@ -93,10 +92,10 @@ function SeverityBadge({ severity, count }: { severity: string; count: number })
   if (count === 0) return null;
 
   const colorMap: Record<string, string> = {
-    critical: 'bg-red-600/20 text-red-400 border-red-600/30',
-    high: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
-    medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    low: 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+    critical: 'bg-segment-track text-muted-foreground border-transparent',
+    high: 'bg-segment-track text-muted-foreground border-transparent',
+    medium: 'bg-segment-track text-muted-foreground border-transparent',
+    low: 'bg-segment-track text-muted-foreground border-transparent'
   };
 
   return (
@@ -113,18 +112,18 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
   if (!parsed) {
     // Fallback for non-parseable content
     return (
-      <Card className="bg-muted/30 border-border/50">
-        <CardContent className="pt-4">
+      <div className="py-3">
+        <div>
           <div className="flex items-center gap-2">
-            <GitPullRequest className="h-4 w-4 text-cyan-400" />
+            <GitPullRequest className="h-4 w-4 text-muted-foreground" />
             <Badge variant="outline">PR Review</Badge>
             <span className="text-xs text-muted-foreground">{formatDate(memory.createdAt)}</span>
           </div>
           <pre className="mt-3 text-xs text-muted-foreground whitespace-pre-wrap font-mono">
             {memory.content}
           </pre>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     );
   }
 
@@ -137,13 +136,13 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
   const hasExpandableContent = hasGotchas || hasPatterns || hasFindings;
 
   return (
-    <Card className="bg-muted/30 border-border/50 hover:border-cyan-500/30 transition-colors">
-      <CardContent className="pt-4 pb-4">
+    <div className="py-3">
+      <div>
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className="p-2 rounded-lg bg-cyan-500/10">
-              <GitPullRequest className="h-4 w-4 text-cyan-400" />
+            <div className="mt-0.5 shrink-0">
+              <GitPullRequest className="h-4 w-4 text-muted-foreground" />
             </div>
             <div className="flex-1 min-w-0">
               {/* PR Info Row */}
@@ -219,7 +218,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
             {hasFindings && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Bug className="h-4 w-4 text-orange-400" />
+                  <Bug className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">Key Findings</span>
                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
                     {parsed.keyFindings.length}
@@ -230,12 +229,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
                     <div key={idx} className="text-sm">
                       <div className="flex items-center gap-2">
                         <Badge
-                          className={`text-xs ${
-                            finding.severity === 'critical' ? 'bg-red-600/20 text-red-400' :
-                            finding.severity === 'high' ? 'bg-orange-500/20 text-orange-400' :
-                            finding.severity === 'medium' ? 'bg-amber-500/20 text-amber-400' :
-                            'bg-blue-500/20 text-blue-400'
-                          }`}
+                          className="text-xs bg-segment-track text-muted-foreground border-transparent"
                         >
                           {finding.severity}
                         </Badge>
@@ -261,7 +255,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
             {hasGotchas && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="h-4 w-4 text-red-400" />
+                  <AlertTriangle className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">Gotchas Discovered</span>
                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
                     {parsed.gotchas.length}
@@ -269,7 +263,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
                 </div>
                 <ul className="space-y-1 pl-6">
                   {parsed.gotchas.map((gotcha, idx) => (
-                    <li key={idx} className="text-sm text-red-400/80 py-1 pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-red-500/50">
+                    <li key={idx} className="text-sm text-muted-foreground py-1 pl-4 relative before:content-['•'] before:absolute before:left-0 before:text-muted-foreground/50">
                       {gotcha}
                     </li>
                   ))}
@@ -281,7 +275,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
             {hasPatterns && (
               <div>
                 <div className="flex items-center gap-2 mb-2">
-                  <Sparkles className="h-4 w-4 text-purple-400" />
+                  <Sparkles className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm font-medium text-foreground">Patterns Identified</span>
                   <Badge variant="secondary" className="text-xs px-1.5 py-0">
                     {parsed.patterns.length}
@@ -289,7 +283,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
                 </div>
                 <div className="flex flex-wrap gap-2 pl-6">
                   {parsed.patterns.map((pattern, idx) => (
-                    <Badge key={idx} variant="secondary" className="text-xs bg-purple-500/10 text-purple-400">
+                    <Badge key={idx} variant="secondary" className="text-xs bg-segment-track text-muted-foreground border-transparent">
                       {pattern}
                     </Badge>
                   ))}
@@ -313,7 +307,7 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
             )}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

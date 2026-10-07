@@ -10,7 +10,7 @@ import {
   Archive,
   ArchiveRestore
 } from 'lucide-react';
-import { Button } from './ui/button';
+import { Button, buttonVariants } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { Checkbox } from './ui/checkbox';
@@ -299,7 +299,7 @@ export function ChatHistorySidebar({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">{t('actions.delete')}</AlertDialogAction>
+            <AlertDialogAction onClick={handleDelete} className={buttonVariants({ variant: 'destructive', size: 'sm' })}>{t('actions.delete')}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -314,7 +314,7 @@ export function ChatHistorySidebar({
             </AlertDialogDescription>
           </AlertDialogHeader>
           {sessionsToDelete.length > 0 && (
-            <div className="mt-4 max-h-32 overflow-y-auto rounded-lg border border-border px-4 py-3">
+            <div className="mt-4 max-h-32 overflow-y-auto rounded-xl bg-segment-track px-4 py-3">
               <p className="mb-1 text-xs font-medium text-muted-foreground">
                 {t('insights.conversationsToDelete')}:
               </p>
@@ -329,7 +329,7 @@ export function ChatHistorySidebar({
           )}
           <AlertDialogFooter>
             <AlertDialogCancel>{t('buttons.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handleBulkDelete} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+            <AlertDialogAction onClick={handleBulkDelete} className={buttonVariants({ variant: 'destructive', size: 'sm' })}>
               {t('insights.bulkDeleteConfirm', { count: selectedIds.size })}
             </AlertDialogAction>
           </AlertDialogFooter>

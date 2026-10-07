@@ -1,5 +1,4 @@
 import { Database, CheckCircle, FileCode, Globe, Code, Package } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '../../lib/utils';
@@ -24,24 +23,24 @@ export function ServiceCard({ name, service }: ServiceCardProps) {
   const colorClass = serviceTypeColors[service.type || 'unknown'];
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-2">
+    <div className="overflow-hidden rounded-xl border border-border p-4">
+      <div className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Icon className="h-4 w-4" />
+          <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+            <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
             {name}
-          </CardTitle>
+          </div>
           <Badge variant="outline" className={cn('capitalize text-xs', colorClass)}>
             {service.type || 'unknown'}
           </Badge>
         </div>
         {service.path && (
-          <CardDescription className="font-mono text-xs truncate">
+          <p className="mt-1 truncate font-mono text-xs text-(--nav-label-color)">
             {service.path}
-          </CardDescription>
+          </p>
         )}
-      </CardHeader>
-      <CardContent className="space-y-3">
+      </div>
+      <div className="space-y-3">
         {/* Language & Framework */}
         <div className="flex flex-wrap gap-1.5">
           {service.language && (
@@ -160,7 +159,7 @@ export function ServiceCard({ name, service }: ServiceCardProps) {
             </div>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

@@ -8,30 +8,21 @@ import {
   Shield,
   Gauge,
   Palette,
-  Lightbulb,
-  Users,
-  GitBranch,
-  GitPullRequest,
-  ListChecks,
   ExternalLink,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { SettingsRow, SettingsRows } from '../settings/SettingsRow';
 import { cn, formatRelativeTime } from '../../lib/utils';
 import {
   TASK_CATEGORY_LABELS,
-  TASK_CATEGORY_COLORS,
   TASK_COMPLEXITY_LABELS,
-  TASK_COMPLEXITY_COLORS,
   TASK_IMPACT_LABELS,
-  TASK_IMPACT_COLORS,
   TASK_PRIORITY_LABELS,
-  TASK_PRIORITY_COLORS,
   JSON_ERROR_PREFIX
 } from '../../../shared/constants';
 import type { Task, TaskCategory } from '../../../shared/types';
@@ -85,117 +76,80 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
     }
   }, [task.id, task.description]);
 
-  const hasClassification = task.metadata && (
-    task.metadata.category ||
-    task.metadata.priority ||
-    task.metadata.complexity ||
-    task.metadata.impact ||
-    task.metadata.securitySeverity ||
-    task.metadata.sourceType
+  const classification = task.metadata
+    ? [
+        task.metadata.category && {
+          key: 'category',
+          icon: CategoryIcon[task.metadata.category],
+          label: TASK_CATEGORY_LABELS[task.metadata.category]
+        },
+        task.metadata.priority && { key: 'priority', label: TASK_PRIORITY_LABELS[task.metadata.priority] },
+        task.metadata.complexity && { key: 'complexity', label: TASK_COMPLEXITY_LABELS[task.metadata.complexity] },
+        task.metadata.impact && { key: 'impact', label: TASK_IMPACT_LABELS[task.metadata.impact] },
+        task.metadata.securitySeverity && {
+          key: 'severity',
+          icon: Shield,
+          label: `${task.metadata.securitySeverity} ${t('tasks:metadata.severity')}`
+        },
+        task.metadata.sourceType && { key: 'source', label: task.metadata.sourceType }
+      ].filter(Boolean) as { key: string; icon?: typeof Target; label: string }[]
+    : [];
+
+  const metaItems: { key: string; icon?: typeof Target; label: string }[] = [
+    ...classification,
+    { key: 'created', label: t('tasks:metadata.created', { time: formatRelativeTime(task.createdAt) }) },
+    { key: 'updated', label: t('tasks:metadata.updated', { time: formatRelativeTime(task.updatedAt) }) }
+  ];
+
+  const hasDetails = !!task.metadata && !!(
+    task.metadata.rationale ||
+    task.metadata.problemSolved ||
+    task.metadata.targetAudience ||
+    (task.metadata.dependencies && task.metadata.dependencies.length > 0) ||
+    task.metadata.prUrl ||
+    (task.metadata.acceptanceCriteria && task.metadata.acceptanceCriteria.length > 0) ||
+    (task.metadata.affectedFiles && task.metadata.affectedFiles.length > 0)
   );
 
   return (
-    <div className="space-y-5">
-      {/* Compact Metadata Bar: Classification + Timeline */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-border">
-        {/* Classification Badges - Left */}
-        {hasClassification && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {/* Category */}
-            {task.metadata?.category && (
-              <Badge
-                variant="outline"
-                className={cn('text-xs', TASK_CATEGORY_COLORS[task.metadata.category])}
-              >
-                {CategoryIcon[task.metadata.category] && (() => {
-                  const Icon = CategoryIcon[task.metadata.category!];
-                  return <Icon className="h-3 w-3 mr-1" />;
-                })()}
-                {TASK_CATEGORY_LABELS[task.metadata.category]}
-              </Badge>
-            )}
-            {/* Priority */}
-            {task.metadata?.priority && (
-              <Badge
-                variant="outline"
-                className={cn('text-xs', TASK_PRIORITY_COLORS[task.metadata.priority])}
-              >
-                {TASK_PRIORITY_LABELS[task.metadata.priority]}
-              </Badge>
-            )}
-            {/* Complexity */}
-            {task.metadata?.complexity && (
-              <Badge
-                variant="outline"
-                className={cn('text-xs', TASK_COMPLEXITY_COLORS[task.metadata.complexity])}
-              >
-                {TASK_COMPLEXITY_LABELS[task.metadata.complexity]}
-              </Badge>
-            )}
-            {/* Impact */}
-            {task.metadata?.impact && (
-              <Badge
-                variant="outline"
-                className={cn('text-xs', TASK_IMPACT_COLORS[task.metadata.impact])}
-              >
-                {TASK_IMPACT_LABELS[task.metadata.impact]}
-              </Badge>
-            )}
-            {/* Security Severity */}
-            {task.metadata?.securitySeverity && (
-              <Badge
-                variant="outline"
-                className={cn('text-xs', TASK_IMPACT_COLORS[task.metadata.securitySeverity])}
-              >
-                <Shield className="h-3 w-3 mr-1" />
-                {task.metadata.securitySeverity}
-              </Badge>
-            )}
-            {/* Source Type */}
-            {task.metadata?.sourceType && (
-              <Badge variant="secondary" className="text-xs">
-                {task.metadata.sourceType}
-              </Badge>
-            )}
-          </div>
-        )}
-
-        {/* Timeline - Right */}
-        <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>Created {formatRelativeTime(task.createdAt)}</span>
-          <span className="text-border">•</span>
-          <span>Updated {formatRelativeTime(task.updatedAt)}</span>
-        </div>
+    <div className="space-y-4">
+      {/* Classification + timeline as one muted line */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-(--nav-label-color)">
+        {metaItems.map((item, idx) => {
+          const Icon = item.icon;
+          return (
+            <span key={item.key} className="flex items-center gap-2">
+              {idx > 0 && <span aria-hidden="true">·</span>}
+              <span className="flex items-center gap-1">
+                {Icon && <Icon className="h-3 w-3" strokeWidth={1.75} />}
+                {item.label}
+              </span>
+            </span>
+          );
+        })}
       </div>
 
-      {/* Description - Primary Content */}
+      {/* Description - primary content in the claude info box */}
       {displayDescription && (
-        <div className="bg-muted/30 rounded-lg px-4 py-3 border border-border/50 overflow-hidden max-w-full">
-          {/* Content container with conditional max-height */}
-          <div className="relative">
-            <div
-              ref={contentRef}
-              id={contentId}
-              className={cn(
-                'prose prose-sm dark:prose-invert max-w-none overflow-hidden prose-p:text-foreground/90 prose-p:leading-relaxed prose-headings:text-foreground prose-strong:text-foreground prose-li:text-foreground/90 prose-ul:my-2 prose-li:my-0.5 prose-a:break-all prose-pre:overflow-x-auto prose-img:max-w-full [&_img]:!max-w-full [&_img]:h-auto [&_code]:break-all [&_code]:whitespace-pre-wrap [&_*]:max-w-full',
-                !isExpanded && hasOverflow && 'max-h-[200px]'
-              )}
-              style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
-            >
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                {displayDescription}
-              </ReactMarkdown>
-            </div>
-
-            {/* Gradient overlay when collapsed and has overflow */}
-            {!isExpanded && hasOverflow && (
-              <div className="absolute bottom-0 left-0 right-0 h-16 bg-gradient-to-t from-muted/80 to-transparent pointer-events-none" />
+        <div className="max-w-full overflow-hidden rounded-xl bg-segment-track px-4 py-3">
+          <div
+            ref={contentRef}
+            id={contentId}
+            className={cn(
+              'prose prose-sm dark:prose-invert max-w-none overflow-hidden prose-p:text-foreground/90 prose-p:leading-relaxed prose-headings:text-foreground prose-strong:text-foreground prose-li:text-foreground/90 prose-ul:my-2 prose-li:my-0.5 prose-a:break-all prose-pre:overflow-x-auto prose-img:max-w-full [&_img]:!max-w-full [&_img]:h-auto [&_code]:break-all [&_code]:whitespace-pre-wrap [&_*]:max-w-full',
+              // Fade the last lines out while collapsed
+              !isExpanded && hasOverflow && 'max-h-[200px] [mask-image:linear-gradient(to_bottom,black_70%,transparent)]'
             )}
+            style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}
+          >
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+              {displayDescription}
+            </ReactMarkdown>
           </div>
 
           {/* Expand/Collapse button */}
           {hasOverflow && (
-            <div className="flex justify-center mt-2">
+            <div className="mt-2 flex justify-center">
               <Button
                 variant="ghost"
                 size="sm"
@@ -206,12 +160,12 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
               >
                 {isExpanded ? (
                   <>
-                    <ChevronUp className="h-4 w-4 mr-1" aria-hidden="true" />
+                    <ChevronUp className="mr-1 h-4 w-4" aria-hidden="true" />
                     {t('tasks:metadata.showLess')}
                   </>
                 ) : (
                   <>
-                    <ChevronDown className="h-4 w-4 mr-1" aria-hidden="true" />
+                    <ChevronDown className="mr-1 h-4 w-4" aria-hidden="true" />
                     {t('tasks:metadata.showMore')}
                   </>
                 )}
@@ -221,118 +175,87 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
         </div>
       )}
 
-      {/* Secondary Details */}
-      {task.metadata && (
-        <div className="space-y-4 pt-2">
-          {/* Rationale */}
+      {/* Secondary details as plain rows */}
+      {task.metadata && hasDetails && (
+        <SettingsRows>
           {task.metadata.rationale && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <Lightbulb className="h-3 w-3 text-warning" />
-                Rationale
-              </h3>
-              <p className="text-sm text-foreground/80">{task.metadata.rationale}</p>
-            </div>
+            <SettingsRow label={t('tasks:metadata.rationale')} description={task.metadata.rationale} />
           )}
 
-          {/* Problem Solved */}
           {task.metadata.problemSolved && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <Target className="h-3 w-3 text-success" />
-                Problem Solved
-              </h3>
-              <p className="text-sm text-foreground/80">{task.metadata.problemSolved}</p>
-            </div>
+            <SettingsRow label={t('tasks:metadata.problemSolved')} description={task.metadata.problemSolved} />
           )}
 
-          {/* Target Audience */}
           {task.metadata.targetAudience && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <Users className="h-3 w-3 text-info" />
-                Target Audience
-              </h3>
-              <p className="text-sm text-foreground/80">{task.metadata.targetAudience}</p>
-            </div>
+            <SettingsRow label={t('tasks:metadata.targetAudience')} description={task.metadata.targetAudience} />
           )}
 
-          {/* Dependencies */}
           {task.metadata.dependencies && task.metadata.dependencies.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <GitBranch className="h-3 w-3 text-purple-400" />
-                Dependencies
-              </h3>
-              <ul className="text-sm text-foreground/80 list-disc list-inside space-y-0.5">
-                {task.metadata.dependencies.map((dep, idx) => (
-                  <li key={idx}>{dep}</li>
-                ))}
-              </ul>
-            </div>
+            <SettingsRow
+              label={t('tasks:metadata.dependencies')}
+              description={
+                <ul className="list-inside list-disc space-y-0.5">
+                  {task.metadata.dependencies.map((dep, idx) => (
+                    <li key={idx}>{dep}</li>
+                  ))}
+                </ul>
+              }
+            />
           )}
 
-          {/* Pull Request */}
           {task.metadata.prUrl && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <GitPullRequest className="h-3 w-3 text-info" />
-                {t('tasks:metadata.pullRequest')}
-              </h3>
-              <button
-                type="button"
-                onClick={() => {
-                  if (task.metadata?.prUrl) {
-                    window.electronAPI.openExternal(task.metadata.prUrl);
-                  }
-                }}
-                className="text-sm text-info hover:underline flex items-center gap-1.5 bg-transparent border-none cursor-pointer p-0 text-left"
-              >
-                {task.metadata.prUrl}
-                <ExternalLink className="h-3 w-3" />
-              </button>
-            </div>
+            <SettingsRow
+              label={t('tasks:metadata.pullRequest')}
+              description={
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (task.metadata?.prUrl) {
+                      window.electronAPI.openExternal(task.metadata.prUrl);
+                    }
+                  }}
+                  className="flex cursor-pointer items-center gap-1.5 break-all border-none bg-transparent p-0 text-left text-foreground hover:underline"
+                >
+                  {task.metadata.prUrl}
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.75} />
+                </button>
+              }
+            />
           )}
 
-          {/* Acceptance Criteria */}
           {task.metadata.acceptanceCriteria && task.metadata.acceptanceCriteria.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <ListChecks className="h-3 w-3 text-success" />
-                Acceptance Criteria
-              </h3>
-              <ul className="text-sm text-foreground/80 list-disc list-inside space-y-0.5">
-                {task.metadata.acceptanceCriteria.map((criteria, idx) => (
-                  <li key={idx}>{criteria}</li>
-                ))}
-              </ul>
-            </div>
+            <SettingsRow
+              label={t('tasks:metadata.acceptanceCriteria')}
+              description={
+                <ul className="list-inside list-disc space-y-0.5">
+                  {task.metadata.acceptanceCriteria.map((criteria, idx) => (
+                    <li key={idx}>{criteria}</li>
+                  ))}
+                </ul>
+              }
+            />
           )}
 
-          {/* Affected Files */}
           {task.metadata.affectedFiles && task.metadata.affectedFiles.length > 0 && (
-            <div>
-              <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 flex items-center gap-1.5">
-                <FileCode className="h-3 w-3" />
-                Affected Files
-              </h3>
-              <div className="flex flex-wrap gap-1">
-                {task.metadata.affectedFiles.map((file, idx) => (
-                  <Tooltip key={idx}>
-                    <TooltipTrigger asChild>
-                      <Badge variant="secondary" className="text-xs font-mono cursor-help">
-                        {file.split('/').pop()}
-                      </Badge>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="font-mono text-xs">
-                      {file}
-                    </TooltipContent>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
+            <SettingsRow
+              label={t('tasks:metadata.affectedFiles')}
+              description={
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {task.metadata.affectedFiles.map((file, idx) => (
+                    <Tooltip key={idx}>
+                      <TooltipTrigger asChild>
+                        <span className="cursor-help font-mono text-xs">{file.split('/').pop()}</span>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="font-mono text-xs">
+                        {file}
+                      </TooltipContent>
+                    </Tooltip>
+                  ))}
+                </div>
+              }
+            />
           )}
-        </div>
+        </SettingsRows>
       )}
     </div>
   );

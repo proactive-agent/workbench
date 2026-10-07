@@ -1,6 +1,4 @@
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle } from 'lucide-react';
-import { SettingsIcon as Settings } from './icons/app-icons';
 import {
   Dialog,
   DialogContent,
@@ -26,7 +24,7 @@ export function AuthFailureModal({ onOpenSettings }: AuthFailureModalProps) {
 
   if (!authFailureInfo) return null;
 
-  const profileName = authFailureInfo.profileName || t('auth.failure.unknownProfile', 'Unknown Profile');
+  const profileName = authFailureInfo.profileName || t('auth.failure.unknownProfile', 'Unknown profile');
 
   // Get user-friendly message for the auth failure type
   const getFailureMessage = () => {
@@ -57,16 +55,15 @@ export function AuthFailureModal({ onOpenSettings }: AuthFailureModalProps) {
     <Dialog open={isModalOpen} onOpenChange={(open) => !open && hideAuthFailureModal()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            {t('auth.failure.title', 'Authentication Required')}
+          <DialogTitle>
+            {t('auth.failure.title', 'Authentication required')}
           </DialogTitle>
           <DialogDescription>
             {t('auth.failure.profileLabel', 'Profile')}: {profileName}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 pt-4">
           <p className="text-sm text-foreground">
             {failureMessage}
           </p>
@@ -75,7 +72,7 @@ export function AuthFailureModal({ onOpenSettings }: AuthFailureModalProps) {
           </p>
 
           {authFailureInfo.taskId && (
-            <div className="rounded-lg border border-border px-4 py-3 text-sm">
+            <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
               <p className="text-muted-foreground">
                 {t('auth.failure.taskAffected', 'Task affected')}: <span className="font-mono">{authFailureInfo.taskId}</span>
               </p>
@@ -83,11 +80,11 @@ export function AuthFailureModal({ onOpenSettings }: AuthFailureModalProps) {
           )}
 
           {authFailureInfo.originalError && (
-            <details className="text-xs">
+            <details className="text-sm">
               <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
                 {t('auth.failure.technicalDetails', 'Technical details')}
               </summary>
-              <pre className="mt-2 rounded-md bg-muted p-2 overflow-x-auto whitespace-pre-wrap break-all">
+              <pre className="mt-2 rounded-xl bg-segment-track px-4 py-3 text-xs overflow-x-auto whitespace-pre-wrap break-all">
                 {authFailureInfo.originalError}
               </pre>
             </details>
@@ -98,9 +95,8 @@ export function AuthFailureModal({ onOpenSettings }: AuthFailureModalProps) {
           <Button variant="ghost" size="sm" onClick={handleDismiss}>
             {t('labels.dismiss', 'Dismiss')}
           </Button>
-          <Button size="sm" onClick={handleGoToSettings} className="gap-1.5">
-            <Settings className="h-3.5 w-3.5" />
-            {t('auth.failure.goToSettings', 'Go to Settings')}
+          <Button size="sm" onClick={handleGoToSettings}>
+            {t('auth.failure.goToSettings', 'Go to settings')}
           </Button>
         </DialogFooter>
       </DialogContent>

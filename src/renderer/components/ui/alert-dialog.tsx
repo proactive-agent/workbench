@@ -67,7 +67,7 @@ const AlertDialogFooter = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     // Full-width bar: the negative margins reach the edges of the p-6 dialog panel
-    className={cn('-mx-6 -mb-6 mt-6', DIALOG_FOOTER_BAR_CLASS, DIALOG_FOOTER_ACTIONS_CLASS, className)}
+    className={cn('mt-6', DIALOG_FOOTER_BAR_CLASS, DIALOG_FOOTER_ACTIONS_CLASS, className)}
     {...props}
   />
 );
@@ -105,6 +105,9 @@ const AlertDialogAction = React.forwardRef<
   <AlertDialogPrimitive.Action
     ref={ref}
     className={cn(buttonVariants({ size: 'sm' }), className)}
+    // Same hooks as <Button> so dialog-scoped button styles apply
+    data-variant="default"
+    data-size="sm"
     {...props}
   />
 ));
@@ -117,6 +120,8 @@ const AlertDialogCancel = React.forwardRef<
   <AlertDialogPrimitive.Cancel
     ref={ref}
     className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), className)}
+    data-variant="ghost"
+    data-size="sm"
     {...props}
   />
 ));

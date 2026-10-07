@@ -17,10 +17,10 @@ import {
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
-import { RadioGroup, RadioGroupItem } from './ui/radio-group';
+import { SegmentedControl, SettingsRow } from './settings/SettingsRow';
 import { useTranslation } from 'react-i18next';
 import type { CustomMcpServer } from '../../shared/types';
-import { Terminal, Globe, X, Github, ExternalLink } from 'lucide-react';
+import { X, Github, ExternalLink, ChevronRight, Globe } from 'lucide-react';
 
 interface CustomMcpDialogProps {
   open: boolean;
@@ -245,37 +245,25 @@ export function CustomMcpDialog({
         <div className="-mx-6 min-h-0 space-y-4 overflow-y-auto px-6 py-4">
           {/* Error message */}
           {error && (
-            <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+            <p className="text-sm text-destructive" role="alert">
               {error}
-            </div>
+            </p>
           )}
 
           {/* Server Type */}
-          <div className="space-y-2">
-            <Label>{t('mcp.serverType')}</Label>
-            <RadioGroup
+          <SettingsRow className="py-0" label={t('mcp.serverType')}>
+            <SegmentedControl
               value={formData.type}
               onValueChange={(value: 'command' | 'http') =>
                 setFormData(prev => ({ ...prev, type: value }))
               }
-              className="flex gap-4"
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="command" id="type-command" />
-                <Label htmlFor="type-command" className="flex items-center gap-1.5 cursor-pointer">
-                  <Terminal className="h-3.5 w-3.5" />
-                  {t('mcp.typeCommand')}
-                </Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem value="http" id="type-http" />
-                <Label htmlFor="type-http" className="flex items-center gap-1.5 cursor-pointer">
-                  <Globe className="h-3.5 w-3.5" />
-                  {t('mcp.typeHttp')}
-                </Label>
-              </div>
-            </RadioGroup>
-          </div>
+              ariaLabel={t('mcp.serverType')}
+              options={[
+                { value: 'command', label: t('mcp.typeCommand') },
+                { value: 'http', label: t('mcp.typeHttp') }
+              ]}
+            />
+          </SettingsRow>
 
           {/* Name */}
           <div className="space-y-2">
@@ -290,8 +278,8 @@ export function CustomMcpDialog({
               placeholder={t('mcp.serverNamePlaceholder')}
             />
             {!isEditing && formData.name && (
-              <p className="text-xs text-muted-foreground">
-                ID: {generateId(formData.name) || '...'}
+              <p className="text-sm text-(--nav-label-color)">
+                {t('mcp.serverIdPreview', { id: generateId(formData.name) || '...' })}
               </p>
             )}
           </div>
@@ -332,7 +320,7 @@ export function CustomMcpDialog({
                   onChange={(e) => setArgsInput(e.target.value)}
                   placeholder="-y @myorg/my-mcp-server"
                 />
-                <p className="text-xs text-muted-foreground">{t('mcp.argsHint')}</p>
+                <p className="text-sm text-(--nav-label-color)">{t('mcp.argsHint')}</p>
               </div>
             </>
           )}
@@ -355,15 +343,14 @@ export function CustomMcpDialog({
 
               {/* URL-based hint for known providers */}
               {urlHint && (
-                <div className="flex items-start gap-2 p-3 bg-muted/50 rounded-lg border border-border">
-                  <urlHint.icon className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
-                  <div className="flex-1 min-w-0">
+                <div className="rounded-xl bg-segment-track px-4 py-3">
+                  <div className="min-w-0">
                     <p className="text-sm text-muted-foreground">{urlHint.message}</p>
                     <a
                       href={urlHint.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-primary hover:underline mt-1"
+                      className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline mt-1"
                       onClick={(e) => {
                         e.preventDefault();
                         window.electronAPI?.openExternal(urlHint.link);
@@ -388,7 +375,7 @@ export function CustomMcpDialog({
                   placeholder={t('mcp.authTokenPlaceholder')}
                   type="password"
                 />
-                <p className="text-xs text-muted-foreground">{t('mcp.authTokenHint')}</p>
+                <p className="text-sm text-(--nav-label-color)">{t('mcp.authTokenHint')}</p>
               </div>
 
               {/* Advanced Headers (collapsible) */}
@@ -398,7 +385,7 @@ export function CustomMcpDialog({
                   onClick={() => setShowAdvancedHeaders(!showAdvancedHeaders)}
                   className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <span className={`transition-transform ${showAdvancedHeaders ? 'rotate-90' : ''}`}>▶</span>
+                  <ChevronRight className={`h-3.5 w-3.5 transition-transform ${showAdvancedHeaders ? 'rotate-90' : ''}`} />
                   {t('mcp.advancedHeaders')}
                 </button>
 
@@ -434,7 +421,7 @@ export function CustomMcpDialog({
                         {Object.entries(formData.headers || {})
                           .filter(([key]) => key.toLowerCase() !== 'authorization')
                           .map(([key, value]) => (
-                            <div key={key} className="flex items-center justify-between text-sm bg-muted px-2 py-1 rounded">
+                            <div key={key} className="flex items-center justify-between text-sm rounded-lg bg-segment-track px-3 py-1.5">
                               <span>
                                 <span className="font-medium">{key}:</span>{' '}
                                 <span className="text-muted-foreground">
@@ -442,6 +429,8 @@ export function CustomMcpDialog({
                                 </span>
                               </span>
                               <button
+                                type="button"
+                                aria-label={t('mcp.removeHeader', { name: key })}
                                 onClick={() => removeHeader(key)}
                                 className="text-muted-foreground hover:text-destructive transition-colors"
                               >

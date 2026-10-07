@@ -68,7 +68,7 @@ export function TerminalHeader({
   const showResumeAllButton = pendingResumeCount >= 2;
 
   return (
-    <div className="electron-no-drag group/header flex h-9 items-center justify-between border-b border-border px-2">
+    <div className="electron-no-drag group/header flex h-11 items-center justify-between border-b border-border px-2">
       <div className="flex items-center gap-2">
         {/* Drag handle - visible on hover */}
         {dragHandleListeners && (
@@ -76,7 +76,7 @@ export function TerminalHeader({
             {...dragHandleListeners}
             className={cn(
               'flex items-center justify-center',
-              'w-4 h-6 -ml-1',
+              'w-4 h-8 -ml-1',
               'opacity-0 group-hover/header:opacity-60',
               'hover:opacity-100 transition-opacity',
               'cursor-grab active:cursor-grabbing',
@@ -89,9 +89,9 @@ export function TerminalHeader({
         {/* Window type: agent (Claude Code) or plain terminal */}
         <span className="flex shrink-0 items-center" title={isCLIMode ? t('terminal:header.agent') : t('terminal:header.terminal')}>
           {isCLIMode ? (
-            <AgentsIcon className="h-3.5 w-3.5 text-primary" />
+            <AgentsIcon className="h-4 w-4 text-primary" />
           ) : (
-            <TerminalPromptIcon className="h-3.5 w-3.5 text-primary" />
+            <TerminalPromptIcon className="h-4 w-4 text-primary" />
           )}
         </span>
         {pendingCLIResume && (
@@ -132,8 +132,8 @@ export function TerminalHeader({
             variant="ghost"
             size={terminalCount >= 4 ? 'icon' : 'sm'}
             className={cn(
-              'h-6 hover:bg-cyan-500/10 hover:text-cyan-500 animate-pulse',
-              terminalCount >= 4 ? 'w-6' : 'px-2 text-xs gap-1',
+              'h-8 hover:bg-cyan-500/10 hover:text-cyan-500 animate-pulse',
+              terminalCount >= 4 ? 'w-8' : 'px-2 text-sm gap-1.5',
               'text-cyan-500 bg-cyan-500/10'
             )}
             onClick={(e) => {
@@ -142,7 +142,7 @@ export function TerminalHeader({
             }}
             title={t('terminal:resume.resumeAllSessions')}
           >
-            <RotateCcw className="h-3 w-3" />
+            <RotateCcw className="h-4 w-4" />
             {terminalCount < 4 && <span>{t('terminal:resume.resumeAllSessions')}</span>}
           </Button>
         )}
@@ -151,7 +151,7 @@ export function TerminalHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 hover:bg-nav-hover"
+            className="h-8 w-8 hover:bg-nav-hover"
             onClick={(e) => {
               e.stopPropagation();
               onToggleExpand();
@@ -159,23 +159,23 @@ export function TerminalHeader({
             title={isExpanded ? t('terminal:expand.collapse') : t('terminal:expand.expand')}
           >
             {isExpanded ? (
-              <Minimize2 className="h-3.5 w-3.5" />
+              <Minimize2 className="h-4 w-4" />
             ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
+              <Maximize2 className="h-4 w-4" />
             )}
           </Button>
         )}
         <Button
           variant="ghost"
           size="icon"
-          className="h-6 w-6 hover:bg-nav-hover"
+          className="h-8 w-8 hover:bg-nav-hover"
           onClick={(e) => {
             e.stopPropagation();
             onClose();
           }}
           title={t('common:close')}
         >
-          <X className="h-3.5 w-3.5" />
+          <X className="h-4 w-4" />
         </Button>
       </div>
     </div>

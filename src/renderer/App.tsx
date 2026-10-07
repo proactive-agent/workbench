@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { debugLog } from '../shared/utils/debug-logger';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Button } from './components/ui/button';
@@ -289,6 +289,22 @@ export function App() {
     window.addEventListener('open-app-settings', handleOpenAppSettings);
     return () => {
       window.removeEventListener('open-app-settings', handleOpenAppSettings);
+    };
+  }, []);
+
+  // Listen for open-project-settings events (e.g., the Kanban board's Settings button)
+  useEffect(() => {
+    const handleOpenProjectSettings = (event: Event) => {
+      const section = (event as CustomEvent<ProjectSettingsSection>).detail;
+      if (section) {
+        setSettingsInitialProjectSection(section);
+      }
+      setIsSettingsDialogOpen(true);
+    };
+
+    window.addEventListener('open-project-settings', handleOpenProjectSettings);
+    return () => {
+      window.removeEventListener('open-project-settings', handleOpenProjectSettings);
     };
   }, []);
 
@@ -862,9 +878,9 @@ export function App() {
                 {t('initialize.description')}
               </DialogDescription>
             </DialogHeader>
-            <div className="py-4">
-              <div className="rounded-lg border border-border px-4 py-3 text-sm">
-                <p className="font-medium mb-2">{t('initialize.willDo')}</p>
+            <div className="space-y-4 pt-4">
+              <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+                <p className="text-foreground mb-2">{t('initialize.willDo')}</p>
                 <ul className="list-disc list-inside space-y-1 text-muted-foreground">
                   <li>{t('initialize.createFolder')}</li>
                   <li>{t('initialize.copyFramework')}</li>
@@ -872,29 +888,19 @@ export function App() {
                 </ul>
               </div>
               {!settings.autoBuildPath && (
-                <div className="mt-4 rounded-lg border border-warning/30 bg-warning/5 px-4 py-3 text-sm">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-warning mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-foreground">{t('initialize.sourcePathNotConfigured')}</p>
-                      <p className="text-muted-foreground mt-1">
-                        {t('initialize.sourcePathNotConfiguredDescription')}
-                      </p>
-                    </div>
-                  </div>
+                <div className="rounded-xl bg-segment-track px-4 py-3 text-sm">
+                  <p className="text-foreground">{t('initialize.sourcePathNotConfigured')}</p>
+                  <p className="text-muted-foreground mt-1">
+                    {t('initialize.sourcePathNotConfiguredDescription')}
+                  </p>
                 </div>
               )}
               {initError && (
-                <div className="mt-4 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-destructive">{t('initialize.initFailed')}</p>
-                      <p className="text-muted-foreground mt-1">
-                        {initError}
-                      </p>
-                    </div>
-                  </div>
+                <div className="text-sm" role="alert">
+                  <p className="text-destructive">{t('initialize.initFailed')}</p>
+                  <p className="text-muted-foreground mt-1">
+                    {initError}
+                  </p>
                 </div>
               )}
             </div>
@@ -913,10 +919,7 @@ export function App() {
                     {t('common:labels.initializing', { ns: 'common' })}
                   </>
                 ) : (
-                  <>
-                    <Download className="mr-1.5 h-3.5 w-3.5" />
-                    {t('common:buttons.initialize', { ns: 'common' })}
-                  </>
+                  t('common:buttons.initialize', { ns: 'common' })
                 )}
               </Button>
             </DialogFooter>
@@ -946,10 +949,9 @@ export function App() {
               </DialogDescription>
             </DialogHeader>
             {removeProjectError && (
-              <div className="mt-4 flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
-                <AlertCircle className="h-4 w-4 flex-shrink-0" />
-                <span>{removeProjectError}</span>
-              </div>
+              <p className="mt-4 text-sm text-destructive" role="alert">
+                {removeProjectError}
+              </p>
             )}
             <DialogFooter>
               <Button variant="ghost" size="sm" onClick={handleCancelRemoveProject}>

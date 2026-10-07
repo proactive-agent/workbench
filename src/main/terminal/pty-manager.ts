@@ -219,6 +219,10 @@ export function setupPtyHandlers(
     // destroyed BrowserWindow.webContents, which triggers pty.node SIGABRT
     if (isShuttingDown) return;
     if (terminal.hasExited) return;
+    // A destroyed PTY (removed from the map, e.g. when a terminal moves to another worktree)
+    // can still flush output while it dies; it must not reach the replacement terminal
+    // that reuses its id
+    if (terminals.get(id) !== terminal) return;
 
     // Append to output buffer (limit to 100KB)
     terminal.outputBuffer = (terminal.outputBuffer + data).slice(-100000);
@@ -257,8 +261,12 @@ export function setupPtyHandlers(
     if (isShuttingDown) return;
 
     // Send to renderer with isDestroyed() check to prevent crashes
-    // when the window is closed during terminal exit
-    safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_EXIT, id, exitCode);
+    // when the window is closed during terminal exit. Skip PTYs that were deliberately
+    // destroyed: their exit can arrive after a replacement terminal with the same id
+    // started (worktree switch), and would mark that live terminal as exited
+    if (terminals.get(id) === terminal) {
+      safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_EXIT, id, exitCode);
+    }
 
     // Call custom exit handler. Guard against unexpected exceptions so PTY exit
     // handling remains robust and doesn't take down the main process.

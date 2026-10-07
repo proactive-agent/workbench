@@ -11,12 +11,12 @@ const Checkbox = React.forwardRef<
     ref={ref}
     checked={checked}
     className={cn(
-      // Neutral outline while unchecked; clay fill and border once checked
-      'peer h-4 w-4 shrink-0 rounded-sm border border-(--input) ring-offset-background',
-      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+      // claude.ai checkbox: 5px radius, translucent fill with a hairline ring; accent blue once checked
+      'peer h-4 w-4 shrink-0 rounded-[5px] border-0 bg-segment-track shadow-[inset_0_0_0_1px_var(--switch-track-hover)] outline-none',
+      'transition-colors duration-100 focus-visible:shadow-(--shadow-focus)',
       'disabled:cursor-not-allowed disabled:opacity-50',
-      'data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
-      'data-[state=indeterminate]:border-primary data-[state=indeterminate]:bg-primary data-[state=indeterminate]:text-primary-foreground',
+      'data-[state=checked]:bg-switch-on data-[state=checked]:text-white data-[state=checked]:shadow-none',
+      'data-[state=indeterminate]:bg-switch-on data-[state=indeterminate]:text-white data-[state=indeterminate]:shadow-none',
       className
     )}
     {...props}
@@ -25,9 +25,9 @@ const Checkbox = React.forwardRef<
       className={cn('flex items-center justify-center text-current')}
     >
       {checked === 'indeterminate' ? (
-        <Minus className="h-3 w-3" />
+        <Minus className="h-3 w-3" strokeWidth={3} />
       ) : (
-        <Check className="h-3 w-3" />
+        <Check className="h-3 w-3" strokeWidth={3} />
       )}
     </CheckboxPrimitive.Indicator>
   </CheckboxPrimitive.Root>

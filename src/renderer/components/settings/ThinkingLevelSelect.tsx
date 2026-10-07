@@ -22,6 +22,48 @@ interface ThinkingLevelSelectProps {
   modelValue: string;
   provider: BuiltinProvider;
   disabled?: boolean;
+  /**
+   * Compact settings-row mode: renders only the dropdown (no "Thinking level" label or badge),
+   * so it can sit next to the model select in a SettingsRow control slot. Use
+   * `ReasoningTypeHint` to show the reasoning type as muted text instead of a badge.
+   */
+  inline?: boolean;
+}
+
+interface ReasoningTypeHintProps {
+  modelValue: string;
+  provider: BuiltinProvider;
+  /** Prefix with " · " so it can be appended to a row description */
+  withSeparator?: boolean;
+}
+
+/**
+ * The model's reasoning type ("Adaptive", "Budget", ...) as plain muted text with an
+ * explanatory tooltip. Renders nothing for models without extended thinking.
+ */
+export function ReasoningTypeHint({ modelValue, provider, withSeparator = false }: ReasoningTypeHintProps) {
+  const { t } = useTranslation('settings');
+  const reasoningType = getReasoningConfigForModel(modelValue, provider).type;
+  const badgeConfig = REASONING_TYPE_BADGES[reasoningType];
+  if (!badgeConfig) return null;
+
+  return (
+    <>
+      {withSeparator && ' · '}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="cursor-help">
+            {t(`agentProfile.reasoning.hint.${reasoningType}` as Parameters<typeof t>[0])}
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          <p className="text-xs">
+            {t(`agentProfile.reasoning.badgeTooltip.${reasoningType}` as Parameters<typeof t>[0])}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </>
+  );
 }
 
 /**
@@ -37,6 +79,7 @@ export function ThinkingLevelSelect({
   modelValue,
   provider,
   disabled,
+  inline = false,
 }: ThinkingLevelSelectProps) {
   const { t } = useTranslation('settings');
 
@@ -72,9 +115,11 @@ export function ThinkingLevelSelect({
     );
   };
 
-  // ── No thinking available ─────────────────────────────────────────────────
-  if (reasoningType === 'none') {
-    return (
+  // Label + badge above the dropdown (default), or just the dropdown (inline settings rows)
+  const wrap = (select: React.ReactNode) =>
+    inline ? (
+      select
+    ) : (
       <div className="space-y-1">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-muted-foreground">
@@ -82,49 +127,49 @@ export function ThinkingLevelSelect({
           </span>
           {renderBadge()}
         </div>
-        <Select value={value} onValueChange={onChange} disabled>
-          <SelectTrigger className="h-9">
-            <SelectValue placeholder={t('agentProfile.reasoning.noThinking')} />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={value || 'low'}>
-              {t('agentProfile.reasoning.noThinking')}
-            </SelectItem>
-          </SelectContent>
-        </Select>
+        {select}
       </div>
+    );
+  const triggerClassName = inline ? 'h-8 w-auto' : 'h-9';
+  const ariaLabel = t('agentProfile.thinkingLevel');
+
+  // ── No thinking available ─────────────────────────────────────────────────
+  if (reasoningType === 'none') {
+    return wrap(
+      <Select value={value} onValueChange={onChange} disabled>
+        <SelectTrigger className={triggerClassName} aria-label={ariaLabel}>
+          <SelectValue placeholder={t('agentProfile.reasoning.noThinking')} />
+        </SelectTrigger>
+        <SelectContent align={inline ? 'end' : undefined}>
+          <SelectItem value={value || 'low'}>
+            {t('agentProfile.reasoning.noThinking')}
+          </SelectItem>
+        </SelectContent>
+      </Select>
     );
   }
 
   // ── Toggle style (Google Gemini thinking on/off) ──────────────────────────
   if (reasoningType === 'thinking_toggle') {
     const isOn = value === 'high';
-    return (
-      <div className="space-y-1">
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">
-            {t('agentProfile.thinkingLevel')}
-          </span>
-          {renderBadge()}
-        </div>
-        <Select
-          value={isOn ? 'high' : 'low'}
-          onValueChange={onChange}
-          disabled={disabled}
-        >
-          <SelectTrigger className="h-9">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="low">
-              {t('agentProfile.reasoning.toggle.off')}
-            </SelectItem>
-            <SelectItem value="high">
-              {t('agentProfile.reasoning.toggle.on')}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+    return wrap(
+      <Select
+        value={isOn ? 'high' : 'low'}
+        onValueChange={onChange}
+        disabled={disabled}
+      >
+        <SelectTrigger className={triggerClassName} aria-label={ariaLabel}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent align={inline ? 'end' : undefined}>
+          <SelectItem value="low">
+            {t('agentProfile.reasoning.toggle.off')}
+          </SelectItem>
+          <SelectItem value="high">
+            {t('agentProfile.reasoning.toggle.on')}
+          </SelectItem>
+        </SelectContent>
+      </Select>
     );
   }
 
@@ -134,26 +179,18 @@ export function ThinkingLevelSelect({
     ? THINKING_LEVELS
     : THINKING_LEVELS.filter((l) => l.value !== 'xhigh');
 
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs text-muted-foreground">
-          {t('agentProfile.thinkingLevel')}
-        </span>
-        {renderBadge()}
-      </div>
-      <Select value={value} onValueChange={onChange} disabled={disabled}>
-        <SelectTrigger className="h-9">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {levels.map((level) => (
-            <SelectItem key={level.value} value={level.value}>
-              {level.label}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+  return wrap(
+    <Select value={value} onValueChange={onChange} disabled={disabled}>
+      <SelectTrigger className={triggerClassName} aria-label={ariaLabel}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent align={inline ? 'end' : undefined}>
+        {levels.map((level) => (
+          <SelectItem key={level.value} value={level.value}>
+            {level.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

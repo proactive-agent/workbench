@@ -6,3 +6,5 @@
 export { ErrorDisplay } from './ErrorDisplay';
 export { EmptyProjectState } from './EmptyProjectState';
 export { InitializationGuard } from './InitializationGuard';
+export { StatusIndicator } from './StatusIndicator';
+export type { StatusIndicatorState } from './StatusIndicator';
