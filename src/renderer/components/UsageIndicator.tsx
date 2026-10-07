@@ -513,7 +513,8 @@ export function UsageIndicator() {
               <span className={sessionColorClass} title={t('common:usage.sessionShort')}>
                 {Math.round(sessionPercent)}
               </span>
-              <span className="text-muted-foreground/50">|</span>
+              {/* Hairline divider (a bold monospace "|" renders too heavy) */}
+              <span aria-hidden="true" className="mx-0.5 h-3 w-px bg-muted-foreground/40" />
               <span className={weeklyColorClass} title={t('common:usage.weeklyShort')}>
                 {Math.round(weeklyPercent)}
               </span>
