@@ -167,7 +167,7 @@ describe('terminal-font-settings-store', () => {
       const windowsStore = windowsStoreModule.useTerminalFontSettingsStore.getState();
 
       expect(windowsStore.fontFamily).toEqual(['Dank Mono', 'Cascadia Code', 'Consolas', 'Courier New', 'monospace']);
-      expect(windowsStore.fontSize).toBe(14);
+      expect(windowsStore.fontSize).toBe(13);
       expect(windowsStore.fontWeight).toBe(400);
     });
 

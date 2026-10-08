@@ -100,7 +100,8 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       expect(screen.getAllByText(/copy to clipboard/i).length).toBeGreaterThan(0);
 
       // Configuration sections
-      expect(screen.getByRole('heading', { name: 'Font' })).toBeInTheDocument();
+      // Font rows live in General > Appearance
+      expect(screen.queryByRole('heading', { name: 'Font' })).not.toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Cursor' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Scrollback' })).toBeInTheDocument();
       expect(screen.queryByRole('heading', { name: 'Presets' })).not.toBeInTheDocument();
@@ -278,20 +279,6 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       // Verify store state reflects imported settings
       expect(useTerminalFontSettingsStore.getState().fontSize).toBe(16);
       expect(useTerminalFontSettingsStore.getState().fontFamily).toEqual(['Fira Code', 'monospace']);
-    });
-  });
-
-  describe('Child Component Integration', () => {
-    it('should render FontConfigPanel with current settings', () => {
-      renderWithI18n(<TerminalFontSettings />);
-
-      // Verify FontConfigPanel renders
-      expect(screen.getAllByText(/font size/i).length).toBeGreaterThan(0);
-
-      // Verify the current font size value is accessible from store
-      const fontSize = useTerminalFontSettingsStore.getState().fontSize;
-      expect(fontSize).toBeGreaterThan(0);
-      expect(fontSize).toBeLessThanOrEqual(24);
     });
   });
 

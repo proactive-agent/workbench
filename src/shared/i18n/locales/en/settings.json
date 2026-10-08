@@ -247,6 +247,25 @@
     "dark": "Dark",
     "system": "System"
   },
+  "fonts": {
+    "interfaceFont": "Interface font",
+    "interfaceFontDescription": "Font for menus, settings and other app text",
+    "interfaceFonts": {
+      "anthropic-sans": "Anthropic Sans",
+      "system": "System",
+      "sans-serif": "Sans serif",
+      "inter": "Inter"
+    },
+    "terminalFont": "Command line font",
+    "terminalFontDescription": "Font for terminals and agent windows",
+    "textSize": "Command line text size",
+    "textSizeDescription": "Size of the text in terminals and agent windows",
+    "textSizes": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    }
+  },
   "devtools": {
     "title": "Developer tools",
     "description": "Configure your preferred IDE, terminal, and terminal font settings",
@@ -961,30 +980,6 @@
     "export": "Export JSON",
     "import": "Import JSON",
     "copy": "Copy to clipboard",
-    "fontConfig": {
-      "title": "Font",
-      "description": "Customize font family, size, weight, line height, and letter spacing",
-      "fontFamily": "Font family",
-      "fontFamilyDescription": "Primary monospace font for terminal text",
-      "selectFont": "Select a font...",
-      "searchFont": "Search fonts...",
-      "noFonts": "No fonts found",
-      "fontChain": "Font chain:",
-      "fontSize": "Font size",
-      "fontSizeDescription": "Base font size in pixels (10-24px)",
-      "decreaseFontSize": "Decrease font size by {{step}}px",
-      "increaseFontSize": "Increase font size by {{step}}px",
-      "pixels": "pixels",
-      "fontWeight": "Font weight",
-      "fontWeightDescription": "Font weight from 100 (thin) to 900 (black), in steps of 100",
-      "commonWeights": "Common: 400 (normal), 600 (semi-bold), 700 (bold)",
-      "decreaseFontWeight": "Decrease font weight by {{step}}",
-      "increaseFontWeight": "Increase font weight by {{step}}",
-      "lineHeight": "Line height",
-      "lineHeightDescription": "Line height as a multiple of font size (1.0-2.0)",
-      "letterSpacing": "Letter spacing",
-      "letterSpacingDescription": "Horizontal spacing between characters (-2 to 5px)"
-    },
     "cursorConfig": {
       "title": "Cursor",
       "description": "Customize cursor style, blinking behavior, and accent color",

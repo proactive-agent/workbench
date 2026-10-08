@@ -3,6 +3,7 @@ import { SettingsSection } from './SettingsSection';
 import { SettingsRows } from './SettingsRow';
 import { ThemeSelector } from './ThemeSelector';
 import { DisplaySettings } from './DisplaySettings';
+import { FontSettings } from './FontSettings';
 import type { AppSettings } from '../../../shared/types';
 
 interface ThemeSettingsProps {
@@ -11,7 +12,7 @@ interface ThemeSettingsProps {
 }
 
 /**
- * Appearance section: the theme switch followed by the display rows (scale, log order, GPU)
+ * Appearance section: the theme switch, the font rows, then the display rows (log order, GPU)
  */
 export function ThemeSettings({ settings, onSettingsChange }: ThemeSettingsProps) {
   const { t } = useTranslation('settings');
@@ -23,6 +24,7 @@ export function ThemeSettings({ settings, onSettingsChange }: ThemeSettingsProps
     >
       <SettingsRows>
         <ThemeSelector settings={settings} onSettingsChange={onSettingsChange} />
+        <FontSettings settings={settings} onSettingsChange={onSettingsChange} />
         <DisplaySettings settings={settings} onSettingsChange={onSettingsChange} />
       </SettingsRows>
     </SettingsSection>

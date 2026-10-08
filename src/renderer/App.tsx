@@ -46,6 +46,7 @@ import { TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
+import { INTERFACE_FONT_STACKS } from './lib/font-options';
 
 // Version constant for version-specific warnings (e.g., reauthentication notices)
 const VERSION_WARNING_275 = '2.7.5';
@@ -407,6 +408,16 @@ export function App() {
       mediaQuery.removeEventListener('change', handleChange);
     };
   }, [settings.theme, settings.colorTheme]);
+
+  // Apply the interface font (overrides the stylesheet's Anthropic Sans stack)
+  useEffect(() => {
+    const stack = INTERFACE_FONT_STACKS[settings.interfaceFont ?? 'anthropic-sans'];
+    if (stack) {
+      document.documentElement.style.setProperty('--font-sans', stack);
+    } else {
+      document.documentElement.style.removeProperty('--font-sans');
+    }
+  }, [settings.interfaceFont]);
 
   // Update selected task when tasks change (for real-time updates)
   useEffect(() => {

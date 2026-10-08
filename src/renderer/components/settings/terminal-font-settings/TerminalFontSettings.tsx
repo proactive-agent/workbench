@@ -10,14 +10,12 @@ import type { TerminalFontSettings } from '../../../stores/terminal-font-setting
 import { MAX_IMPORT_FILE_SIZE } from '../../../lib/terminal-font-constants';
 
 // Child components
-import { FontConfigPanel } from './FontConfigPanel';
 import { CursorConfigPanel } from './CursorConfigPanel';
 import { PerformanceConfigPanel } from './PerformanceConfigPanel';
 
 /**
  * Terminal font settings main container component
  * Orchestrates all terminal font customization panels:
- * - Font configuration (family, size, weight, line height, letter spacing)
  * - Cursor configuration (style, blink, accent color)
  * - Performance settings (scrollback limit)
  * - Quick presets (VS Code, IntelliJ, macOS, Ubuntu)
@@ -174,10 +172,6 @@ export function TerminalFontSettings() {
 
   return (
     <div>
-
-      <SettingsSection title={t('terminalFonts.fontConfig.title', { defaultValue: 'Font' })}>
-        <FontConfigPanel settings={settings} onSettingChange={handleSettingChange} />
-      </SettingsSection>
 
       <SettingsSection title={t('terminalFonts.cursorConfig.title', { defaultValue: 'Cursor' })}>
         <CursorConfigPanel settings={settings} onSettingChange={handleSettingChange} />

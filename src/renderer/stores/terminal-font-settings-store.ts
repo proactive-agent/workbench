@@ -11,6 +11,12 @@ import {
   isValidHexColor,
   isValidFontFamily,
 } from '../lib/terminal-font-constants';
+import {
+  TERMINAL_FONTS,
+  TERMINAL_FONT_SIZES,
+  nearestOption,
+  terminalFontChain,
+} from '../lib/font-options';
 
 /**
  * Terminal font settings interface
@@ -34,7 +40,7 @@ function getOSDefaults(): TerminalFontSettings {
   if (isWindows()) {
     return {
       fontFamily: ['Dank Mono', 'Cascadia Code', 'Consolas', 'Courier New', 'monospace'],
-      fontSize: 14,
+      fontSize: 13,
       fontWeight: 400,
       lineHeight: 1.2,
       letterSpacing: 0,
@@ -76,7 +82,7 @@ function getOSDefaults(): TerminalFontSettings {
   // Fallback for unknown platforms
   return {
     fontFamily: ['Dank Mono', 'monospace'],
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: 400,
     lineHeight: 1.2,
     letterSpacing: 0,
@@ -378,11 +384,22 @@ export const useTerminalFontSettingsStore = create<TerminalFontSettingsStore>()(
     {
       name: 'terminal-font-settings',
       // v1: Dank Mono (bundled) became the default terminal font; put it first in saved chains
-      version: 1,
+      // v2: Appearance offers a fixed set of fonts and text sizes; snap saved values to them and reset
+      // the line height, letter spacing and weight (no longer adjustable) to the defaults
+      version: 2,
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<TerminalFontSettings> | undefined;
         if (version < 1 && state && Array.isArray(state.fontFamily) && state.fontFamily[0] !== 'Dank Mono') {
           state.fontFamily = ['Dank Mono', ...state.fontFamily.filter((f) => f !== 'Dank Mono')];
+        }
+        if (version < 2 && state) {
+          if (Array.isArray(state.fontFamily) && !(TERMINAL_FONTS as readonly string[]).includes(state.fontFamily[0])) {
+            state.fontFamily = terminalFontChain('Dank Mono');
+          }
+          if (typeof state.fontSize === 'number') state.fontSize = nearestOption(TERMINAL_FONT_SIZES, state.fontSize);
+          state.lineHeight = 1.2;
+          state.letterSpacing = 0;
+          state.fontWeight = 400;
         }
         return state as TerminalFontSettingsStore;
       },

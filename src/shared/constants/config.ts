@@ -25,6 +25,7 @@ export const PANEL_CLEANUP_GRACE_PERIOD_MS = 150;
  */
 export const TITLE_BAR_OVERLAY_HEIGHT = 40;
 
+
 // ============================================
 // Default App Settings
 // ============================================
@@ -57,6 +58,8 @@ export const DEFAULT_APP_SETTINGS = {
   globalOpenAIApiKey: undefined as string | undefined,
   // Selected agent profile - defaults to 'auto' for per-phase optimized model selection
   selectedAgentProfile: 'auto',
+  // Interface font (bundled Anthropic Sans)
+  interfaceFont: 'anthropic-sans' as const,
   // Log order setting for task detail view (default chronological - oldest first)
   logOrder: 'chronological' as const,
   // Beta updates opt-in (receive pre-release versions)

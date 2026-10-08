@@ -9,6 +9,9 @@ import type { ProviderModelSpec } from '../constants/models';
 // Color theme types for multi-theme support
 export type ColorTheme = 'default';
 
+/** Interface font choice (Appearance settings) */
+export type InterfaceFont = 'anthropic-sans' | 'system' | 'sans-serif' | 'inter';
+
 // Developer tools preferences - IDE and terminal selection
 // Comprehensive list based on Stack Overflow Developer Survey 2024, JetBrains Survey, and market research
 export type SupportedIDE =
@@ -307,6 +310,8 @@ export interface AppSettings {
   // Feature-specific configuration (insights, PR/MR review, utility, naming)
   featureModels?: FeatureModelConfig;
   featureThinking?: FeatureThinkingConfig;
+  // Interface font (default Anthropic Sans)
+  interfaceFont?: InterfaceFont;
   // Log order setting for task detail view
   logOrder?: 'chronological' | 'reverse-chronological';
   // Beta updates opt-in (receive pre-release updates)
