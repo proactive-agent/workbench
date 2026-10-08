@@ -4,7 +4,6 @@ import { Input } from '../ui/input';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ProviderAgentTabs } from './ProviderAgentTabs';
-import { ClaudeCodeSettings } from './ClaudeCodeSettings';
 import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT } from '../../../shared/constants';
 import type {
   AppSettings,
@@ -96,13 +95,8 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
 
   if (section === 'agent') {
     return (
-      <>
-        {/* Provider-tabbed agent settings (profiles, features, model overrides) */}
-        <ProviderAgentTabs />
-
-        {/* Claude Code CLI (status, install/update, version and installation switching) */}
-        <ClaudeCodeSettings />
-      </>
+      // Provider-tabbed agent settings (profiles, features, model overrides)
+      <ProviderAgentTabs />
     );
   }
 

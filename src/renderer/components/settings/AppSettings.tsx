@@ -28,6 +28,7 @@ import { useSettings } from './hooks/useSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { GeneralSettings } from './GeneralSettings';
 import { AdvancedSettings } from './AdvancedSettings';
+import { ClaudeCodeSettings } from './ClaudeCodeSettings';
 import { DevToolsSettings } from './DevToolsSettings';
 import { DebugSettings } from './DebugSettings';
 import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSettings';
@@ -220,7 +221,13 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
           </>
         );
       case 'updates':
-        return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />;
+        return (
+          <>
+            <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />
+            {/* Claude Code CLI (status, install/update, version and installation switching) */}
+            <ClaudeCodeSettings />
+          </>
+        );
       default:
         return null;
     }
