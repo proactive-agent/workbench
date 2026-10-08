@@ -32,6 +32,17 @@ import type { ClaudeCodeVersionInfo, ClaudeInstallationInfo } from "../../../sha
 
 type StatusType = "loading" | "installed" | "outdated" | "not-found" | "error";
 
+/** True when version a is newer than version b (numeric dot-separated comparison, "v" prefix ignored) */
+function isNewerVersion(a: string, b: string): boolean {
+  const pa = a.replace(/^v/, "").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  const pb = b.replace(/^v/, "").split(/[.-]/).map((x) => Number.parseInt(x, 10) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d !== 0) return d > 0;
+  }
+  return false;
+}
+
 // Check every 24 hours
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // Delay before re-checking version after install/update
@@ -51,6 +62,8 @@ export function ClaudeCodeSettings() {
 
   // Version rollback state
   const [availableVersions, setAvailableVersions] = useState<string[]>([]);
+  // npm release channels (latest, next, stable) → version
+  const [distTags, setDistTags] = useState<Record<string, string>>({});
   const [isLoadingVersions, setIsLoadingVersions] = useState(false);
   const [versionsError, setVersionsError] = useState<string | null>(null);
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null);
@@ -107,6 +120,7 @@ export function ClaudeCodeSettings() {
       const result = await window.electronAPI.getClaudeCodeVersions();
       if (result.success && result.data) {
         setAvailableVersions(result.data.versions);
+        setDistTags(result.data.distTags ?? {});
       } else {
         setVersionsError(result.error || "Failed to load versions");
       }
@@ -302,9 +316,24 @@ export function ClaudeCodeSettings() {
     setShowRollbackWarning(true);
   };
 
+  // A pre-release ("next" channel) newer than the installed version: "up to date" refers to the
+  // latest release, so mention the pre-release instead of implying nothing newer exists
+  const newerPrerelease =
+    distTags.next && versionInfo?.installed && isNewerVersion(distTags.next, versionInfo.installed)
+      ? normalizeVersion(distTags.next)
+      : null;
+
+  // Channel labels for the version list (e.g. "Next" for the current pre-release)
+  const channelLabels = (version: string): string[] =>
+    (["latest", "next", "stable"] as const)
+      .filter((channel) => distTags[channel] && normalizeVersion(distTags[channel]) === normalizeVersion(version))
+      .map((channel) => t(`navigation:claudeCode.channels.${channel}`));
+
   const statusText = {
     loading: t("navigation:claudeCode.checking"),
-    installed: t("navigation:claudeCode.upToDate"),
+    installed: newerPrerelease
+      ? t("navigation:claudeCode.upToDateWithPrerelease", { version: newerPrerelease })
+      : t("navigation:claudeCode.upToDate"),
     outdated: t("navigation:claudeCode.updateAvailable"),
     "not-found": t("navigation:claudeCode.notInstalled"),
     error: t("navigation:claudeCode.error"),
@@ -381,13 +410,15 @@ export function ClaudeCodeSettings() {
               <SelectContent>
                 {availableVersions.map((version) => {
                   const isCurrentVersion = normalizeVersion(version) === normalizeVersion(versionInfo.installed || "");
+                  const labels = [
+                    ...(isCurrentVersion ? [t("navigation:claudeCode.currentVersion")] : []),
+                    ...channelLabels(version),
+                  ];
                   return (
                     <SelectItem key={version} value={version}>
                       <span className="font-mono">{version}</span>
-                      {isCurrentVersion && (
-                        <span className="ml-2 text-muted-foreground">
-                          ({t("navigation:claudeCode.currentVersion")})
-                        </span>
+                      {labels.length > 0 && (
+                        <span className="ml-2 text-muted-foreground">({labels.join(" · ")})</span>
                       )}
                     </SelectItem>
                   );

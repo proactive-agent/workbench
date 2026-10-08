@@ -31,8 +31,9 @@ const execFileAsync = promisify(execFile);
 
 // Cache for latest version (avoid hammering npm registry)
 let cachedLatestVersion: { version: string; timestamp: number } | null = null;
-let cachedVersionList: { versions: string[]; timestamp: number } | null = null;
-const CACHE_DURATION_MS = 24 * 60 * 60 * 1000; // 24 hours
+let cachedVersionList: { versions: string[]; distTags: Record<string, string>; timestamp: number } | null = null;
+// Both caches expire together so "latest" and the version list never disagree for long
+const CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour
 const VERSION_LIST_CACHE_DURATION_MS = 60 * 60 * 1000; // 1 hour for version list
 
 /**
@@ -280,13 +281,13 @@ async function fetchLatestVersion(currentInstalled?: string | null, forceRefresh
 
 /**
  * Fetch available versions of Claude Code from npm registry
- * Returns versions sorted by semver descending (newest first)
- * Limited to last 20 versions for performance
+ * Returns versions sorted by semver descending (newest first), limited to the last 20, plus the
+ * npm dist-tags (release channels such as latest, next and stable)
  */
-async function fetchAvailableVersions(): Promise<string[]> {
+async function fetchAvailableVersions(): Promise<{ versions: string[]; distTags: Record<string, string> }> {
   // Check cache first
   if (cachedVersionList && Date.now() - cachedVersionList.timestamp < VERSION_LIST_CACHE_DURATION_MS) {
-    return cachedVersionList.versions;
+    return { versions: cachedVersionList.versions, distTags: cachedVersionList.distTags };
   }
 
   try {
@@ -319,14 +320,16 @@ async function fetchAvailableVersions(): Promise<string[]> {
       throw new Error('No valid semver versions found in npm registry');
     }
 
+    const distTags: Record<string, string> = data['dist-tags'] ?? {};
+
     // Cache the result
-    cachedVersionList = { versions: sortedVersions, timestamp: Date.now() };
-    return sortedVersions;
+    cachedVersionList = { versions: sortedVersions, distTags, timestamp: Date.now() };
+    return { versions: sortedVersions, distTags };
   } catch (error) {
     console.error('[Claude Code] Failed to fetch available versions:', error);
     // Return cached versions if available, even if expired
     if (cachedVersionList) {
-      return cachedVersionList.versions;
+      return { versions: cachedVersionList.versions, distTags: cachedVersionList.distTags };
     }
     throw error;
   }
@@ -1074,14 +1077,14 @@ export function registerClaudeCodeHandlers(): void {
   // Get available Claude Code versions
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_CODE_GET_VERSIONS,
-    async (): Promise<IPCResult<{ versions: string[] }>> => {
+    async (): Promise<IPCResult<{ versions: string[]; distTags: Record<string, string> }>> => {
       try {
         console.log('[Claude Code] Fetching available versions...');
-        const versions = await fetchAvailableVersions();
+        const { versions, distTags } = await fetchAvailableVersions();
         console.log('[Claude Code] Found', versions.length, 'versions');
         return {
           success: true,
-          data: { versions },
+          data: { versions, distTags },
         };
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : 'Unknown error';

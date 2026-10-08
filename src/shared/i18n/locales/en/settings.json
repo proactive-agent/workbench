@@ -290,7 +290,7 @@
     }
   },
   "updates": {
-    "title": "Updates",
+    "title": "Auto Claude Desktop",
     "description": "Manage Auto Claude updates",
     "appUpdateReady": "Update available",
     "newVersion": "New version",

@@ -233,6 +233,7 @@
     "refresh": "Refresh",
     "checking": "Checking Claude Code...",
     "upToDate": "Claude Code is up to date",
+    "upToDateWithPrerelease": "Claude Code is up to date · {{version}} is available as a pre-release",
     "updateAvailable": "Claude Code update available",
     "notInstalled": "Claude Code not installed",
     "error": "Error checking Claude Code",
@@ -261,6 +262,11 @@
     "rollbackWarningTerminalNote": "A terminal window will open to run the installation command. Please wait for the installation to complete before continuing.",
     "switchAnyway": "Open terminal and switch",
     "currentVersion": "Current",
+    "channels": {
+      "latest": "Latest",
+      "next": "Next",
+      "stable": "Stable"
+    },
     "switchInstallation": "Switch installation",
     "selectInstallation": "Select installation",
     "loadingInstallations": "Loading installations...",

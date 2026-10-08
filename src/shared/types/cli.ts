@@ -48,6 +48,8 @@ export interface ClaudeCodeVersionInfo {
 export interface ClaudeCodeVersionList {
   /** List of available versions, sorted newest first */
   versions: string[];
+  /** npm release channels and the version each points to (e.g. latest, next, stable) */
+  distTags?: Record<string, string>;
 }
 
 /**
