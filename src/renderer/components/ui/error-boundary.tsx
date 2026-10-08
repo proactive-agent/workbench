@@ -2,7 +2,6 @@ import React from 'react';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { Button } from './button';
 import { Card, CardContent } from './card';
-import { captureException } from '../../lib/sentry';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -31,11 +30,6 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
     console.error('ErrorBoundary caught an error:', error, errorInfo);
-
-    // Report to Sentry with React component stack
-    captureException(error, {
-      componentStack: errorInfo.componentStack,
-    });
   }
 
   handleReset = (): void => {

@@ -13,7 +13,6 @@ import { WizardProgress, WizardStep } from './WizardProgress';
 import { WelcomeStep } from './WelcomeStep';
 import { AccountsStep } from './AccountsStep';
 import { DevToolsStep } from './DevToolsStep';
-import { PrivacyStep } from './PrivacyStep';
 import { MemoryStep } from './MemoryStep';
 import { CompletionStep } from './CompletionStep';
 import { useSettingsStore } from '../../stores/settings-store';
@@ -26,14 +25,13 @@ interface OnboardingWizardProps {
 }
 
 // Wizard step identifiers
-type WizardStepId = 'welcome' | 'accounts' | 'devtools' | 'privacy' | 'memory' | 'completion';
+type WizardStepId = 'welcome' | 'accounts' | 'devtools' | 'memory' | 'completion';
 
 // Step configuration with translation keys
 const WIZARD_STEPS: { id: WizardStepId; labelKey: string }[] = [
   { id: 'welcome', labelKey: 'steps.welcome' },
   { id: 'accounts', labelKey: 'steps.accounts' },
   { id: 'devtools', labelKey: 'steps.devtools' },
-  { id: 'privacy', labelKey: 'steps.privacy' },
   { id: 'memory', labelKey: 'steps.memory' },
   { id: 'completion', labelKey: 'steps.done' }
 ];
@@ -146,13 +144,6 @@ export function OnboardingWizard({
       case 'devtools':
         return (
           <DevToolsStep
-            onNext={goToNextStep}
-            onBack={goToPreviousStep}
-          />
-        );
-      case 'privacy':
-        return (
-          <PrivacyStep
             onNext={goToNextStep}
             onBack={goToPreviousStep}
           />

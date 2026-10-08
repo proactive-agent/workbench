@@ -26,10 +26,6 @@ export interface SettingsAPI {
   // App Info
   getAppVersion: () => Promise<string>;
 
-  // Sentry error reporting
-  notifySentryStateChanged: (enabled: boolean) => void;
-  getSentryDsn: () => Promise<string>;
-  getSentryConfig: () => Promise<{ dsn: string; tracesSampleRate: number; profilesSampleRate: number }>;
 
   // Spell check
   setSpellCheckLanguages: (language: string) => Promise<IPCResult<{ success: boolean }>>;
@@ -76,17 +72,6 @@ export const createSettingsAPI = (): SettingsAPI => ({
   getAppVersion: (): Promise<string> =>
     ipcRenderer.invoke(IPC_CHANNELS.APP_VERSION),
 
-  // Sentry error reporting - notify main process when setting changes
-  notifySentryStateChanged: (enabled: boolean): void =>
-    ipcRenderer.send(IPC_CHANNELS.SENTRY_STATE_CHANGED, enabled),
-
-  // Get Sentry DSN from main process (loaded from environment variable)
-  getSentryDsn: (): Promise<string> =>
-    ipcRenderer.invoke(IPC_CHANNELS.GET_SENTRY_DSN),
-
-  // Get full Sentry config from main process (DSN + sample rates)
-  getSentryConfig: (): Promise<{ dsn: string; tracesSampleRate: number; profilesSampleRate: number }> =>
-    ipcRenderer.invoke(IPC_CHANNELS.GET_SENTRY_CONFIG),
 
   // Spell check - sync spell checker language with app language
   setSpellCheckLanguages: (language: string): Promise<IPCResult<{ success: boolean }>> =>

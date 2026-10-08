@@ -1,11 +1,10 @@
 // Polyfill CommonJS require for ESM compatibility
-// This MUST be at the very top, before any imports that might trigger Sentry's
-// require-in-the-middle hooks. Sentry's hooks expect require.cache to exist,
-// which is only available in CommonJS. Without this, node-pty native module
-// loading fails with "ReferenceError: require is not defined".
+// This MUST be at the very top, before any imports that load CommonJS native
+// modules. Without this, node-pty native module loading fails with
+// "ReferenceError: require is not defined".
 import Module, { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-// Make require globally available for Sentry's require-in-the-middle hooks
+// Make require globally available to dependencies that expect it
 globalThis.require = require;
 
 // In packaged Electron apps, native modules (e.g. @libsql/client) are placed in
@@ -62,7 +61,6 @@ import { getAppLanguage, initAppLanguage } from './app-language';
 import { readSettingsFile } from './settings-utils';
 import { registerSettingsAccessor } from './ai/auth/resolver';
 import { appLog, setupErrorLogging } from './app-logger';
-import { initSentryMain } from './sentry';
 import { preWarmToolCache } from './cli-tool-manager';
 import { initializeClaudeProfileManager, getClaudeProfileManager } from './claude-profile-manager';
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
@@ -110,9 +108,6 @@ const DEFAULT_SCREEN_HEIGHT: number = 1080;
 
 // Setup error logging early (captures uncaught exceptions)
 setupErrorLogging();
-
-// Initialize Sentry for error tracking (respects user's sentryEnabled setting)
-initSentryMain();
 
 // Wire up settings accessor for the AI auth resolver.
 // This lets resolveAuth() / buildDefaultQueueConfig() read provider accounts

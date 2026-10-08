@@ -71,8 +71,6 @@ export const DEFAULT_APP_SETTINGS = {
   logOrder: 'chronological' as const,
   // Beta updates opt-in (receive pre-release versions)
   betaUpdates: false,
-  // Anonymous error reporting (Sentry) - enabled by default to help improve the app
-  sentryEnabled: true,
   // Auto-name Claude terminals based on initial message (enabled by default)
   // GPU acceleration for terminal rendering
   // Default to 'off' until WebGL stability is proven across all GPU drivers.

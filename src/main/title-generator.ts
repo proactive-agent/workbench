@@ -2,7 +2,6 @@ import { EventEmitter } from 'events';
 import { streamText } from 'ai';
 import { createSimpleClient } from './ai/client/factory';
 import { getActiveProviderFeatureSettings } from './ipc-handlers/feature-settings-helper';
-import { safeBreadcrumb, safeCaptureException } from './sentry';
 
 /**
  * Debug logging - only logs when DEBUG=true or in development mode
@@ -48,13 +47,6 @@ export class TitleGenerator extends EventEmitter {
 
     debug('Generating title for description:', description.substring(0, 100) + '...');
 
-    safeBreadcrumb({
-      category: 'title-generator',
-      message: 'Generating title via Vercel AI SDK',
-      level: 'info',
-      data: { descriptionLength: description.length },
-    });
-
     try {
       // Read the user's configured naming model for their active provider.
       // This ensures we use the correct model for the active provider
@@ -87,21 +79,11 @@ export class TitleGenerator extends EventEmitter {
       const raw = (await result.text).trim();
       if (!raw) {
         debug('AI returned empty response');
-        safeBreadcrumb({
-          category: 'title-generator',
-          message: 'AI returned empty response',
-          level: 'warning',
-        });
         return null;
       }
 
       const title = this.cleanTitle(raw);
       debug('Generated title:', title);
-      safeBreadcrumb({
-        category: 'title-generator',
-        message: 'Title generated successfully',
-        level: 'info',
-      });
       return title;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -109,11 +91,6 @@ export class TitleGenerator extends EventEmitter {
       // Surface 429 rate-limit errors as sdk-rate-limit events
       if (message.includes('429') || message.toLowerCase().includes('rate limit')) {
         debug('Rate limit detected:', message);
-        safeBreadcrumb({
-          category: 'title-generator',
-          message: 'Rate limit detected',
-          level: 'warning',
-        });
         this.emit('sdk-rate-limit', {
           source: 'title-generator',
           message,
@@ -125,27 +102,10 @@ export class TitleGenerator extends EventEmitter {
       // Auth failures
       if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
         debug('Auth failure during title generation');
-        safeBreadcrumb({
-          category: 'title-generator',
-          message: 'Auth failure',
-          level: 'error',
-        });
-        safeCaptureException(error instanceof Error ? error : new Error(message), {
-          contexts: { titleGenerator: { phase: 'auth' } },
-        });
         return null;
       }
 
       debug('Title generation failed:', message);
-      safeBreadcrumb({
-        category: 'title-generator',
-        message: 'Title generation failed',
-        level: 'error',
-        data: { error: message },
-      });
-      safeCaptureException(error instanceof Error ? error : new Error(message), {
-        contexts: { titleGenerator: { phase: 'generation' } },
-      });
       return null;
     }
   }

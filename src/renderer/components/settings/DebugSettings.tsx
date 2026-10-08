@@ -2,11 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, Copy, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
-import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
-import { useSettingsStore } from '../../stores/settings-store';
-import { notifySentryStateChanged } from '../../lib/sentry';
 
 interface DebugInfo {
   systemInfo: Record<string, string>;
@@ -20,27 +17,10 @@ interface DebugInfo {
  */
 export function DebugSettings() {
   const { t } = useTranslation('settings');
-  const { settings, updateSettings } = useSettingsStore();
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  // Handle Sentry toggle
-  const handleSentryToggle = async (checked: boolean) => {
-    setError(null);
-    try {
-      const result = await window.electronAPI.saveSettings({ sentryEnabled: checked });
-      if (result.success) {
-        updateSettings({ sentryEnabled: checked });
-        notifySentryStateChanged(checked);
-      } else {
-        setError(t('debug.errorReporting.saveFailed', 'Failed to save error reporting setting'));
-      }
-    } catch (_err) {
-      setError(t('debug.errorReporting.saveFailed', 'Failed to save error reporting setting'));
-    }
-  };
 
   const loadDebugInfo = async () => {
     setIsLoading(true);
@@ -86,19 +66,6 @@ export function DebugSettings() {
       description={t('debug.description', 'Access logs and debug information for troubleshooting')}
     >
         <SettingsRows>
-          {/* Error Reporting Toggle */}
-          <SettingsRow
-            label={t('debug.errorReporting.label', 'Anonymous error reporting')}
-            description={t('debug.errorReporting.description', 'Send crash reports to help improve Auto Claude. No personal data or code is collected.')}
-            htmlFor="sentry-toggle"
-          >
-            <Switch
-              id="sentry-toggle"
-              checked={settings.sentryEnabled ?? true}
-              onCheckedChange={handleSentryToggle}
-            />
-          </SettingsRow>
-
           {/* Copy debug info (for bug reports) */}
           <SettingsRow
             label={t('debug.helpTitle', 'Reporting issues')}

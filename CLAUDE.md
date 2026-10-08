@@ -36,8 +36,9 @@ resolves issues → User reviews and merges.
 **Platform abstraction** — Never use `process.platform` directly. Import from `src/main/platform/` (see
 [Cross-Platform](#cross-platform)).
 
-**No console.log in production code** — `console.log` output is invisible in bundled Electron apps. Use Sentry for error
-tracking in production; reserve `console.log` for development only.
+**No console.log in production code** — `console.log` output is invisible in bundled Electron apps. Log errors in the
+main process with `appLog` (`src/main/app-logger.ts`, written to the logs folder); reserve `console.log` for development
+only.
 
 **No time estimates** — Provide priority-based ordering instead of duration predictions.
 

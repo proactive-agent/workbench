@@ -155,30 +155,8 @@
     "welcome": "Welcome",
     "accounts": "Accounts",
     "devtools": "Dev tools",
-    "privacy": "Privacy",
     "memory": "Memory",
     "done": "Done"
-  },
-  "privacy": {
-    "title": "Help improve Auto Claude",
-    "subtitle": "Anonymous error reporting helps us fix bugs faster",
-    "whatWeCollect": {
-      "title": "What we collect",
-      "crashReports": "Crash reports and error stack traces",
-      "errorMessages": "Error messages (with file paths anonymized)",
-      "appVersion": "App version and platform info"
-    },
-    "whatWeNeverCollect": {
-      "title": "What we never collect",
-      "code": "Your code or project files",
-      "filenames": "Full file paths (usernames are masked)",
-      "apiKeys": "API keys or tokens",
-      "personalData": "Personal information or usage data"
-    },
-    "toggle": {
-      "label": "Send anonymous error reports",
-      "description": "Help us identify and fix issues"
-    }
   },
   "claudeCode": {
     "title": "Claude Code CLI",

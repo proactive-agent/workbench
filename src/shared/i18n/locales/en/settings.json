@@ -872,10 +872,6 @@
   "debug": {
     "title": "Debug & logs",
     "description": "Access logs and debug information for troubleshooting",
-    "errorReporting": {
-      "label": "Anonymous error reporting",
-      "description": "Send crash reports to help improve Auto Claude. No personal data or code is collected."
-    },
     "openLogsFolder": "Open logs folder",
     "copyDebugInfo": "Copy debug info",
     "copied": "Copied!",

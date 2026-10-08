@@ -21,9 +21,7 @@ export default defineConfig({
     },
     // Mock Electron modules for unit tests
     alias: {
-      electron: resolve(__dirname, 'src/__mocks__/electron.ts'),
-      '@sentry/electron/main': resolve(__dirname, 'src/__mocks__/sentry-electron-main.ts'),
-      '@sentry/electron/renderer': resolve(__dirname, 'src/__mocks__/sentry-electron-renderer.ts')
+      electron: resolve(__dirname, 'src/__mocks__/electron.ts')
     },
     // Setup files for test environment
     setupFiles: ['src/__tests__/setup.ts']
