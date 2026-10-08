@@ -20,7 +20,8 @@ import { Label } from './ui/label';
 import { SegmentedControl, SettingsRow } from './settings/SettingsRow';
 import { useTranslation } from 'react-i18next';
 import type { CustomMcpServer } from '../../shared/types';
-import { X, Github, ExternalLink, ChevronRight, Globe } from 'lucide-react';
+import { X, Github, ChevronRight, Globe } from 'lucide-react';
+import { ExternalLink } from './ui/external-link';
 
 interface CustomMcpDialogProps {
   open: boolean;
@@ -346,19 +347,9 @@ export function CustomMcpDialog({
                 <div className="rounded-xl bg-segment-track px-4 py-3">
                   <div className="min-w-0">
                     <p className="text-sm text-muted-foreground">{urlHint.message}</p>
-                    <a
-                      href={urlHint.link}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 text-sm text-foreground underline-offset-2 hover:underline mt-1"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        window.electronAPI?.openExternal(urlHint.link);
-                      }}
-                    >
+                    <ExternalLink href={urlHint.link} className="mt-1">
                       {urlHint.linkText}
-                      <ExternalLink className="h-3 w-3" />
-                    </a>
+                    </ExternalLink>
                   </div>
                 </div>
               )}

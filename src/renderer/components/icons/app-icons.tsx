@@ -130,6 +130,15 @@ export function AgentOutlineIcon({ strokeWidth = 1.5, ...props }: IconProps) {
   );
 }
 
+/** Up-right arrow — links that open outside the app (browser, external tools) */
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M256 258.133333c0-21.333333 14.933333-38.4 34.133333-42.666666H765.866667c23.466667 0 42.666667 19.2 42.666666 42.666666L810.666667 725.333333c0 10.666667-4.266667 21.333333-12.8 29.866667-8.533333 8.533333-19.2 12.8-29.866667 12.8-10.666667 0-21.333333-4.266667-29.866667-12.8-8.533333-8.533333-12.8-19.2-12.8-29.866667V360.533333L288 795.733333c-17.066667 17.066667-42.666667 17.066667-59.733333 0-17.066667-17.066667-17.066667-42.666667 0-59.733333l435.2-435.2H298.666667c-21.333333 0-38.4-14.933333-42.666667-34.133333v-8.533334z" />
+    </Svg>
+  );
+}
+
 /** Two sliders, vertical (the source artwork rotated 90°) — replaces the cog everywhere */
 export function SettingsIcon(props: IconProps) {
   return (

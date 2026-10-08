@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ExternalLink, RefreshCw, ChevronDown, Check, Star, Plus } from 'lucide-react';
+import { RefreshCw, ChevronDown, Check, Star, Plus } from 'lucide-react';
+import { ExternalLink } from './ui/external-link';
 import {
   Dialog,
   DialogContent,
@@ -338,17 +339,10 @@ export function RateLimitModal() {
 
             {/* Upgrade prompt */}
             <SettingsRow label={t('rateLimit.upgradeTitle')} description={t('rateLimit.upgradeDescription')}>
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-2"
-                onClick={handleUpgrade}
-                aria-label={t('accessibility.upgradeSubscriptionAriaLabel')}
-              >
+              <ExternalLink onClick={handleUpgrade} aria-label={t('accessibility.upgradeSubscriptionAriaLabel')}>
                 {t('rateLimit.upgradeSubscription')}
-                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
                 <span className="sr-only">({t('accessibility.opensInNewWindow')})</span>
-              </Button>
+              </ExternalLink>
             </SettingsRow>
           </SettingsRows>
         </div>

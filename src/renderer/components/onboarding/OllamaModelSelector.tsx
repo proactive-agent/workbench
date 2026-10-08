@@ -5,9 +5,9 @@ import {
   Download,
   Loader2,
   AlertCircle,
-  RefreshCw,
-  ExternalLink
+  RefreshCw
 } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { useDownloadStore } from '../../stores/download-store';
@@ -381,15 +381,7 @@ export function OllamaModelSelector({
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 {t('ollama.notInstalled.retry')}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => window.electronAPI?.openExternal?.('https://ollama.com')}
-                className="text-muted-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
-                {t('ollama.notInstalled.learnMore')}
-              </Button>
+              <ExternalLink href="https://ollama.com">{t('ollama.notInstalled.learnMore')}</ExternalLink>
             </div>
 
             <p className="text-xs text-muted-foreground mt-3">

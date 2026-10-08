@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Loader2, ExternalLink } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import { ExternalLink } from '../../ui/external-link';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -144,15 +145,13 @@ export function CreatePRDialog({
                   : t('taskReview:pr.success.created')}
               </p>
               {result.prUrl && (
-                <button
-                  type="button"
+                <ExternalLink
                   data-testid="pr-link-button"
                   onClick={handleOpenPR}
-                  className="flex cursor-pointer items-center gap-1 break-all border-none bg-transparent p-0 text-left font-mono text-xs text-(--nav-label-color) hover:text-foreground hover:underline"
+                  className="break-all"
                 >
                   {result.prUrl}
-                  <ExternalLink className="h-3 w-3 shrink-0" />
-                </button>
+                </ExternalLink>
               )}
             </div>
             <DialogFooter>

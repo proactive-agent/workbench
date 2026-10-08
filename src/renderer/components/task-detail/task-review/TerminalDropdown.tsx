@@ -1,4 +1,5 @@
-import { Terminal, ExternalLink, ChevronDown } from 'lucide-react';
+import { Terminal, ChevronDown } from 'lucide-react';
+import { ExternalLinkIcon } from '../../icons/app-icons';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../../ui/button';
 import {
@@ -46,7 +47,7 @@ export function TerminalDropdown({
           {t('terminal.openInbuilt')}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onOpenExternal}>
-          <ExternalLink className="h-4 w-4 mr-2" />
+          <ExternalLinkIcon className="h-4 w-4 mr-2" />
           {t('terminal.openExternal')}
         </DropdownMenuItem>
       </DropdownMenuContent>

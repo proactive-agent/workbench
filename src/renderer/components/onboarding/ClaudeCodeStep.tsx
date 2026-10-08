@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Terminal, Loader2, Check, AlertTriangle, X, RefreshCw, Download, Info, ExternalLink } from 'lucide-react';
+import { Terminal, Loader2, Check, AlertTriangle, X, RefreshCw, Download, Info } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import type { ClaudeCodeVersionInfo } from '../../../shared/types/cli';
@@ -278,15 +279,9 @@ export function ClaudeCodeStep({ onNext, onBack, onSkip }: ClaudeCodeStepProps) 
 
           {/* Documentation link */}
           <div className="flex justify-center">
-            <Button
-              variant="link"
-              size="sm"
-              className="text-muted-foreground gap-1"
-              onClick={() => window.electronAPI?.openExternal?.('https://claude.ai/code')}
-            >
+            <ExternalLink href="https://claude.ai/code">
               {t('claudeCode.learnMore', 'Learn more about Claude Code')}
-              <ExternalLink className="h-3 w-3" />
-            </Button>
+            </ExternalLink>
           </div>
         </div>
 

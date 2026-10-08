@@ -6,12 +6,12 @@ import {
   Loader2,
   CheckCircle2,
   AlertCircle,
-  ExternalLink,
   Eye,
   EyeOff,
   Zap,
   XCircle
 } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -833,13 +833,7 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
                           <li>Reduces repetitive explanations</li>
                           <li>No Docker required - uses embedded database</li>
                         </ul>
-                        <button
-                          onClick={handleOpenDocs}
-                          className="text-sm text-info hover:text-info/80 flex items-center gap-1"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                          Learn more about Graphiti
-                        </button>
+                        <ExternalLink onClick={handleOpenDocs}>Learn more about Graphiti</ExternalLink>
                       </div>
                     </div>
                   </CardContent>

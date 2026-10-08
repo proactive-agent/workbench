@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, Search, Check, Brain, Eye, Wrench, ExternalLink, Loader2 } from 'lucide-react';
+import { ChevronDown, Search, Check, Brain, Eye, Wrench, Loader2 } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { ALL_AVAILABLE_MODELS, resolveModelEquivalent, type ModelOption } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import type { BuiltinProvider } from '@shared/types/provider-account';
@@ -354,16 +355,16 @@ export function MultiProviderModelSelect({
                         {providerInfo?.name ?? provider}
                       </span>
                       {!configured && providerInfo?.website && (
-                        <a
-                          href={providerInfo.website}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground hover:underline"
-                          onClick={e => e.stopPropagation()}
+                        <ExternalLink
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (providerInfo?.website) window.electronAPI?.openExternal?.(providerInfo.website);
+                          }}
+                          className="gap-1 text-[10px]"
+                          iconClassName="h-2.5 w-2.5"
                         >
                           {t('settings:modelSelect.configureProvider', { defaultValue: 'Configure' })}
-                          <ExternalLink className="h-2.5 w-2.5" />
-                        </a>
+                        </ExternalLink>
                       )}
                     </div>
 

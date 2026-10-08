@@ -8,10 +8,10 @@ import {
   Shield,
   Gauge,
   Palette,
-  ExternalLink,
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '../ui/button';
@@ -207,18 +207,9 @@ export function TaskMetadata({ task }: TaskMetadataProps) {
             <SettingsRow
               label={t('tasks:metadata.pullRequest')}
               description={
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (task.metadata?.prUrl) {
-                      window.electronAPI.openExternal(task.metadata.prUrl);
-                    }
-                  }}
-                  className="flex cursor-pointer items-center gap-1.5 break-all border-none bg-transparent p-0 text-left text-foreground hover:underline"
-                >
+                <ExternalLink href={task.metadata.prUrl} className="break-all">
                   {task.metadata.prUrl}
-                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.75} />
-                </button>
+                </ExternalLink>
               }
             />
           )}

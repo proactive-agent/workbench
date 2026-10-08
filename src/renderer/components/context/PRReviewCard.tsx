@@ -9,9 +9,9 @@ import {
   ChevronUp,
   AlertTriangle,
   Bug,
-  Sparkles,
-  ExternalLink
+  Sparkles
 } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import type { MemoryEpisode } from '../../../shared/types';
@@ -294,15 +294,9 @@ export function PRReviewCard({ memory }: PRReviewCardProps) {
             {/* Link to PR */}
             {parsed.repo && parsed.prNumber && (
               <div className="pt-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs text-muted-foreground hover:text-foreground gap-1"
-                  onClick={() => window.open(`https://github.com/${parsed.repo}/pull/${parsed.prNumber}`, '_blank')}
-                >
-                  <ExternalLink className="h-3 w-3" />
+                <ExternalLink href={`https://github.com/${parsed.repo}/pull/${parsed.prNumber}`}>
                   View PR on GitHub
-                </Button>
+                </ExternalLink>
               </div>
             )}
           </div>

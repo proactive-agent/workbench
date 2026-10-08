@@ -4,9 +4,9 @@ import {
   AlertTriangle,
   Loader2,
   Download,
-  RefreshCw,
-  ExternalLink
+  RefreshCw
 } from "lucide-react";
+import { ExternalLink } from "../ui/external-link";
 import { Button } from "../ui/button";
 import {
   AlertDialog,
@@ -480,18 +480,12 @@ export function ClaudeCodeSettings() {
 
         {/* Changelog */}
         <SettingsRow label={t("navigation:claudeCode.changelog")}>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={() =>
-              window.electronAPI?.openExternal?.("https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md")
-            }
+          <ExternalLink
+            href="https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md"
             aria-label={t("navigation:claudeCode.viewChangelogAriaLabel")}
           >
             {t("navigation:claudeCode.viewChangelog")}
-            <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-          </Button>
+          </ExternalLink>
         </SettingsRow>
       </SettingsRows>
 

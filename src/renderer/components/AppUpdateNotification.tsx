@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { RefreshCw, Check, ExternalLink } from "lucide-react";
+import { RefreshCw, Check } from "lucide-react";
+import { ExternalLink } from "./ui/external-link";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
@@ -242,19 +243,16 @@ export function AppUpdateNotification() {
           )}
 
           {/* Claude Code Changelog Link */}
-          <Button
-            variant="link"
-            size="sm"
-            className="w-full text-xs text-muted-foreground gap-1"
-            onClick={() => window.electronAPI.openExternal(CLAUDE_CODE_CHANGELOG_URL)}
+          <ExternalLink
+            href={CLAUDE_CODE_CHANGELOG_URL}
+            className="self-start"
             aria-label={t(
               "dialogs:appUpdate.claudeCodeChangelogAriaLabel",
               "View Claude Code changelog (opens in new window)"
             )}
           >
             {t("dialogs:appUpdate.claudeCodeChangelog", "View Claude Code changelog")}
-            <ExternalLink className="h-3 w-3" aria-hidden="true" />
-          </Button>
+          </ExternalLink>
 
           {/* Download Progress */}
           {isDownloading && downloadProgress && (

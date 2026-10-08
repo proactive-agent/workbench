@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Download, Loader2, AlertCircle, RefreshCw, ExternalLink, WifiOff } from 'lucide-react';
+import { Check, Download, Loader2, AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
+import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { cn } from '../../lib/utils';
@@ -134,15 +135,9 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
                 <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
                 {t('providers.ollama.connection.retry', { defaultValue: 'Retry' })}
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => window.electronAPI?.openExternal?.('https://ollama.com')}
-                className="text-muted-foreground"
-              >
-                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+              <ExternalLink href="https://ollama.com">
                 {t('providers.ollama.connection.learnMore', { defaultValue: 'Learn More' })}
-              </Button>
+              </ExternalLink>
             </div>
           </div>
         </div>
