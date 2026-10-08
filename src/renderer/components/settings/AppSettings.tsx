@@ -35,7 +35,7 @@ import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSetti
 import { AccountSettings } from './AccountSettings';
 import { ProjectSettingsContent, ProjectSettingsSection, STANDALONE_PROJECT_SECTIONS } from './ProjectSettingsContent';
 import { Context } from '../Context';
-import { AgentTools } from '../AgentTools';
+import { ConnectorsSettings } from './ConnectorsSettings';
 import { ErrorBoundary } from '../ui/error-boundary';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
@@ -55,7 +55,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings pages (claude.ai layout: related settings grouped on one page)
-type AppPage = 'general' | 'accounts' | 'agent' | 'terminal-fonts' | 'devtools' | 'updates';
+type AppPage = 'general' | 'accounts' | 'agent' | 'terminal-fonts' | 'connectors' | 'devtools' | 'updates';
 
 // Section ids accepted from the rest of the app; older ids map onto the page that now holds them
 export type AppSection = AppPage | 'appearance' | 'display' | 'notifications' | 'paths' | 'debug' | 'integrations' | 'api-profiles';
@@ -82,6 +82,7 @@ const appNavItemsConfig: NavItemConfig<AppPage>[] = [
   { id: 'accounts', icon: CircleUserRound },
   { id: 'agent', icon: AgentOutlineIcon },
   { id: 'terminal-fonts', icon: SquareTerminal },
+  { id: 'connectors', icon: Blocks },
   { id: 'devtools', icon: CodeXml },
   { id: 'updates', icon: Download }
 ];
@@ -90,8 +91,7 @@ const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
   { id: 'general', icon: FolderCog },
   { id: 'queue', icon: ListOrdered },
   { id: 'memory', icon: History },
-  { id: 'context', icon: FileText },
-  { id: 'mcp', icon: Blocks }
+  { id: 'context', icon: FileText }
 ];
 
 // Changes save on their own (claude.ai has no Save button); quick edits are batched
@@ -212,6 +212,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
             <TerminalFontSettings />
           </>
         );
+      case 'connectors':
+        return <ConnectorsSettings settings={settings} onSettingsChange={setSettings} />;
       case 'devtools':
         return (
           <>
@@ -244,9 +246,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         </ErrorBoundary>
       ) : null;
     }
-    if (projectSection === 'mcp') {
-      return <AgentTools />;
-    }
     return (
       <ProjectSettingsContent
         project={selectedProject}
@@ -272,7 +271,7 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
     <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 text-muted-foreground" strokeWidth={1.5} />
   );
 
-  // Context and MCP Overview are full pages with their own scrolling; give them the whole area
+  // Context is a full page with its own scrolling; give it the whole area
   const isStandaloneSection = activeTopLevel === 'project' && STANDALONE_PROJECT_SECTIONS.has(projectSection);
 
   return (

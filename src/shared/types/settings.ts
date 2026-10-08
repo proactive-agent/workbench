@@ -2,12 +2,29 @@
  * Application settings types
  */
 
-import type { NotificationSettings, MemoryEmbeddingProvider } from './project';
+import type { NotificationSettings, MemoryEmbeddingProvider, CustomMcpServer } from './project';
 import type { ProviderAccount, BuiltinProvider } from './provider-account';
 import type { ProviderModelSpec } from '../constants/models';
 
 // Color theme types for multi-theme support
 export type ColorTheme = 'default';
+
+/**
+ * MCP connector defaults (Settings > Connectors). New tasks start from these and can change them
+ * per task (TaskMetadata.mcpConnectors) without affecting the defaults or other tasks.
+ */
+export interface McpConnectorSettings {
+  /** Context7 documentation lookup (default on) */
+  context7Enabled?: boolean;
+  /** Memory knowledge graph (default on; also needs the memory server configured) */
+  memoryEnabled?: boolean;
+  /** Electron automation, QA agents only (default off) */
+  electronEnabled?: boolean;
+  /** Puppeteer browser automation, QA agents only (default off) */
+  puppeteerEnabled?: boolean;
+  /** User-added servers; only ones that passed a connection test can be used */
+  customServers?: CustomMcpServer[];
+}
 
 /** Interface font choice (Appearance settings) */
 export type InterfaceFont = 'anthropic-sans' | 'system' | 'sans-serif' | 'inter';
@@ -312,6 +329,8 @@ export interface AppSettings {
   featureThinking?: FeatureThinkingConfig;
   // Interface font (default Anthropic Sans)
   interfaceFont?: InterfaceFont;
+  // MCP connector defaults for new tasks (Settings > Connectors)
+  mcpConnectors?: McpConnectorSettings;
   // Log order setting for task detail view
   logOrder?: 'chronological' | 'reverse-chronological';
   // Beta updates opt-in (receive pre-release updates)

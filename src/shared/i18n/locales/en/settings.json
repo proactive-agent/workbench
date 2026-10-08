@@ -17,6 +17,10 @@
       "title": "Display",
       "description": "Adjust the size of UI elements"
     },
+    "connectors": {
+      "title": "Connectors",
+      "description": "Default MCP servers for new tasks"
+    },
     "devtools": {
       "title": "Developer",
       "description": "IDE and terminal preferences"
@@ -379,10 +383,6 @@
     "context": {
       "title": "Context",
       "description": "Project index and agent memories"
-    },
-    "mcp": {
-      "title": "MCP Overview",
-      "description": "MCP servers available to each agent"
     }
   },
   "agentProfile": {
@@ -872,22 +872,11 @@
     }
   },
   "mcp": {
-    "title": "MCP Server Overview",
-    "titleWithProject": "MCP Server Overview for {{projectName}}",
-    "description": "Configure which MCP servers are available for agents in this project",
-    "descriptionNoProject": "Select a project to configure MCP servers",
     "serversEnabled": "{{count}} servers enabled",
-    "configuration": "MCP Server Configuration",
-    "configurationHint": "Disabled servers reduce context usage and startup time",
-    "noProjectSelected": "No Project Selected",
-    "noProjectSelectedDescription": "Select a project from the dropdown to view and configure MCP servers.",
-    "projectNotInitialized": "Project Not Initialized",
-    "projectNotInitializedDescription": "Initialize Auto Claude for this project to configure MCP servers.",
+    "defaultsHint": "Defaults for new tasks; each task can change them",
     "qaAgentsOnly": "QA agents only",
     "alwaysEnabled": "always enabled",
     "addServer": "Add server",
-    "noMcpServers": "No MCP servers",
-    "cannotRemove": "Cannot remove (required)",
     "servers": {
       "context7": {
         "name": "Context7",
@@ -946,11 +935,7 @@
     "authTokenHint": "Used as Bearer token in the Authorization header",
     "advancedHeaders": "Additional headers",
     "status": {
-      "healthy": "Server is responding",
-      "unhealthy": "Server is not responding",
-      "needsAuth": "Authentication required",
-      "checking": "Checking...",
-      "unknown": "Status unknown"
+      "needsAuth": "Authentication required"
     },
     "hints": {
       "github": "This looks like a GitHub MCP server. You'll need a Personal Access Token with appropriate scopes.",
@@ -1205,19 +1190,7 @@
       "serversTitle": "MCP servers",
       "add": "Add",
       "edit": "Edit",
-      "delete": "Delete",
-      "agentServers": "MCP servers",
-      "availableTools": "Available tools",
-      "mcpCount_one": "{{count}} MCP server",
-      "mcpCount_other": "{{count}} MCP servers",
-      "agentMenu": "{{agent}} MCP servers and tools",
-      "offForProject": "off for this project",
-      "categories": {
-        "spec": "Spec creation",
-        "build": "Build",
-        "qa": "QA",
-        "utility": "Utility"
-      }
+      "delete": "Delete"
     }
   }
 }

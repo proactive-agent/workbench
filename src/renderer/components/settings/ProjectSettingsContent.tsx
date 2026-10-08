@@ -9,13 +9,13 @@ import { SectionRouter } from './sections/SectionRouter';
 import { createHookProxy } from './utils/hookProxyFactory';
 import type { Project } from '../../../shared/types';
 
-export type ProjectSettingsSection = 'general' | 'queue' | 'memory' | 'context' | 'mcp';
+export type ProjectSettingsSection = 'general' | 'queue' | 'memory' | 'context';
 
 /**
  * Project sections that are self-contained pages (they load and persist their own data) rather
  * than parts of the project settings form; the dialog renders them full-height
  */
-export const STANDALONE_PROJECT_SECTIONS: ReadonlySet<ProjectSettingsSection> = new Set(['context', 'mcp']);
+export const STANDALONE_PROJECT_SECTIONS: ReadonlySet<ProjectSettingsSection> = new Set(['context']);
 
 interface ProjectSettingsContentProps {
   project: Project | undefined;
