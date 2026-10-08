@@ -18,6 +18,7 @@ import i18n from '../../../../../shared/i18n';
 // Mock font-discovery module
 vi.mock('../../../../lib/font-discovery', () => ({
   COMMON_MONOSPACE_FONTS: {
+    bundled: ['Dank Mono'],
     windows: ['Consolas', 'Courier New'],
     macos: ['SF Mono', 'Menlo'],
     linux: ['Ubuntu Mono', 'Liberation Mono'],

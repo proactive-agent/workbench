@@ -33,7 +33,7 @@ export interface TerminalFontSettings {
 function getOSDefaults(): TerminalFontSettings {
   if (isWindows()) {
     return {
-      fontFamily: ['Cascadia Code', 'Consolas', 'Courier New', 'monospace'],
+      fontFamily: ['Dank Mono', 'Cascadia Code', 'Consolas', 'Courier New', 'monospace'],
       fontSize: 14,
       fontWeight: 400,
       lineHeight: 1.2,
@@ -47,7 +47,7 @@ function getOSDefaults(): TerminalFontSettings {
 
   if (isMacOS()) {
     return {
-      fontFamily: ['SF Mono', 'Menlo', 'Monaco', 'monospace'],
+      fontFamily: ['Dank Mono', 'SF Mono', 'Menlo', 'Monaco', 'monospace'],
       fontSize: 13,
       fontWeight: 400,
       lineHeight: 1.2,
@@ -61,7 +61,7 @@ function getOSDefaults(): TerminalFontSettings {
 
   if (isLinux()) {
     return {
-      fontFamily: ['Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace'],
+      fontFamily: ['Dank Mono', 'Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace'],
       fontSize: 13,
       fontWeight: 400,
       lineHeight: 1.2,
@@ -75,7 +75,7 @@ function getOSDefaults(): TerminalFontSettings {
 
   // Fallback for unknown platforms
   return {
-    fontFamily: ['monospace'],
+    fontFamily: ['Dank Mono', 'monospace'],
     fontSize: 14,
     fontWeight: 400,
     lineHeight: 1.2,
@@ -377,6 +377,15 @@ export const useTerminalFontSettingsStore = create<TerminalFontSettingsStore>()(
     }),
     {
       name: 'terminal-font-settings',
+      // v1: Dank Mono (bundled) became the default terminal font; put it first in saved chains
+      version: 1,
+      migrate: (persistedState, version) => {
+        const state = persistedState as Partial<TerminalFontSettings> | undefined;
+        if (version < 1 && state && Array.isArray(state.fontFamily) && state.fontFamily[0] !== 'Dank Mono') {
+          state.fontFamily = ['Dank Mono', ...state.fontFamily.filter((f) => f !== 'Dank Mono')];
+        }
+        return state as TerminalFontSettingsStore;
+      },
       onRehydrateStorage: () => (state) => {
         // Validate state after rehydration from localStorage
         if (!state) return;

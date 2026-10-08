@@ -102,7 +102,7 @@ describe('terminal-font-settings-store', () => {
       const state = useTerminalFontSettingsStore.getState();
 
       expect(state).toBeDefined();
-      expect(state.fontFamily).toEqual(['Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace']);
+      expect(state.fontFamily).toEqual(['Dank Mono', 'Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace']);
       expect(state.fontSize).toBe(13);
       expect(state.fontWeight).toBe(400);
       expect(state.lineHeight).toBe(1.2);
@@ -166,7 +166,7 @@ describe('terminal-font-settings-store', () => {
       const windowsStoreModule = await import('../terminal-font-settings-store');
       const windowsStore = windowsStoreModule.useTerminalFontSettingsStore.getState();
 
-      expect(windowsStore.fontFamily).toEqual(['Cascadia Code', 'Consolas', 'Courier New', 'monospace']);
+      expect(windowsStore.fontFamily).toEqual(['Dank Mono', 'Cascadia Code', 'Consolas', 'Courier New', 'monospace']);
       expect(windowsStore.fontSize).toBe(14);
       expect(windowsStore.fontWeight).toBe(400);
     });
@@ -208,7 +208,7 @@ describe('terminal-font-settings-store', () => {
       const macStoreModule = await import('../terminal-font-settings-store');
       const macStore = macStoreModule.useTerminalFontSettingsStore.getState();
 
-      expect(macStore.fontFamily).toEqual(['SF Mono', 'Menlo', 'Monaco', 'monospace']);
+      expect(macStore.fontFamily).toEqual(['Dank Mono', 'SF Mono', 'Menlo', 'Monaco', 'monospace']);
       expect(macStore.fontSize).toBe(13);
       expect(macStore.fontWeight).toBe(400);
     });
@@ -216,7 +216,7 @@ describe('terminal-font-settings-store', () => {
     it('should initialize with Linux defaults', () => {
       const state = useTerminalFontSettingsStore.getState();
 
-      expect(state.fontFamily).toEqual(['Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace']);
+      expect(state.fontFamily).toEqual(['Dank Mono', 'Ubuntu Mono', 'Source Code Pro', 'Liberation Mono', 'DejaVu Sans Mono', 'monospace']);
       expect(state.fontSize).toBe(13);
       expect(state.fontWeight).toBe(400);
     });

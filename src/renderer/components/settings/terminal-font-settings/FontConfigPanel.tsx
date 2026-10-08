@@ -58,6 +58,7 @@ export function FontConfigPanel({ settings, onSettingChange }: FontConfigPanelPr
   useEffect(() => {
     // Combine all common monospace fonts
     const allFonts = [
+      ...COMMON_MONOSPACE_FONTS.bundled,
       ...COMMON_MONOSPACE_FONTS.windows,
       ...COMMON_MONOSPACE_FONTS.macos,
       ...COMMON_MONOSPACE_FONTS.linux,

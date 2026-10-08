@@ -1,6 +1,17 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Bundled UI font (shipped with the build, no network needed). Only the Regular cut is bundled,
+   so it is declared as weight 400 and the browser synthesizes bold for semibold/bold text.
+   Dank Mono, the terminal font, is registered from main.tsx before terminals open. */
+@font-face {
+  font-family: 'Anthropic Sans';
+  src: url('../assets/fonts/AnthropicSans-Text-Regular-Static.otf') format('opentype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 /* Pointer cursor on everything with a Tailwind hover: style (Tailwind v4 no longer gives buttons one).
    Disabled controls and text fields keep their cursor, and explicit cursor-* utilities still win
    (this lives in the base layer). */
@@ -16,7 +27,7 @@
 /* Define custom theme colors for Tailwind CSS v4 */
 @theme {
   /* Font families */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-sans: 'Anthropic Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', monospace;
   /* Display/heading font - same as sans in @theme; the Default theme overrides it with a serif stack */
   --font-heading: var(--font-sans);
@@ -241,7 +252,7 @@
   --radius-3xl: 20px;
 
   /* Typography */
-  --font-heading: 'Tiempos Headline', 'Copernicus', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-heading: var(--font-sans);
 
   /* Elevation (Tailwind shadow utilities) */
   --elevation-sm: 0 0 #0000;
@@ -388,7 +399,7 @@
   --radius-3xl: 20px;
 
   /* Typography */
-  --font-heading: 'Tiempos Headline', 'Copernicus', ui-serif, Georgia, 'Times New Roman', serif;
+  --font-heading: var(--font-sans);
 
   /* Elevation (Tailwind shadow utilities) */
   --elevation-sm: 0 0 #0000;

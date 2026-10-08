@@ -9,6 +9,8 @@ import { getOS } from './os-detection';
  * Used as fallback lists for OS-specific defaults.
  */
 export const COMMON_MONOSPACE_FONTS = {
+  // Bundled with the app (default terminal font)
+  bundled: ['Dank Mono'],
   windows: [
     'Cascadia Code',
     'Cascadia Mono',
