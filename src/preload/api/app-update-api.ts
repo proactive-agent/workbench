@@ -1,6 +1,7 @@
 import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
+  AppUpdateCheckResult,
   AppUpdateInfo,
   AppUpdateProgress,
   AppUpdateAvailableEvent,
@@ -16,7 +17,7 @@ import { createIpcListener, invokeIpc, IpcListenerCleanup } from './modules/ipc-
  */
 export interface AppUpdateAPI {
   // Operations
-  checkAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
+  checkAppUpdate: () => Promise<IPCResult<AppUpdateCheckResult>>;
   downloadAppUpdate: () => Promise<IPCResult>;
   downloadStableUpdate: () => Promise<IPCResult>;
   installAppUpdate: () => void;
@@ -54,7 +55,7 @@ export interface AppUpdateAPI {
  */
 export const createAppUpdateAPI = (): AppUpdateAPI => ({
   // Operations
-  checkAppUpdate: (): Promise<IPCResult<AppUpdateInfo | null>> =>
+  checkAppUpdate: (): Promise<IPCResult<AppUpdateCheckResult>> =>
     invokeIpc(IPC_CHANNELS.APP_UPDATE_CHECK),
 
   downloadAppUpdate: (): Promise<IPCResult> =>

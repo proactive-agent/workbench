@@ -73,7 +73,7 @@ import type {
   TerminalProfileChangedEvent
 } from './agent';
 import type { AppSettings } from './settings';
-import type { AppUpdateInfo, AppUpdateProgress, AppUpdateAvailableEvent, AppUpdateDownloadedEvent, AppUpdateErrorEvent } from './app-update';
+import type { AppUpdateCheckResult, AppUpdateInfo, AppUpdateProgress, AppUpdateAvailableEvent, AppUpdateDownloadedEvent, AppUpdateErrorEvent } from './app-update';
 import type {
   InsightsSession,
   InsightsSessionSummary,
@@ -387,7 +387,7 @@ export interface ElectronAPI {
   testMemoryConnection: (dbPath?: string, database?: string) => Promise<IPCResult<MemoryValidationResult>>;
 
   // Electron app update operations
-  checkAppUpdate: () => Promise<IPCResult<AppUpdateInfo | null>>;
+  checkAppUpdate: () => Promise<IPCResult<AppUpdateCheckResult>>;
   downloadAppUpdate: () => Promise<IPCResult>;
   downloadStableUpdate: () => Promise<IPCResult>;
   installAppUpdate: () => void;

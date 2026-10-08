@@ -7,7 +7,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
-import type { IPCResult, AppUpdateInfo } from '../../shared/types';
+import type { IPCResult, AppUpdateCheckResult, AppUpdateInfo } from '../../shared/types';
 import {
   checkForUpdates,
   downloadUpdate,
@@ -36,7 +36,7 @@ export function registerAppUpdateHandlers(): void {
    */
   ipcMain.handle(
     IPC_CHANNELS.APP_UPDATE_CHECK,
-    async (): Promise<IPCResult<AppUpdateInfo | null>> => {
+    async (): Promise<IPCResult<AppUpdateCheckResult>> => {
       try {
         const result = await checkForUpdates();
         return { success: true, data: result };

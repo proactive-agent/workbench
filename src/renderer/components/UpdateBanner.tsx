@@ -34,8 +34,9 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
   const checkForUpdate = useCallback(async () => {
     try {
       const result = await window.electronAPI.checkAppUpdate();
-      if (result.success && result.data) {
-        const newVersion = result.data.version;
+      const update = result.success ? result.data?.update : undefined;
+      if (update) {
+        const newVersion = update.version;
 
         // Check if this version is suppressed (skipped or snoozed)
         const suppressed = await window.electronAPI.isAppUpdateSuppressed(newVersion);
@@ -57,8 +58,8 @@ export function UpdateBanner({ className }: UpdateBannerProps) {
         }
         setUpdateInfo({
           version: newVersion,
-          releaseNotes: result.data.releaseNotes,
-          releaseDate: result.data.releaseDate,
+          releaseNotes: update.releaseNotes,
+          releaseDate: update.releaseDate,
         });
       }
     } catch (_err) {

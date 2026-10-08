@@ -304,6 +304,8 @@
     "checkingForUpdates": "Checking for updates...",
     "newVersionAvailable": "New version available:",
     "latestVersion": "You're running the latest version.",
+    "unpublishedVersion": "Unpublished release: there's no published release to update from yet.",
+    "checkFailed": "Couldn't check for updates.",
     "viewRelease": "View full release on GitHub",
     "unableToCheck": "Unable to check for updates",
     "checkForUpdates": "Check for updates",

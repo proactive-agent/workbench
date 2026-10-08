@@ -20,6 +20,7 @@ import { SettingsRow, SettingsRows } from './SettingsRow';
 import type {
   AppSettings,
   AppUpdateAvailableEvent,
+  AppUpdateCheckStatus,
   AppUpdateProgress,
   AppUpdateInfo,
   NotificationSettings
@@ -77,6 +78,8 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
   // Electron app update state
   const [appUpdateInfo, setAppUpdateInfo] = useState<AppUpdateAvailableEvent | null>(null);
   const [isCheckingAppUpdate, setIsCheckingAppUpdate] = useState(false);
+  // Outcome of the last check; "latest" is only claimed when the check confirmed it
+  const [appUpdateStatus, setAppUpdateStatus] = useState<AppUpdateCheckStatus | null>(null);
   const [isDownloadingAppUpdate, setIsDownloadingAppUpdate] = useState(false);
   const [appDownloadProgress, setAppDownloadProgress] = useState<AppUpdateProgress | null>(null);
   const [isAppUpdateDownloaded, setIsAppUpdateDownloaded] = useState(false);
@@ -124,13 +127,11 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
       try {
         const result = await window.electronAPI.checkAppUpdate();
         if (isCancelled) return;
-        if (result.success && result.data) {
-          setAppUpdateInfo(result.data);
-        } else {
-          setAppUpdateInfo(null);
-        }
+        setAppUpdateInfo(result.success ? result.data?.update ?? null : null);
+        setAppUpdateStatus(result.success && result.data ? result.data.status : 'error');
       } catch (err) {
         console.error('Failed to check for app updates:', err);
+        if (!isCancelled) setAppUpdateStatus('error');
       } finally {
         if (!isCancelled) {
           setIsCheckingAppUpdate(false);
@@ -199,14 +200,11 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
     setIsCheckingAppUpdate(true);
     try {
       const result = await window.electronAPI.checkAppUpdate();
-      if (result.success && result.data) {
-        setAppUpdateInfo(result.data);
-      } else {
-        // No update available
-        setAppUpdateInfo(null);
-      }
+      setAppUpdateInfo(result.success ? result.data?.update ?? null : null);
+      setAppUpdateStatus(result.success && result.data ? result.data.status : 'error');
     } catch (err) {
       console.error('Failed to check for app updates:', err);
+      setAppUpdateStatus('error');
     } finally {
       setIsCheckingAppUpdate(false);
     }
@@ -285,7 +283,17 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                 {appUpdateInfo ? (
                   <span>· {t('updates.newVersionAvailable')} {appUpdateInfo.version}</span>
                 ) : (
-                  !isCheckingAppUpdate && <span>· {t('updates.latestVersion')}</span>
+                  !isCheckingAppUpdate &&
+                  appUpdateStatus && (
+                    <span>
+                      ·{' '}
+                      {appUpdateStatus === 'up-to-date'
+                        ? t('updates.latestVersion')
+                        : appUpdateStatus === 'unpublished'
+                          ? t('updates.unpublishedVersion')
+                          : t('updates.checkFailed')}
+                    </span>
+                  )
                 )}
               </span>
             }
