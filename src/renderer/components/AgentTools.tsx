@@ -10,15 +10,11 @@ import {
   Server,
   Brain,
   Search,
-  Check,
-  ChevronRight,
-  Circle,
+  ChevronDown,
   Monitor,
   Globe,
   ListChecks,
   Plus,
-  X,
-  RotateCcw,
   Pencil,
   Trash2,
   Terminal,
@@ -31,15 +27,16 @@ import { ScrollArea } from './ui/scroll-area';
 import { Switch } from './ui/switch';
 import { Button } from './ui/button';
 import { SettingsSection } from './settings/SettingsSection';
-import { SettingsRow, SettingsRows } from './settings/SettingsRow';
-import { cn } from '../lib/utils';
+import { SettingsRow, SettingsRows, SETTINGS_MENU_TRIGGER_CLASS } from './settings/SettingsRow';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle
-} from './ui/dialog';
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from './ui/dropdown-menu';
+import { cn } from '../lib/utils';
 import { useSettingsStore } from '../stores/settings-store';
 import { useProjectStore } from '../stores/project-store';
 import type { ProjectEnvConfig, AgentMcpOverride, CustomMcpServer, McpHealthCheckResult, } from '../../shared/types';
@@ -65,7 +62,6 @@ interface AgentConfig {
   category: string;
   tools: string[];
   mcp_servers: string[];
-  mcp_optional?: string[];
   // Maps to settings source - either a phase or a feature
   settingsSource: AgentSettingsSource;
 }
@@ -166,7 +162,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['electron', 'puppeteer'],
     settingsSource: { type: 'phase', phase: 'qa' },
   },
   qa_fixer: {
@@ -175,7 +170,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['electron', 'puppeteer'],
     settingsSource: { type: 'phase', phase: 'qa' },
   },
 
@@ -285,17 +279,29 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
   },
 };
 
-// All available MCP servers that can be added to agents
-const ALL_MCP_SERVERS = [
-  'context7',
-  'memory',
-  'electron',
-  'puppeteer',
-  'auto-claude'
-] as const;
-
 // Agent categories, in display order (labels come from settings:projectPages.mcp.categories)
 const CATEGORIES = ['spec', 'build', 'qa', 'utility'] as const;
+
+// Browser automation servers are only offered to the QA agents
+const QA_AGENT_IDS = ['qa_reviewer', 'qa_fixer'];
+const BROWSER_MCP_SERVERS = ['electron', 'puppeteer'];
+
+/**
+ * The MCP servers an agent can use: every server (built-in and custom) except browser
+ * automation, which only QA agents get. Auto Claude's own server stays with the agents built
+ * around it (planner, coder, QA). Agents use all of these that are enabled for the project,
+ * minus the ones removed for that agent.
+ */
+function getAgentEligibleMcps(agentId: string, customServerIds: string[]): string[] {
+  const config = AGENT_CONFIGS[agentId];
+  return [
+    'context7',
+    'memory',
+    ...(QA_AGENT_IDS.includes(agentId) ? BROWSER_MCP_SERVERS : []),
+    ...customServerIds,
+    ...(config?.mcp_servers.includes('auto-claude') ? ['auto-claude'] : []),
+  ];
+}
 
 /** Leading icon tile used by MCP server rows (claude.ai Connectors style) */
 function ServerIconTile({ icon: Icon }: { icon: React.ElementType }) {
@@ -334,16 +340,19 @@ interface AgentCardProps {
   modelLabel: string;
   thinkingLabel: string;
   overrides: AgentMcpOverride | undefined;
-  mcpServerStates: ProjectEnvConfig['mcpServers'];
+  /** Whether each server is switched on for the project */
+  isEnabledForProject: (mcpId: string) => boolean;
   customServers: CustomMcpServer[];
   onAddMcp: (agentId: string, mcpId: string) => void;
   onRemoveMcp: (agentId: string, mcpId: string) => void;
 }
 
-/** One agent as a hairline row; expands in place to show its MCP servers and tools */
-function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServerStates, customServers, onAddMcp, onRemoveMcp }: AgentCardProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [showAddDialog, setShowAddDialog] = useState(false);
+/**
+ * One agent as a settings row (like the Accounts page's provider rows): label, description,
+ * model and tool tags on the left; a dropdown on the right with its MCP servers as a checklist.
+ * Enabled servers are on by default; unchecking removes one for this agent.
+ */
+function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, isEnabledForProject, customServers, onAddMcp, onRemoveMcp }: AgentCardProps) {
   const { t } = useTranslation(['settings']);
 
   // Build combined MCP server info including custom servers
@@ -359,226 +368,82 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
     return servers;
   }, [customServers]);
 
-  // Calculate effective MCPs: defaults + adds - removes, then filter by project-level MCP states
-  const effectiveMcps = useMemo(() => {
-    const defaultMcps = [...config.mcp_servers, ...(config.mcp_optional || [])];
-    const added = overrides?.add || [];
+  // Every eligible server, checked when it's enabled for the project and not removed for this agent
+  const serverItems = useMemo(() => {
     const removed = overrides?.remove || [];
-    const combinedMcps = [...new Set([...defaultMcps, ...added])].filter(mcp => !removed.includes(mcp));
-
-    // Filter out MCPs that are disabled at project level (custom servers are always enabled)
-    return combinedMcps.filter(mcp => {
-      if (!mcpServerStates) return true; // No project config, show all
-      // Custom servers are always available if they exist
-      if (customServers.some(s => s.id === mcp)) return true;
-      switch (mcp) {
-        case 'context7': return mcpServerStates.context7Enabled !== false;
-        case 'memory': return mcpServerStates.memoryEnabled !== false;
-        case 'electron': return mcpServerStates.electronEnabled !== false;
-        case 'puppeteer': return mcpServerStates.puppeteerEnabled !== false;
-        default: return true;
-      }
+    return getAgentEligibleMcps(id, customServers.map(s => s.id)).map((server) => {
+      const enabled = isEnabledForProject(server);
+      return { server, enabled, checked: enabled && !removed.includes(server) };
     });
-  }, [config, overrides, mcpServerStates, customServers]);
-
-  // Check if an MCP is a custom addition (not in defaults)
-  const isCustomAdd = (mcpId: string) => {
-    const defaults = [...config.mcp_servers, ...(config.mcp_optional || [])];
-    return !defaults.includes(mcpId) && (overrides?.add || []).includes(mcpId);
-  };
-
-  // Get removed MCPs (from defaults)
-  const removedMcps = useMemo(() => {
-    const defaults = [...config.mcp_servers, ...(config.mcp_optional || [])];
-    return defaults.filter(mcp => (overrides?.remove || []).includes(mcp));
-  }, [config, overrides]);
-
-  // Get MCPs that can be added (not already in effective list) - includes custom servers
-  const customServerIds = customServers.map(s => s.id);
-  const allAvailableMcpIds = [...ALL_MCP_SERVERS, ...customServerIds];
-  const availableMcps = allAvailableMcpIds.filter(
-    mcp => !effectiveMcps.includes(mcp) && !removedMcps.includes(mcp) && mcp !== 'auto-claude'
-  );
+  }, [id, overrides, customServers, isEnabledForProject]);
+  const activeCount = serverItems.filter(item => item.checked).length;
 
   return (
-    <div className="py-1">
-      {/* Header - clickable to expand */}
-      <button
-        type="button"
-        onClick={() => setIsExpanded(!isExpanded)}
-        aria-expanded={isExpanded}
-        className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-lg px-2 py-2 text-left outline-none hover:bg-nav-hover focus-visible:shadow-(--shadow-focus)"
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-sm text-foreground">{config.label}</span>
-          <span className="truncate text-sm text-(--nav-label-color)">{config.description}</span>
-        </div>
-        <span className="shrink-0 text-sm text-(--nav-label-color)">
-          {modelLabel} · {thinkingLabel} · {t('projectPages.mcp.mcpCount', { count: effectiveMcps.length })}
-        </span>
-        <ChevronRight
-          className={cn('h-4 w-4 shrink-0 text-muted-foreground transition-transform', isExpanded && 'rotate-90')}
-          strokeWidth={1.75}
-        />
-      </button>
-
-      {/* Expanded content */}
-      {isExpanded && (
-        <div className="space-y-4 pb-3 pt-2">
-          {/* MCP Servers */}
-          <div>
-            <div className="mb-1 flex items-center justify-between">
-              <h4 className="text-sm text-(--nav-label-color)">{t('projectPages.mcp.agentServers')}</h4>
-              {availableMcps.length > 0 && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={(e) => { e.stopPropagation(); setShowAddDialog(true); }}
-                  className="gap-1.5"
+    <SettingsRow
+      label={config.label}
+      description={
+        <>
+          {config.description}
+          <span className="mt-0.5 block text-xs">{modelLabel} · {thinkingLabel}</span>
+          {config.tools.length > 0 && (
+            <span className="mt-2 flex flex-wrap gap-1" aria-label={t('projectPages.mcp.availableTools')}>
+              {config.tools.map((tool) => (
+                <span key={tool} className="rounded-md bg-segment-track px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
+                  {tool}
+                </span>
+              ))}
+            </span>
+          )}
+        </>
+      }
+    >
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          aria-label={t('projectPages.mcp.agentMenu', { agent: config.label })}
+          className={SETTINGS_MENU_TRIGGER_CLASS}
+        >
+          {t('projectPages.mcp.mcpCount', { count: activeCount })}
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-80">
+          <DropdownMenuLabel className="text-xs font-normal text-(--nav-label-color)">
+            {t('projectPages.mcp.agentServers')}
+          </DropdownMenuLabel>
+          {serverItems.length > 0 ? (
+            serverItems.map(({ server, enabled, checked }) => {
+              const serverInfo = allMcpServers[server];
+              // Auto Claude's own server is always on; servers off for the project can't be used
+              const locked = server === 'auto-claude' || !enabled;
+              const note = enabled ? undefined : t('projectPages.mcp.offForProject');
+              return (
+                <DropdownMenuCheckboxItem
+                  key={server}
+                  checked={checked}
+                  disabled={locked}
+                  // Keep the menu open so several servers can be toggled
+                  onSelect={(event) => event.preventDefault()}
+                  onCheckedChange={(value) => (value ? onAddMcp(id, server) : onRemoveMcp(id, server))}
+                  className="cursor-pointer"
                 >
-                  <Plus className="h-4 w-4" strokeWidth={1.75} />
-                  {t('mcp.addServer')}
-                </Button>
-              )}
-            </div>
-            {effectiveMcps.length > 0 || removedMcps.length > 0 ? (
-              <div className="[&>*+*]:border-t [&>*+*]:border-settings-divider">
-                {/* Active MCPs */}
-                {effectiveMcps.map((server) => {
-                  const serverInfo = allMcpServers[server];
-                  const isAdded = isCustomAdd(server);
-                  const canRemove = server !== 'auto-claude';
-
-                  return (
-                    <div key={server} className="group flex h-9 items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2 text-sm">
-                        <span className="truncate text-foreground">{serverInfo?.name || server}</span>
-                        {isAdded && <span className="text-(--nav-label-color)">· {t('mcp.added')}</span>}
-                      </div>
-                      {canRemove && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); onRemoveMcp(id, server); }}
-                          className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                          title={t('mcp.remove')}
-                          aria-label={t('mcp.remove')}
-                        >
-                          <X className="h-4 w-4" strokeWidth={1.75} />
-                        </button>
-                      )}
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-sm text-foreground">
+                      {serverInfo?.name || server}
+                      {note && <span className="text-(--nav-label-color)"> · {note}</span>}
                     </div>
-                  );
-                })}
+                    {serverInfo?.description && (
+                      <div className="truncate text-[0.8125rem] text-(--nav-label-color)">{serverInfo.description}</div>
+                    )}
+                  </div>
+                </DropdownMenuCheckboxItem>
+              );
+            })
+          ) : (
+            <DropdownMenuItem disabled className="text-(--nav-label-color)">{t('mcp.noMcpServers')}</DropdownMenuItem>
+          )}
 
-                {/* Removed MCPs (grayed out with restore option) */}
-                {removedMcps.map((server) => {
-                  const serverInfo = allMcpServers[server];
-
-                  return (
-                    <div key={server} className="group flex h-9 items-center justify-between gap-2">
-                      <div className="flex min-w-0 items-center gap-2 text-sm text-(--nav-label-color)">
-                        <Circle className="h-4 w-4 shrink-0" strokeWidth={1.75} />
-                        <span className="truncate line-through">{serverInfo?.name || server}</span>
-                        <span>· {t('mcp.removed')}</span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); onAddMcp(id, server); }}
-                        className="rounded-md p-1 text-muted-foreground opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover:opacity-100"
-                        title={t('mcp.restore')}
-                        aria-label={t('mcp.restore')}
-                      >
-                        <RotateCcw className="h-4 w-4" strokeWidth={1.75} />
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-(--nav-label-color)">{t('mcp.noMcpServers')}</p>
-            )}
-          </div>
-
-          {/* Tools */}
-          <div>
-            <h4 className="mb-2 text-sm text-(--nav-label-color)">{t('projectPages.mcp.availableTools')}</h4>
-            {config.tools.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {config.tools.map((tool) => (
-                  <span key={tool} className="rounded-md bg-segment-track px-2 py-0.5 font-mono text-xs text-muted-foreground">
-                    {tool}
-                  </span>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-(--nav-label-color)">{t('projectPages.mcp.noTools')}</p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* Add MCP Dialog */}
-      <Dialog open={showAddDialog} onOpenChange={setShowAddDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('mcp.addMcpTo', { agent: config.label })}</DialogTitle>
-            <DialogDescription>{t('mcp.addMcpDescription')}</DialogDescription>
-          </DialogHeader>
-          <div className="-mx-6 min-h-0 space-y-1 overflow-y-auto px-6 py-4">
-            {availableMcps.length > 0 ? (
-              availableMcps.map((mcpId) => {
-                const server = allMcpServers[mcpId];
-                const ServerIcon = server?.icon || Server;
-                return (
-                  <button
-                    type="button"
-                    key={mcpId}
-                    onClick={() => { onAddMcp(id, mcpId); setShowAddDialog(false); }}
-                    className="flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-nav-hover"
-                  >
-                    <ServerIconTile icon={ServerIcon} />
-                    <div className="min-w-0">
-                      <div className="text-sm text-foreground">{server?.name || mcpId}</div>
-                      <div className="text-sm text-(--nav-label-color)">{server?.description}</div>
-                    </div>
-                  </button>
-                );
-              })
-            ) : (
-              <p className="py-4 text-center text-sm text-(--nav-label-color)">
-                {t('mcp.allMcpsAdded')}
-              </p>
-            )}
-            {/* Also show removed MCPs that can be restored */}
-            {removedMcps.length > 0 && (
-              <>
-                <div className="my-2 border-t border-border pt-2">
-                  <p className="text-sm text-(--nav-label-color)">{t('mcp.restore')}</p>
-                </div>
-                {removedMcps.map((mcpId) => {
-                  const server = allMcpServers[mcpId];
-                  const ServerIcon = server?.icon || Server;
-                  return (
-                    <button
-                      type="button"
-                      key={mcpId}
-                      onClick={() => { onAddMcp(id, mcpId); setShowAddDialog(false); }}
-                      className="flex w-full items-center gap-3 rounded-lg p-2 text-left opacity-60 transition-colors hover:bg-nav-hover"
-                    >
-                      <ServerIconTile icon={ServerIcon} />
-                      <div className="min-w-0">
-                        <div className="text-sm text-foreground">{server?.name || mcpId}</div>
-                        <div className="text-sm text-(--nav-label-color)">{server?.description}</div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SettingsRow>
   );
 }
 
@@ -701,9 +566,8 @@ export function AgentTools() {
   const handleRemoveMcp = useCallback(async (agentId: string, mcpId: string) => {
     if (!selectedProjectId || !envConfig) return;
 
-    const agentConfig = AGENT_CONFIGS[agentId];
-    const defaults = [...(agentConfig?.mcp_servers || []), ...(agentConfig?.mcp_optional || [])];
-    const isDefault = defaults.includes(mcpId);
+    const customIds = (envConfig.customMcpServers || []).map(s => s.id);
+    const isDefault = getAgentEligibleMcps(agentId, customIds).includes(mcpId);
 
     const currentOverrides = envConfig.agentMcpOverrides || {};
     const agentOverride = currentOverrides[agentId] || {};
@@ -916,6 +780,17 @@ export function AgentTools() {
   const mcpServers = envConfig?.mcpServers || {};
 
   // Count enabled MCP servers
+  // Whether a server is switched on for the project (custom servers are always available)
+  const isEnabledForProject = useCallback((mcpId: string) => {
+    switch (mcpId) {
+      case 'context7': return mcpServers.context7Enabled !== false;
+      case 'memory': return mcpServers.memoryEnabled !== false && !!envConfig?.memoryProviderConfig;
+      case 'electron': return mcpServers.electronEnabled === true;
+      case 'puppeteer': return mcpServers.puppeteerEnabled === true;
+      default: return true;
+    }
+  }, [mcpServers, envConfig?.memoryProviderConfig]);
+
   const enabledCount = [
     mcpServers.context7Enabled !== false,
     mcpServers.memoryEnabled && envConfig?.memoryProviderConfig,
@@ -1021,16 +896,11 @@ export function AgentTools() {
                   >
                     <Switch checked={true} disabled aria-label={t('settings:mcp.servers.autoClaude.name')} />
                   </ServerRow>
-                </SettingsRows>
-              </SettingsSection>
-
-              {/* Browser Automation Section */}
-              <SettingsSection title={t('settings:mcp.browserAutomation')}>
-                <SettingsRows>
+                  {/* Browser automation: offered to the QA agents only */}
                   <ServerRow
                     icon={Monitor}
                     name={t('settings:mcp.servers.electron.name')}
-                    description={t('settings:mcp.servers.electron.description')}
+                    description={`${t('settings:mcp.servers.electron.description')} (${t('settings:mcp.qaAgentsOnly')})`}
                   >
                     <Switch
                       checked={mcpServers.electronEnabled === true}
@@ -1041,7 +911,7 @@ export function AgentTools() {
                   <ServerRow
                     icon={Globe}
                     name={t('settings:mcp.servers.puppeteer.name')}
-                    description={t('settings:mcp.servers.puppeteer.description')}
+                    description={`${t('settings:mcp.servers.puppeteer.description')} (${t('settings:mcp.qaAgentsOnly')})`}
                   >
                     <Switch
                       checked={mcpServers.puppeteerEnabled === true}
@@ -1157,7 +1027,7 @@ export function AgentTools() {
                         modelLabel={getModelLabel(model)}
                         thinkingLabel={getThinkingLabel(thinking)}
                         overrides={envConfig?.agentMcpOverrides?.[id]}
-                        mcpServerStates={envConfig?.mcpServers}
+                        isEnabledForProject={isEnabledForProject}
                         customServers={envConfig?.customMcpServers || []}
                         onAddMcp={handleAddMcp}
                         onRemoveMcp={handleRemoveMcp}

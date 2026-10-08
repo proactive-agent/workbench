@@ -2,6 +2,10 @@ import { useLayoutEffect, useRef, type KeyboardEvent } from 'react';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 
+/** Borderless dropdown trigger for a settings row's value (text + chevron), like the select triggers */
+export const SETTINGS_MENU_TRIGGER_CLASS =
+  'flex h-8 shrink-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-sm text-foreground outline-none hover:bg-nav-hover focus-visible:shadow-(--shadow-focus) data-[state=open]:bg-nav-hover';
+
 interface SettingsRowProps {
   label: React.ReactNode;
   description?: React.ReactNode;

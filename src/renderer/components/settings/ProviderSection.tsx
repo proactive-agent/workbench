@@ -8,7 +8,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../ui/dropdown-menu';
-import { SettingsRow } from './SettingsRow';
+import { SettingsRow, SETTINGS_MENU_TRIGGER_CLASS } from './SettingsRow';
 import { ProviderAccountMenu } from './ProviderAccountMenu';
 import { OllamaConnectionPanel } from './OllamaConnectionPanel';
 import type { BillingModel, BuiltinProvider, ProviderAccount, ProviderInfo } from '@shared/types/provider-account';
@@ -106,7 +106,7 @@ export function ProviderSection({
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger
           aria-label={t('providers.section.accountsMenu', { provider: provider.name })}
-          className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-sm text-foreground outline-none hover:bg-nav-hover focus-visible:shadow-(--shadow-focus) data-[state=open]:bg-nav-hover"
+          className={SETTINGS_MENU_TRIGGER_CLASS}
         >
           {triggerLabel}
           <ChevronDown className="h-4 w-4 text-muted-foreground" />
