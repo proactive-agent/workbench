@@ -11,8 +11,6 @@
  *    (falls back to shell `rm -rf` on Unix when Node.js rm() fails)
  * 2. Prunes git's internal worktree references
  * 3. Optionally deletes the associated branch
- *
- * Related issue: https://github.com/AndyMik90/Auto-Claude/issues/1539
  */
 
 import { execFileSync } from 'child_process';

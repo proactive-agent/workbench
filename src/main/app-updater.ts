@@ -31,8 +31,8 @@ import { isMacOS } from './platform';
 import { readSettingsFile, writeSettingsFile } from './settings-utils';
 
 // GitHub repo info for API calls
-const GITHUB_OWNER = 'AndyMik90';
-const GITHUB_REPO = 'Aperant';
+const GITHUB_OWNER = 'proactive-agent';
+const GITHUB_REPO = 'auto-claude';
 
 // Debug mode - DEBUG_UPDATER=true or development mode
 const DEBUG_UPDATER = process.env.DEBUG_UPDATER === 'true' || process.env.NODE_ENV === 'development';

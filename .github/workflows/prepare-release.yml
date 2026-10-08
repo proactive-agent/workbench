@@ -34,7 +34,7 @@ jobs:
           if [ -z "${{ secrets.PAT_TOKEN }}" ]; then
             echo "::error::PAT_TOKEN secret is not configured."
             echo "::error::This secret is required for automatic release triggering."
-            echo "::error::See https://github.com/AndyMik90/Auto-Claude/pull/1043 for setup instructions."
+            echo "::error::Add a personal access token with repo and workflow scopes as the PAT_TOKEN repository secret."
             exit 1
           fi
 

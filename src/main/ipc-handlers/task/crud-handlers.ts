@@ -302,7 +302,7 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
    *
    * Note: Worktree cleanup uses manual deletion instead of `git worktree remove --force`
    * because the latter fails on Windows when the directory contains untracked files
-   * (node_modules, build artifacts, etc.). See: https://github.com/AndyMik90/Auto-Claude/issues/1539
+   * (node_modules, build artifacts, etc.).
    */
   ipcMain.handle(
     IPC_CHANNELS.TASK_DELETE,

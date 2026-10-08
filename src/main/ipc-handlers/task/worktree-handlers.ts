@@ -2518,7 +2518,6 @@ export function registerWorktreeHandlers(
    *
    * Note: Uses the shared cleanupWorktree utility which handles Windows-specific issues
    * where `git worktree remove --force` fails when the directory contains untracked files.
-   * See: https://github.com/AndyMik90/Auto-Claude/issues/1539
    */
   ipcMain.handle(
     IPC_CHANNELS.TASK_WORKTREE_DISCARD,
