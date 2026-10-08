@@ -490,7 +490,7 @@ export class SpecOrchestrator extends EventEmitter {
         if (missingFiles.length > 0) {
           const noToolCalls = result.toolCallCount === 0;
           const detail = noToolCalls
-            ? `Model completed session without making any tool calls — expected files not created: ${missingFiles.join(', ')}`
+            ? `Model completed session without making any tool calls; expected files not created: ${missingFiles.join(', ')}`
             : `Phase completed but expected output files missing: ${missingFiles.join(', ')}`;
           errors.push(detail);
           this.emitTyped('log', `Phase ${phase} output validation failed (attempt ${attempt + 1}): ${detail}`);

@@ -63,7 +63,7 @@
       "tokenHint": "Paste the token shown in your terminal after completing OAuth login."
     },
     "keychainTitle": "Secure Storage",
-    "keychainDescription": "Your tokens are encrypted using your system's keychain. You may see a password prompt from macOS — click \"Always Allow\" to avoid seeing it again.",
+    "keychainDescription": "Your tokens are encrypted using your system's keychain. You may see a password prompt from macOS. Click \"Always Allow\" to avoid seeing it again.",
     "toast": {
       "authSuccess": "Profile authenticated successfully",
       "authSuccessWithEmail": "Account: {{email}}",

@@ -120,7 +120,7 @@ describe('describeModelError', () => {
 
     expect(parseInsightsError(description)).toEqual({
       code: INSIGHTS_ERROR_CODES.subscriptionRejected,
-      details: 'HTTP 429 — rate_limit_error: Error (request req_123)',
+      details: 'HTTP 429: rate_limit_error: Error (request req_123)',
     });
   });
 
@@ -128,12 +128,12 @@ describe('describeModelError', () => {
     const error = apiError(429, { type: 'error', error: { type: 'rate_limit_error', message: 'Number of request tokens has exceeded your per-minute rate limit' } });
     const description = describeModelError(error);
     expect(parseInsightsError(description).code).toBeNull();
-    expect(description).toBe('HTTP 429 — rate_limit_error: Number of request tokens has exceeded your per-minute rate limit');
+    expect(description).toBe('HTTP 429: rate_limit_error: Number of request tokens has exceeded your per-minute rate limit');
   });
 
   it('reports status and provider message for other API errors', () => {
     expect(describeModelError(apiError(401, { error: { type: 'authentication_error', message: 'invalid x-api-key' } })))
-      .toBe('HTTP 401 — authentication_error: invalid x-api-key');
+      .toBe('HTTP 401: authentication_error: invalid x-api-key');
   });
 
   it('redacts keys echoed in messages', () => {
@@ -146,6 +146,6 @@ describe('describeModelError', () => {
       { type: 'error', error: apiError(401, { error: { type: 'authentication_error', message: 'invalid x-api-key' } }) },
     ]));
     const { promise } = await run();
-    await expect(promise).rejects.toThrow('HTTP 401 — authentication_error: invalid x-api-key');
+    await expect(promise).rejects.toThrow('HTTP 401: authentication_error: invalid x-api-key');
   });
 });

@@ -363,7 +363,7 @@ export function describeModelError(error: unknown): string {
     }
     const status = last.statusCode ? `HTTP ${last.statusCode}` : 'Request failed';
     const detail = providerMessage?.trim() || (last.message && last.message !== 'Error' ? last.message : '');
-    const description = redactSecrets(detail ? `${status} — ${detail}` : status);
+    const description = redactSecrets(detail ? `${status}: ${detail}` : status);
 
     // A 429 whose only message is "Error" is not a usage limit: it's how the Messages API
     // rejects a Claude subscription token used outside the clients it accepts

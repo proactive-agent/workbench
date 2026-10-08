@@ -503,7 +503,7 @@ async function executeStream(
         usage: summary.usage,
         error: {
           code: 'stream_timeout',
-          message: `Stream inactivity timeout — no data received from provider for ${STREAM_INACTIVITY_TIMEOUT_MS / 1000}s`,
+          message: `Stream inactivity timeout: no data received from provider for ${STREAM_INACTIVITY_TIMEOUT_MS / 1000}s`,
           retryable: true,
         },
         messages,

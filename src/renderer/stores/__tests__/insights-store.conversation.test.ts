@@ -180,7 +180,7 @@ describe('Insights mock conversations', () => {
 
   it('clears a previous error when starting a new conversation', async () => {
     store.sendMessage('project-a', 'hello');
-    emit.error('project-a', 'HTTP 429 — rate_limit_error: Error');
+    emit.error('project-a', 'HTTP 429: rate_limit_error: Error');
     expect(state().status.phase).toBe('error');
 
     await store.newSession('project-a');

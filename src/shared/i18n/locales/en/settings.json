@@ -395,7 +395,7 @@
     "phaseConfigNote": "These settings will be used as defaults when creating new tasks with this profile. You can override them per-task in the task creation wizard.",
     "adaptiveThinking": {
       "badge": "Adaptive",
-      "tooltip": "Opus uses adaptive thinking — it dynamically decides how much to think within the budget cap set by the thinking level."
+      "tooltip": "Opus uses adaptive thinking: it dynamically decides how much to think within the budget cap set by the thinking level."
     },
     "reasoning": {
       "adaptive": "Adaptive",

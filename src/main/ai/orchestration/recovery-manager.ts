@@ -281,7 +281,7 @@ export class RecoveryManager {
       return {
         action: 'escalate',
         target: subtaskId,
-        reason: `Circular fix detected for ${subtaskId} — same error repeated ${CIRCULAR_FIX_THRESHOLD}+ times`,
+        reason: `Circular fix detected for ${subtaskId}: same error repeated ${CIRCULAR_FIX_THRESHOLD}+ times`,
       };
     }
 
@@ -299,7 +299,7 @@ export class RecoveryManager {
       return {
         action: 'retry',
         target: subtaskId,
-        reason: 'Rate limited — will retry after back-off',
+        reason: 'Rate limited, will retry after back-off',
       };
     }
 
@@ -308,7 +308,7 @@ export class RecoveryManager {
       return {
         action: 'escalate',
         target: subtaskId,
-        reason: 'Authentication failure — requires credential refresh',
+        reason: 'Authentication failure, requires credential refresh',
       };
     }
 
@@ -317,7 +317,7 @@ export class RecoveryManager {
       return {
         action: 'retry',
         target: subtaskId,
-        reason: 'Context exhausted — retrying with fresh context',
+        reason: 'Context exhausted, retrying with fresh context',
       };
     }
 

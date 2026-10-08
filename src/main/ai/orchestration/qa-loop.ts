@@ -283,7 +283,7 @@ export class QALoop extends EventEmitter {
 
           // Check for recurring issues
           if (this.hasRecurringIssues(issues)) {
-            this.emitTyped('log', 'Recurring issues detected — escalating to human review');
+            this.emitTyped('log', 'Recurring issues detected, escalating to human review');
             const recurringIssues = this.getRecurringIssues(issues);
             try {
               const escalationReport = generateEscalationReport(this.iterationHistory, recurringIssues);
@@ -353,7 +353,7 @@ export class QALoop extends EventEmitter {
         };
 
         if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-          this.emitTyped('log', `${MAX_CONSECUTIVE_ERRORS} consecutive errors — escalating to human`);
+          this.emitTyped('log', `${MAX_CONSECUTIVE_ERRORS} consecutive errors, escalating to human`);
           await this.writeReports('max_iterations');
           return this.outcome(false, iteration, Date.now() - startTime, 'consecutive_errors');
         }
@@ -446,7 +446,7 @@ export class QALoop extends EventEmitter {
    * Process human feedback by running the fixer agent first.
    */
   private async processHumanFeedback(): Promise<void> {
-    this.emitTyped('log', 'Human feedback detected — running QA Fixer first');
+    this.emitTyped('log', 'Human feedback detected, running QA Fixer first');
     this.emitTyped('qa-fix-start', 0);
     this.sessionNumber++;
 
