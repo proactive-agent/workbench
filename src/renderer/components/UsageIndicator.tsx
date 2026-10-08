@@ -9,7 +9,8 @@
  * - Anthropic OAuth (subscription): shows session/weekly usage bars
  * - Non-Anthropic subscription accounts (e.g. OpenAI Codex OAuth): shows "Subscription" badge
  *   with a note that rate limits apply but monitoring is not yet available
- * - Pay-per-use / API key providers: shows "Unlimited" badge
+ * - API key providers: checks the key with the provider and shows "API key" (pay as you go)
+ *   or "Invalid key"; local providers (Ollama) show "Local"
  */
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
@@ -24,6 +25,8 @@ import { formatTimeRemaining, localizeUsageWindowLabel, hasHardcodedText } from 
 import type { ClaudeUsageSnapshot } from '../../shared/types/agent';
 import type { AppSection } from './settings/AppSettings';
 import { useActiveProvider } from '../hooks/useActiveProvider';
+import { PROVIDER_REGISTRY } from '../../shared/constants/providers';
+import type { ProviderKeyCheckResult } from '../../shared/types/provider-account';
 
 /**
  * Usage threshold constants for color coding
@@ -282,6 +285,31 @@ export function UsageIndicator() {
     };
   }, []);
 
+  // API key accounts have no usage data: check the key with its provider instead (on account
+  // change, and again when the breakdown opens if the last check is over a minute old)
+  const isApiKeyAccount = !!activeAccount && !hasUsageMonitoring && !hasSubscriptionLimits && activeAccount.provider !== 'ollama';
+  const [keyCheck, setKeyCheck] = useState<{ key: string; result: ProviderKeyCheckResult | null; at: number } | null>(null);
+  const keyCheckId = isApiKeyAccount ? `${activeAccount.id}:${activeAccount.apiKey ?? ''}:${activeAccount.baseUrl ?? ''}` : null;
+  const runKeyCheck = useCallback(() => {
+    if (!keyCheckId || !activeAccount) return;
+    setKeyCheck({ key: keyCheckId, result: null, at: Date.now() });
+    window.electronAPI.testProviderConnection(activeAccount.provider, {
+      apiKey: activeAccount.apiKey,
+      baseUrl: activeAccount.baseUrl,
+    }).then((res) => {
+      const result: ProviderKeyCheckResult = res.success && res.data ? res.data : { status: 'unreachable', error: res.error };
+      setKeyCheck((prev) => (prev?.key === keyCheckId ? { ...prev, result } : prev));
+    }).catch(() => {
+      setKeyCheck((prev) => (prev?.key === keyCheckId ? { ...prev, result: { status: 'unreachable' } } : prev));
+    });
+  }, [keyCheckId]);
+  useEffect(() => {
+    runKeyCheck();
+  }, [runKeyCheck]);
+  useEffect(() => {
+    if (isOpen && keyCheck?.result && Date.now() - keyCheck.at > 60_000) runKeyCheck();
+  }, [isOpen]);
+
   // Show loading state - only for Anthropic OAuth accounts awaiting usage data
   if (isLoading && hasUsageMonitoring) {
     return (
@@ -338,21 +366,41 @@ export function UsageIndicator() {
     );
   }
 
-  // For pay-per-use / API key providers (no rate limits), show "Unlimited" badge
+  // API key (pay-as-you-go) and local providers: no usage limits to track
   if (!hasUsageMonitoring && !hasSubscriptionLimits) {
+    const providerName = PROVIDER_REGISTRY.find((p) => p.id === activeAccount?.provider)?.name ?? activeAccount?.provider ?? '';
+    const status = isApiKeyAccount ? (keyCheck?.key === keyCheckId ? keyCheck?.result?.status ?? 'checking' : 'checking') : 'local';
+    const isInvalid = status === 'invalid';
+    const badgeLabel = status === 'local'
+      ? t('common:usage.localBadge')
+      : isInvalid
+        ? t('common:usage.invalidKeyBadge')
+        : t('common:usage.apiKeyBadge');
+    const badgeColor = isInvalid
+      ? 'text-red-500 bg-red-500/10 border-red-500/20'
+      : 'text-muted-foreground bg-muted/50 border-border';
+    const message = {
+      checking: t('common:usage.apiKeyChecking', { provider: providerName }),
+      valid: t('common:usage.apiKeyValid', { provider: providerName }),
+      invalid: t('common:usage.apiKeyInvalid', { provider: providerName }),
+      unreachable: t('common:usage.apiKeyUnreachable', { provider: providerName }),
+      unknown: t('common:usage.apiKeyUnknown', { provider: providerName }),
+      local: t('common:usage.localNoLimits'),
+    }[status];
+
     return (
       <Popover open={isOpen} onOpenChange={handleOpenChange}>
         <PopoverTrigger asChild>
           <button
             ref={triggerRef}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md border transition-all hover:opacity-80 text-green-500 bg-green-500/10 border-green-500/20"
+            className={`flex items-center gap-1 px-2 py-1.5 rounded-md border transition-all hover:opacity-80 ${badgeColor}`}
             aria-label={t('common:usage.usageStatusAriaLabel')}
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
             onClick={handleTriggerClick}
           >
-            <Activity className="h-3.5 w-3.5" />
-            <span className="text-xs font-semibold">{t('common:usage.unlimited')}</span>
+            {isInvalid ? <AlertCircle className="h-3.5 w-3.5" /> : <Activity className="h-3.5 w-3.5" />}
+            <span className="text-xs font-semibold">{badgeLabel}</span>
           </button>
         </PopoverTrigger>
         <PopoverContent
@@ -368,14 +416,24 @@ export function UsageIndicator() {
               <Activity className="h-3.5 w-3.5" />
               <span className="font-semibold text-xs">{t('common:usage.usageBreakdown')}</span>
             </div>
-            <div className="flex items-center justify-center py-4">
-              <div className="text-center space-y-1">
-                <span className="text-2xl font-bold text-green-500">&#8734;</span>
-                <p className="text-xs text-muted-foreground">
-                  {t('common:usage.unlimitedApiKey')}
-                </p>
+            <div className="flex items-start gap-2.5 py-1">
+              {isInvalid
+                ? <AlertCircle className="h-4 w-4 text-red-500 flex-shrink-0 mt-0.5" />
+                : <Info className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />}
+              <div className="min-w-0 space-y-1">
+                <p className="truncate text-xs font-medium">{activeAccount?.name} · {providerName}</p>
+                <p className="text-xs text-muted-foreground leading-relaxed">{message}</p>
               </div>
             </div>
+            {isInvalid && (
+              <button
+                type="button"
+                onClick={handleOpenAccounts}
+                className="w-full rounded-md bg-muted/60 px-2 py-1.5 text-xs font-medium hover:bg-muted"
+              >
+                {t('common:usage.manageAccounts')}
+              </button>
+            )}
           </div>
         </PopoverContent>
       </Popover>

@@ -11,6 +11,13 @@ export type BuiltinProvider =
 
 export type BillingModel = 'subscription' | 'pay-per-use';
 
+/** Result of checking an API key with its provider */
+export interface ProviderKeyCheckResult {
+  /** valid: accepted; invalid: rejected; unreachable: request failed; unknown: provider can't be checked */
+  status: 'valid' | 'invalid' | 'unreachable' | 'unknown';
+  error?: string;
+}
+
 /** A user-defined model for custom endpoints */
 export interface CustomModel {
   id: string;

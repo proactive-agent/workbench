@@ -23,8 +23,9 @@ vi.mock('react-i18next', () => ({
       const translations: Record<string, string> = {
         'common:usage.loading': 'Loading...',
         'common:usage.usageBreakdown': 'Usage Breakdown',
-        'common:usage.unlimited': 'Unlimited',
-        'common:usage.unlimitedApiKey': 'Unlimited (API Key)',
+        'common:usage.apiKeyBadge': 'API key',
+        'common:usage.invalidKeyBadge': 'Invalid key',
+        'common:usage.apiKeyInvalid': '{{provider}} rejected this API key',
         'common:usage.noUsageMonitoring': 'Usage monitoring not available',
         'common:usage.subscriptionBadge': 'Subscription',
         'common:usage.subscriptionLimitsApply': 'Rate limits apply',
@@ -177,6 +178,7 @@ describe('UsageIndicator', () => {
       }),
       onAllProfilesUsageUpdated: vi.fn(),
       setQueueOrder: vi.fn(),
+      testProviderConnection: vi.fn().mockResolvedValue({ success: true, data: { status: 'valid' } }),
     };
   });
 
@@ -207,6 +209,29 @@ describe('UsageIndicator', () => {
       expect(screen.queryByText('common:usage.otherAccounts')).not.toBeInTheDocument();
       expect(screen.queryByText('OpenAI OAuth')).not.toBeInTheDocument();
       expect(screen.queryByText('Cross-Provider Usage')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('API key accounts', () => {
+    beforeEach(() => {
+      // Active account: OpenAI API key (no usage monitoring)
+      vi.mocked(useSettingsStore).mockReturnValue(createStoreMock() as any);
+    });
+
+    it('shows an API key badge, not "Unlimited", when the provider accepts the key', async () => {
+      render(<UsageIndicator />);
+      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
+      await waitFor(() => expect(usageTrigger).toHaveTextContent('API key'));
+      expect(window.electronAPI.testProviderConnection).toHaveBeenCalledWith('openai', { apiKey: 'openai-key', baseUrl: undefined });
+    });
+
+    it('flags a key the provider rejects', async () => {
+      vi.mocked(window.electronAPI.testProviderConnection).mockResolvedValue({ success: true, data: { status: 'invalid' } });
+      render(<UsageIndicator />);
+      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
+      await waitFor(() => expect(usageTrigger).toHaveTextContent('Invalid key'));
+      fireEvent.click(usageTrigger);
+      expect(await screen.findByText('OpenAI rejected this API key')).toBeInTheDocument();
     });
   });
 });

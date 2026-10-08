@@ -20,7 +20,8 @@ import { setUpdateChannel, setUpdateChannelWithDowngradeCheck } from '../app-upd
 import { getSettingsPath, readSettingsFile } from '../settings-utils';
 import { resetMemoryService } from './context/memory-service-factory';
 import { configureTools, getToolPath, getToolInfo, isPathFromWrongPlatform, preWarmToolCache } from '../cli-tool-manager';
-import type { ProviderAccount } from '../../shared/types/provider-account';
+import type { ProviderAccount, ProviderKeyCheckResult } from '../../shared/types/provider-account';
+import { checkProviderKey } from '../services/provider-key-check';
 import type { APIProfile } from '../../shared/types/profile';
 import type { ClaudeProfile } from '../../shared/types/agent';
 import { loadProfilesFile } from '../utils/profile-manager';
@@ -1111,9 +1112,8 @@ export function registerSettingsHandlers(
   // TEST CONNECTION for a provider account
   ipcMain.handle(
     IPC_CHANNELS.PROVIDER_ACCOUNTS_TEST_CONNECTION,
-    async (_event, _provider: string, _config: { apiKey?: string; baseUrl?: string; region?: string }): Promise<IPCResult<{ success: boolean; error?: string }>> => {
-      // Basic stub - connection testing can be enhanced later per-provider
-      return { success: true, data: { success: true } };
+    async (_event, provider: string, config: { apiKey?: string; baseUrl?: string; region?: string }): Promise<IPCResult<ProviderKeyCheckResult>> => {
+      return { success: true, data: await checkProviderKey(provider, config) };
     }
   );
 

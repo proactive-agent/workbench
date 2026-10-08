@@ -82,7 +82,7 @@ import type {
   InsightsModelConfig
 } from './insights';
 import type { APIProfile, ProfilesFile, TestConnectionResult, DiscoverModelsResult } from './profile';
-import type { ProviderAccount } from './provider-account';
+import type { ProviderAccount, ProviderKeyCheckResult } from './provider-account';
 
 // ============================================
 // Branch Types
@@ -348,7 +348,7 @@ export interface ElectronAPI {
   setProviderAccountQueueOrder: (order: string[]) => Promise<IPCResult>;
   setCrossProviderQueueOrder: (order: string[]) => Promise<IPCResult>;
   saveModelOverrides: (overrides: Record<string, unknown>) => Promise<IPCResult>;
-  testProviderConnection: (provider: string, config: { apiKey?: string; baseUrl?: string; region?: string }) => Promise<IPCResult<{ success: boolean; error?: string }>>;
+  testProviderConnection: (provider: string, config: { apiKey?: string; baseUrl?: string; region?: string }) => Promise<IPCResult<ProviderKeyCheckResult>>;
   checkEnvCredentials: () => Promise<IPCResult<Record<string, boolean>>>;
 
   // Codex OAuth authentication
