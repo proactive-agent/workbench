@@ -381,6 +381,10 @@ export interface CustomMcpServer {
   headers?: Record<string, string>;
   /** Optional description shown in UI */
   description?: string;
+  /** Set once a connection test passes; the row then shows an on/off switch instead of Test */
+  verified?: boolean;
+  /** Whether agents get this server (default true) */
+  enabled?: boolean;
 }
 
 /**

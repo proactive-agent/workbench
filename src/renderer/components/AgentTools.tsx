@@ -621,9 +621,18 @@ export function AgentTools() {
 
     let newServers: CustomMcpServer[];
     if (existingIndex >= 0) {
-      // Update existing
+      // Update existing. Keep its tested/enabled state unless the connection details changed,
+      // in which case it has to pass a test again
+      const existing = currentServers[existingIndex];
+      const connectionChanged = (['type', 'command', 'url'] as const).some(k => existing[k] !== server[k])
+        || JSON.stringify(existing.args ?? []) !== JSON.stringify(server.args ?? [])
+        || JSON.stringify(existing.headers ?? {}) !== JSON.stringify(server.headers ?? {});
       newServers = [...currentServers];
-      newServers[existingIndex] = server;
+      newServers[existingIndex] = {
+        ...server,
+        verified: connectionChanged ? false : server.verified ?? existing.verified,
+        enabled: server.enabled ?? existing.enabled,
+      };
     } else {
       // Add new
       newServers = [...currentServers, server];
@@ -739,6 +748,10 @@ export function AgentTools() {
 
     try {
       const result = await window.electronAPI.testMcpConnection(server);
+      // A passing test turns the Test button into an on/off switch for good
+      if (result.success && result.data?.success && !server.verified) {
+        await handleSaveCustomServer({ ...server, verified: true, enabled: true });
+      }
       if (result.success && result.data) {
         // Update health status based on test result
         setServerHealthStatus(prev => ({
@@ -769,7 +782,7 @@ export function AgentTools() {
         return next;
       });
     }
-  }, []);
+  }, [handleSaveCustomServer]);
 
   // Resolve agent settings using the centralized utility, scoped to the active provider
   // Resolution order: custom overrides -> selected profile's config -> global defaults
@@ -780,16 +793,17 @@ export function AgentTools() {
   const mcpServers = envConfig?.mcpServers || {};
 
   // Count enabled MCP servers
-  // Whether a server is switched on for the project (custom servers are always available)
+  // Whether a server is switched on for the project
   const isEnabledForProject = useCallback((mcpId: string) => {
     switch (mcpId) {
       case 'context7': return mcpServers.context7Enabled !== false;
       case 'memory': return mcpServers.memoryEnabled !== false && !!envConfig?.memoryProviderConfig;
       case 'electron': return mcpServers.electronEnabled === true;
       case 'puppeteer': return mcpServers.puppeteerEnabled === true;
-      default: return true;
+      // Custom servers: on unless switched off
+      default: return envConfig?.customMcpServers?.find(s => s.id === mcpId)?.enabled !== false;
     }
-  }, [mcpServers, envConfig?.memoryProviderConfig]);
+  }, [mcpServers, envConfig?.memoryProviderConfig, envConfig?.customMcpServers]);
 
   const enabledCount = [
     mcpServers.context7Enabled !== false,
@@ -942,7 +956,9 @@ export function AgentTools() {
                             {renderCustomServerStatus(server)}
                           </span>
                         }
+                        // The server's own description when set, otherwise its status or connection
                         description={
+                          server.description?.trim() ||
                           health?.message ||
                           (server.type === 'command' ? `${server.command} ${server.args?.join(' ') || ''}` : server.url)
                         }
@@ -969,20 +985,29 @@ export function AgentTools() {
                             <Trash2 className="h-4 w-4" strokeWidth={1.75} />
                           </Button>
                         </div>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleTestConnection(server)}
-                          disabled={isTesting}
-                          className="gap-1.5"
-                        >
-                          {isTesting ? (
-                            <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
-                          ) : (
-                            <RefreshCw className="h-4 w-4" strokeWidth={1.75} />
-                          )}
-                          {t('settings:mcp.testConnection')}
-                        </Button>
+                        {/* Untested servers need a passing test first; after that, an on/off switch */}
+                        {server.verified ? (
+                          <Switch
+                            checked={server.enabled !== false}
+                            onCheckedChange={(checked) => handleSaveCustomServer({ ...server, enabled: checked })}
+                            aria-label={server.name}
+                          />
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleTestConnection(server)}
+                            disabled={isTesting}
+                            className="gap-1.5"
+                          >
+                            {isTesting ? (
+                              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+                            ) : (
+                              <RefreshCw className="h-4 w-4" strokeWidth={1.75} />
+                            )}
+                            {t('settings:mcp.testConnection')}
+                          </Button>
+                        )}
                       </ServerRow>
                     );
                   })}
