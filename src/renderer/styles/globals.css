@@ -1,6 +1,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Pointer cursor on everything with a Tailwind hover: style (Tailwind v4 no longer gives buttons one).
+   Disabled controls and text fields keep their cursor, and explicit cursor-* utilities still win
+   (this lives in the base layer). */
+@layer base {
+  [class*='hover:']:hover:not(:disabled, [aria-disabled='true'], [data-disabled], input, textarea, [contenteditable='true']) {
+    cursor: pointer;
+  }
+}
+
 /* Auto-Build UI Design System - Oscura Midnight Theme */
 /* A modern, professional design system with deep dark mode and warm yellow accents */
 
@@ -506,6 +515,7 @@ body {
 }
 
 .card-interactive:hover {
+  cursor: pointer;
   border-color: var(--card-hover-border);
 }
 
@@ -649,6 +659,7 @@ body {
 }
 
 .task-card-glow:hover {
+  cursor: pointer;
   box-shadow: var(--task-card-hover-shadow);
 }
 
@@ -738,6 +749,7 @@ body {
 }
 
 .subtask-dot:hover {
+  cursor: pointer;
   transform: scale(1.5);
 }
 
@@ -790,6 +802,7 @@ body {
 }
 
 .task-card-enhanced:hover {
+  cursor: pointer;
   border-color: var(--task-card-hover-border);
   box-shadow: var(--task-card-enhanced-shadow);
   transform: var(--task-card-hover-lift);
@@ -854,6 +867,7 @@ body {
 }
 
 .subtask-dot:hover {
+  cursor: pointer;
   transform: scale(1.5);
 }
 
@@ -883,6 +897,7 @@ body {
 
 .empty-column-dropzone:hover,
 .empty-column-dropzone.active {
+  cursor: pointer;
   border-color: rgba(var(--accent-glow-rgb), 0.4);
   background-color: rgba(var(--accent-glow-rgb), 0.05);
 }
@@ -1220,6 +1235,7 @@ body {
 }
 .claude-dialog [data-settings-control] button[role='combobox'].field-border:hover,
 .claude-dialog [data-settings-control] button[role='combobox'][data-state='open'] {
+  cursor: pointer;
   background-color: var(--nav-hover);
 }
 .claude-dialog [data-settings-control] button[role='combobox'].field-border:focus-visible {
@@ -1232,6 +1248,7 @@ body {
   background-color: var(--fill-control);
 }
 .claude-dialog [data-variant='outline']:hover {
+  cursor: pointer;
   background-color: var(--fill-control-hover);
   color: var(--foreground);
 }
