@@ -84,6 +84,52 @@ export function TerminalPromptIcon(props: IconProps) {
   );
 }
 
+/**
+ * Eight-tooth gear (claude.ai's settings "General" icon). Unlike the filled icons above it is a
+ * 24×24 stroke icon like lucide's, so it honors `strokeWidth` and matches lucide neighbours.
+ */
+export function GearIcon({ strokeWidth = 2, ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path d="M12.00 2.25 12.95 2.36 13.70 3.47 14.24 4.62 14.93 4.93 15.64 5.20 16.83 4.77 18.14 4.51 18.89 5.11 19.49 5.86 19.23 7.17 18.80 8.36 19.07 9.07 19.38 9.76 20.53 10.30 21.64 11.05 21.75 12.00 21.64 12.95 20.53 13.70 19.38 14.24 19.07 14.93 18.80 15.64 19.23 16.83 19.49 18.14 18.89 18.89 18.14 19.49 16.83 19.23 15.64 18.80 14.93 19.07 14.24 19.38 13.70 20.53 12.95 21.64 12.00 21.75 11.05 21.64 10.30 20.53 9.76 19.38 9.07 19.07 8.36 18.80 7.17 19.23 5.86 19.49 5.11 18.89 4.51 18.14 4.77 16.83 5.20 15.64 4.93 14.93 4.62 14.24 3.47 13.70 2.36 12.95 2.25 12.00 2.36 11.05 3.47 10.30 4.62 9.76 4.93 9.07 5.20 8.36 4.77 7.17 4.51 5.86 5.11 5.11 5.86 4.51 7.17 4.77 8.36 5.20 9.07 4.93 9.76 4.62 10.30 3.47 11.05 2.36Z" />
+      <circle cx="12" cy="12" r="2.75" />
+    </svg>
+  );
+}
+
+/**
+ * Agent (outlined) — the Agents icon drawn as a stroke icon for lucide-style lists. The default
+ * lucide `strokeWidth` (1.5) maps to a 32-unit stroke on the 1024 artboard.
+ */
+export function AgentOutlineIcon({ strokeWidth = 1.5, ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 1024 1024"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={(Number(strokeWidth) * 64) / 3}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path d="M895.91 467.16H1024v132.35h-128v129.19h-63.45V853.33H768v-124.63h-63.45V853.33H640v-124.63H384V853.33H319.49v-124.63H256V853.33H191.45v-124.63H128V599.51H0v-132.27h128V213.33h767.91v253.83z" />
+      <path d="M256 467.16h63.49V345.69H256v121.47z" />
+      <path d="M704.51 467.16H768V345.69h-63.49v121.47z" />
+    </svg>
+  );
+}
+
 /** Two sliders, vertical (the source artwork rotated 90°) — replaces the cog everywhere */
 export function SettingsIcon(props: IconProps) {
   return (

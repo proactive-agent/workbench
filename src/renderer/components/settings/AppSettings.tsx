@@ -3,9 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   X,
-  Settings,
   CircleUserRound,
-  Bot,
   SquareTerminal,
   CodeXml,
   Download,
@@ -15,6 +13,7 @@ import {
   Blocks,
   ListOrdered
 } from 'lucide-react';
+import { AgentOutlineIcon, GearIcon } from '../icons/app-icons';
 
 import {
   FullScreenDialog,
@@ -78,9 +77,9 @@ interface NavItemConfig<T extends string> {
 }
 
 const appNavItemsConfig: NavItemConfig<AppPage>[] = [
-  { id: 'general', icon: Settings },
+  { id: 'general', icon: GearIcon },
   { id: 'accounts', icon: CircleUserRound },
-  { id: 'agent', icon: Bot },
+  { id: 'agent', icon: AgentOutlineIcon },
   { id: 'terminal-fonts', icon: SquareTerminal },
   { id: 'devtools', icon: CodeXml },
   { id: 'updates', icon: Download }
@@ -263,7 +262,7 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
   );
 
   const renderNavIcon = (Icon: React.ElementType) => (
-    <Icon className="h-5 w-5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+    <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 text-muted-foreground" strokeWidth={1.5} />
   );
 
   // Context and MCP Overview are full pages with their own scrolling; give them the whole area
