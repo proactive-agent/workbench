@@ -242,7 +242,6 @@
     "missing": "Not installed",
     "current": "Current",
     "latest": "Latest",
-    "path": "Path",
     "lastChecked": "Last checked",
     "learnMore": "Learn more about Claude Code",
     "learnMoreAriaLabel": "Learn more about Claude Code (opens in new window)",
@@ -266,15 +265,6 @@
       "latest": "Latest",
       "next": "Next",
       "stable": "Stable"
-    },
-    "switchInstallation": "Switch installation",
-    "selectInstallation": "Select installation",
-    "loadingInstallations": "Loading installations...",
-    "failedToLoadInstallations": "Failed to load installations",
-    "activeInstallation": "Active",
-    "pathChangeWarningTitle": "Switch CLI installation?",
-    "pathChangeWarningDescription": "Switching CLI installations will use a different Claude Code binary. Any running sessions will continue using the previous installation until restarted.",
-    "switchInstallationConfirm": "Switch",
-    "versionUnknown": "version unknown"
+    }
   }
 }
