@@ -35,6 +35,7 @@ import {
   getProviderPreset
 } from '../../shared/constants';
 import { useSettingsStore } from '../stores/settings-store';
+import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { useActiveProvider } from '../hooks/useActiveProvider';
 
 interface TaskCreationWizardProps {
@@ -156,6 +157,9 @@ export function TaskCreationWizard({
 
   // Fast mode
   const [fastMode, setFastMode] = useState(false);
+  // MCP connectors start from the Connectors defaults; changes stay with this task
+  const defaultConnectors = useMemo(() => getDefaultMcpConnectorIds(settings.mcpConnectors), [settings.mcpConnectors]);
+  const [mcpConnectors, setMcpConnectors] = useState<string[]>(defaultConnectors);
 
   // Show Fast Mode toggle when any phase uses an Opus model
   const showFastModeToggle = useMemo(() => {
@@ -196,6 +200,7 @@ export function TaskCreationWizard({
         setReferencedFiles(draft.referencedFiles ?? []);
         setRequireReviewBeforeCoding(draft.requireReviewBeforeCoding ?? false);
         setFastMode(draft.fastMode ?? false);
+        setMcpConnectors(draft.mcpConnectors ?? defaultConnectors);
         setPushNewBranches(draft.pushNewBranches ?? projectPushNewBranches);
         setIsDraftRestored(true);
       } else {
@@ -216,6 +221,7 @@ export function TaskCreationWizard({
         setReferencedFiles([]);
         setRequireReviewBeforeCoding(false);
         setFastMode(false);
+        setMcpConnectors(defaultConnectors);
         setBaseBranch(PROJECT_DEFAULT_BRANCH);
         setUseWorktree(true);
         setPushNewBranches(projectPushNewBranches);
@@ -291,9 +297,10 @@ export function TaskCreationWizard({
     referencedFiles,
     requireReviewBeforeCoding,
     fastMode,
+    mcpConnectors,
     pushNewBranches,
     savedAt: new Date()
-  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, images, referencedFiles, requireReviewBeforeCoding, fastMode, pushNewBranches]);
+  }), [projectId, title, description, category, priority, complexity, impact, profileId, model, thinkingLevel, phaseModels, phaseThinking, images, referencedFiles, requireReviewBeforeCoding, fastMode, mcpConnectors, pushNewBranches]);
 
   /**
    * Detect @ mention being typed and show autocomplete
@@ -464,6 +471,7 @@ export function TaskCreationWizard({
       if (isSelectedBranchLocal) metadata.useLocalBranch = true;
       if (!pushNewBranches) metadata.pushNewBranches = false;
       metadata.fastMode = fastMode;
+      metadata.mcpConnectors = mcpConnectors;
 
       const task = await createTask(projectId, title.trim(), description.trim(), metadata);
       if (task) {
@@ -496,6 +504,7 @@ export function TaskCreationWizard({
     setReferencedFiles([]);
     setRequireReviewBeforeCoding(false);
     setFastMode(false);
+    setMcpConnectors(defaultConnectors);
     setBaseBranch(PROJECT_DEFAULT_BRANCH);
     setUseWorktree(true);
     setPushNewBranches(projectPushNewBranches);
@@ -677,6 +686,8 @@ export function TaskCreationWizard({
         onRequireReviewChange={setRequireReviewBeforeCoding}
         fastMode={fastMode}
         onFastModeChange={setFastMode}
+        mcpConnectors={mcpConnectors}
+        onMcpConnectorsChange={setMcpConnectors}
         showFastModeToggle={showFastModeToggle}
         disabled={isCreating}
         error={error}

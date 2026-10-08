@@ -155,6 +155,7 @@ export interface TaskDraft {
   referencedFiles: ReferencedFile[];
   requireReviewBeforeCoding?: boolean;
   fastMode?: boolean;
+  mcpConnectors?: string[];
   pushNewBranches?: boolean;
   savedAt: Date;
 }
@@ -236,6 +237,9 @@ export interface TaskMetadata {
   phaseThinking?: PhaseThinkingConfig;  // Per-phase thinking configuration
   phaseProviders?: Record<string, string>;  // Per-phase provider preference (cross-provider mode)
   fastMode?: boolean;  // Fast Mode — faster Opus 4.6 output, higher cost per token
+  // MCP connectors enabled for this task (ids: context7, memory, electron, puppeteer, custom ids).
+  // Copied from the Connectors defaults when the task is created; unset means use the defaults
+  mcpConnectors?: string[];
 
   // Git/Worktree configuration
   baseBranch?: string;  // Override base branch for this task's worktree

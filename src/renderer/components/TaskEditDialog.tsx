@@ -45,6 +45,7 @@ import {
 } from '../../shared/constants';
 import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
 import { useSettingsStore } from '../stores/settings-store';
+import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { useActiveProvider } from '../hooks/useActiveProvider';
 
 /**
@@ -133,6 +134,11 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   // Fast mode
   const [fastMode, setFastMode] = useState(task.metadata?.fastMode ?? false);
 
+  // MCP connectors: the task's own choice, or the Connectors defaults for tasks created before
+  // connectors were per task. Saving changes only this task
+  const taskConnectors = task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(settings.mcpConnectors);
+  const [mcpConnectors, setMcpConnectors] = useState<string[]>(taskConnectors);
+
   // Show Fast Mode toggle when any phase uses an Opus model
   const showFastModeToggle = useMemo(() => {
     if (!isAnthropic) return false;
@@ -184,9 +190,10 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       setImages(task.metadata?.attachedImages || []);
       setRequireReviewBeforeCoding(task.metadata?.requireReviewBeforeCoding ?? false);
       setFastMode(task.metadata?.fastMode ?? false);
+      setMcpConnectors(task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(settings.mcpConnectors));
       setError(null);
     }
-  }, [open, task, resolvedProfileId, selectedProfile.model, selectedProfile.thinkingLevel, profilePhaseModels, profilePhaseThinking]);
+  }, [open, task, resolvedProfileId, selectedProfile.model, selectedProfile.thinkingLevel, profilePhaseModels, profilePhaseThinking, settings.mcpConnectors]);
 
   const handleSave = async () => {
     // Validate input
@@ -209,6 +216,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       thinkingLevel !== (task.metadata?.thinkingLevel || '') ||
       requireReviewBeforeCoding !== (task.metadata?.requireReviewBeforeCoding ?? false) ||
       fastMode !== (task.metadata?.fastMode ?? false) ||
+      [...mcpConnectors].sort().join(',') !== [...taskConnectors].sort().join(',') ||
       JSON.stringify(images) !== JSON.stringify(task.metadata?.attachedImages || []) ||
       JSON.stringify(phaseModels) !== JSON.stringify(task.metadata?.phaseModels || DEFAULT_PHASE_MODELS) ||
       JSON.stringify(phaseThinking) !== JSON.stringify(task.metadata?.phaseThinking || DEFAULT_PHASE_THINKING);
@@ -239,6 +247,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     metadataUpdates.attachedImages = images.length > 0 ? images : [];
     metadataUpdates.requireReviewBeforeCoding = requireReviewBeforeCoding;
     metadataUpdates.fastMode = fastMode;
+    metadataUpdates.mcpConnectors = mcpConnectors;
 
     const success = await persistUpdateTask(task.id, {
       title: trimmedTitle,
@@ -318,6 +327,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         onRequireReviewChange={setRequireReviewBeforeCoding}
         fastMode={fastMode}
         onFastModeChange={setFastMode}
+        mcpConnectors={mcpConnectors}
+        onMcpConnectorsChange={setMcpConnectors}
         showFastModeToggle={showFastModeToggle && isFastModeEditable}
         disabled={isSaving}
         error={error}

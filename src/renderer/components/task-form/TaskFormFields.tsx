@@ -23,6 +23,7 @@ import { SettingsSection } from '../settings/SettingsSection';
 import { useImageUpload } from './useImageUpload';
 import { ImagePreviewModal } from './ImagePreviewModal';
 import { cn } from '../../lib/utils';
+import { TaskConnectorRows } from './TaskConnectorRows';
 import type {
   TaskCategory,
   TaskPriority,
@@ -87,6 +88,10 @@ interface TaskFormFieldsProps {
   onFastModeChange?: (value: boolean) => void;
   showFastModeToggle?: boolean;
 
+  // MCP connectors for this task (ids); the rows show when a change handler is given
+  mcpConnectors?: string[];
+  onMcpConnectorsChange?: (value: string[]) => void;
+
   // Form state
   disabled?: boolean;
   error?: string | null;
@@ -137,6 +142,8 @@ export function TaskFormFields({
   fastMode = false,
   onFastModeChange,
   showFastModeToggle = false,
+  mcpConnectors = [],
+  onMcpConnectorsChange,
   disabled = false,
   error,
   onError,
@@ -418,6 +425,14 @@ export function TaskFormFields({
             onPhaseThinkingChange={onPhaseThinkingChange}
             disabled={disabled}
           />
+          {onMcpConnectorsChange && (
+            <TaskConnectorRows
+              value={mcpConnectors}
+              onChange={onMcpConnectorsChange}
+              disabled={disabled}
+              idPrefix={prefix}
+            />
+          )}
         </SettingsSection>
 
         {/* Classification */}
