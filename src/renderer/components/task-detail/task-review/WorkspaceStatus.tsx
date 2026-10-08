@@ -3,7 +3,6 @@ import {
   Loader2,
   RotateCcw,
   AlertTriangle,
-  CheckCircle,
   Code,
   Terminal
 } from 'lucide-react';
@@ -378,9 +377,7 @@ export function WorkspaceStatus({
           <SettingsRow
             label={
               <span className="flex items-center gap-1.5">
-                {!needsAIMerge && !hasAIConflicts ? (
-                  <CheckCircle className="h-4 w-4 text-success" strokeWidth={1.75} />
-                ) : (
+                {(needsAIMerge || hasAIConflicts) && (
                   <AlertTriangle className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
                 )}
                 {mergeStatusTitle}

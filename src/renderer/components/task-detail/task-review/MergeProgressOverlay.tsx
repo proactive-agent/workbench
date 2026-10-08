@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, FileCode, AlertTriangle, Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileCode, AlertTriangle, Loader2, Clock } from 'lucide-react';
 import { Progress } from '../../ui/progress';
 import { cn } from '../../../lib/utils';
 import type { MergeProgress, MergeLogEntry, MergeLogEntryType } from '../../../../shared/types';
@@ -112,9 +112,9 @@ export function MergeProgressOverlay({ mergeProgress, logEntries }: MergeProgres
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           {isError ? (
-            <XCircle className="h-4 w-4 text-destructive shrink-0" />
+            null
           ) : isComplete ? (
-            <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
+            null
           ) : isStalled ? (
             <Clock className="h-4 w-4 text-muted-foreground shrink-0" />
           ) : (

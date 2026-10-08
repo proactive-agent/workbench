@@ -1,15 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Brain,
   Database,
   Info,
   Loader2,
-  CheckCircle2,
   AlertCircle,
   Eye,
   EyeOff,
-  Zap,
-  XCircle
+  Zap
 } from 'lucide-react';
 import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
@@ -112,6 +111,7 @@ interface ValidationStatus {
  * Allows users to configure Graphiti memory backend with multiple provider options.
  */
 export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
+  const { t } = useTranslation('onboarding');
   const { settings, updateSettings } = useSettingsStore();
   const [config, setConfig] = useState<GraphitiConfig>({
     enabled: true,  // Enabled by default for better first-time experience
@@ -376,13 +376,9 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
                 OpenAI API Key
               </Label>
               {validationStatus.provider?.tested && needsOpenAI && (
-                <div className="flex items-center gap-1.5">
-                  {validationStatus.provider.success ? (
-                    <CheckCircle2 className="h-4 w-4 text-success" />
-                  ) : (
-                    <XCircle className="h-4 w-4 text-destructive" />
-                  )}
-                </div>
+                <span className={`text-xs ${validationStatus.provider.success ? 'text-success' : 'text-destructive'}`}>
+                  {validationStatus.provider.success ? t('memory.validationReady') : t('memory.validationIssue')}
+                </span>
               )}
             </div>
             <div className="relative">
@@ -751,7 +747,6 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
               <Card className="border border-success/30 bg-success/10">
                 <CardContent className="p-6">
                   <div className="flex items-start gap-4">
-                    <CheckCircle2 className="h-6 w-6 text-success shrink-0 mt-0.5" />
                     <div className="flex-1">
                       <h3 className="text-lg font-medium text-success">
                         Graphiti configured successfully
@@ -877,13 +872,8 @@ export function GraphitiStep({ onNext, onBack, onSkip }: GraphitiStepProps) {
                         </div>
                         {validationStatus.database && (
                           <div className="flex items-center gap-1.5">
-                            {validationStatus.database.success ? (
-                              <CheckCircle2 className="h-4 w-4 text-success" />
-                            ) : (
-                              <XCircle className="h-4 w-4 text-destructive" />
-                            )}
                             <span className={`text-xs ${validationStatus.database.success ? 'text-success' : 'text-destructive'}`}>
-                              {validationStatus.database.success ? 'Ready' : 'Issue'}
+                              {validationStatus.database.success ? t('memory.validationReady') : t('memory.validationIssue')}
                             </span>
                           </div>
                         )}

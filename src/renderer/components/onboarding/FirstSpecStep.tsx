@@ -2,7 +2,6 @@ import { useState } from 'react';
 import {
   FileText,
   Lightbulb,
-  CheckCircle2,
   ArrowRight,
   PenLine,
   ListChecks,
@@ -106,7 +105,6 @@ export function FirstSpecStep({ onNext, onBack, onSkip, onOpenTaskCreator }: Fir
           <Card className="border border-success/30 bg-success/10 mb-6">
             <CardContent className="p-5">
               <div className="flex items-start gap-4">
-                <CheckCircle2 className="h-6 w-6 text-success shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <h3 className="text-lg font-medium text-success">
                     Task Creator Opened

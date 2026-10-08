@@ -1,4 +1,4 @@
-import { Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Loader2, AlertCircle } from 'lucide-react';
 
 interface ConnectionStatusProps {
   isChecking: boolean;
@@ -34,7 +34,7 @@ export function ConnectionStatus({
         {isChecking ? (
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
         ) : isConnected ? (
-          <CheckCircle2 className="h-4 w-4 text-success" />
+          null
         ) : (
           <AlertCircle className="h-4 w-4 text-warning" />
         )}

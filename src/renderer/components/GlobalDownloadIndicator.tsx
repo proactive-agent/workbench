@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Download, X, ChevronDown, ChevronUp, Check, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, X, ChevronDown, ChevronUp, AlertCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useDownloadStore } from '../stores/download-store';
 import { cn } from '../lib/utils';
@@ -49,7 +49,7 @@ export function GlobalDownloadIndicator() {
             {hasActive ? (
               <Loader2 className="h-4 w-4 animate-spin text-primary" />
             ) : completedDownloads.length > 0 && failedDownloads.length === 0 ? (
-              <Check className="h-4 w-4 text-success" />
+              null
             ) : failedDownloads.length > 0 ? (
               <AlertCircle className="h-4 w-4 text-destructive" />
             ) : (
@@ -102,7 +102,6 @@ export function GlobalDownloadIndicator() {
                   <div className="flex items-center gap-1.5">
                     {download.status === 'completed' && (
                       <span className="text-xs text-success flex items-center gap-1">
-                        <Check className="h-3 w-3" />
                         {t('downloads.done')}
                       </span>
                     )}

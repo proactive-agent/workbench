@@ -1,4 +1,4 @@
-import { CheckCircle, AlertTriangle, XCircle, AlertCircle } from 'lucide-react';
+import { AlertTriangle, AlertCircle } from 'lucide-react';
 
 /**
  * Returns the appropriate icon component based on conflict severity level
@@ -7,12 +7,12 @@ export function getSeverityIcon(severity: string) {
   switch (severity) {
     case 'none':
     case 'low':
-      return <CheckCircle className="h-4 w-4 text-success" />;
+      return null;
     case 'medium':
       return <AlertTriangle className="h-4 w-4 text-muted-foreground" />;
     case 'high':
     case 'critical':
-      return <XCircle className="h-4 w-4 text-destructive" />;
+      return <AlertTriangle className="h-4 w-4 text-destructive" />;
     default:
       return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
   }

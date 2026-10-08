@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Download, Check, Loader2, RefreshCw } from 'lucide-react';
+import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
@@ -249,7 +249,6 @@ export function OllamaModelManager() {
               >
                 {installed ? (
                   <span className={`flex items-center gap-1.5 ${mutedClass}`}>
-                    <Check className="h-4 w-4 text-[var(--success)]" strokeWidth={1.75} />
                     {t('agentProfile.ollamaModels.installedLabel')}
                   </span>
                 ) : (

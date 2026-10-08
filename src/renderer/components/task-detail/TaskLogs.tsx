@@ -4,8 +4,6 @@ import {
   Loader2,
   Pencil,
   FileCode,
-  CheckCircle2,
-  XCircle,
   ChevronDown,
   ChevronRight,
   FileText,
@@ -102,13 +100,13 @@ interface PhaseLogSectionProps {
   isTaskSettled?: boolean;
 }
 
-// Same status icons as the subtasks list: green/red only for success/failure
+// Same status icons as the subtasks list: none once a phase has finished (failure is labelled)
 function getPhaseStatusIcon(status: string) {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />;
+      return null;
     case 'failed':
-      return <XCircle className="h-4 w-4 text-[var(--error)]" />;
+      return null;
     case 'active':
       return <Clock className="h-4 w-4 text-muted-foreground animate-pulse" />;
     default:
@@ -143,6 +141,7 @@ function PhaseLogSection({ phase, phaseLog, isExpanded, onToggle, isTaskSettled 
         >
           <span className="shrink-0">{getPhaseStatusIcon(status)}</span>
           <span className="text-sm text-foreground">{t(`tasks:logs.phases.${phase}`)}</span>
+          {status === 'failed' && <span className="text-xs text-destructive">{t('tasks:execution.phases.failed')}</span>}
           {hasEntries && (
             <span className="text-xs text-(--nav-label-color)">
               {t('tasks:logs.entries', { count: phaseLog?.entries.length ?? 0 })}
@@ -244,7 +243,6 @@ function LogEntry({ entry }: LogEntryProps) {
         <div className="flex items-center gap-2">
           <div className={cn('inline-flex items-center gap-2 rounded-md px-2 py-1 text-xs', color, 'opacity-60')}>
             <Icon className="h-3 w-3" />
-            <CheckCircle2 className="h-3 w-3 text-success" />
             <span className="text-muted-foreground">{t('tasks:logs.done')}</span>
           </div>
           {hasDetail && (
@@ -285,7 +283,6 @@ function LogEntry({ entry }: LogEntryProps) {
     return (
       <div className="flex flex-col">
         <div className="flex items-start gap-2 text-xs text-destructive px-2 py-1">
-          <XCircle className="h-3 w-3 mt-0.5 shrink-0" />
           <span className="break-words flex-1">{entry.content}</span>
           <SubphaseBadge />
           {hasDetail && (
@@ -315,7 +312,6 @@ function LogEntry({ entry }: LogEntryProps) {
   if (entry.type === 'success') {
     return (
       <div className="flex items-start gap-2 text-xs text-foreground px-2 py-1">
-        <CheckCircle2 className="h-3 w-3 mt-0.5 shrink-0 text-success" />
         <span className="break-words flex-1">{entry.content}</span>
         <SubphaseBadge />
       </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { RefreshCw, Check } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { ExternalLink } from "./ui/external-link";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -220,7 +220,7 @@ export function AppUpdateNotification() {
             <span className="flex items-center gap-1.5 text-sm text-foreground">
               {updateInfo.version}
               {isDownloaded ? (
-                <Check className="h-4 w-4 text-success" />
+                null
               ) : isDownloading ? (
                 <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
               ) : null}

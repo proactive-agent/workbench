@@ -3,7 +3,7 @@ import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import '@xterm/xterm/css/xterm.css';
-import { X, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { X, Loader2, AlertCircle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
@@ -350,9 +350,6 @@ export function AuthTerminal({
           )}
           {status === 'ready' && (
             <div className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
-          )}
-          {status === 'success' && (
-            <CheckCircle2 className="h-4 w-4 text-success" />
           )}
           {status === 'error' && (
             <AlertCircle className="h-4 w-4 text-destructive" />

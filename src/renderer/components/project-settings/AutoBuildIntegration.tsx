@@ -1,4 +1,4 @@
-import { RefreshCw, Download, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import { RefreshCw, Download, AlertCircle, Loader2 } from 'lucide-react';
 import { Button } from '../ui/button';
 import type { AutoBuildVersionInfo } from '../../../shared/types';
 
@@ -56,7 +56,6 @@ export function AutoBuildIntegration({
         <div className="rounded-lg border border-border bg-muted/50 p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="h-4 w-4 text-success" />
               <span className="text-sm font-medium text-foreground">Initialized</span>
             </div>
             <code className="text-xs bg-background px-2 py-1 rounded">

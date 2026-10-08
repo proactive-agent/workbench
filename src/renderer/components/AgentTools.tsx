@@ -951,11 +951,11 @@ export function AgentTools() {
     }
     switch (health?.status) {
       case 'healthy':
-        return <Check className="h-4 w-4 text-success" strokeWidth={1.75} aria-label={t('settings:mcp.status.healthy')} />;
+        return null;
       case 'needs_auth':
         return <Lock className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} aria-label={t('settings:mcp.status.needsAuth')} />;
       case 'unhealthy':
-        return <X className="h-4 w-4 text-destructive" strokeWidth={1.75} aria-label={t('settings:mcp.status.unhealthy')} />;
+        return null;
       default:
         return null;
     }

@@ -231,7 +231,6 @@ export function ClaudeOAuthFlow({ onSuccess, onCancel }: ClaudeOAuthFlowProps) {
         <Card className="border border-success/30 bg-success/10">
           <CardContent className="p-6">
             <div className="flex items-start gap-4">
-              <CheckCircle2 className="h-6 w-6 text-success shrink-0 mt-0.5" />
               <div className="flex-1">
                 <h3 className="text-lg font-medium text-success">
                   {t('oauth.successTitle')}

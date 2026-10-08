@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Terminal, Loader2, Check, AlertTriangle, X, RefreshCw, Download, Info } from 'lucide-react';
+import { Terminal, Loader2, AlertTriangle, RefreshCw, Download, Info } from 'lucide-react';
 import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
@@ -104,11 +104,11 @@ export function ClaudeCodeStep({ onNext, onBack, onSkip }: ClaudeCodeStepProps) 
       case 'loading':
         return <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />;
       case 'installed':
-        return <Check className="h-6 w-6 text-green-500" />;
+        return null;
       case 'outdated':
         return <AlertTriangle className="h-6 w-6 text-yellow-500" />;
       case 'not-found':
-        return <X className="h-6 w-6 text-destructive" />;
+        return null;
       case 'error':
         return <AlertTriangle className="h-6 w-6 text-destructive" />;
     }

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   RefreshCw,
-  CheckCircle2,
   Download,
   ArrowDownToLine,
   X,
@@ -354,7 +353,6 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
                   {/* Downloaded Success */}
                   {isAppUpdateDownloaded && !showReadOnlyWarning && (
                     <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-success" strokeWidth={1.75} />
                       {t('updates.updateDownloaded')}
                     </p>
                   )}

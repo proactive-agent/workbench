@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Play, Square, CheckCircle2, RotateCcw, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { Play, Square, RotateCcw, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '../ui/button';
 import {
   AlertDialog,
@@ -99,7 +99,6 @@ export function TaskActions({
         )}
         {task.status === 'done' && (
           <div className="completion-state text-sm">
-            <CheckCircle2 className="h-5 w-5" />
             <span className="font-medium">Task completed successfully</span>
           </div>
         )}

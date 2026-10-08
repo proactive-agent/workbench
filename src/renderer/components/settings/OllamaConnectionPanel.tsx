@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Download, Loader2, AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
+import { Download, Loader2, AlertCircle, RefreshCw, WifiOff } from 'lucide-react';
 import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -181,9 +181,6 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
       {/* Status row */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-success/20 border border-success/40 shrink-0">
-            <Check className="h-3 w-3 text-success" />
-          </div>
           <span className="text-sm font-medium text-foreground">
             {t('providers.ollama.connection.connected', { defaultValue: 'Connected' })}
           </span>

@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { CheckCircle2, Clock, XCircle, AlertCircle, ListChecks, FileCode, ChevronRight, ChevronsUpDown } from 'lucide-react';
+import { Clock, AlertCircle, ListChecks, FileCode, ChevronRight, ChevronsUpDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Badge } from '../ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
@@ -13,11 +13,11 @@ interface TaskSubtasksProps {
 function getSubtaskStatusIcon(status: string) {
   switch (status) {
     case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-[var(--success)]" />;
+      return null;
     case 'in_progress':
       return <Clock className="h-4 w-4 text-muted-foreground animate-pulse" />;
     case 'failed':
-      return <XCircle className="h-4 w-4 text-[var(--error)]" />;
+      return null;
     default:
       return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
   }
@@ -107,6 +107,9 @@ export function TaskSubtasks({ task }: TaskSubtasksProps) {
                   <span className="text-sm font-medium text-foreground flex-1 min-w-0 line-clamp-2">
                     {subtask.title || t('tasks:subtasks.untitled', { number: index + 1 })}
                   </span>
+                  {subtask.status === 'failed' && (
+                    <span className="shrink-0 text-xs text-destructive">{t('tasks:execution.phases.failed')}</span>
+                  )}
                   {hasDetails && (
                     <ChevronRight className={cn(
                       'h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200',
