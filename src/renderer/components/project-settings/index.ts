@@ -10,7 +10,6 @@ export { AutoBuildIntegration } from './AutoBuildIntegration';
 export { LinearIntegrationSection } from './LinearIntegrationSection';
 export { GitHubIntegrationSection } from './GitHubIntegrationSection';
 export { MemoryBackendSection } from './MemoryBackendSection';
-export { AgentConfigSection } from './AgentConfigSection';
 export { NotificationsSection } from './NotificationsSection';
 
 // Utility components

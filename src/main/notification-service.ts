@@ -1,6 +1,8 @@
 import { Notification, shell } from 'electron';
 import type { BrowserWindow } from 'electron';
-import { projectStore } from './project-store';
+import { readSettingsFile } from './settings-utils';
+import { DEFAULT_APP_SETTINGS } from '../shared/constants';
+import type { NotificationSettings } from '../shared/types';
 
 export type NotificationType = 'task-complete' | 'task-failed' | 'review-needed';
 
@@ -65,7 +67,7 @@ class NotificationService {
    */
   private sendNotification(type: NotificationType, options: NotificationOptions): void {
     // Get notification settings
-    const settings = this.getNotificationSettings(options.projectId);
+    const settings = this.getNotificationSettings();
 
     // Check if this notification type is enabled
     if (!this.isNotificationEnabled(type, settings)) {
@@ -109,30 +111,17 @@ class NotificationService {
   }
 
   /**
-   * Get notification settings for a project or fall back to defaults
+   * Get the app-wide notification settings (Settings > General > Notifications),
+   * falling back to the defaults for any missing value
    */
-  private getNotificationSettings(projectId?: string): {
+  private getNotificationSettings(): {
     onTaskComplete: boolean;
     onTaskFailed: boolean;
     onReviewNeeded: boolean;
     sound: boolean;
   } {
-    // Try to get project-specific settings
-    if (projectId) {
-      const projects = projectStore.getProjects();
-      const project = projects.find(p => p.id === projectId);
-      if (project?.settings?.notifications) {
-        return project.settings.notifications;
-      }
-    }
-
-    // Fall back to defaults
-    return {
-      onTaskComplete: true,
-      onTaskFailed: true,
-      onReviewNeeded: true,
-      sound: false
-    };
+    const saved = readSettingsFile()?.notifications as Partial<NotificationSettings> | undefined;
+    return { ...DEFAULT_APP_SETTINGS.notifications, ...saved };
   }
 
   /**
