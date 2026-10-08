@@ -69,7 +69,6 @@ export function DebugSettings() {
           {/* Copy debug info (for bug reports) */}
           <SettingsRow
             label={t('debug.helpTitle', 'Reporting issues')}
-            description={t('debug.helpText', 'When reporting bugs, click "Copy Debug Info" to get system information and recent errors that help us diagnose the issue.')}
           >
             <Button
               variant="outline"

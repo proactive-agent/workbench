@@ -847,8 +847,7 @@
     "logsLocation": "Logs location",
     "recentErrors": "Recent errors",
     "noRecentErrors": "No recent errors",
-    "helpTitle": "Reporting issues",
-    "helpText": "When reporting bugs, click \"Copy debug info\" to get system information and recent errors that help us diagnose the issue."
+    "helpTitle": "Reporting issues"
   },
   "projectSettings": {
     "noProjectSelected": {
