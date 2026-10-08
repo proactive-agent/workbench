@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useSettingsStore, saveSettings as saveSettingsToStore, loadSettings as loadSettingsFromStore } from '../../../stores/settings-store';
 import type { AppSettings } from '../../../../shared/types';
-import { UI_SCALE_DEFAULT } from '../../../../shared/constants';
 
 /**
  * Custom hook for managing application settings
@@ -22,11 +21,9 @@ export function useSettings() {
   const originalThemeRef = useRef<{
     theme: AppSettings['theme'];
     colorTheme: AppSettings['colorTheme'];
-    uiScale: number;
   }>({
     theme: currentSettings.theme,
-    colorTheme: currentSettings.colorTheme,
-    uiScale: currentSettings.uiScale ?? UI_SCALE_DEFAULT
+    colorTheme: currentSettings.colorTheme
   });
 
   // Sync with store
@@ -39,14 +36,13 @@ export function useSettings() {
     loadSettingsFromStore();
   }, []);
 
-  // Capture original theme/scale when store values change (for revert on cancel)
+  // Capture original theme when store values change (for revert on cancel)
   useEffect(() => {
     originalThemeRef.current = {
       theme: currentSettings.theme,
-      colorTheme: currentSettings.colorTheme,
-      uiScale: currentSettings.uiScale ?? UI_SCALE_DEFAULT
+      colorTheme: currentSettings.colorTheme
     };
-  }, [currentSettings.colorTheme, currentSettings.theme, currentSettings.uiScale]);
+  }, [currentSettings.colorTheme, currentSettings.theme]);
 
   const saveSettings = async () => {
     setIsSaving(true);
@@ -97,8 +93,7 @@ export function useSettings() {
     const original = originalThemeRef.current;
     updateStoreSettings({
       theme: original.theme,
-      colorTheme: original.colorTheme,
-      uiScale: original.uiScale
+      colorTheme: original.colorTheme
     });
   }, [updateStoreSettings]);
 
@@ -109,10 +104,9 @@ export function useSettings() {
   const commitTheme = useCallback(() => {
     originalThemeRef.current = {
       theme: settings.theme,
-      colorTheme: settings.colorTheme,
-      uiScale: settings.uiScale ?? UI_SCALE_DEFAULT
+      colorTheme: settings.colorTheme
     };
-  }, [settings.theme, settings.colorTheme, settings.uiScale]);
+  }, [settings.theme, settings.colorTheme]);
 
   return {
     settings,

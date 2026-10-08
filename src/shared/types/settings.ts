@@ -307,8 +307,6 @@ export interface AppSettings {
   // Feature-specific configuration (insights, PR/MR review, utility, naming)
   featureModels?: FeatureModelConfig;
   featureThinking?: FeatureThinkingConfig;
-  // UI Scale setting (75-200%, default 100)
-  uiScale?: number;
   // Log order setting for task detail view
   logOrder?: 'chronological' | 'reverse-chronological';
   // Beta updates opt-in (receive pre-release updates)

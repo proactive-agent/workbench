@@ -69,7 +69,6 @@ vi.mock('../../ui/select', () => {
 });
 
 const defaultSettings: AppSettings = {
-  uiScale: 100,
   logOrder: 'chronological',
   gpuAcceleration: 'auto'
 } as AppSettings;

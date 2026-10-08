@@ -181,10 +181,6 @@
     "ollamaNoModelsHint": "Install models in Agent Settings → Ollama tab",
     "apiKeyOnly": "API key"
   },
-  "scale": {
-    "presets": "Scale presets",
-    "presetsDescription": "Quick scale options for common preferences"
-  },
   "logOrder": {
     "label": "Log order",
     "description": "Choose how logs are displayed in the task detail view",

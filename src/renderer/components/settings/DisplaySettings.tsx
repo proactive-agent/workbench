@@ -1,7 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { SettingsRow, SegmentedControl, type SegmentedOption } from './SettingsRow';
-import { useSettingsStore } from '../../stores/settings-store';
-import { UI_SCALE_PRESETS, normalizeUiScale } from '../../../shared/constants';
+import { SettingsRow } from './SettingsRow';
 import type { AppSettings, GpuAcceleration } from '../../../shared/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
@@ -11,39 +9,14 @@ interface DisplaySettingsProps {
 }
 
 /**
- * Display settings: UI scale presets (100%, 125%, 150%), log order and GPU acceleration.
- * Scale changes apply immediately.
+ * Display settings: log order and GPU acceleration.
  */
 export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsProps) {
   const { t } = useTranslation('settings');
-  const updateStoreSettings = useSettingsStore((state) => state.updateSettings);
-
-  // Scales outside the presets (e.g. from the removed fine-tune slider) fall back to 100%
-  const currentScale = normalizeUiScale(settings.uiScale);
-
-  const handlePresetChange = (newScale: number) => {
-    onSettingsChange({ ...settings, uiScale: newScale });
-    updateStoreSettings({ uiScale: newScale });
-  };
-
-  const presetOptions: SegmentedOption<string>[] = UI_SCALE_PRESETS.map((preset) => ({
-    value: String(preset),
-    label: `${preset}%`
-  }));
 
   // Rows only: the Appearance section lists them under the theme row
   return (
     <>
-      {/* Preset Buttons */}
-      <SettingsRow label={t('scale.presets')} description={t('scale.presetsDescription')}>
-        <SegmentedControl
-          value={String(currentScale)}
-          options={presetOptions}
-          onValueChange={(value) => handlePresetChange(Number(value))}
-          ariaLabel={t('scale.presets')}
-        />
-      </SettingsRow>
-
       {/* Log Order Setting */}
       <SettingsRow
         label={t('logOrder.label')}

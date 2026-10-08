@@ -25,14 +25,6 @@ export const PANEL_CLEANUP_GRACE_PERIOD_MS = 150;
  */
 export const TITLE_BAR_OVERLAY_HEIGHT = 40;
 
-export const UI_SCALE_DEFAULT = 100;
-export const UI_SCALE_PRESETS = [100, 125, 150] as const;
-
-/** The UI scale to apply: one of the presets, otherwise the 100% default */
-export function normalizeUiScale(scale: number | undefined): number {
-  return UI_SCALE_PRESETS.some((preset) => preset === scale) ? (scale as number) : UI_SCALE_DEFAULT;
-}
-
 // ============================================
 // Default App Settings
 // ============================================
@@ -65,8 +57,6 @@ export const DEFAULT_APP_SETTINGS = {
   globalOpenAIApiKey: undefined as string | undefined,
   // Selected agent profile - defaults to 'auto' for per-phase optimized model selection
   selectedAgentProfile: 'auto',
-  // UI Scale (default 100% - standard size)
-  uiScale: UI_SCALE_DEFAULT,
   // Log order setting for task detail view (default chronological - oldest first)
   logOrder: 'chronological' as const,
   // Beta updates opt-in (receive pre-release versions)

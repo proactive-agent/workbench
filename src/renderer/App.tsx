@@ -41,7 +41,7 @@ import { useIpcListeners } from './hooks/useIpc';
 import { useTitleBarColors } from './hooks/useTitleBarColors';
 import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { useTerminalProfileChange } from './hooks/useTerminalProfileChange';
-import { sanitizeColorTheme, normalizeUiScale } from '../shared/constants';
+import { sanitizeColorTheme } from '../shared/constants';
 import { TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
@@ -407,12 +407,6 @@ export function App() {
       mediaQuery.removeEventListener('change', handleChange);
     };
   }, [settings.theme, settings.colorTheme]);
-
-  // Apply UI scale
-  useEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute('data-ui-scale', normalizeUiScale(settings.uiScale).toString());
-  }, [settings.uiScale]);
 
   // Update selected task when tasks change (for real-time updates)
   useEffect(() => {
