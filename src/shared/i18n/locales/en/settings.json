@@ -246,7 +246,7 @@
     "title": "Appearance",
     "description": "Customize how Auto Claude looks",
     "mode": "Theme",
-    "modeDescription": "Choose between light and dark themes",
+    "modeDescription": "Use light or dark mode, or match your system",
     "light": "Light",
     "dark": "Dark",
     "system": "System"

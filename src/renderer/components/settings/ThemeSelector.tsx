@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { Sun, Moon, Monitor } from 'lucide-react';
-import { SettingsRow, SettingsRows, SegmentedControl, type SegmentedOption } from './SettingsRow';
+import { SettingsRow, SegmentedControl, type SegmentedOption } from './SettingsRow';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { AppSettings } from '../../../shared/types';
 
@@ -34,19 +34,17 @@ export function ThemeSelector({ settings, onSettingsChange }: ThemeSelectorProps
     { value: 'dark', label: t('theme.dark'), icon: Moon }
   ];
 
+  // A single row: the Appearance section lists it with the display rows
   return (
-    <SettingsRows>
-      {/* Theme: icon-only System / Light / Dark switch, like claude.ai */}
-      <SettingsRow label={t('theme.mode')}>
-        <SegmentedControl
-          value={currentMode}
-          options={modeOptions}
-          onValueChange={handleModeChange}
-          ariaLabel={t('theme.mode')}
-          iconOnly
-        />
-      </SettingsRow>
-
-    </SettingsRows>
+    // Theme: icon-only System / Light / Dark switch, like claude.ai
+    <SettingsRow label={t('theme.mode')} description={t('theme.modeDescription')}>
+      <SegmentedControl
+        value={currentMode}
+        options={modeOptions}
+        onValueChange={handleModeChange}
+        ariaLabel={t('theme.mode')}
+        iconOnly
+      />
+    </SettingsRow>
   );
 }

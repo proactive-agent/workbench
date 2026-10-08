@@ -299,7 +299,6 @@ export function AppUpdateNotification() {
           {/* Downloaded Success */}
           {isDownloaded && !showReadOnlyWarning && (
             <div className="flex items-center gap-3 rounded-xl bg-segment-track px-4 py-3 text-sm">
-              <Check className="h-4 w-4 shrink-0 text-success" />
               <span>
                 {t(
                   "dialogs:appUpdate.updateDownloaded",

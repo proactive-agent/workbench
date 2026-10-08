@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FolderOpen, Copy, RefreshCw, Loader2, Check, AlertCircle } from 'lucide-react';
+import { FolderOpen, Copy, RefreshCw, Loader2, AlertCircle } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
@@ -112,7 +112,6 @@ export function DebugSettings() {
             >
               {copySuccess ? (
                 <>
-                  <Check className="mr-1.5 h-3.5 w-3.5 text-success" strokeWidth={1.75} />
                   {t('debug.copied', 'Copied!')}
                 </>
               ) : (
@@ -168,7 +167,6 @@ export function DebugSettings() {
                   </div>
                 ) : (
                   <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                    <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
                     {t('debug.noRecentErrors', 'No recent errors')}
                   </p>
                 )}

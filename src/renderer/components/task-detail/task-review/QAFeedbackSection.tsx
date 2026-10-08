@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState, type ClipboardEvent, type DragEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Loader2, Image as ImageIcon, X } from 'lucide-react';
+import { Loader2, Image as ImageIcon, X } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import {
@@ -302,7 +302,6 @@ export function QAFeedbackSection({
       {/* Paste Success Indicator */}
       {pasteSuccess && (
         <div className="flex items-center gap-2 text-sm text-(--nav-label-color) mb-2 animate-in fade-in slide-in-from-top-1 duration-200">
-          <Check className="h-4 w-4 text-success" />
           {t('feedback.imageAdded')}
         </div>
       )}

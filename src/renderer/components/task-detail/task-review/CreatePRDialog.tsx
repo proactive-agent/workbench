@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Check, Loader2, ExternalLink } from 'lucide-react';
+import { Loader2, ExternalLink } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -139,7 +139,6 @@ export function CreatePRDialog({
           <>
             <div className="mt-4 space-y-1 text-sm">
               <p className="flex items-center gap-1.5 text-foreground">
-                <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
                 {result.alreadyExists
                   ? t('taskReview:pr.success.alreadyExists')
                   : t('taskReview:pr.success.created')}

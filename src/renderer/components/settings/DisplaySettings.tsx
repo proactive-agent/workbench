@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { SettingsSection } from './SettingsSection';
-import { SettingsRow, SettingsRows, SegmentedControl, type SegmentedOption } from './SettingsRow';
+import { SettingsRow, SegmentedControl, type SegmentedOption } from './SettingsRow';
 import { useSettingsStore } from '../../stores/settings-store';
 import { UI_SCALE_PRESETS, normalizeUiScale } from '../../../shared/constants';
 import type { AppSettings, GpuAcceleration } from '../../../shared/types';
@@ -32,84 +31,80 @@ export function DisplaySettings({ settings, onSettingsChange }: DisplaySettingsP
     label: `${preset}%`
   }));
 
+  // Rows only: the Appearance section lists them under the theme row
   return (
-    <SettingsSection
-      title={t('sections.display.title')}
-      description={t('sections.display.description')}
-    >
-      <SettingsRows>
-        {/* Preset Buttons */}
-        <SettingsRow label={t('scale.presets')} description={t('scale.presetsDescription')}>
-          <SegmentedControl
-            value={String(currentScale)}
-            options={presetOptions}
-            onValueChange={(value) => handlePresetChange(Number(value))}
-            ariaLabel={t('scale.presets')}
-          />
-        </SettingsRow>
+    <>
+      {/* Preset Buttons */}
+      <SettingsRow label={t('scale.presets')} description={t('scale.presetsDescription')}>
+        <SegmentedControl
+          value={String(currentScale)}
+          options={presetOptions}
+          onValueChange={(value) => handlePresetChange(Number(value))}
+          ariaLabel={t('scale.presets')}
+        />
+      </SettingsRow>
 
-        {/* Log Order Setting */}
-        <SettingsRow
-          label={t('logOrder.label')}
-          description={t('logOrder.description')}
-          htmlFor="logOrder"
+      {/* Log Order Setting */}
+      <SettingsRow
+        label={t('logOrder.label')}
+        description={t('logOrder.description')}
+        htmlFor="logOrder"
+      >
+        <Select
+          value={settings.logOrder || 'chronological'}
+          onValueChange={(value) => onSettingsChange({
+            ...settings,
+            logOrder: value as 'chronological' | 'reverse-chronological'
+          })}
         >
-          <Select
-            value={settings.logOrder || 'chronological'}
-            onValueChange={(value) => onSettingsChange({
-              ...settings,
-              logOrder: value as 'chronological' | 'reverse-chronological'
-            })}
-          >
-            <SelectTrigger id="logOrder" className="h-8 w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto">
-              <SelectItem value="chronological">
-                {t('logOrder.chronological')}
-              </SelectItem>
-              <SelectItem value="reverse-chronological">
-                {t('logOrder.reverseChronological')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
+          <SelectTrigger id="logOrder" className="h-8 w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-60 overflow-y-auto">
+            <SelectItem value="chronological">
+              {t('logOrder.chronological')}
+            </SelectItem>
+            <SelectItem value="reverse-chronological">
+              {t('logOrder.reverseChronological')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingsRow>
 
-        {/* GPU Acceleration Setting */}
-        <SettingsRow
-          label={t('gpuAcceleration.label')}
-          htmlFor="gpuAcceleration"
-          description={
-            <>
-              {t('gpuAcceleration.description')}
-              <span className="mt-0.5 block text-xs">{t('gpuAcceleration.helperText')}</span>
-            </>
-          }
+      {/* GPU Acceleration Setting */}
+      <SettingsRow
+        label={t('gpuAcceleration.label')}
+        htmlFor="gpuAcceleration"
+        description={
+          <>
+            {t('gpuAcceleration.description')}
+            <span className="mt-0.5 block text-xs">{t('gpuAcceleration.helperText')}</span>
+          </>
+        }
+      >
+        <Select
+          value={settings.gpuAcceleration || 'off'}
+          onValueChange={(value) => onSettingsChange({
+            ...settings,
+            gpuAcceleration: value as GpuAcceleration
+          })}
         >
-          <Select
-            value={settings.gpuAcceleration || 'off'}
-            onValueChange={(value) => onSettingsChange({
-              ...settings,
-              gpuAcceleration: value as GpuAcceleration
-            })}
-          >
-            <SelectTrigger id="gpuAcceleration" className="h-8 w-56">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="max-h-60 overflow-y-auto">
-              <SelectItem value="auto">
-                {t('gpuAcceleration.auto')}
-              </SelectItem>
-              <SelectItem value="on">
-                {t('gpuAcceleration.on')}
-              </SelectItem>
-              <SelectItem value="off">
-                {t('gpuAcceleration.off')}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-      </SettingsRows>
-    </SettingsSection>
+          <SelectTrigger id="gpuAcceleration" className="h-8 w-56">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-60 overflow-y-auto">
+            <SelectItem value="auto">
+              {t('gpuAcceleration.auto')}
+            </SelectItem>
+            <SelectItem value="on">
+              {t('gpuAcceleration.on')}
+            </SelectItem>
+            <SelectItem value="off">
+              {t('gpuAcceleration.off')}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </SettingsRow>
+    </>
   );
 }

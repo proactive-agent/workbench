@@ -1,4 +1,4 @@
-import { Check, FileText, BookOpen } from 'lucide-react';
+import { FileText, BookOpen } from 'lucide-react';
 import { SettingsIcon as Settings } from '../icons/app-icons';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
@@ -84,7 +84,6 @@ export function CompletionStep({
 
         {/* Completion message */}
         <div className="flex items-start gap-3 rounded-xl bg-segment-track px-4 py-3 text-sm mb-8">
-          <Check className="h-4 w-4 text-success shrink-0 mt-0.5" />
           <div className="flex-1">
             <p className="text-foreground">
               {t('completion.setupComplete')}

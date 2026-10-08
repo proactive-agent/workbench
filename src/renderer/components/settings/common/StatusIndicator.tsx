@@ -1,4 +1,4 @@
-import { Check, Loader2, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 
 export type StatusIndicatorState = 'loading' | 'success' | 'error' | 'neutral';
@@ -19,13 +19,12 @@ const TONE_CLASS = {
 
 /**
  * claude.ai-style status: muted text with a small leading icon
- * (spinner while checking, green check on success, red x on failure).
+ * (spinner while checking, red x on failure; success shows the text alone).
  */
 export function StatusIndicator({ state, children, tone = 'muted', className }: StatusIndicatorProps) {
   return (
     <span className={cn('inline-flex min-w-0 items-center gap-1.5 text-sm', TONE_CLASS[tone], className)}>
       {state === 'loading' && <Loader2 className="h-4 w-4 shrink-0 animate-spin" strokeWidth={1.75} />}
-      {state === 'success' && <Check className="h-4 w-4 shrink-0 text-success" strokeWidth={1.75} />}
       {state === 'error' && <X className="h-4 w-4 shrink-0 text-destructive" strokeWidth={1.75} />}
       {children}
     </span>

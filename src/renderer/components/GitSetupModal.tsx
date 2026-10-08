@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 import {
   Dialog,
@@ -163,7 +163,6 @@ export function GitSetupModal({
       </DialogHeader>
 
       <div className="py-8 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-        <Check className="h-4 w-4 text-success" />
         {t('gitSetup.readyToUse')}
       </div>
     </>

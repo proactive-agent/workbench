@@ -24,7 +24,7 @@
     "package": "electron-builder",
     "package:mac": "electron-builder --mac",
     "package:win": "electron-builder --win",
-    "package:linux": "electron-builder --linux",
+    "package:linux": "electron-builder --linux --config.productName=auto-claude",
     "verify:linux": "node .github/scripts/verify-linux-packages.cjs dist",
     "start:packaged:mac": "open \"dist/mac-arm64/Auto Claude.app\" || open \"dist/mac/Auto Claude.app\"",
     "start:packaged:win": "start \"\" \"dist\\win-unpacked\\Auto Claude.exe\"",
@@ -221,7 +221,13 @@
       "target": [
         "deb"
       ],
-      "category": "Development"
+      "category": "Development",
+      "desktop": {
+        "entry": {
+          "Name": "Auto Claude",
+          "StartupWMClass": "Auto Claude"
+        }
+      }
     }
   }
 }

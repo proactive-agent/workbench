@@ -9,7 +9,6 @@ import {
   SquareTerminal,
   CodeXml,
   Download,
-  Bug,
   FolderCog,
   Github,
   History,
@@ -37,7 +36,6 @@ import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '../../lib/utils';
 import { useSettings } from './hooks/useSettings';
 import { ThemeSettings } from './ThemeSettings';
-import { DisplaySettings } from './DisplaySettings';
 import { GeneralSettings } from './GeneralSettings';
 import { AdvancedSettings } from './AdvancedSettings';
 import { DevToolsSettings } from './DevToolsSettings';
@@ -66,16 +64,17 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings pages (claude.ai layout: related settings grouped on one page)
-type AppPage = 'general' | 'accounts' | 'agent' | 'terminal-fonts' | 'devtools' | 'updates' | 'debug';
+type AppPage = 'general' | 'accounts' | 'agent' | 'terminal-fonts' | 'devtools' | 'updates';
 
 // Section ids accepted from the rest of the app; older ids map onto the page that now holds them
-export type AppSection = AppPage | 'appearance' | 'display' | 'notifications' | 'paths' | 'integrations' | 'api-profiles';
+export type AppSection = AppPage | 'appearance' | 'display' | 'notifications' | 'paths' | 'debug' | 'integrations' | 'api-profiles';
 
 const LEGACY_SECTION_PAGE: Record<string, AppPage> = {
   appearance: 'general',
   display: 'general',
   notifications: 'general',
   paths: 'devtools',
+  debug: 'devtools',
   integrations: 'accounts',
   'api-profiles': 'accounts'
 };
@@ -93,8 +92,7 @@ const appNavItemsConfig: NavItemConfig<AppPage>[] = [
   { id: 'agent', icon: Bot },
   { id: 'terminal-fonts', icon: SquareTerminal },
   { id: 'devtools', icon: CodeXml },
-  { id: 'updates', icon: Download },
-  { id: 'debug', icon: Bug }
+  { id: 'updates', icon: Download }
 ];
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
@@ -211,7 +209,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return (
           <>
             <ThemeSettings settings={settings} onSettingsChange={setSettings} />
-            <DisplaySettings settings={settings} onSettingsChange={setSettings} />
             <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="notifications" version={version} />
           </>
         );
@@ -231,12 +228,11 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
           <>
             <DevToolsSettings settings={settings} onSettingsChange={setSettings} />
             <GeneralSettings settings={settings} onSettingsChange={setSettings} section="paths" />
+            <DebugSettings />
           </>
         );
       case 'updates':
         return <AdvancedSettings settings={settings} onSettingsChange={setSettings} section="updates" version={version} />;
-      case 'debug':
-        return <DebugSettings />;
       default:
         return null;
     }

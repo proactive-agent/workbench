@@ -281,11 +281,6 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
             label={t('updates.version')}
             description={
               <span className="flex items-center gap-1.5">
-                {isCheckingAppUpdate ? (
-                  <RefreshCw className="h-3.5 w-3.5 animate-spin" strokeWidth={1.75} />
-                ) : !appUpdateInfo ? (
-                  <CheckCircle2 className="h-3.5 w-3.5 text-success" strokeWidth={1.75} />
-                ) : null}
                 <span className="font-mono">{version || t('updates.loading')}</span>
                 {appUpdateInfo ? (
                   <span>· {t('updates.newVersionAvailable')} {appUpdateInfo.version}</span>

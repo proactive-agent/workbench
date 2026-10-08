@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Check, Terminal, Plus, X } from 'lucide-react';
+import { Loader2, Terminal, Plus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -534,7 +534,6 @@ export function AddAccountDialog({
 
             {oauthStatus === 'success' && (
               <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
-                <Check className="h-4 w-4 shrink-0 text-success" />
                 <span>{isCodexOAuth ? t('providers.dialog.codexSuccess') : t('providers.dialog.oauthSuccess', { email: oauthEmail ?? 'Unknown' })}</span>
               </div>
             )}

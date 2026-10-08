@@ -1,13 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Check,
   AlertTriangle,
-  X,
   Loader2,
   Download,
   RefreshCw,
-  ExternalLink,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "../ui/button";
 import {
@@ -304,22 +302,6 @@ export function ClaudeCodeSettings() {
     setShowRollbackWarning(true);
   };
 
-  // Status icon: green/red only for success/failure, neutral otherwise
-  const getStatusIcon = () => {
-    switch (status) {
-      case "loading":
-        return <Loader2 className="h-3.5 w-3.5 animate-spin" />;
-      case "installed":
-        return <Check className="h-3.5 w-3.5 text-[var(--success)]" />;
-      case "outdated":
-        return <AlertTriangle className="h-3.5 w-3.5" />;
-      case "not-found":
-        return <X className="h-3.5 w-3.5 text-[var(--error)]" />;
-      case "error":
-        return <AlertTriangle className="h-3.5 w-3.5 text-[var(--error)]" />;
-    }
-  };
-
   const statusText = {
     loading: t("navigation:claudeCode.checking"),
     installed: t("navigation:claudeCode.upToDate"),
@@ -343,12 +325,7 @@ export function ClaudeCodeSettings() {
         {/* Status + install/update/refresh */}
         <SettingsRow
           label={t("navigation:claudeCode.status")}
-          description={
-            <span className="flex items-center gap-1.5">
-              {getStatusIcon()}
-              {statusText}
-            </span>
-          }
+          description={statusText}
         >
           {(status === "not-found" || status === "outdated") && (
             <Button size="sm" className="gap-1.5" onClick={handleInstall} disabled={isInstalling}>

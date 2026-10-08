@@ -14,7 +14,7 @@
  * - Edit mode: API key masked with "Change" button
  */
 import { useState, useEffect, useRef } from 'react';
-import { Loader2, Check, X } from 'lucide-react';
+import { Loader2, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   Dialog,
@@ -454,9 +454,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
           {/* Inline connection test result */}
           {showTestResult && testConnectionResult && (
             <div className="flex items-start gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
-              {testConnectionResult.success ? (
-                <Check className="h-4 w-4 text-success mt-0.5 flex-shrink-0" />
-              ) : (
+              {!testConnectionResult.success && (
                 <X className="h-4 w-4 text-destructive mt-0.5 flex-shrink-0" />
               )}
               <div className="flex-1 min-w-0">

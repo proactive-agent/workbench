@@ -470,7 +470,6 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
                   return (
                     <div key={server} className="group flex h-9 items-center justify-between gap-2">
                       <div className="flex min-w-0 items-center gap-2 text-sm">
-                        <Check className="h-4 w-4 shrink-0 text-success" strokeWidth={1.75} />
                         <span className="truncate text-foreground">{serverInfo?.name || server}</span>
                         {isAdded && <span className="text-(--nav-label-color)">· {t('mcp.added')}</span>}
                       </div>

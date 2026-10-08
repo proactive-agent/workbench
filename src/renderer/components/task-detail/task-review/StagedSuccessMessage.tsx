@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check } from 'lucide-react';
+import { Copy } from 'lucide-react';
 import { Button } from '../../ui/button';
 import { Textarea } from '../../ui/textarea';
 import { persistTaskStatus } from '../../../stores/task-store';
@@ -123,7 +123,6 @@ export function StagedSuccessMessage({
     <div className="space-y-3">
       <div>
         <h3 className="flex items-center gap-1.5 text-sm text-foreground">
-          <Check className="h-4 w-4 text-success" strokeWidth={1.75} />
           {t('taskReview:stagedSuccess.title')}
         </h3>
         <p className="mt-1 text-sm text-(--nav-label-color)">{stagedSuccess}</p>
@@ -137,7 +136,6 @@ export function StagedSuccessMessage({
             <Button variant="ghost" size="sm" onClick={handleCopy} disabled={!commitMessage}>
               {copied ? (
                 <>
-                  <Check className="mr-1.5 h-3.5 w-3.5 text-success" />
                   {t('taskReview:stagedSuccess.copied')}
                 </>
               ) : (

@@ -1,4 +1,4 @@
-import { RefreshCw, Download, Check, Loader2 } from 'lucide-react';
+import { RefreshCw, Download, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
@@ -59,7 +59,6 @@ export function GeneralSettings({
     const initialized = versionInfo ? versionInfo.isInitialized : true;
     return (
       <span className="flex items-center gap-1.5 text-sm text-(--nav-label-color)">
-        {initialized && <Check className="h-4 w-4 text-success" strokeWidth={1.75} />}
         {initialized ? t('projectPages.general.initialized') : t('projectPages.general.notInitialized')}
       </span>
     );
