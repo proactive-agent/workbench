@@ -355,14 +355,17 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
 
           {/* Page */}
           <div className="relative flex min-w-0 flex-1 flex-col">
-            <DialogPrimitive.Close aria-label={t('actions.close')} className={DIALOG_CLOSE_BUTTON_CLASS}>
-              <X className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
-            </DialogPrimitive.Close>
+            {/* Top bar holding the close button: page content scrolls under it, not under the X */}
+            <div className="h-14 shrink-0 bg-settings-surface">
+              <DialogPrimitive.Close aria-label={t('actions.close')} className={DIALOG_CLOSE_BUTTON_CLASS}>
+                <X className={DIALOG_CLOSE_ICON_CLASS} strokeWidth={DIALOG_CLOSE_ICON_STROKE} />
+              </DialogPrimitive.Close>
+            </div>
 
             {(error || projectError) && (
               <div
                 role="alert"
-                className="mx-7 mt-14 truncate rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
+                className="mx-7 mb-4 truncate rounded-lg border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive"
                 title={error || projectError || undefined}
               >
                 {error || projectError}
@@ -370,10 +373,10 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
             )}
 
             {isStandaloneSection ? (
-              <div className="min-h-0 flex-1 overflow-hidden pt-10">{renderContent()}</div>
+              <div className="min-h-0 flex-1 overflow-hidden">{renderContent()}</div>
             ) : (
               <ScrollArea className="min-h-0 flex-1">
-                <div className="mx-auto w-full max-w-[832px] px-7 pb-10 pt-14">
+                <div className="mx-auto w-full max-w-[832px] px-7 pb-10">
                   {renderContent()}
                 </div>
               </ScrollArea>
