@@ -36,7 +36,7 @@
   },
   "claudeCode": {
     "title": "Claude Code CLI",
-    "description": "The Claude Code CLI used by agent terminals: status, version and installation.",
+    "description": "The Claude Code CLI used by agent terminals: status, version and installation",
     "status": "Status",
     "version": "Version",
     "changelog": "Changelog",

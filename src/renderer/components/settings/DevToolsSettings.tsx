@@ -460,10 +460,10 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
           label={t('devtools.yoloMode.label', 'YOLO mode')}
           description={
             <>
-              {t('devtools.yoloMode.description', 'Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.')}
+              {t('devtools.yoloMode.description', 'Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution')}
               {settings.dangerouslySkipPermissions && (
                 <span className="mt-1 block text-xs text-destructive">
-                  {t('devtools.yoloMode.warning', 'This mode bypasses Claude\'s permission system. Only enable if you fully trust the code being executed.')}
+                  {t('devtools.yoloMode.warning', 'This mode bypasses Claude\'s permission system. Only enable if you fully trust the code being executed')}
                 </span>
               )}
             </>

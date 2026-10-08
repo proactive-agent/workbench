@@ -187,7 +187,7 @@ export function TerminalFontSettings() {
           <SettingsRow
             label={t('terminalFonts.importExport.label', { defaultValue: 'Import and export' })}
             description={t('terminalFonts.importExport.description', {
-              defaultValue: 'Save, load or copy your terminal settings as JSON.',
+              defaultValue: 'Save, load or copy your terminal settings as JSON',
             })}
           >
             <div className="flex flex-wrap items-center gap-2">

@@ -300,8 +300,8 @@
     "noToolsDetected": "No additional tools detected (VS Code and system terminal will be used)",
     "yoloMode": {
       "label": "YOLO mode",
-      "description": "Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution.",
-      "warning": "This mode bypasses Claude's permission system. Only enable if you fully trust the code being executed."
+      "description": "Start Claude with --dangerously-skip-permissions flag, bypassing all safety prompts. Use with extreme caution",
+      "warning": "This mode bypasses Claude's permission system. Only enable if you fully trust the code being executed"
     }
   },
   "updates": {
@@ -318,9 +318,9 @@
     "loading": "Loading...",
     "checkingForUpdates": "Checking for updates...",
     "newVersionAvailable": "New version available:",
-    "latestVersion": "You're running the latest version.",
-    "unpublishedVersion": "Unpublished release: there's no published release to update from yet.",
-    "checkFailed": "Couldn't check for updates.",
+    "latestVersion": "You're running the latest version",
+    "unpublishedVersion": "Unpublished release: there's no published release to update from yet",
+    "checkFailed": "Couldn't check for updates",
     "viewRelease": "View full release on GitHub",
     "unableToCheck": "Unable to check for updates",
     "checkForUpdates": "Check for updates",
@@ -407,7 +407,7 @@
     "customized": "Customized",
     "customizedDescription": "Phase settings differ from the {{profile}} profile defaults",
     "ollamaNotConfigured": "Select models below",
-    "phaseConfigNote": "These settings will be used as defaults when creating new tasks with this profile. You can override them per-task in the task creation wizard.",
+    "phaseConfigNote": "These settings will be used as defaults when creating new tasks with this profile. You can override them per-task in the task creation wizard",
     "adaptiveThinking": {
       "badge": "Adaptive",
       "tooltip": "Opus uses adaptive thinking: it dynamically decides how much to think within the budget cap set by the thinking level."
@@ -476,8 +476,8 @@
     },
     "crossProviderTab": {
       "title": "Cross-provider configuration",
-      "description": "Assign a different provider and model to each pipeline phase for maximum flexibility.",
-      "activateInfo": "Tasks created while this configuration is active will use the cross-provider setup.",
+      "description": "Assign a different provider and model to each pipeline phase for maximum flexibility",
+      "activateInfo": "Tasks created while this configuration is active will use the cross-provider setup",
       "featureModelsTitle": "Feature models",
       "featureModelsDescription": "Configure models for non-pipeline features (Insights, MR review, etc.)"
     },
@@ -649,7 +649,7 @@
     },
     "autoSwitching": {
       "title": "Automatic account switching",
-      "description": "Automatically switch between accounts to avoid interruptions. Configure proactive monitoring to switch before hitting limits.",
+      "description": "Automatically switch between accounts to avoid interruptions. Configure proactive monitoring to switch before hitting limits",
       "enableAutoSwitching": "Enable automatic switching",
       "masterSwitch": "Master switch for all auto-swap features",
       "proactiveMonitoring": "Proactive monitoring",
@@ -667,12 +667,12 @@
       "title": "Account priority order",
       "modeLabel": "Priority mode",
       "dragHandle": "Drag to reorder",
-      "description": "Drag to reorder. System will switch to the next available account in order.",
+      "description": "Drag to reorder. System will switch to the next available account in order",
       "tabs": {
         "default": "Default",
         "crossProvider": "Cross-provider"
       },
-      "crossProviderDescription": "This priority order is used when cross-provider mode is active. When multiple accounts share a provider, the system selects the best available one based on this order.",
+      "crossProviderDescription": "This priority order is used when cross-provider mode is active. When multiple accounts share a provider, the system selects the best available one based on this order",
       "setActive": "Set active",
       "setActiveTooltip": "Make this the primary account",
       "noAccounts": "No accounts configured. Add accounts above to set priority.",
@@ -869,7 +869,7 @@
   "projectSettings": {
     "noProjectSelected": {
       "title": "No project selected",
-      "description": "Select a project from the sidebar to configure its settings."
+      "description": "Select a project from the sidebar to configure its settings"
     }
   },
   "mcp": {
@@ -942,7 +942,7 @@
     "headers": "Headers",
     "headerName": "Header name",
     "headerValue": "Header value",
-    "noCustomServers": "No custom servers configured. Add one to use with your agents.",
+    "noCustomServers": "No custom servers configured. Add one to use with your agents",
     "errorNameRequired": "Server name is required",
     "errorIdExists": "A server with this ID already exists",
     "errorCommandRequired": "Command is required for command-based servers",
@@ -1041,7 +1041,7 @@
       "readError": "Failed to read file",
       "title": "Configuration",
       "label": "Import and export",
-      "description": "Save, load or copy your terminal settings as JSON."
+      "description": "Save, load or copy your terminal settings as JSON"
     },
     "slider": {
       "decrease": "Decrease {{label}} by {{step}}",
@@ -1133,7 +1133,7 @@
       "dataFolder": "Data folder",
       "initialized": "Initialized",
       "notInitialized": "Not initialized",
-      "notInitializedDescription": "Initialize Auto-Build to enable task creation and agent workflows.",
+      "notInitializedDescription": "Initialize Auto-Build to enable task creation and agent workflows",
       "initialize": "Initialize",
       "initializing": "Initializing...",
       "checkingStatus": "Checking...",
@@ -1155,7 +1155,7 @@
     "memory": {
       "enable": "Enable memory",
       "enableDescription": "Persistent cross-session memory using LadybugDB (embedded database)",
-      "fileBasedDescription": "Session insights are stored locally in JSON files. Enable for persistent cross-session context with semantic search.",
+      "fileBasedDescription": "Session insights are stored locally in JSON files. Enable for persistent cross-session context with semantic search",
       "embeddingsTitle": "Embeddings",
       "provider": "Embedding provider",
       "providerDescription": "Used for semantic search; keyword search works without it",
@@ -1166,8 +1166,8 @@
       "apiKey": "{{name}} API key",
       "openaiKey": "OpenAI API key",
       "openaiKeyOverride": "OpenAI API key (override)",
-      "usingGlobalKey": "Using the key from app settings. Enter a project key to override it.",
-      "requiredFor": "Required for {{name}} embeddings.",
+      "usingGlobalKey": "Using the key from app settings. Enter a project key to override it",
+      "requiredFor": "Required for {{name}} embeddings",
       "getKey": "Get a key from {{name}}",
       "overridePlaceholder": "Enter to override global key...",
       "showKey": "Show {{name}} API key",

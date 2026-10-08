@@ -162,7 +162,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
   // QA Phases
   qa_reviewer: {
     label: 'QA Reviewer',
-    description: 'Validates acceptance criteria. Uses Electron or Puppeteer based on project type.',
+    description: 'Validates acceptance criteria. Uses Electron or Puppeteer based on project type',
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
@@ -171,7 +171,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
   },
   qa_fixer: {
     label: 'QA Fixer',
-    description: 'Fixes QA-reported issues. Uses Electron or Puppeteer based on project type.',
+    description: 'Fixes QA-reported issues. Uses Electron or Puppeteer based on project type',
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
@@ -233,7 +233,7 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
   },
   'memory': {
     name: 'Memory',
-    description: 'Knowledge graph for cross-session context. Requires GRAPHITI_MCP_URL env var.',
+    description: 'Knowledge graph for cross-session context. Requires GRAPHITI_MCP_URL env var',
     // Note: mcp__graphiti-memory__ tool names are the external MCP server's protocol names
     icon: Brain,
     tools: [
@@ -259,7 +259,7 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
   },
   electron: {
     name: 'Electron MCP',
-    description: 'Desktop app automation via Chrome DevTools Protocol. Requires ELECTRON_MCP_ENABLED=true.',
+    description: 'Desktop app automation via Chrome DevTools Protocol. Requires ELECTRON_MCP_ENABLED=true',
     icon: Monitor,
     tools: [
       'mcp__electron__get_electron_window_info',
@@ -270,7 +270,7 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
   },
   puppeteer: {
     name: 'Puppeteer MCP',
-    description: 'Web browser automation for non-Electron web frontends.',
+    description: 'Web browser automation for non-Electron web frontends',
     icon: Globe,
     tools: [
       'mcp__puppeteer__puppeteer_connect_active_tab',
