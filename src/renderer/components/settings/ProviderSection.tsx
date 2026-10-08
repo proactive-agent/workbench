@@ -1,16 +1,24 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Plus } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { Button } from '../ui/button';
-import { cn } from '../../lib/utils';
-import { ProviderAccountCard } from './ProviderAccountCard';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
+import { SettingsRow } from './SettingsRow';
+import { ProviderAccountMenu } from './ProviderAccountMenu';
 import { OllamaConnectionPanel } from './OllamaConnectionPanel';
 import type { BillingModel, BuiltinProvider, ProviderAccount, ProviderInfo } from '@shared/types/provider-account';
 
 interface ProviderSectionProps {
   provider: ProviderInfo;
   accounts: ProviderAccount[];
+  /** The account agents use for this provider */
+  activeAccountId?: string;
+  onSelectAccount: (account: ProviderAccount) => void;
   envDetected: boolean;
   onAddAccount: (provider: BuiltinProvider, authType: 'oauth' | 'api-key', billingModel?: BillingModel) => void;
   onEditAccount: (account: ProviderAccount) => void;
@@ -19,13 +27,15 @@ interface ProviderSectionProps {
 }
 
 /**
- * A provider row (claude.ai settings style): name + muted description on the left, account
- * count and an expand chevron on the right. Expanding reveals the connected accounts and the
- * add-account actions.
+ * A provider row (claude.ai settings style): name + muted description on the left and a
+ * dropdown on the right showing the account in use. The dropdown lists the connected accounts
+ * (click to use one; hover for re-authenticate / edit / delete) and the add-account actions.
  */
 export function ProviderSection({
   provider,
   accounts,
+  activeAccountId,
+  onSelectAccount,
   envDetected,
   onAddAccount,
   onEditAccount,
@@ -33,151 +43,107 @@ export function ProviderSection({
   onReauthAccount,
 }: ProviderSectionProps) {
   const { t } = useTranslation('settings');
-  const [isOpen, setIsOpen] = useState(accounts.length > 0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const hasOAuth = provider.authMethods.includes('oauth');
   const hasApiKey = provider.authMethods.includes('api-key');
-  const isOllamaLike = provider.authMethods.length === 0 || (provider.authMethods.length === 0 && provider.configFields.includes('baseUrl'));
-  const canAdd = hasOAuth || hasApiKey || isOllamaLike;
-  const contentId = `provider-${provider.id}-accounts`;
+  const isOllama = provider.id === 'ollama';
 
-  const accountList = accounts.length > 0 && (
-    <div className="rounded-xl border border-border px-4 [&>*+*]:border-t [&>*+*]:border-settings-divider">
-      {accounts.map((account) => (
-        <ProviderAccountCard
-          key={account.id}
-          account={account}
-          onEdit={onEditAccount}
-          onDelete={onDeleteAccount}
-          onReauth={onReauthAccount}
-        />
-      ))}
-    </div>
-  );
+  // Add-account actions offered by this provider (Ollama accounts come from its connection panel)
+  const addActions: { key: string; label: string; onSelect: () => void }[] = [];
+  if (!isOllama) {
+    if (hasOAuth) {
+      addActions.push({
+        key: 'oauth',
+        label:
+          provider.id === 'openai'
+            ? t('providers.section.addCodexSubscription')
+            : provider.id === 'anthropic'
+              ? t('providers.section.addClaudeCode')
+              : t('providers.section.addOAuth'),
+        onSelect: () => onAddAccount(provider.id, 'oauth'),
+      });
+    }
+    // Z.AI: Coding Plan subscription before the generic API key
+    if (provider.id === 'zai' && hasApiKey) {
+      addActions.push({
+        key: 'coding-plan',
+        label: t('providers.section.addCodingPlan'),
+        onSelect: () => onAddAccount(provider.id, 'api-key', 'subscription'),
+      });
+    }
+    if (hasApiKey) {
+      addActions.push({
+        key: 'api-key',
+        label: provider.id === 'zai' ? t('providers.section.addUsageBased') : t('providers.section.addApiKey'),
+        onSelect: () => onAddAccount(provider.id, 'api-key'),
+      });
+    }
+    // No-key providers with a base URL
+    if (!hasOAuth && !hasApiKey && provider.configFields.includes('baseUrl')) {
+      addActions.push({
+        key: 'endpoint',
+        label: t('providers.section.addEndpoint'),
+        onSelect: () => onAddAccount(provider.id, 'api-key'),
+      });
+    }
+  }
+
+  const activeAccount = accounts.find((a) => a.id === activeAccountId) ?? accounts[0];
+  const triggerLabel =
+    activeAccount
+      ? activeAccount.name
+      : envDetected
+        ? t('providers.section.envDetected')
+        : t('providers.section.noAccountsShort');
 
   return (
-    <div>
-      {/* Row header */}
-      <button
-        type="button"
-        onClick={() => setIsOpen(!isOpen)}
-        aria-expanded={isOpen}
-        aria-controls={contentId}
-        className="group flex w-full items-center justify-between gap-7 rounded-lg py-3 text-left outline-none focus-visible:shadow-(--shadow-focus)"
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="text-sm text-foreground">{provider.name}</span>
-          <span className="text-sm text-(--nav-label-color)">{provider.description}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-sm text-(--nav-label-color)">
-          {accounts.length > 0 ? (
-            <span>{t('providers.section.accountCount', { count: accounts.length })}</span>
-          ) : (
-            envDetected && <span>{t('providers.section.envDetected')}</span>
+    <SettingsRow
+      label={provider.name}
+      description={provider.description}
+      footer={isOllama ? <OllamaConnectionPanel accounts={accounts} /> : undefined}
+    >
+      <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+        <DropdownMenuTrigger
+          aria-label={t('providers.section.accountsMenu', { provider: provider.name })}
+          className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-sm text-foreground outline-none hover:bg-nav-hover focus-visible:shadow-(--shadow-focus) data-[state=open]:bg-nav-hover"
+        >
+          {triggerLabel}
+          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-72">
+          {accounts.map((account) => (
+            <ProviderAccountMenu
+              key={account.id}
+              account={account}
+              isActive={account.id === activeAccount?.id}
+              onSelect={(selected) => {
+                onSelectAccount(selected);
+                setMenuOpen(false);
+              }}
+              onEdit={onEditAccount}
+              onDelete={onDeleteAccount}
+              onReauth={onReauthAccount}
+            />
+          ))}
+
+          {accounts.length === 0 && (
+            <DropdownMenuItem disabled className="text-(--nav-label-color)">
+              {envDetected
+                ? t('providers.section.envCredentialDetected', { envVar: provider.envVars[0] })
+                : t('providers.section.noAccounts')}
+            </DropdownMenuItem>
           )}
-          <ChevronDown
-            className={cn(
-              'h-4 w-4 transition-transform duration-150 group-hover:text-foreground',
-              isOpen && 'rotate-180'
-            )}
-            strokeWidth={1.75}
-          />
-        </div>
-      </button>
 
-      {/* Expanded content */}
-      <AnimatePresence initial={false}>
-        {isOpen && (
-          <motion.div
-            id={contentId}
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={{ duration: 0.15 }}
-            className="overflow-hidden"
-          >
-            <div className="space-y-3 pb-4">
-              {provider.id === 'ollama' ? (
-                <>
-                  {accountList}
-                  {/* Ollama connection panel handles its own empty state and auto-creation */}
-                  <OllamaConnectionPanel accounts={accounts} />
-                </>
-              ) : (
-                <>
-                  {accountList}
-
-                  {accounts.length === 0 && (
-                    <p className="text-sm text-(--nav-label-color)">
-                      {envDetected
-                        ? t('providers.section.envCredentialDetected', { envVar: provider.envVars[0] })
-                        : t('providers.section.noAccounts')}
-                    </p>
-                  )}
-
-                  {/* Add buttons */}
-                  {canAdd && (
-                    <div className="flex flex-wrap items-center gap-2">
-                      {hasOAuth && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onAddAccount(provider.id, 'oauth')}
-                          className="gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" strokeWidth={1.75} />
-                          {provider.id === 'openai'
-                            ? t('providers.section.addCodexSubscription')
-                            : provider.id === 'anthropic'
-                              ? t('providers.section.addClaudeCode')
-                              : t('providers.section.addOAuth')}
-                        </Button>
-                      )}
-                      {/* Z.AI: Coding Plan subscription button before generic API Key */}
-                      {provider.id === 'zai' && hasApiKey && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onAddAccount(provider.id, 'api-key', 'subscription')}
-                          className="gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" strokeWidth={1.75} />
-                          {t('providers.section.addCodingPlan')}
-                        </Button>
-                      )}
-                      {hasApiKey && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onAddAccount(provider.id, 'api-key')}
-                          className="gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" strokeWidth={1.75} />
-                          {provider.id === 'zai'
-                            ? t('providers.section.addUsageBased')
-                            : t('providers.section.addApiKey')}
-                        </Button>
-                      )}
-                      {/* No-key providers with baseUrl (non-Ollama) */}
-                      {!hasOAuth && !hasApiKey && provider.configFields.includes('baseUrl') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onAddAccount(provider.id, 'api-key')}
-                          className="gap-1.5"
-                        >
-                          <Plus className="h-4 w-4" strokeWidth={1.75} />
-                          {t('providers.section.addEndpoint')}
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
+          {addActions.length > 0 && <DropdownMenuSeparator />}
+          {addActions.map((action) => (
+            <DropdownMenuItem key={action.key} className="cursor-pointer" onSelect={action.onSelect}>
+              <Plus className="h-4 w-4 text-(--nav-label-color)" strokeWidth={1.75} />
+              {action.label}
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </SettingsRow>
   );
 }

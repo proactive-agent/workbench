@@ -13,5 +13,5 @@ export { useSettings } from './hooks/useSettings';
 export { MultiProviderModelSelect } from './MultiProviderModelSelect';
 export { ProviderAccountsList } from './ProviderAccountsList';
 export { ProviderSection } from './ProviderSection';
-export { ProviderAccountCard } from './ProviderAccountCard';
+export { ProviderAccountMenu } from './ProviderAccountMenu';
 export { AddAccountDialog } from './AddAccountDialog';

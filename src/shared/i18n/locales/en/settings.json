@@ -736,22 +736,25 @@
       "active": "Active",
       "setDefault": "Set Active",
       "edit": "Edit account",
-      "editButton": "Edit",
+      "useAccount": "Use this account",
+      "inUse": "In use",
       "reauth": "Re-authenticate",
       "delete": "Delete account",
-      "showKey": "Show API key",
-      "hideKey": "Hide API key",
       "oauthAccount": "OAuth account",
       "oauthLinked": "Linked account",
-      "noEndpoint": "No endpoint",
-      "customModels": "{{count}} model(s) configured"
+      "noEndpoint": "No endpoint"
+    },
+    "default": {
+      "title": "Default provider",
+      "label": "Provider",
+      "description": "Agents use this provider's selected account. Other providers are only used when it's unavailable"
     },
     "section": {
       "envDetected": "From env",
       "envCredentialDetected": "Credentials detected from {{envVar}} environment variable",
       "noAccounts": "No accounts configured",
-      "accountCount_one": "{{count}} account",
-      "accountCount_other": "{{count}} accounts",
+      "noAccountsShort": "No accounts",
+      "accountsMenu": "{{provider}} accounts",
       "addOAuth": "Add OAuth account",
       "addClaudeCode": "Add Claude Code account",
       "addCodexSubscription": "Add Codex subscription",
