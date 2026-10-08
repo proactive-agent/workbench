@@ -24,6 +24,8 @@ import { getSecurityProfile } from '../ai/security/security-profile';
 import { createOrGetWorktree } from '../ai/worktree';
 import { findTaskWorktree } from '../worktree-paths';
 import { readSettingsFile } from '../settings-utils';
+import { getDefaultMcpConnectorIds, getUsableCustomServers } from '../../shared/utils/mcp-connectors';
+import type { McpConnectorSettings } from '../../shared/types/settings';
 import type { ProviderAccount } from '../../shared/types/provider-account';
 import { tryLoadPrompt } from '../ai/prompts/prompt-loader';
 
@@ -390,10 +392,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-      },
+      mcpOptions: this.resolveTaskMcpOptions(resolvedSpecDir, metadata?.mcpConnectors),
       toolContext: {
         cwd: projectPath,
         projectDir: projectPath,
@@ -513,10 +512,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-      },
+      mcpOptions: this.resolveTaskMcpOptions(specDir),
       toolContext: {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
@@ -615,10 +611,7 @@ export class AgentManager extends EventEmitter {
       baseURL: resolved.auth?.baseURL,
       configDir: resolved.configDir,
       oauthTokenFilePath: resolved.auth?.oauthTokenFilePath,
-      mcpOptions: {
-        context7Enabled: true,
-        memoryEnabled: !!process.env.GRAPHITI_MCP_URL,
-      },
+      mcpOptions: this.resolveTaskMcpOptions(specDir),
       toolContext: {
         cwd: effectiveCwd,
         projectDir: effectiveProjectDir,
@@ -867,6 +860,35 @@ export class AgentManager extends EventEmitter {
       customScripts: {
         shellScripts: profile.customScripts.shellScripts,
       },
+    };
+  }
+
+  /**
+   * MCP options for a task's session: the connectors chosen for the task (passed in, or from
+   * task_metadata.json), otherwise the Connectors defaults. Each task's worker gets its own
+   * copy, so tasks running at the same time don't affect each other or the defaults.
+   */
+  private resolveTaskMcpOptions(specDir?: string, taskConnectors?: string[]): SerializableSessionConfig['mcpOptions'] {
+    const defaults = (readSettingsFile() as { mcpConnectors?: McpConnectorSettings } | undefined)?.mcpConnectors;
+    let ids = taskConnectors;
+    if (!ids && specDir) {
+      try {
+        const metadataPath = path.join(specDir, 'task_metadata.json');
+        if (existsSync(metadataPath)) {
+          const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8')) as { mcpConnectors?: unknown };
+          if (Array.isArray(metadata.mcpConnectors)) ids = metadata.mcpConnectors as string[];
+        }
+      } catch {
+        // Unreadable metadata: use the defaults
+      }
+    }
+    const enabled = ids ?? getDefaultMcpConnectorIds(defaults);
+    return {
+      context7Enabled: enabled.includes('context7'),
+      memoryEnabled: enabled.includes('memory') && !!process.env.GRAPHITI_MCP_URL,
+      electronMcpEnabled: enabled.includes('electron'),
+      puppeteerMcpEnabled: enabled.includes('puppeteer'),
+      customServers: getUsableCustomServers(defaults).filter((server) => enabled.includes(server.id)),
     };
   }
 

@@ -47,6 +47,8 @@ export interface TaskExecutionOptions {
 }
 
 export interface SpecCreationMetadata {
+  /** MCP connectors enabled for the task (unset: Connectors defaults) */
+  mcpConnectors?: string[];
   requireReviewBeforeCoding?: boolean;
   // Auto profile - phase-based model and thinking configuration
   isAutoProfile?: boolean;

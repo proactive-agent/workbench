@@ -113,6 +113,20 @@ describe('getMcpServerConfig', () => {
 // resolveMcpServers
 // =============================================================================
 
+describe('custom servers', () => {
+  it('builds stdio and HTTP configs for user-added servers', () => {
+    const customServers = [
+      { id: 'cmd', name: 'Cmd', type: 'command' as const, command: 'npx', args: ['-y', 'pkg'] },
+      { id: 'web', name: 'Web', type: 'http' as const, url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer x' } },
+    ];
+    expect(getMcpServerConfig('cmd', { customServers })?.transport).toEqual({ type: 'stdio', command: 'npx', args: ['-y', 'pkg'] });
+    expect(getMcpServerConfig('web', { customServers })?.transport).toEqual({
+      type: 'streamable-http', url: 'https://mcp.example.com/mcp', headers: { Authorization: 'Bearer x' },
+    });
+    expect(getMcpServerConfig('missing', { customServers })).toBeNull();
+  });
+});
+
 describe('resolveMcpServers', () => {
   it('returns configs for all recognized server IDs', () => {
     const configs = resolveMcpServers(['context7', 'electron', 'puppeteer']);

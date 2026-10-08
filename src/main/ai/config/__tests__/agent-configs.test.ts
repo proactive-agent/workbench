@@ -203,6 +203,17 @@ describe('mapMcpServerName', () => {
 });
 
 describe('getRequiredMcpServers', () => {
+  it('gives every MCP-using agent the enabled connectors, including custom servers', () => {
+    const servers = getRequiredMcpServers('spec_researcher', { memoryEnabled: true, enabledCustomServerIds: ['docs'] });
+    expect(servers).toEqual(expect.arrayContaining(['context7', 'memory', 'docs']));
+    expect(getRequiredMcpServers('merge_resolver', { enabledCustomServerIds: ['docs'] })).toEqual([]);
+  });
+
+  it('keeps browser connectors with the QA agents, using the switched-on ones when the project type is unknown', () => {
+    expect(getRequiredMcpServers('qa_reviewer', { electronMcpEnabled: true })).toContain('electron');
+    expect(getRequiredMcpServers('coder', { electronMcpEnabled: true })).not.toContain('electron');
+  });
+
   it('should return base MCP servers for an agent', () => {
     const servers = getRequiredMcpServers('spec_researcher');
     expect(servers).toContain('context7');

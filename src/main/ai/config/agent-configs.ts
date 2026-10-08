@@ -396,6 +396,8 @@ export interface McpServerResolveOptions {
   agentMcpRemove?: string;
   /** Custom MCP server IDs to recognize */
   customServerIds?: string[];
+  /** Custom MCP servers enabled for the task: every agent type that uses MCP gets them */
+  enabledCustomServerIds?: string[];
 }
 
 /**
@@ -417,6 +419,17 @@ export function getRequiredMcpServers(
   const config = getAgentConfig(agentType);
   const servers = [...config.mcpServers];
 
+  // Every agent type that uses MCP gets every connector enabled for the task (browser automation
+  // stays with the QA agents, Auto Claude's server with the build agents)
+  if (servers.length > 0) {
+    for (const id of ['context7', 'memory']) {
+      if (!servers.includes(id)) servers.push(id);
+    }
+    for (const id of options.enabledCustomServerIds ?? []) {
+      if (!servers.includes(id)) servers.push(id);
+    }
+  }
+
   // Filter context7 if explicitly disabled
   if (options.context7Enabled === false) {
     const idx = servers.indexOf('context7');
@@ -434,6 +447,10 @@ export function getRequiredMcpServers(
       } else if (caps.is_web_frontend && !caps.is_electron && options.puppeteerMcpEnabled) {
         servers.push('puppeteer');
       }
+    } else {
+      // Project type unknown: use whichever browser connectors are switched on
+      if (options.electronMcpEnabled) servers.push('electron');
+      if (options.puppeteerMcpEnabled) servers.push('puppeteer');
     }
   }
 

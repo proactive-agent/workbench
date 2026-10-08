@@ -10,6 +10,7 @@
  */
 
 import type { McpServerConfig, McpServerId } from './types';
+import type { CustomMcpServer } from '../../../shared/types/project';
 
 // =============================================================================
 // Server Configuration Definitions
@@ -113,6 +114,8 @@ export interface McpRegistryOptions {
   memoryMcpUrl?: string;
   /** Environment variables for server processes */
   env?: Record<string, string>;
+  /** User-added servers (Settings > Connectors), resolved by id */
+  customServers?: CustomMcpServer[];
 }
 
 /**
@@ -147,9 +150,33 @@ export function getMcpServerConfig(
       return createAutoClaudeServer(specDir);
     }
 
-    default:
-      return null;
+    default: {
+      const custom = options.customServers?.find((server) => server.id === serverId);
+      return custom ? createCustomServer(custom) : null;
+    }
   }
+}
+
+/** MCP server config for a user-added server: stdio command or streamable HTTP */
+function createCustomServer(server: CustomMcpServer): McpServerConfig | null {
+  if (server.type === 'command') {
+    if (!server.command) return null;
+    return {
+      id: server.id,
+      name: server.name,
+      description: server.description,
+      enabledByDefault: true,
+      transport: { type: 'stdio', command: server.command, args: server.args ?? [] },
+    };
+  }
+  if (!server.url) return null;
+  return {
+    id: server.id,
+    name: server.name,
+    description: server.description,
+    enabledByDefault: true,
+    transport: { type: 'streamable-http', url: server.url, headers: server.headers },
+  };
 }
 
 /**
