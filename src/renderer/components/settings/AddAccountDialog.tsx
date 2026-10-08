@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Loader2, Terminal, Plus, X } from 'lucide-react';
+import { Loader2, Plus, X } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -66,14 +66,9 @@ export function AddAccountDialog({
   const [oauthEmail, setOauthEmail] = useState<string | null>(null);
   const [oauthProfileId, setOauthProfileId] = useState<string | null>(null);
   const [oauthError, setOauthError] = useState<string | null>(null);
-  const [showFallbackTerminal, setShowFallbackTerminal] = useState(false);
 
   // Tracks whether the account was auto-saved after OAuth success
   const [accountSaved, setAccountSaved] = useState(false);
-
-  // AuthTerminal fallback state
-  const [fallbackTerminalId, setFallbackTerminalId] = useState<string | null>(null);
-  const [fallbackConfigDir, setFallbackConfigDir] = useState<string | null>(null);
 
   // Reset form when dialog opens/editAccount changes
   useEffect(() => {
@@ -104,9 +99,6 @@ export function AddAccountDialog({
       setOauthProfileId(null);
       setOauthError(null);
       setAccountSaved(false);
-      setShowFallbackTerminal(false);
-      setFallbackTerminalId(null);
-      setFallbackConfigDir(null);
     }
   }, [open, editAccount, provider, billingModelOverride]);
 
@@ -349,59 +341,6 @@ export function AddAccountDialog({
     }
   }, [name, t, toast, isCodexOAuth, isEditing, editAccount, oauthProfileId, provider, addProviderAccount, updateProviderAccount, handleDuplicateEmailError, onOpenChange, refreshUsageData]);
 
-  const handleFallbackTerminal = useCallback(async () => {
-    if (!name.trim()) {
-      toast({
-        variant: 'destructive',
-        title: t('providers.dialog.oauthNameRequired'),
-      });
-      return;
-    }
-
-    try {
-      // Create a profile if we don't have one yet
-      let profileId = oauthProfileId;
-      if (!profileId) {
-        const profileResult = await window.electronAPI.saveClaudeProfile({
-          id: '',
-          name: name.trim(),
-          isDefault: false,
-          isAuthenticated: false,
-          configDir: '',
-          createdAt: new Date(),
-        });
-        if (!profileResult.success || !profileResult.data) {
-          toast({ variant: 'destructive', title: t('providers.dialog.toast.createProfileFailed') });
-          return;
-        }
-        profileId = profileResult.data.id;
-        setOauthProfileId(profileId);
-      }
-
-      // Get terminal config for embedded AuthTerminal
-      const authResult = await window.electronAPI.authenticateClaudeProfile(profileId);
-      if (!authResult.success || !authResult.data) {
-        toast({ variant: 'destructive', title: authResult.error ?? t('providers.dialog.toast.authPrepareFailed') });
-        return;
-      }
-
-      setFallbackTerminalId(authResult.data.terminalId);
-      setFallbackConfigDir(authResult.data.configDir);
-      setShowFallbackTerminal(true);
-    } catch (err) {
-      toast({
-        variant: 'destructive',
-        title: err instanceof Error ? err.message : t('providers.dialog.toast.unexpectedError'),
-      });
-    }
-  }, [name, oauthProfileId, t, toast]);
-
-  const handleFallbackAuthSuccess = useCallback((email?: string) => {
-    setOauthStatus('success');
-    setOauthEmail(email ?? null);
-    setShowFallbackTerminal(false);
-  }, []);
-
   const handleSave = async () => {
     if (!canSave()) return;
 
@@ -505,18 +444,6 @@ export function AddAccountDialog({
               />
             </div>
 
-            {/* Authenticate Button */}
-            {oauthStatus === 'idle' && (
-              <Button
-                size="sm"
-                onClick={handleAuthenticate}
-                className="w-full"
-                disabled={!name.trim()}
-              >
-                {oauthAuthLabel}
-              </Button>
-            )}
-
             {/* Progress States */}
             {oauthStatus === 'authenticating' && (
               <div className="flex items-center gap-2 rounded-xl bg-segment-track px-4 py-3 text-sm">
@@ -539,45 +466,11 @@ export function AddAccountDialog({
             )}
 
             {oauthStatus === 'error' && (
-              <div className="space-y-2">
-                <div className="text-sm text-destructive" role="alert">
-                  <span>{isCodexOAuth ? t('providers.dialog.codexError', { error: oauthError ?? 'Unknown' }) : t('providers.dialog.oauthError', { error: oauthError ?? 'Unknown' })}</span>
-                </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAuthenticate}
-                  className="w-full"
-                  disabled={!name.trim()}
-                >
-                  {oauthAuthLabel}
-                </Button>
+              <div className="text-sm text-destructive" role="alert">
+                <span>{isCodexOAuth ? t('providers.dialog.codexError', { error: oauthError ?? 'Unknown' }) : t('providers.dialog.oauthError', { error: oauthError ?? 'Unknown' })}</span>
               </div>
             )}
 
-            {/* Fallback Terminal Link (Anthropic OAuth only) */}
-            {!isCodexOAuth && !showFallbackTerminal && oauthStatus !== 'success' && !isAuthInProgress && (
-              <button
-                type="button"
-                onClick={handleFallbackTerminal}
-                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-                disabled={!name.trim()}
-              >
-                <Terminal className="h-3 w-3" />
-                {t('providers.dialog.oauthFallback')}
-              </button>
-            )}
-
-            {/* Fallback AuthTerminal (Anthropic OAuth only) */}
-            {!isCodexOAuth && showFallbackTerminal && fallbackTerminalId && fallbackConfigDir && (
-              <FallbackTerminalWrapper
-                terminalId={fallbackTerminalId}
-                configDir={fallbackConfigDir}
-                profileName={name.trim()}
-                onClose={() => setShowFallbackTerminal(false)}
-                onAuthSuccess={handleFallbackAuthSuccess}
-              />
-            )}
           </div>
         ) : (
           <div className="-mx-6 mt-4 min-h-0 space-y-4 overflow-y-auto px-6">
@@ -758,8 +651,20 @@ export function AddAccountDialog({
               <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)} disabled={isSaving || isAuthInProgress}>
                 {t('providers.dialog.cancel')}
               </Button>
+              {/* Subscription accounts: sign in first (re-authenticate is optional when editing) */}
+              {isOAuthOnly && oauthStatus !== 'success' && (
+                <Button
+                  size="sm"
+                  variant={isEditing ? 'outline' : 'default'}
+                  onClick={handleAuthenticate}
+                  disabled={!name.trim() || isAuthInProgress}
+                >
+                  {isAuthInProgress && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
+                  {oauthAuthLabel}
+                </Button>
+              )}
               {(isOAuthOnly ? (isEditing || oauthStatus === 'success') : true) && (
-                <Button size="sm" onClick={handleSave} disabled={!canSave() || isSaving}>
+                <Button size="sm" onClick={handleSave} disabled={!canSave() || isSaving || isAuthInProgress}>
                   {isSaving && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
                   {isEditing ? t('providers.dialog.save') : t('providers.dialog.add')}
                 </Button>
@@ -769,57 +674,5 @@ export function AddAccountDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/**
- * Lazy wrapper for AuthTerminal to avoid importing xterm.js unless needed.
- * AuthTerminal is rendered inside the dialog only when the user clicks "Use Terminal (Fallback)".
- */
-function FallbackTerminalWrapper({
-  terminalId,
-  configDir,
-  profileName,
-  onClose,
-  onAuthSuccess,
-}: {
-  terminalId: string;
-  configDir: string;
-  profileName: string;
-  onClose: () => void;
-  onAuthSuccess: (email?: string) => void;
-}) {
-  const [AuthTerminalComponent, setAuthTerminalComponent] = useState<React.ComponentType<{
-    terminalId: string;
-    configDir: string;
-    profileName: string;
-    onClose: () => void;
-    onAuthSuccess?: (email?: string) => void;
-  }> | null>(null);
-
-  useEffect(() => {
-    import('./AuthTerminal').then((mod) => {
-      setAuthTerminalComponent(() => mod.AuthTerminal);
-    });
-  }, []);
-
-  if (!AuthTerminalComponent) {
-    return (
-      <div className="flex items-center justify-center h-48 rounded-xl border border-border">
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-xl border border-border overflow-hidden" style={{ height: 280 }}>
-      <AuthTerminalComponent
-        terminalId={terminalId}
-        configDir={configDir}
-        profileName={profileName}
-        onClose={onClose}
-        onAuthSuccess={onAuthSuccess}
-      />
-    </div>
   );
 }
