@@ -36,7 +36,6 @@ import { RateLimitIndicator } from './RateLimitIndicator';
 
 import { UpdateBanner } from './UpdateBanner';
 import { UsageIndicator } from './UsageIndicator';
-import { HeaderStatus } from './HeaderStatus';
 import type { Project, GitStatus } from '../../shared/types';
 
 export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'insights';
@@ -278,8 +277,8 @@ export function Sidebar({
             <PanelLeft className="h-[1.125rem] w-[1.125rem]" strokeWidth={1.75} />
           </Button>
           {!isCollapsed && (
-            <span className="electron-no-drag ml-1.5 flex min-w-0 items-center">
-              <HeaderStatus />
+            <span className="ml-1.5 min-w-0 truncate font-['Anthropic_Serif'] text-[1.375rem] font-medium leading-none text-foreground">
+              {t('header.title')}
             </span>
           )}
         </div>
