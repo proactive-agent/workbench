@@ -9,7 +9,6 @@
  *
  * Operations include:
  * - Autonomous tasks (spec creation, task execution)
- * - GitLab MR reviews
  * - Insights analysis
  * - Any other Claude SDK subprocess
  */

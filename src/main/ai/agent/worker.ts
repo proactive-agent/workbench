@@ -386,7 +386,6 @@ async function run(): Promise<void> {
       mcpClients = await createMcpClientsForAgent(session.agentType, {
         context7Enabled: session.mcpOptions?.context7Enabled ?? true,
         memoryEnabled: session.mcpOptions?.memoryEnabled ?? false,
-        linearEnabled: session.mcpOptions?.linearEnabled ?? false,
         electronMcpEnabled: session.mcpOptions?.electronMcpEnabled ?? false,
         puppeteerMcpEnabled: session.mcpOptions?.puppeteerMcpEnabled ?? false,
         projectCapabilities: session.mcpOptions?.projectCapabilities,

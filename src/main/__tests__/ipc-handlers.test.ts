@@ -383,7 +383,7 @@ describe("IPC Handlers", { timeout: 30000 }, () => {
       // Update settings
       const result = await ipcMain.invokeHandler("project:updateSettings", {}, projectId, {
         model: "sonnet",
-        linearSync: true,
+        maxParallelTasks: 5,
       });
 
       expect(result).toEqual({ success: true });

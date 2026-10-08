@@ -30,7 +30,6 @@ function project(id: string, name: string, updatedAt: string): Project {
     settings: {
       model: 'sonnet',
       memoryBackend: 'file',
-      linearSync: false,
       notifications: { onTaskComplete: true, onTaskFailed: true, onReviewNeeded: true, sound: false }
     },
     createdAt: new Date(updatedAt),

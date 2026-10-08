@@ -30,32 +30,6 @@ describe('getMcpServerConfig', () => {
     });
   });
 
-  describe('linear', () => {
-    it('returns null when no API key provided', () => {
-      const config = getMcpServerConfig('linear', {});
-      expect(config).toBeNull();
-    });
-
-    it('returns config when linearApiKey is provided', () => {
-      const config = getMcpServerConfig('linear', { linearApiKey: 'lin_api_123' });
-      expect(config).not.toBeNull();
-      expect(config?.id).toBe('linear');
-    });
-
-    it('returns config when LINEAR_API_KEY is in env option', () => {
-      const config = getMcpServerConfig('linear', { env: { LINEAR_API_KEY: 'lin_env_456' } });
-      expect(config).not.toBeNull();
-    });
-
-    it('injects LINEAR_API_KEY into the transport env', () => {
-      const config = getMcpServerConfig('linear', { linearApiKey: 'lin_inject' });
-      expect(config?.transport.type).toBe('stdio');
-      if (config?.transport.type === 'stdio') {
-        expect(config.transport.env?.LINEAR_API_KEY).toBe('lin_inject');
-      }
-    });
-  });
-
   describe('memory', () => {
     it('returns null when no memory URL provided', () => {
       const config = getMcpServerConfig('memory', {});
@@ -146,15 +120,10 @@ describe('resolveMcpServers', () => {
     expect(configs.map((c) => c.id)).toEqual(['context7', 'electron', 'puppeteer']);
   });
 
-  it('filters out servers that cannot be configured (e.g. linear without API key)', () => {
-    const configs = resolveMcpServers(['context7', 'linear'], {});
+  it('filters out servers that cannot be configured (e.g. memory without a URL)', () => {
+    const configs = resolveMcpServers(['context7', 'memory'], {});
     expect(configs).toHaveLength(1);
     expect(configs[0].id).toBe('context7');
-  });
-
-  it('includes linear when API key option is provided', () => {
-    const configs = resolveMcpServers(['context7', 'linear'], { linearApiKey: 'lin_test' });
-    expect(configs).toHaveLength(2);
   });
 
   it('returns empty array for empty input', () => {

@@ -352,39 +352,6 @@
       "title": "Claude Auth",
       "description": "Claude authentication"
     },
-    "linear": {
-      "title": "Linear",
-      "description": "Linear integration",
-      "integrationTitle": "Linear Integration",
-      "integrationDescription": "Connect to Linear for issue tracking and task import",
-      "syncDescription": "Sync with Linear for issue tracking"
-    },
-    "github": {
-      "title": "GitHub",
-      "description": "GitHub issues sync",
-      "integrationTitle": "GitHub Integration",
-      "integrationDescription": "Connect to GitHub for issue tracking",
-      "syncDescription": "Sync with GitHub Issues",
-      "defaultBranch": {
-        "label": "Default branch",
-        "description": "Base branch for creating task worktrees",
-        "autoDetect": "Auto-detect (main/master)",
-        "searchPlaceholder": "Search branches...",
-        "noBranchesFound": "No branches found",
-        "selectedBranchHelp": "All new tasks will branch from {{branch}}"
-      },
-      "pushNewBranches": {
-        "label": "Push new branches automatically",
-        "description": "Push new task and worktree branches to GitHub and set upstream tracking automatically"
-      }
-    },
-    "gitlab": {
-      "title": "GitLab",
-      "description": "GitLab issues sync",
-      "integrationTitle": "GitLab Integration",
-      "integrationDescription": "Connect to GitLab for issue tracking",
-      "syncDescription": "Sync with GitLab Issues"
-    },
     "memory": {
       "title": "Memory",
       "description": "Graphiti memory backend",
@@ -923,11 +890,6 @@
         "description": "Knowledge graph for cross-session context",
         "notConfigured": "Requires memory configuration (see Memory settings)"
       },
-      "linear": {
-        "name": "Linear",
-        "description": "Project management integration",
-        "notConfigured": "Requires Linear integration (see Linear settings)"
-      },
       "electron": {
         "name": "Electron",
         "description": "Desktop app automation via Chrome DevTools"
@@ -1216,52 +1178,19 @@
       "initializing": "Initializing...",
       "checkingStatus": "Checking...",
       "agentTitle": "Agent",
-      "model": "Model",
-      "modelDescription": "Default model for this project's agents",
-      "notificationsTitle": "Notifications",
-      "notifications": {
-        "onTaskComplete": "Task completed",
-        "onTaskCompleteDescription": "Notify when a task finishes successfully",
-        "onTaskFailed": "Task failed",
-        "onTaskFailedDescription": "Notify when a task fails",
-        "onReviewNeeded": "Review needed",
-        "onReviewNeededDescription": "Notify when a task is ready for your review",
-        "sound": "Sound",
-        "soundDescription": "Play a sound with notifications"
+      "branches": {
+        "title": "Branches",
+        "defaultBranch": "Default branch",
+        "defaultBranchDescription": "Base branch for task and terminal worktrees",
+        "selectedBranchHelp": "All new tasks will branch from {{branch}}",
+        "autoDetect": "Auto-detect (main/master)",
+        "searchPlaceholder": "Search branches...",
+        "noBranchesFound": "No branches found",
+        "refresh": "Refresh branches",
+        "loadFailed": "Failed to load branches",
+        "pushNewBranches": "Push new branches automatically",
+        "pushNewBranchesDescription": "Push new task and worktree branches to origin and set upstream tracking"
       }
-    },
-    "github": {
-      "enableIssues": "Sync GitHub issues",
-      "enableIssuesDescription": "Sync issues from GitHub and create tasks automatically",
-      "autoSync": "Sync on project load",
-      "autoSyncDescription": "Automatically fetch issues when the project loads",
-      "connectionTitle": "Connection",
-      "connectedViaCli": "Connected via GitHub CLI",
-      "authenticatedAs": "Authenticated as {{username}}",
-      "useDifferentToken": "Use different token",
-      "authentication": "GitHub authentication",
-      "useManualToken": "Use manual token",
-      "oauth": "Sign in with GitHub CLI",
-      "oauthDescription": "Authenticate with OAuth instead of a personal access token",
-      "useOAuth": "Use OAuth",
-      "token": "Personal access token",
-      "tokenDescription": "Create a token with the repo scope in",
-      "tokenLink": "GitHub settings",
-      "repository": "Repository",
-      "repositoryFormat": "Format: owner/repo (for example facebook/react)",
-      "refreshRepositories": "Refresh repositories",
-      "enterManually": "Enter manually",
-      "loadingRepositories": "Loading repositories...",
-      "selectRepository": "Select a repository...",
-      "searchRepositories": "Search repositories...",
-      "noMatchingRepositories": "No matching repositories",
-      "noRepositories": "No repositories found",
-      "connectionStatus": "Connection status",
-      "checking": "Checking...",
-      "connectedTo": "Connected to {{repo}}",
-      "notConnected": "Not connected",
-      "branchesTitle": "Branches",
-      "refreshBranches": "Refresh branches"
     },
     "memory": {
       "enable": "Enable memory",

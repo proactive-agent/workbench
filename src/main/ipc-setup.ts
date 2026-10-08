@@ -24,7 +24,6 @@ import { setupIpcHandlers as setupModularHandlers } from './ipc-handlers';
  * - file-handlers.ts: File system operations
  * - context-handlers.ts: Project context and memory
  * - env-handlers.ts: Environment configuration
- * - linear-handlers.ts: Linear integration
  * - github-handlers.ts: GitHub integration
  * - autobuild-source-handlers.ts: Source updates
  * - insights-handlers.ts: AI insights chat

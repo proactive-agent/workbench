@@ -18,7 +18,6 @@ import {
   ELECTRON_TOOLS,
   MEMORY_MCP_TOOLS,
   GRAPHITI_MCP_TOOLS,
-  LINEAR_TOOLS,
   PUPPETEER_TOOLS,
   getAgentConfig,
   getDefaultThinkingLevel,
@@ -35,7 +34,6 @@ export {
   ELECTRON_TOOLS,
   MEMORY_MCP_TOOLS,
   GRAPHITI_MCP_TOOLS,
-  LINEAR_TOOLS,
   PUPPETEER_TOOLS,
   getAgentConfig,
   getDefaultThinkingLevel,
@@ -58,7 +56,6 @@ export const TOOL_UPDATE_QA_STATUS = 'mcp__auto-claude__update_qa_status';
 
 export interface McpConfig {
   CONTEXT7_ENABLED?: string;
-  LINEAR_MCP_ENABLED?: string;
   ELECTRON_MCP_ENABLED?: string;
   PUPPETEER_MCP_ENABLED?: string;
   CUSTOM_MCP_SERVERS?: Array<{ id: string }>;
@@ -134,7 +131,6 @@ export class ToolRegistry {
  *
  * Handles dynamic server selection:
  * - "browser" → electron (if is_electron) or puppeteer (if is_web_frontend)
- * - "linear" → only if in mcpServersOptional AND linearEnabled is true
  * - "memory" → only if memoryEnabled is true
  * - Applies per-agent ADD/REMOVE overrides from mcpConfig
  */
@@ -142,7 +138,6 @@ export function getRequiredMcpServers(
   agentType: AgentType,
   options: {
     projectCapabilities?: ProjectCapabilities;
-    linearEnabled?: boolean;
     memoryEnabled?: boolean;
     /** @deprecated Use memoryEnabled instead */
     graphitiEnabled?: boolean;
@@ -151,7 +146,6 @@ export function getRequiredMcpServers(
 ): string[] {
   const {
     projectCapabilities,
-    linearEnabled = false,
     memoryEnabled = options.graphitiEnabled ?? false,
     mcpConfig = {},
   } = options;
@@ -164,15 +158,6 @@ export function getRequiredMcpServers(
     const enabled = mcpConfig.CONTEXT7_ENABLED ?? 'true';
     if (String(enabled).toLowerCase() === 'false') {
       servers = servers.filter((s) => s !== 'context7');
-    }
-  }
-
-  // Handle optional servers (e.g., Linear)
-  const optional = config.mcpServersOptional ?? [];
-  if (optional.includes('linear') && linearEnabled) {
-    const linearMcpEnabled = mcpConfig.LINEAR_MCP_ENABLED ?? 'true';
-    if (String(linearMcpEnabled).toLowerCase() !== 'false') {
-      servers.push('linear');
     }
   }
 

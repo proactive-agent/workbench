@@ -33,10 +33,10 @@ export function FeatureModelSettings({ provider }: FeatureModelSettingsProps) {
 
   // For Ollama, default to empty strings — Anthropic model shorthands are meaningless
   const providerFeatureDefaults: FeatureModelConfig = provider === 'ollama'
-    ? { insights: '', githubPrs: '', utility: '', naming: '' }
+    ? { insights: '', utility: '', naming: '' }
     : DEFAULT_FEATURE_MODELS;
   const providerThinkingDefaults = provider === 'ollama'
-    ? { insights: 'low' as ThinkingLevel, githubPrs: 'low' as ThinkingLevel, utility: 'low' as ThinkingLevel, naming: 'low' as ThinkingLevel }
+    ? { insights: 'low' as ThinkingLevel, utility: 'low' as ThinkingLevel, naming: 'low' as ThinkingLevel }
     : DEFAULT_FEATURE_THINKING;
 
   const featureModels: FeatureModelConfig =

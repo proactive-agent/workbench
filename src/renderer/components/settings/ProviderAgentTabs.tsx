@@ -34,7 +34,7 @@ export function ProviderAgentTabs() {
     // Check feature models — all must be set for the provider to be fully configured
     const featureModels = ollamaConfig.featureModels;
     if (!featureModels) return true;
-    if (!featureModels.insights || !featureModels.githubPrs || !featureModels.utility) return true;
+    if (!featureModels.insights || !featureModels.utility) return true;
     return false;
   }, [settings.providerAgentConfig]);
 

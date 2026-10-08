@@ -217,14 +217,6 @@ describe('AgentTools - Agent Profile Resolution', () => {
       expect(insightsAgent.model).toBe('sonnet');
       expect(insightsAgent.thinking).toBe('medium');
 
-      // GitHub PRs feature agent (defaults to opus)
-      const githubPrsAgent = resolveAgentSettings(
-        { type: 'feature', feature: 'githubPrs' },
-        resolvedSettings
-      );
-      expect(githubPrsAgent.model).toBe('opus');
-      expect(githubPrsAgent.thinking).toBe('medium');
-
       // Utility feature agent (defaults to haiku)
       const utilityAgent = resolveAgentSettings(
         { type: 'feature', feature: 'utility' },

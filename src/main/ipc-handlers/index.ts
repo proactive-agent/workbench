@@ -18,9 +18,6 @@ import { registerSettingsHandlers } from './settings-handlers';
 import { registerFileHandlers } from './file-handlers';
 import { registerContextHandlers } from './context-handlers';
 import { registerEnvHandlers } from './env-handlers';
-import { registerLinearHandlers } from './linear-handlers';
-import { registerGithubHandlers } from './github-handlers';
-import { registerGitlabHandlers } from './gitlab-handlers';
 import { registerInsightsHandlers } from './insights-handlers';
 import { registerMemoryHandlers } from './memory-handlers';
 import { registerAppUpdateHandlers } from './app-update-handlers';
@@ -78,15 +75,6 @@ export function setupIpcHandlers(
   // Environment configuration handlers
   registerEnvHandlers(getMainWindow);
 
-  // Linear integration handlers
-  registerLinearHandlers(agentManager, getMainWindow);
-
-  // GitHub integration handlers
-  registerGithubHandlers();
-
-  // GitLab integration handlers
-  registerGitlabHandlers(agentManager, getMainWindow);
-
   // Insights handlers
   registerInsightsHandlers(getMainWindow);
 
@@ -125,9 +113,6 @@ export {
   registerFileHandlers,
   registerContextHandlers,
   registerEnvHandlers,
-  registerLinearHandlers,
-  registerGithubHandlers,
-  registerGitlabHandlers,
   registerInsightsHandlers,
   registerMemoryHandlers,
   registerAppUpdateHandlers,

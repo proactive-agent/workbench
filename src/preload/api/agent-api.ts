@@ -3,15 +3,10 @@
  *
  * This file serves as the main entry point for agent APIs, combining:
  * - Insights operations
- * - Linear integration
- * - GitHub integration
  * - Shell operations
  */
 
 import { createInsightsAPI, InsightsAPI } from './modules/insights-api';
-import { createLinearAPI, LinearAPI } from './modules/linear-api';
-import { createGitHubAPI, GitHubAPI } from './modules/github-api';
-import { createGitLabAPI, GitLabAPI } from './modules/gitlab-api';
 import { createShellAPI, ShellAPI } from './modules/shell-api';
 
 /**
@@ -20,9 +15,6 @@ import { createShellAPI, ShellAPI } from './modules/shell-api';
  */
 export interface AgentAPI extends
   InsightsAPI,
-  LinearAPI,
-  GitHubAPI,
-  GitLabAPI,
   ShellAPI {}
 
 /**
@@ -32,23 +24,11 @@ export interface AgentAPI extends
  */
 export const createAgentAPI = (): AgentAPI => {
   const insightsAPI = createInsightsAPI();
-  const linearAPI = createLinearAPI();
-  const githubAPI = createGitHubAPI();
-  const gitlabAPI = createGitLabAPI();
   const shellAPI = createShellAPI();
 
   return {
     // Insights API
     ...insightsAPI,
-
-    // Linear Integration API
-    ...linearAPI,
-
-    // GitHub Integration API
-    ...githubAPI,
-
-    // GitLab Integration API
-    ...gitlabAPI,
 
     // Shell Operations API
     ...shellAPI
@@ -58,8 +38,5 @@ export const createAgentAPI = (): AgentAPI => {
 // Re-export individual API interfaces for consumers who need them
 export type {
   InsightsAPI,
-  LinearAPI,
-  GitHubAPI,
-  GitLabAPI,
   ShellAPI
 };

@@ -180,25 +180,6 @@ const browserMockAPI: ElectronAPI = {
     success: true
   }),
 
-  // GitHub API
-  github: {
-    getGitHubRepositories: async () => ({ success: true, data: [] }),
-    checkGitHubConnection: async () => ({ success: true, data: { connected: false, repoFullName: undefined, error: undefined } }),
-    checkGitHubCli: async () => ({ success: true, data: { installed: false } }),
-    checkGitHubAuth: async () => ({ success: true, data: { authenticated: false } }),
-    startGitHubAuth: async () => ({ success: true, data: { success: false } }),
-    getGitHubToken: async () => ({ success: true, data: { token: '' } }),
-    getGitHubUser: async () => ({ success: true, data: { username: '' } }),
-    listGitHubUserRepos: async () => ({ success: true, data: { repos: [] } }),
-    detectGitHubRepo: async () => ({ success: true, data: '' }),
-    getGitHubBranches: async () => ({ success: true, data: [] }),
-    createGitHubRepo: async () => ({ success: true, data: { fullName: '', url: '' } }),
-    addGitRemote: async () => ({ success: true, data: { remoteUrl: '' } }),
-    listGitHubOrgs: async () => ({ success: true, data: { orgs: [] } }),
-    onGitHubAuthDeviceCode: () => () => {},
-    onGitHubAuthChanged: () => () => {}
-  },
-
   // Queue Routing API (rate limit recovery)
   queue: {
     getRunningTasksByProfile: async () => ({ success: true, data: { byProfile: {}, totalRunning: 0 } }),

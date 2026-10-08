@@ -10,7 +10,7 @@
  * Tool lists are organized by category:
  * - Base tools: Core file operations (Read, Write, Edit, etc.)
  * - Web tools: Documentation and research (WebFetch, WebSearch)
- * - MCP tools: External integrations (Context7, Linear, Memory, etc.)
+ * - MCP tools: External integrations (Context7, Memory, etc.)
  * - Auto-Claude tools: Custom build management tools
  */
 
@@ -54,26 +54,6 @@ const TOOL_UPDATE_QA_STATUS = 'mcp__auto-claude__update_qa_status';
 export const CONTEXT7_TOOLS = [
   'mcp__context7__resolve-library-id',
   'mcp__context7__query-docs',
-] as const;
-
-/** Linear MCP tools for project management (when LINEAR_API_KEY is set) */
-export const LINEAR_TOOLS = [
-  'mcp__linear-server__list_teams',
-  'mcp__linear-server__get_team',
-  'mcp__linear-server__list_projects',
-  'mcp__linear-server__get_project',
-  'mcp__linear-server__create_project',
-  'mcp__linear-server__update_project',
-  'mcp__linear-server__list_issues',
-  'mcp__linear-server__get_issue',
-  'mcp__linear-server__create_issue',
-  'mcp__linear-server__update_issue',
-  'mcp__linear-server__list_comments',
-  'mcp__linear-server__create_comment',
-  'mcp__linear-server__list_issue_statuses',
-  'mcp__linear-server__list_issue_labels',
-  'mcp__linear-server__list_users',
-  'mcp__linear-server__get_user',
 ] as const;
 
 /** Memory MCP tools for knowledge graph memory (when GRAPHITI_MCP_URL is set) */
@@ -144,8 +124,6 @@ export interface AgentConfig {
   tools: readonly string[];
   /** MCP servers to start for this agent */
   mcpServers: readonly string[];
-  /** Optional MCP servers (conditionally enabled) */
-  mcpServersOptional?: readonly string[];
   /** Auto-Claude MCP tools this agent can use */
   autoClaudeTools: readonly string[];
   /** Default thinking level for this agent */
@@ -233,7 +211,6 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   build_orchestrator: {
     tools: [...ALL_BUILTIN_TOOLS, 'SpawnSubagent'],
     mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
       TOOL_GET_SESSION_CONTEXT,
@@ -245,12 +222,10 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
 
   // ═══════════════════════════════════════════════════════════════════════
   // BUILD PHASES (Full tools + memory)
-  // Note: "linear" is conditional on project setting "update_linear_with_tasks"
   // ═══════════════════════════════════════════════════════════════════════
   planner: {
     tools: [...ALL_BUILTIN_TOOLS],
     mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
       TOOL_GET_SESSION_CONTEXT,
@@ -261,7 +236,6 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   coder: {
     tools: [...ALL_BUILTIN_TOOLS],
     mcpServers: ['context7', 'memory', 'auto-claude'],
-    mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,
       TOOL_GET_BUILD_PROGRESS,
@@ -278,7 +252,6 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   qa_reviewer: {
     tools: [...ALL_BUILTIN_TOOLS],
     mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
-    mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_GET_BUILD_PROGRESS,
       TOOL_UPDATE_QA_STATUS,
@@ -289,7 +262,6 @@ export const AGENT_CONFIGS: Record<AgentType, AgentConfig> = {
   qa_fixer: {
     tools: [...ALL_BUILTIN_TOOLS],
     mcpServers: ['context7', 'memory', 'auto-claude', 'browser'],
-    mcpServersOptional: ['linear'],
     autoClaudeTools: [
       TOOL_UPDATE_SUBTASK_STATUS,
       TOOL_GET_BUILD_PROGRESS,
@@ -377,7 +349,6 @@ const MCP_SERVER_NAME_MAP: Record<string, string> = {
   'graphiti-memory': 'memory',
   graphiti: 'memory',
   memory: 'memory',
-  linear: 'linear',
   electron: 'electron',
   puppeteer: 'puppeteer',
   'auto-claude': 'auto-claude',
@@ -411,8 +382,6 @@ export interface McpServerResolveOptions {
     is_electron?: boolean;
     is_web_frontend?: boolean;
   };
-  /** Whether Linear integration is enabled for this project */
-  linearEnabled?: boolean;
   /** Whether memory MCP is available (GRAPHITI_MCP_URL is set) */
   memoryEnabled?: boolean;
   /** Whether Electron MCP is enabled */
@@ -434,7 +403,6 @@ export interface McpServerResolveOptions {
  *
  * Handles dynamic server selection:
  * - "browser" → electron (if is_electron) or puppeteer (if is_web_frontend)
- * - "linear" → only if in mcpServersOptional AND linearEnabled is true
  * - "memory" → only if memoryEnabled is true
  * - Applies per-agent ADD/REMOVE overrides
  *
@@ -453,12 +421,6 @@ export function getRequiredMcpServers(
   if (options.context7Enabled === false) {
     const idx = servers.indexOf('context7');
     if (idx !== -1) servers.splice(idx, 1);
-  }
-
-  // Handle optional servers (e.g., Linear)
-  const optional = config.mcpServersOptional ?? [];
-  if (optional.includes('linear') && options.linearEnabled) {
-    servers.push('linear');
   }
 
   // Handle dynamic "browser" → electron/puppeteer

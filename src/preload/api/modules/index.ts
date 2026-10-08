@@ -6,7 +6,5 @@
 
 export * from './ipc-utils';
 export * from './insights-api';
-export * from './linear-api';
-export * from './github-api';
 export * from './shell-api';
 export * from './debug-api';

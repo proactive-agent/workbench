@@ -18,7 +18,6 @@
     "saveEditAriaLabel": "Save",
     "cancelEditAriaLabel": "Cancel",
     "moreOptionsAriaLabel": "More options",
-    "openOnGitLabAriaLabel": "Open on GitLab (opens in new window)",
     "toggleShowArchivedAriaLabel": "Toggle show archived tasks",
     "clearSelectionAriaLabel": "Clear selection",
     "selectAllAriaLabel": "Select all",

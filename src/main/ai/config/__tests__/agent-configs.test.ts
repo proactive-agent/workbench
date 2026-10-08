@@ -7,7 +7,6 @@ import {
   getRequiredMcpServers,
   mapMcpServerName,
   CONTEXT7_TOOLS,
-  LINEAR_TOOLS,
   MEMORY_MCP_TOOLS, GRAPHITI_MCP_TOOLS,
   PUPPETEER_TOOLS,
   ELECTRON_TOOLS,
@@ -82,7 +81,6 @@ describe('AGENT_CONFIGS', () => {
     expect(config.mcpServers).toContain('context7');
     expect(config.mcpServers).toContain('memory');
     expect(config.mcpServers).toContain('auto-claude');
-    expect(config.mcpServersOptional).toContain('linear');
     expect(config.thinkingDefault).toBe('high');
   });
 
@@ -130,10 +128,6 @@ describe('MCP tool arrays', () => {
   it('CONTEXT7_TOOLS should have 2 tools', () => {
     expect(CONTEXT7_TOOLS).toHaveLength(2);
     expect(CONTEXT7_TOOLS).toContain('mcp__context7__resolve-library-id');
-  });
-
-  it('LINEAR_TOOLS should have 16 tools', () => {
-    expect(LINEAR_TOOLS).toHaveLength(16);
   });
 
   it('MEMORY_MCP_TOOLS should have 5 tools', () => {
@@ -185,7 +179,6 @@ describe('mapMcpServerName', () => {
     expect(mapMcpServerName('context7')).toBe('context7');
     expect(mapMcpServerName('graphiti')).toBe('memory');
     expect(mapMcpServerName('graphiti-memory')).toBe('memory');
-    expect(mapMcpServerName('linear')).toBe('linear');
     expect(mapMcpServerName('auto-claude')).toBe('auto-claude');
   });
 
@@ -228,22 +221,6 @@ describe('getRequiredMcpServers', () => {
   it('should include memory when enabled', () => {
     const servers = getRequiredMcpServers('coder', { memoryEnabled: true });
     expect(servers).toContain('memory');
-  });
-
-  it('should add linear when optional and enabled', () => {
-    const servers = getRequiredMcpServers('planner', {
-      linearEnabled: true,
-      memoryEnabled: true,
-    });
-    expect(servers).toContain('linear');
-  });
-
-  it('should not add linear when not enabled', () => {
-    const servers = getRequiredMcpServers('planner', {
-      linearEnabled: false,
-      memoryEnabled: true,
-    });
-    expect(servers).not.toContain('linear');
   });
 
   it('should resolve browser to electron for electron projects', () => {

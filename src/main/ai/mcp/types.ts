@@ -45,7 +45,6 @@ export type McpTransportConfig = StdioTransportConfig | StreamableHttpTransportC
 /** Internal MCP server identifier */
 export type McpServerId =
   | 'context7'
-  | 'linear'
   | 'memory'
   | 'electron'
   | 'puppeteer'

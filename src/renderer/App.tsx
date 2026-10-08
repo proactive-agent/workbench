@@ -21,8 +21,6 @@ import { AppSettingsDialog, type AppSection } from './components/settings/AppSet
 import type { ProjectSettingsSection } from './components/settings/ProjectSettingsContent';
 import { TerminalGrid } from './components/TerminalGrid';
 import { Insights } from './components/Insights';
-import { GitLabIssues } from './components/GitLabIssues';
-import { GitLabMergeRequests } from './components/gitlab-merge-requests';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ProjectsPage } from './components/ProjectsPage';
 import { RateLimitModal } from './components/RateLimitModal';
@@ -32,7 +30,6 @@ import { VersionWarningModal } from './components/VersionWarningModal';
 import { OnboardingWizard } from './components/onboarding';
 import { AppUpdateNotification } from './components/AppUpdateNotification';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
-import { GitHubSetupModal } from './components/GitHubSetupModal';
 import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useSettingsStore, loadSettings, loadProfiles, saveSettings } from './stores/settings-store';
@@ -120,8 +117,6 @@ export function App() {
   const [showAddProjectModal, setShowAddProjectModal] = useState(false);
 
   // GitHub setup state (shown after Auto Claude init)
-  const [showGitHubSetup, setShowGitHubSetup] = useState(false);
-  const [gitHubSetupProject, setGitHubSetupProject] = useState<Project | null>(null);
 
   // Remove project confirmation state
   const [showRemoveProjectDialog, setShowRemoveProjectDialog] = useState(false);
@@ -637,9 +632,6 @@ export function App() {
 
       if (result?.success) {
         console.warn('[InitDialog] Initialization successful, closing dialog');
-        // Get the updated project from store
-        const updatedProject = useProjectStore.getState().projects.find(p => p.id === projectId);
-        console.warn('[InitDialog] Updated project:', updatedProject);
 
         // Mark as successful to prevent onOpenChange from treating this as a skip
         setInitSuccess(true);
@@ -648,12 +640,6 @@ export function App() {
         // Now close the dialog
         setShowInitDialog(false);
         setPendingProject(null);
-
-        // Show GitHub setup modal
-        if (updatedProject) {
-          setGitHubSetupProject(updatedProject);
-          setShowGitHubSetup(true);
-        }
       } else {
         // Initialization failed - show error but keep dialog open
         console.warn('[InitDialog] Initialization failed, showing error');
@@ -670,49 +656,6 @@ export function App() {
     }
   };
 
-  const handleGitHubSetupComplete = async (settings: {
-    githubToken: string;
-    githubRepo: string;
-    mainBranch: string;
-    githubAuthMethod?: 'oauth' | 'pat';
-  }) => {
-    if (!gitHubSetupProject) return;
-
-    try {
-      // NOTE: settings.githubToken is a GitHub access token (from gh CLI),
-      // NOT a Claude Code OAuth token. They are different things:
-      // - GitHub token: for GitHub API access (repo operations)
-      // - Claude token: for Claude AI access (agents, insights, etc.)
-      // The user needs to separately authenticate with Claude using 'claude setup-token'
-
-      // Update project env config with GitHub settings
-      await window.electronAPI.updateProjectEnv(gitHubSetupProject.id, {
-        githubEnabled: true,
-        githubToken: settings.githubToken, // GitHub token for repo access
-        githubRepo: settings.githubRepo,
-        githubAuthMethod: settings.githubAuthMethod // Track how user authenticated
-      });
-
-      // Update project settings with mainBranch
-      await window.electronAPI.updateProjectSettings(gitHubSetupProject.id, {
-        mainBranch: settings.mainBranch
-      });
-
-      // Refresh projects to get updated data
-      await loadProjects();
-    } catch (error) {
-      console.error('Failed to save GitHub settings:', error);
-    }
-
-    setShowGitHubSetup(false);
-    setGitHubSetupProject(null);
-  };
-
-  const handleGitHubSetupSkip = () => {
-    setShowGitHubSetup(false);
-    setGitHubSetupProject(null);
-  };
-
   const handleSkipInit = () => {
     console.warn('[InitDialog] User skipped initialization');
     if (pendingProject) {
@@ -722,16 +665,6 @@ export function App() {
     setPendingProject(null);
     setInitError(null); // Clear any error when skipping
     setInitSuccess(false); // Reset success flag
-  };
-
-  const handleGoToTask = (taskId: string) => {
-    // Switch to kanban view
-    setActiveView('kanban');
-    // Find and select the task (match by id or specId)
-    const task = tasks.find((t) => t.id === taskId || t.specId === taskId);
-    if (task) {
-      setSelectedTask(task);
-    }
   };
 
   return (
@@ -785,24 +718,6 @@ export function App() {
                 </div>
                 {activeView === 'insights' && (activeProjectId || selectedProjectId) && (
                   <Insights projectId={activeProjectId || selectedProjectId!} />
-                )}
-                {activeView === 'gitlab-issues' && (activeProjectId || selectedProjectId) && (
-                  <GitLabIssues
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                    onNavigateToTask={handleGoToTask}
-                  />
-                )}
-                {activeView === 'gitlab-merge-requests' && (activeProjectId || selectedProjectId) && (
-                  <GitLabMergeRequests
-                    projectId={activeProjectId || selectedProjectId!}
-                    onOpenSettings={() => {
-                      setSettingsInitialProjectSection('gitlab');
-                      setIsSettingsDialogOpen(true);
-                    }}
-                  />
                 )}
               </>
             ) : (
@@ -923,17 +838,6 @@ export function App() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* GitHub Setup Modal - shows after Auto Claude init to configure GitHub */}
-        {gitHubSetupProject && (
-          <GitHubSetupModal
-            open={showGitHubSetup}
-            onOpenChange={setShowGitHubSetup}
-            project={gitHubSetupProject}
-            onComplete={handleGitHubSetupComplete}
-            onSkip={handleGitHubSetupSkip}
-          />
-        )}
 
         {/* Remove Project Confirmation Dialog */}
         <Dialog open={showRemoveProjectDialog} onOpenChange={(open) => {

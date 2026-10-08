@@ -15,7 +15,6 @@ function createTestProject(overrides: Partial<Project> = {}): Project {
   const defaultSettings: ProjectSettings = {
     model: 'claude-3-opus',
     memoryBackend: 'memory',
-    linearSync: false,
     notifications: {
       onTaskComplete: true,
       onTaskFailed: true,

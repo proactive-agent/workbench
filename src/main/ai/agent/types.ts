@@ -65,7 +65,6 @@ export interface SerializableSessionConfig {
   mcpOptions?: {
     context7Enabled?: boolean;
     memoryEnabled?: boolean;
-    linearEnabled?: boolean;
     electronMcpEnabled?: boolean;
     puppeteerMcpEnabled?: boolean;
     projectCapabilities?: {

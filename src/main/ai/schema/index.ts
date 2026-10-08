@@ -46,13 +46,6 @@ export {
 } from './structured-output';
 
 export {
-  ReviewFindingSchema,
-  MRReviewResultSchema,
-  type ValidatedReviewFinding,
-  type ValidatedMRReviewResult,
-} from './pr-review';
-
-export {
   ExtractedInsightsSchema,
   TaskSuggestionSchema,
   type ValidatedExtractedInsights,

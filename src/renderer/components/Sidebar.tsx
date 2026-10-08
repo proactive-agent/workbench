@@ -1,10 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Plus,
   RefreshCw,
-  GitlabIcon,
-  GitMerge,
   PanelLeft
 } from 'lucide-react';
 import { AgentsIcon, InsightsIcon, KanbanIcon, ProjectIcon, SettingsIcon as Settings } from './icons/app-icons';
@@ -31,11 +29,7 @@ import {
   initializeProject
 } from '../stores/project-store';
 import { useSettingsStore, saveSettings } from '../stores/settings-store';
-import {
-  useProjectEnvStore,
-  loadProjectEnvConfig,
-  clearProjectEnvConfig
-} from '../stores/project-env-store';
+import { loadProjectEnvConfig, clearProjectEnvConfig } from '../stores/project-env-store';
 import { AddProjectModal } from './AddProjectModal';
 import { GitSetupModal } from './GitSetupModal';
 import { RateLimitIndicator } from './RateLimitIndicator';
@@ -45,7 +39,7 @@ import { UsageIndicator } from './UsageIndicator';
 import { HeaderStatus } from './HeaderStatus';
 import type { Project, GitStatus } from '../../shared/types';
 
-export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'gitlab-issues' | 'gitlab-merge-requests' | 'insights';
+export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'insights';
 
 interface SidebarProps {
   onSettingsClick: () => void;
@@ -60,17 +54,11 @@ interface NavItem {
   icon: React.ElementType;
 }
 
-// Base nav items always shown
-const baseNavItems: NavItem[] = [
+// Main nav items
+const navItems: NavItem[] = [
   { id: 'kanban', labelKey: 'navigation:items.kanban', icon: KanbanIcon },
   { id: 'terminals', labelKey: 'navigation:items.terminals', icon: AgentsIcon },
   { id: 'insights', labelKey: 'navigation:items.insights', icon: InsightsIcon },
-];
-
-// GitLab nav items shown when GitLab is enabled
-const gitlabNavItems: NavItem[] = [
-  { id: 'gitlab-issues', labelKey: 'navigation:items.gitlabIssues', icon: GitlabIcon },
-  { id: 'gitlab-merge-requests', labelKey: 'navigation:items.gitlabMRs', icon: GitMerge }
 ];
 
 
@@ -104,22 +92,8 @@ export function Sidebar({
     saveSettings({ sidebarCollapsed: !isCollapsed });
   };
 
-  // Subscribe to project-env-store for reactive GitLab tab visibility
-  const gitlabEnabled = useProjectEnvStore((state) => state.envConfig?.gitlabEnabled ?? false);
-
   // Track the last loaded project ID to avoid redundant loads
   const lastLoadedProjectIdRef = useRef<string | null>(null);
-
-  // Compute visible nav items based on GitLab enabled state from store
-  const visibleNavItems = useMemo(() => {
-    const items = [...baseNavItems];
-
-    if (gitlabEnabled) {
-      items.push(...gitlabNavItems);
-    }
-
-    return items;
-  }, [gitlabEnabled]);
 
   // Load envConfig when project changes to ensure store is populated
   useEffect(() => {
@@ -354,7 +328,7 @@ export function Sidebar({
               </h3>
             )}
             <nav className="flex flex-col gap-px">
-              {visibleNavItems.map(renderNavItem)}
+              {navItems.map(renderNavItem)}
             </nav>
           </div>
         </ScrollArea>

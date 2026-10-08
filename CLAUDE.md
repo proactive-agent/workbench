@@ -17,8 +17,7 @@ resolves issues → User reviews and merges.
 - **Kanban Board** — Visual task management from planning through completion
 - **Agent Terminals** — Up to 12 parallel AI-powered terminals with task context injection
 - **Insights** — AI chat interface for exploring and understanding a codebase
-- **GitHub Integration** — Repository connection and pull request creation from a task's worktree
-- **GitLab Integration** — Import issues, AI-powered investigation, MR review and creation
+- **Pull Requests** — Create a GitHub pull request from a task's worktree (via the `gh` CLI)
 - **Memory** — Local knowledge store that retains insights across sessions
 - **Isolated Workspaces** — Git worktree isolation for every build; AI-powered semantic merge
 - **Flexible Authentication** — Claude Code subscription (OAuth) or API profiles with any Anthropic-compatible endpoint
@@ -132,7 +131,7 @@ auto-claude/
 │   │   │   ├── security/        # Bash validator, command parser, path containment
 │   │   │   ├── config/          # Agent configs, phase config, model resolution
 │   │   │   ├── prompts/         # Prompt loading and assembly
-│   │   │   ├── runners/         # Insights, MR review, PR creation, commit messages, etc.
+│   │   │   ├── runners/         # Insights, PR creation, commit messages, etc.
 │   │   │   ├── memory/          # Local memory store (libSQL)
 │   │   │   ├── mcp/             # MCP client integration
 │   │   │   └── auth/            # Token resolution (reuses claude-profile/)
@@ -218,9 +217,8 @@ xterm.js 6, electron-vite 5 (Vite 7), Vitest 4 + React Testing Library + jsdom, 
 **Path aliases:** `@/*` → `src/renderer/*`, `@shared/*` → `src/shared/*`, `@preload/*` → `src/preload/*`.
 
 **State (Zustand)** — Renderer stores live in `src/renderer/stores/` (`project-store.ts`, `task-store.ts`,
-`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `kanban-settings-store.ts`,
-`github/sync-status-store.ts`, `gitlab-store.ts`). Main-process stores: `src/main/project-store.ts`,
-`src/main/terminal-session-store.ts`.
+`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `kanban-settings-store.ts`). Main-process stores:
+`src/main/project-store.ts`, `src/main/terminal-session-store.ts`.
 
 **Styling** — Tailwind CSS v4 via `@tailwindcss/postcss`; `clsx` + `tailwind-merge` through `cn()`; variants with
 `class-variance-authority`. Two color themes, **Default** and **Lime** (`src/shared/constants/themes.ts`), each with
@@ -243,15 +241,15 @@ refresh), `usage-monitor.ts` (usage and rate limits), `profile-scorer.ts` (profi
 English is the only supported language. Translation files: `src/shared/i18n/locales/en/*.json`.
 
 **Namespaces:** `common`, `navigation`, `settings`, `dialogs`, `tasks`, `taskReview`, `terminal`, `errors`,
-`onboarding`, `welcome`, `gitlab`.
+`onboarding`, `welcome`.
 
 ```tsx
 import { useTranslation } from 'react-i18next';
 
 const { t } = useTranslation(['navigation', 'common']);
 
-<span>{t('navigation:items.gitlabMRs')}</span>       // CORRECT
-<span>GitLab MRs</span>                               // WRONG
+<span>{t('navigation:items.kanban')}</span>          // CORRECT
+<span>Kanban</span>                                   // WRONG
 <span>{t('errors:task.parseError', { error })}</span> // With interpolation
 ```
 

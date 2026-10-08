@@ -1,6 +1,6 @@
 /**
  * Shared utilities for branch selection across the application.
- * Used by TaskCreationWizard, CreateWorktreeDialog, and GitHubIntegration.
+ * Used by TaskCreationWizard, CreateWorktreeDialog, and the project branch settings.
  */
 import { GitBranch, Cloud } from 'lucide-react';
 import type { ComboboxOption } from '../components/ui/combobox';
@@ -27,7 +27,7 @@ export interface BranchOptionsConfig {
     /** Translation key for the label (will receive { branch } interpolation) */
     labelKey: string;
   };
-  /** Optional: Include an "auto-detect" option (used in GitHub settings) */
+  /** Optional: Include an "auto-detect" option (used in the project branch settings) */
   includeAutoDetect?: {
     /** The value to use for auto-detect (usually empty string) */
     value: string;
@@ -79,7 +79,7 @@ export function buildBranchOptions(
   // Build final options array
   const options: ComboboxOption[] = [];
 
-  // Add auto-detect option if configured (for GitHub settings)
+  // Add auto-detect option if configured (for the project branch settings)
   if (includeAutoDetect) {
     options.push({
       value: includeAutoDetect.value,

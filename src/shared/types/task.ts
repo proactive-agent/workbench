@@ -183,19 +183,14 @@ export interface TaskMetadata {
   userDescription?: string;
 
   // Origin tracking
-  sourceType?: 'ideation' | 'manual' | 'imported' | 'insights' | 'roadmap' | 'linear' | 'github' | 'gitlab';
+  sourceType?: 'ideation' | 'manual' | 'imported' | 'insights' | 'roadmap' | 'github';
   ideationType?: string;  // e.g., 'code_improvements', 'security_hardening'
   ideaId?: string;  // Reference to original idea if converted
   featureId?: string;  // Reference to roadmap feature if from roadmap
-  linearIssueId?: string;  // Reference to Linear issue if from Linear
-  linearIdentifier?: string;  // Linear issue identifier (e.g., 'ABC-123')
-  linearUrl?: string;  // Linear issue URL
   githubIssueNumber?: number;  // Reference to GitHub issue number if from GitHub (single issue)
   githubIssueNumbers?: number[];  // Reference to multiple GitHub issues if from a batch
   githubUrl?: string;  // GitHub issue URL
   githubBatchTheme?: string;  // Theme/title of the GitHub issue batch
-  gitlabIssueIid?: number;  // Reference to GitLab issue IID if from GitLab
-  gitlabUrl?: string;  // GitLab issue URL
 
   // Classification
   category?: TaskCategory;

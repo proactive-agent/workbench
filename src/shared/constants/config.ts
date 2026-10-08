@@ -85,7 +85,6 @@ export const DEFAULT_APP_SETTINGS = {
 export const DEFAULT_PROJECT_SETTINGS = {
   model: 'opus',
   memoryBackend: 'file' as const,
-  linearSync: false,
   notifications: {
     onTaskComplete: true,
     onTaskFailed: true,

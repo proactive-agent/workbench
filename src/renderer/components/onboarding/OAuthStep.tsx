@@ -38,7 +38,7 @@ interface OAuthStepProps {
 /**
  * OAuth step component for the onboarding wizard.
  * Guides users through Claude profile management and OAuth authentication,
- * reusing patterns from IntegrationSettings.tsx.
+ * reusing the project settings patterns.
  */
 export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
   const { t } = useTranslation(['onboarding', 'common']);
@@ -102,7 +102,7 @@ export function OAuthStep({ onNext, onBack, onSkip }: OAuthStepProps) {
     loadClaudeProfiles();
   }, [loadClaudeProfiles]);
 
-  // Profile management handlers - following patterns from IntegrationSettings.tsx
+  // Profile management handlers
   const handleAddProfile = async () => {
     if (!newProfileName.trim()) return;
 

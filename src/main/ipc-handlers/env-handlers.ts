@@ -8,22 +8,6 @@ import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { projectStore } from '../project-store';
 import { parseEnvFile } from './utils';
 
-// GitLab environment variable keys
-const GITLAB_ENV_KEYS = {
-  ENABLED: 'GITLAB_ENABLED',
-  TOKEN: 'GITLAB_TOKEN',
-  INSTANCE_URL: 'GITLAB_INSTANCE_URL',
-  PROJECT: 'GITLAB_PROJECT',
-  AUTO_SYNC: 'GITLAB_AUTO_SYNC'
-} as const;
-
-/**
- * Helper to generate .env line (DRY)
- */
-function envLine(vars: Record<string, string>, key: string, defaultVal: string = ''): string {
-  return vars[key] ? `${key}=${vars[key]}` : `# ${key}=${defaultVal}`;
-}
-
 /**
  * Register all env-related IPC handlers
  */
@@ -50,44 +34,6 @@ export function registerEnvHandlers(
     // Update with new values
     if (config.autoBuildModel !== undefined) {
       existingVars['AUTO_BUILD_MODEL'] = config.autoBuildModel;
-    }
-    if (config.linearApiKey !== undefined) {
-      existingVars['LINEAR_API_KEY'] = config.linearApiKey;
-    }
-    if (config.linearTeamId !== undefined) {
-      existingVars['LINEAR_TEAM_ID'] = config.linearTeamId;
-    }
-    if (config.linearProjectId !== undefined) {
-      existingVars['LINEAR_PROJECT_ID'] = config.linearProjectId;
-    }
-    if (config.linearRealtimeSync !== undefined) {
-      existingVars['LINEAR_REALTIME_SYNC'] = config.linearRealtimeSync ? 'true' : 'false';
-    }
-    // GitHub Integration
-    if (config.githubToken !== undefined) {
-      existingVars['GITHUB_TOKEN'] = config.githubToken;
-    }
-    if (config.githubRepo !== undefined) {
-      existingVars['GITHUB_REPO'] = config.githubRepo;
-    }
-    if (config.githubAutoSync !== undefined) {
-      existingVars['GITHUB_AUTO_SYNC'] = config.githubAutoSync ? 'true' : 'false';
-    }
-    // GitLab Integration
-    if (config.gitlabEnabled !== undefined) {
-      existingVars[GITLAB_ENV_KEYS.ENABLED] = config.gitlabEnabled ? 'true' : 'false';
-    }
-    if (config.gitlabToken !== undefined) {
-      existingVars[GITLAB_ENV_KEYS.TOKEN] = config.gitlabToken;
-    }
-    if (config.gitlabInstanceUrl !== undefined) {
-      existingVars[GITLAB_ENV_KEYS.INSTANCE_URL] = config.gitlabInstanceUrl;
-    }
-    if (config.gitlabProject !== undefined) {
-      existingVars[GITLAB_ENV_KEYS.PROJECT] = config.gitlabProject;
-    }
-    if (config.gitlabAutoSync !== undefined) {
-      existingVars[GITLAB_ENV_KEYS.AUTO_SYNC] = config.gitlabAutoSync ? 'true' : 'false';
     }
     // Git/Worktree Settings
     if (config.defaultBranch !== undefined) {
@@ -141,9 +87,6 @@ export function registerEnvHandlers(
       if (config.mcpServers.context7Enabled !== undefined) {
         existingVars['CONTEXT7_ENABLED'] = config.mcpServers.context7Enabled ? 'true' : 'false';
       }
-      if (config.mcpServers.linearMcpEnabled !== undefined) {
-        existingVars['LINEAR_MCP_ENABLED'] = config.mcpServers.linearMcpEnabled ? 'true' : 'false';
-      }
       if (config.mcpServers.electronEnabled !== undefined) {
         existingVars['ELECTRON_MCP_ENABLED'] = config.mcpServers.electronEnabled ? 'true' : 'false';
       }
@@ -190,30 +133,6 @@ export function registerEnvHandlers(
 ${existingVars['AUTO_BUILD_MODEL'] ? `AUTO_BUILD_MODEL=${existingVars['AUTO_BUILD_MODEL']}` : '# AUTO_BUILD_MODEL=claude-opus-4-6'}
 
 # =============================================================================
-# LINEAR INTEGRATION (OPTIONAL)
-# =============================================================================
-${existingVars['LINEAR_API_KEY'] ? `LINEAR_API_KEY=${existingVars['LINEAR_API_KEY']}` : '# LINEAR_API_KEY='}
-${existingVars['LINEAR_TEAM_ID'] ? `LINEAR_TEAM_ID=${existingVars['LINEAR_TEAM_ID']}` : '# LINEAR_TEAM_ID='}
-${existingVars['LINEAR_PROJECT_ID'] ? `LINEAR_PROJECT_ID=${existingVars['LINEAR_PROJECT_ID']}` : '# LINEAR_PROJECT_ID='}
-${existingVars['LINEAR_REALTIME_SYNC'] !== undefined ? `LINEAR_REALTIME_SYNC=${existingVars['LINEAR_REALTIME_SYNC']}` : '# LINEAR_REALTIME_SYNC=false'}
-
-# =============================================================================
-# GITHUB INTEGRATION (OPTIONAL)
-# =============================================================================
-${existingVars['GITHUB_TOKEN'] ? `GITHUB_TOKEN=${existingVars['GITHUB_TOKEN']}` : '# GITHUB_TOKEN='}
-${existingVars['GITHUB_REPO'] ? `GITHUB_REPO=${existingVars['GITHUB_REPO']}` : '# GITHUB_REPO=owner/repo'}
-${existingVars['GITHUB_AUTO_SYNC'] !== undefined ? `GITHUB_AUTO_SYNC=${existingVars['GITHUB_AUTO_SYNC']}` : '# GITHUB_AUTO_SYNC=false'}
-
-# =============================================================================
-# GITLAB INTEGRATION (OPTIONAL)
-# =============================================================================
-${existingVars[GITLAB_ENV_KEYS.ENABLED] !== undefined ? `${GITLAB_ENV_KEYS.ENABLED}=${existingVars[GITLAB_ENV_KEYS.ENABLED]}` : `# ${GITLAB_ENV_KEYS.ENABLED}=true`}
-${envLine(existingVars, GITLAB_ENV_KEYS.INSTANCE_URL, 'https://gitlab.com')}
-${envLine(existingVars, GITLAB_ENV_KEYS.TOKEN)}
-${envLine(existingVars, GITLAB_ENV_KEYS.PROJECT, 'group/project')}
-${envLine(existingVars, GITLAB_ENV_KEYS.AUTO_SYNC, 'false')}
-
-# =============================================================================
 # GIT/WORKTREE SETTINGS (OPTIONAL)
 # =============================================================================
 # Default base branch for worktree creation
@@ -230,8 +149,6 @@ ${existingVars['ENABLE_FANCY_UI'] !== undefined ? `ENABLE_FANCY_UI=${existingVar
 # =============================================================================
 # Context7 documentation lookup (default: enabled)
 ${existingVars['CONTEXT7_ENABLED'] !== undefined ? `CONTEXT7_ENABLED=${existingVars['CONTEXT7_ENABLED']}` : '# CONTEXT7_ENABLED=true'}
-# Linear MCP integration (default: follows LINEAR_API_KEY)
-${existingVars['LINEAR_MCP_ENABLED'] !== undefined ? `LINEAR_MCP_ENABLED=${existingVars['LINEAR_MCP_ENABLED']}` : '# LINEAR_MCP_ENABLED=true'}
 # Electron desktop automation - QA agents only (default: disabled)
 ${existingVars['ELECTRON_MCP_ENABLED'] !== undefined ? `ELECTRON_MCP_ENABLED=${existingVars['ELECTRON_MCP_ENABLED']}` : '# ELECTRON_MCP_ENABLED=false'}
 # Puppeteer browser automation - QA agents only (default: disabled)
@@ -321,9 +238,6 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
 
       // Default config
       const config: ProjectEnvConfig = {
-        linearEnabled: false,
-        githubEnabled: false,
-        gitlabEnabled: false,
         memoryEnabled: false,
         enableFancyUi: true,
         openaiKeyIsGlobal: false
@@ -342,48 +256,6 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
 
       if (vars['AUTO_BUILD_MODEL']) {
         config.autoBuildModel = vars['AUTO_BUILD_MODEL'];
-      }
-
-      if (vars['LINEAR_API_KEY']) {
-        config.linearEnabled = true;
-        config.linearApiKey = vars['LINEAR_API_KEY'];
-      }
-      if (vars['LINEAR_TEAM_ID']) {
-        config.linearTeamId = vars['LINEAR_TEAM_ID'];
-      }
-      if (vars['LINEAR_PROJECT_ID']) {
-        config.linearProjectId = vars['LINEAR_PROJECT_ID'];
-      }
-      if (vars['LINEAR_REALTIME_SYNC']?.toLowerCase() === 'true') {
-        config.linearRealtimeSync = true;
-      }
-
-      // GitHub config
-      if (vars['GITHUB_TOKEN']) {
-        config.githubEnabled = true;
-        config.githubToken = vars['GITHUB_TOKEN'];
-      }
-      if (vars['GITHUB_REPO']) {
-        config.githubRepo = vars['GITHUB_REPO'];
-      }
-      if (vars['GITHUB_AUTO_SYNC']?.toLowerCase() === 'true') {
-        config.githubAutoSync = true;
-      }
-
-      // GitLab config
-      if (vars[GITLAB_ENV_KEYS.TOKEN]) {
-        config.gitlabToken = vars[GITLAB_ENV_KEYS.TOKEN];
-        // Enable by default if token exists and GITLAB_ENABLED is not explicitly false
-        config.gitlabEnabled = vars[GITLAB_ENV_KEYS.ENABLED]?.toLowerCase() !== 'false';
-      }
-      if (vars[GITLAB_ENV_KEYS.INSTANCE_URL]) {
-        config.gitlabInstanceUrl = vars[GITLAB_ENV_KEYS.INSTANCE_URL];
-      }
-      if (vars[GITLAB_ENV_KEYS.PROJECT]) {
-        config.gitlabProject = vars[GITLAB_ENV_KEYS.PROJECT];
-      }
-      if (vars[GITLAB_ENV_KEYS.AUTO_SYNC]?.toLowerCase() === 'true') {
-        config.gitlabAutoSync = true;
       }
 
       // Git/Worktree config
@@ -445,11 +317,10 @@ ${existingVars['GRAPHITI_DB_PATH'] ? `GRAPHITI_DB_PATH=${existingVars['GRAPHITI_
       }
 
       // MCP Server Configuration (per-project overrides)
-      // Default: context7=true, linear=true (if API key set), electron/puppeteer=false
+      // Default: context7=true, electron/puppeteer=false
       config.mcpServers = {
         context7Enabled: vars['CONTEXT7_ENABLED']?.toLowerCase() !== 'false', // default true
         memoryEnabled: config.memoryEnabled, // follows GRAPHITI_ENABLED
-        linearMcpEnabled: vars['LINEAR_MCP_ENABLED']?.toLowerCase() !== 'false', // default true
         electronEnabled: vars['ELECTRON_MCP_ENABLED']?.toLowerCase() === 'true', // default false
         puppeteerEnabled: vars['PUPPETEER_MCP_ENABLED']?.toLowerCase() === 'true', // default false
       };

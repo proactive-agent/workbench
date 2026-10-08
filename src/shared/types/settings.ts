@@ -197,7 +197,6 @@ export interface PhaseThinkingConfig {
 // Values can be Claude shorthands or concrete model IDs
 export interface FeatureModelConfig {
   insights: string;    // Insights chat feature
-  githubPrs: string;    // PR/MR review automation (used by GitLab MR review)
   utility: string;      // Utility agents (commit message, merge resolver)
   naming: string;       // AI naming (task titles, terminal names)
 }
@@ -205,7 +204,6 @@ export interface FeatureModelConfig {
 // Feature-specific thinking level configuration
 export interface FeatureThinkingConfig {
   insights: ThinkingLevel;
-  githubPrs: ThinkingLevel;
   utility: ThinkingLevel;
   naming: ThinkingLevel;
 }

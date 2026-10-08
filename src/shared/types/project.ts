@@ -15,8 +15,6 @@ export interface Project {
 export interface ProjectSettings {
   model: string;
   memoryBackend: 'memory' | 'file';
-  linearSync: boolean;
-  linearTeamId?: string;
   notifications: NotificationSettings;
   /** Main branch name for worktree creation (default: auto-detected or 'main') */
   mainBranch?: string;
@@ -307,27 +305,6 @@ export interface ProjectEnvConfig {
   // Model Override
   autoBuildModel?: string;
 
-  // Linear Integration
-  linearEnabled: boolean;
-  linearApiKey?: string;
-  linearTeamId?: string;
-  linearProjectId?: string;
-  linearRealtimeSync?: boolean; // Enable real-time sync of new Linear tasks
-
-  // GitHub Integration
-  githubEnabled: boolean;
-  githubToken?: string;
-  githubRepo?: string; // Format: owner/repo
-  githubAutoSync?: boolean; // Auto-sync issues on project load
-  githubAuthMethod?: 'oauth' | 'pat'; // How the token was obtained
-
-  // GitLab Integration
-  gitlabEnabled: boolean;
-  gitlabInstanceUrl?: string; // Default: https://gitlab.com, or self-hosted URL
-  gitlabToken?: string;
-  gitlabProject?: string; // Format: group/project or numeric ID
-  gitlabAutoSync?: boolean; // Auto-sync issues on project load
-
   // Git/Worktree Settings
   defaultBranch?: string; // Base branch for worktree creation (e.g., 'main', 'develop')
 
@@ -351,8 +328,6 @@ export interface ProjectEnvConfig {
     context7Enabled?: boolean;
     /** Memory knowledge graph - default: true (if memoryProviderConfig set) */
     memoryEnabled?: boolean;
-    /** Linear MCP integration - default: follows linearEnabled */
-    linearMcpEnabled?: boolean;
     /** Electron desktop automation (QA only) - default: false */
     electronEnabled?: boolean;
     /** Puppeteer browser automation (QA only) - default: false */

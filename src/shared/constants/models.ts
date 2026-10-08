@@ -178,10 +178,9 @@ export const DEFAULT_PHASE_THINKING: import('../types/settings').PhaseThinkingCo
 // Feature Settings (Non-Pipeline Features)
 // ============================================
 
-// Default feature model configuration (for insights, PR/MR review, utility, naming)
+// Default feature model configuration (for insights, utility, naming)
 export const DEFAULT_FEATURE_MODELS: FeatureModelConfig = {
   insights: 'sonnet',     // Fast, responsive chat
-  githubPrs: 'opus',      // PR review benefits from thorough Opus analysis
   utility: 'haiku',       // Fast utility operations (commit messages, merge resolution)
   naming: 'haiku'         // Fast, cheap model for task titles and terminal names
 };
@@ -189,7 +188,6 @@ export const DEFAULT_FEATURE_MODELS: FeatureModelConfig = {
 // Default feature thinking configuration
 export const DEFAULT_FEATURE_THINKING: FeatureThinkingConfig = {
   insights: 'medium',     // Balanced thinking for chat
-  githubPrs: 'medium',    // Moderate thinking for PR review
   utility: 'low',         // Fast thinking for utility operations
   naming: 'low'           // No thinking needed for short name generation
 };
@@ -197,7 +195,6 @@ export const DEFAULT_FEATURE_THINKING: FeatureThinkingConfig = {
 // Feature labels for UI display
 export const FEATURE_LABELS: Record<keyof FeatureModelConfig, { label: string; description: string }> = {
   insights: { label: 'Insights Chat', description: 'Ask questions about your codebase' },
-  githubPrs: { label: 'GitHub PR Review', description: 'AI-powered pull request reviews' },
   utility: { label: 'Utility', description: 'Commit messages and merge conflict resolution' },
   naming: { label: 'AI Naming', description: 'Task titles and terminal tab names' },
 };

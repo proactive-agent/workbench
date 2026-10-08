@@ -4,16 +4,12 @@ import {
   checkProjectVersion,
   initializeProject
 } from '../../../stores/project-store';
-import { checkGitHubConnection as checkGitHubConnectionGlobal } from '../../../stores/github';
 import { setProjectEnvConfig } from '../../../stores/project-env-store';
 import type {
   Project,
   ProjectSettings as ProjectSettingsType,
   AutoBuildVersionInfo,
-  ProjectEnvConfig,
-  LinearSyncStatus,
-  GitHubSyncStatus,
-  GitLabSyncStatus
+  ProjectEnvConfig
 } from '../../../../shared/types';
 
 export interface UseProjectSettingsReturn {
@@ -40,32 +36,12 @@ export interface UseProjectSettingsReturn {
   // Password visibility toggles
   showClaudeToken: boolean;
   setShowClaudeToken: React.Dispatch<React.SetStateAction<boolean>>;
-  showLinearKey: boolean;
-  setShowLinearKey: React.Dispatch<React.SetStateAction<boolean>>;
   showOpenAIKey: boolean;
   setShowOpenAIKey: React.Dispatch<React.SetStateAction<boolean>>;
-  showGitHubToken: boolean;
-  setShowGitHubToken: React.Dispatch<React.SetStateAction<boolean>>;
 
   // Collapsible sections
   expandedSections: Record<string, boolean>;
   toggleSection: (section: string) => void;
-
-  // GitHub state
-  gitHubConnectionStatus: GitHubSyncStatus | null;
-  isCheckingGitHub: boolean;
-
-  // GitLab state
-  showGitLabToken: boolean;
-  setShowGitLabToken: React.Dispatch<React.SetStateAction<boolean>>;
-  gitLabConnectionStatus: GitLabSyncStatus | null;
-  isCheckingGitLab: boolean;
-
-  // Linear state
-  showLinearImportModal: boolean;
-  setShowLinearImportModal: React.Dispatch<React.SetStateAction<boolean>>;
-  linearConnectionStatus: LinearSyncStatus | null;
-  isCheckingLinear: boolean;
 
   // Actions
   handleInitialize: () => Promise<void>;
@@ -98,31 +74,13 @@ export function useProjectSettings(
 
   // Password visibility toggles
   const [showClaudeToken, setShowClaudeToken] = useState(false);
-  const [showLinearKey, setShowLinearKey] = useState(false);
   const [showOpenAIKey, setShowOpenAIKey] = useState(false);
 
   // Collapsible sections
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
     claude: true,
-    linear: false,
-    github: false,
     memory: false
   });
-
-  // GitHub state
-  const [showGitHubToken, setShowGitHubToken] = useState(false);
-  const [gitHubConnectionStatus, setGitHubConnectionStatus] = useState<GitHubSyncStatus | null>(null);
-  const [isCheckingGitHub, setIsCheckingGitHub] = useState(false);
-
-  // GitLab state
-  const [showGitLabToken, setShowGitLabToken] = useState(false);
-  const [gitLabConnectionStatus, setGitLabConnectionStatus] = useState<GitLabSyncStatus | null>(null);
-  const [isCheckingGitLab, setIsCheckingGitLab] = useState(false);
-
-  // Linear import state
-  const [showLinearImportModal, setShowLinearImportModal] = useState(false);
-  const [linearConnectionStatus, setLinearConnectionStatus] = useState<LinearSyncStatus | null>(null);
-  const [isCheckingLinear, setIsCheckingLinear] = useState(false);
 
   // Reset settings when project changes
   useEffect(() => {
@@ -168,87 +126,6 @@ export function useProjectSettings(
     loadEnvConfig();
   }, [open, project.id, project.autoBuildPath]);
 
-  // Check Linear connection when API key changes
-  useEffect(() => {
-    const checkLinearConnection = async () => {
-      if (!envConfig?.linearEnabled || !envConfig.linearApiKey) {
-        setLinearConnectionStatus(null);
-        return;
-      }
-
-      setIsCheckingLinear(true);
-      try {
-        const result = await window.electronAPI.checkLinearConnection(project.id);
-        if (result.success && result.data) {
-          setLinearConnectionStatus(result.data);
-        }
-      } catch {
-        setLinearConnectionStatus({ connected: false, error: 'Failed to check connection' });
-      } finally {
-        setIsCheckingLinear(false);
-      }
-    };
-
-    if (envConfig?.linearEnabled && envConfig.linearApiKey) {
-      checkLinearConnection();
-    }
-  }, [envConfig?.linearEnabled, envConfig?.linearApiKey, project.id]);
-
-  // Check GitHub connection when token/repo changes
-  // Also updates the global GitHub store so other components (like GitHub Issues) see the change
-  useEffect(() => {
-    const checkGitHubConnection = async () => {
-      if (!envConfig?.githubEnabled || !envConfig.githubToken || !envConfig.githubRepo) {
-        setGitHubConnectionStatus(null);
-        return;
-      }
-
-      setIsCheckingGitHub(true);
-      try {
-        // Use the global store action - it makes the API call AND updates the global store
-        // This ensures the GitHub Issues page sees the updated status
-        const status = await checkGitHubConnectionGlobal(project.id);
-        if (status) {
-          setGitHubConnectionStatus(status);
-        }
-      } catch {
-        setGitHubConnectionStatus({ connected: false, error: 'Failed to check connection' });
-      } finally {
-        setIsCheckingGitHub(false);
-      }
-    };
-
-    if (envConfig?.githubEnabled && envConfig.githubToken && envConfig.githubRepo) {
-      checkGitHubConnection();
-    }
-  }, [envConfig?.githubEnabled, envConfig?.githubToken, envConfig?.githubRepo, project.id]);
-
-  // Check GitLab connection when token/project changes
-  useEffect(() => {
-    const checkGitLabConnection = async () => {
-      if (!envConfig?.gitlabEnabled || !envConfig.gitlabToken || !envConfig.gitlabProject) {
-        setGitLabConnectionStatus(null);
-        return;
-      }
-
-      setIsCheckingGitLab(true);
-      try {
-        const status = await window.electronAPI.checkGitLabConnection(project.id);
-        if (status.success && status.data) {
-          setGitLabConnectionStatus(status.data);
-        }
-      } catch {
-        setGitLabConnectionStatus({ connected: false, error: 'Failed to check connection' });
-      } finally {
-        setIsCheckingGitLab(false);
-      }
-    };
-
-    if (envConfig?.gitlabEnabled && envConfig.gitlabToken && envConfig.gitlabProject) {
-      checkGitLabConnection();
-    }
-  }, [envConfig?.gitlabEnabled, envConfig?.gitlabToken, envConfig?.gitlabProject, project.id]);
-
   const toggleSection = (section: string) => {
     setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
   };
@@ -265,7 +142,7 @@ export function useProjectSettings(
         if (envResult.success && envResult.data) {
           setEnvConfig(envResult.data);
           committedEnvConfigRef.current = envResult.data;
-          // Update global store so Sidebar reflects correct GitHub/GitLab enabled state
+          // Update the shared env config store
           setProjectEnvConfig(project.id, envResult.data);
         }
       } else {
@@ -361,24 +238,10 @@ export function useProjectSettings(
     updateEnvConfig,
     showClaudeToken,
     setShowClaudeToken,
-    showLinearKey,
-    setShowLinearKey,
     showOpenAIKey,
     setShowOpenAIKey,
-    showGitHubToken,
-    setShowGitHubToken,
     expandedSections,
     toggleSection,
-    gitHubConnectionStatus,
-    isCheckingGitHub,
-    showGitLabToken,
-    setShowGitLabToken,
-    gitLabConnectionStatus,
-    isCheckingGitLab,
-    showLinearImportModal,
-    setShowLinearImportModal,
-    linearConnectionStatus,
-    isCheckingLinear,
     handleInitialize,
     handleSave
   };

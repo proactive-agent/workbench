@@ -226,12 +226,12 @@ describe('ProjectStore', () => {
       const project = store.addProject(TEST_PROJECT_PATH);
       const updated = store.updateProjectSettings(project.id, {
         model: 'sonnet',
-        linearSync: true
+        maxParallelTasks: 5
       });
 
       expect(updated).toBeDefined();
       expect(updated?.settings.model).toBe('sonnet');
-      expect(updated?.settings.linearSync).toBe(true);
+      expect(updated?.settings.maxParallelTasks).toBe(5);
     });
 
     it('should update updatedAt timestamp', async () => {
@@ -614,7 +614,6 @@ describe('ProjectStore', () => {
             settings: {
               model: 'sonnet',
               memoryBackend: 'memory',
-              linearSync: false,
               notifications: {
                 onTaskComplete: true,
                 onTaskFailed: true,

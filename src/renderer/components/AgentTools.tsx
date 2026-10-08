@@ -15,7 +15,6 @@ import {
   Circle,
   Monitor,
   Globe,
-  ClipboardList,
   ListChecks,
   Plus,
   X,
@@ -149,7 +148,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'build',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['linear'],
     settingsSource: { type: 'phase', phase: 'planning' },
   },
   coder: {
@@ -158,7 +156,6 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'build',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['linear'],
     settingsSource: { type: 'phase', phase: 'coding' },
   },
 
@@ -169,7 +166,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['linear', 'electron', 'puppeteer'],
+    mcp_optional: ['electron', 'puppeteer'],
     settingsSource: { type: 'phase', phase: 'qa' },
   },
   qa_fixer: {
@@ -178,7 +175,7 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     category: 'qa',
     tools: ['Read', 'Glob', 'Grep', 'Write', 'Edit', 'Bash', 'WebFetch', 'WebSearch'],
     mcp_servers: ['context7', 'memory', 'auto-claude'],
-    mcp_optional: ['linear', 'electron', 'puppeteer'],
+    mcp_optional: ['electron', 'puppeteer'],
     settingsSource: { type: 'phase', phase: 'qa' },
   },
 
@@ -260,19 +257,6 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
       'mcp__auto-claude__update_qa_status',
     ],
   },
-  linear: {
-    name: 'Linear',
-    description: 'Project management via Linear API. Requires LINEAR_API_KEY env var.',
-    icon: ClipboardList,
-    tools: [
-      'mcp__linear-server__list_teams',
-      'mcp__linear-server__list_projects',
-      'mcp__linear-server__list_issues',
-      'mcp__linear-server__create_issue',
-      'mcp__linear-server__update_issue',
-      // ... and more
-    ],
-  },
   electron: {
     name: 'Electron MCP',
     description: 'Desktop app automation via Chrome DevTools Protocol. Requires ELECTRON_MCP_ENABLED=true.',
@@ -305,7 +289,6 @@ const MCP_SERVERS: Record<string, { name: string; description: string; icon: Rea
 const ALL_MCP_SERVERS = [
   'context7',
   'memory',
-  'linear',
   'electron',
   'puppeteer',
   'auto-claude'
@@ -391,7 +374,6 @@ function AgentCard({ id, config, modelLabel, thinkingLabel, overrides, mcpServer
       switch (mcp) {
         case 'context7': return mcpServerStates.context7Enabled !== false;
         case 'memory': return mcpServerStates.memoryEnabled !== false;
-        case 'linear': return mcpServerStates.linearMcpEnabled !== false;
         case 'electron': return mcpServerStates.electronEnabled !== false;
         case 'puppeteer': return mcpServerStates.puppeteerEnabled !== false;
         default: return true;
@@ -937,7 +919,6 @@ export function AgentTools() {
   const enabledCount = [
     mcpServers.context7Enabled !== false,
     mcpServers.memoryEnabled && envConfig?.memoryProviderConfig,
-    mcpServers.linearMcpEnabled !== false && envConfig?.linearEnabled,
     mcpServers.electronEnabled,
     mcpServers.puppeteerEnabled,
     true, // auto-claude always enabled
@@ -1031,22 +1012,6 @@ export function AgentTools() {
                       onCheckedChange={(checked) => updateMcpServer('memoryEnabled', checked)}
                       disabled={!envConfig.memoryProviderConfig}
                       aria-label={t('settings:mcp.servers.memory.name')}
-                    />
-                  </ServerRow>
-                  <ServerRow
-                    icon={ClipboardList}
-                    name={t('settings:mcp.servers.linear.name')}
-                    description={
-                      envConfig.linearEnabled
-                        ? t('settings:mcp.servers.linear.description')
-                        : t('settings:mcp.servers.linear.notConfigured')
-                    }
-                  >
-                    <Switch
-                      checked={mcpServers.linearMcpEnabled !== false && envConfig.linearEnabled}
-                      onCheckedChange={(checked) => updateMcpServer('linearMcpEnabled', checked)}
-                      disabled={!envConfig.linearEnabled}
-                      aria-label={t('settings:mcp.servers.linear.name')}
                     />
                   </ServerRow>
                   <ServerRow

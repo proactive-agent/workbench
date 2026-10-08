@@ -198,8 +198,6 @@
     "kanban": "Kanban",
     "terminals": "Agents",
     "insights": "Claude",
-    "gitlabIssues": "GitLab Issues",
-    "gitlabMRs": "GitLab MRs",
     "projects": "Projects"
   },
   "actions": {
