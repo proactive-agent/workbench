@@ -13,7 +13,6 @@ import { MAX_IMPORT_FILE_SIZE } from '../../../lib/terminal-font-constants';
 import { FontConfigPanel } from './FontConfigPanel';
 import { CursorConfigPanel } from './CursorConfigPanel';
 import { PerformanceConfigPanel } from './PerformanceConfigPanel';
-import { PresetsPanel } from './PresetsPanel';
 
 /**
  * Terminal font settings main container component
@@ -62,8 +61,6 @@ export function TerminalFontSettings() {
 
   // Get action methods from store
   const updateSettings = useTerminalFontSettingsStore((state) => state.applySettings);
-  const resetToDefaults = useTerminalFontSettingsStore((state) => state.resetToDefaults);
-  const applyPreset = useTerminalFontSettingsStore((state) => state.applyPreset);
   const exportSettings = useTerminalFontSettingsStore((state) => state.exportSettings);
   const importSettings = useTerminalFontSettingsStore((state) => state.importSettings);
 
@@ -76,20 +73,6 @@ export function TerminalFontSettings() {
     value: TerminalFontSettings[K]
   ) => {
     updateSettings({ [key]: value });
-  };
-
-  /**
-   * Handle preset application
-   */
-  const handlePresetApply = (presetName: string) => {
-    applyPreset(presetName);
-  };
-
-  /**
-   * Handle reset to OS defaults
-   */
-  const handleReset = () => {
-    resetToDefaults();
   };
 
   /**
@@ -202,14 +185,6 @@ export function TerminalFontSettings() {
 
       <SettingsSection title={t('terminalFonts.performanceConfig.title', { defaultValue: 'Scrollback' })}>
         <PerformanceConfigPanel settings={settings} onSettingChange={handleSettingChange} />
-      </SettingsSection>
-
-      <SettingsSection title={t('terminalFonts.presets.title', { defaultValue: 'Presets' })}>
-        <PresetsPanel
-          onPresetApply={handlePresetApply}
-          onReset={handleReset}
-          currentSettings={settings}
-        />
       </SettingsSection>
 
       {/* Settings as JSON: export, import, copy */}

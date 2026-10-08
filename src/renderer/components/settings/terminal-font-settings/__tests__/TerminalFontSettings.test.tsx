@@ -103,7 +103,7 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       expect(screen.getByRole('heading', { name: 'Font' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Cursor' })).toBeInTheDocument();
       expect(screen.getByRole('heading', { name: 'Scrollback' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Presets' })).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: 'Presets' })).not.toBeInTheDocument();
 
       // Preview section
       expect(screen.getAllByText(/import and export/i).length).toBeGreaterThan(0);
