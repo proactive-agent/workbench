@@ -323,8 +323,8 @@
   --card-surface-shadow: none;
   --card-hover-border: rgba(11, 11, 11, 0.2);
   --surface-elevated: #FFFFFF;
-  --scrollbar-thumb: rgba(11, 11, 11, 0.15);
-  --scrollbar-thumb-hover: rgba(11, 11, 11, 0.3);
+  --scrollbar-thumb: rgba(11, 11, 11, 0.28);
+  --scrollbar-thumb-hover: rgba(11, 11, 11, 0.24);
   --progress-sweep-gradient: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
   --task-card-hover-shadow: none;
   --task-card-hover-border: rgba(11, 11, 11, 0.2);
@@ -468,7 +468,7 @@
   --card-surface-shadow: none;
   --card-hover-border: rgba(255, 255, 255, 0.2);
   --surface-elevated: #20201F;
-  --scrollbar-thumb: rgba(255, 255, 255, 0.12);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.28);
   --scrollbar-thumb-hover: rgba(255, 255, 255, 0.24);
   --progress-sweep-gradient: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.15) 50%, transparent 100%);
   --task-card-hover-shadow: none;
@@ -550,10 +550,11 @@ body {
   border-radius: var(--radius-lg);
 }
 
-/* Custom scrollbar - following design system */
+/* Scrollbars (claude.ai style): a 1px line 1px in from the edge that widens to a 3px rounded
+   thumb on hover. The 10px gutter is transparent; borders inset the painted thumb within it. */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
 }
 
 /* Scroll anchoring - prevent scroll position jumps during DOM updates
@@ -575,16 +576,46 @@ body {
   background: transparent;
 }
 
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  opacity: 0.3;
-  border-radius: var(--radius-full);
-  transition: background 0.2s;
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-  opacity: 0.5;
+::-webkit-scrollbar-thumb {
+  background-color: var(--scrollbar-thumb);
+  background-clip: content-box;
+  border-style: solid;
+  border-color: transparent;
+  border-width: 2px 1px 2px 8px;
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:horizontal {
+  border-width: 8px 2px 1px 2px;
+}
+
+::-webkit-scrollbar-thumb:hover,
+::-webkit-scrollbar-thumb:active {
+  background-color: var(--scrollbar-thumb-hover);
+  border-width: 2px 1px 2px 6px;
+}
+
+::-webkit-scrollbar-thumb:horizontal:hover,
+::-webkit-scrollbar-thumb:horizontal:active {
+  border-width: 6px 2px 1px 2px;
+}
+
+/* Terminal (xterm) scrollbar: same line/thumb, widening while the pointer is over the bar */
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: auto !important;
+  right: 1px;
+  width: 1px !important;
+  border-radius: 9999px;
+  background: var(--scrollbar-thumb) !important;
+}
+.xterm .xterm-scrollable-element > .scrollbar.vertical:hover > .slider,
+.xterm .xterm-scrollable-element > .scrollbar.vertical > .slider.active {
+  width: 3px !important;
+  background: var(--scrollbar-thumb-hover) !important;
 }
 
 /* Electron window dragging area */
