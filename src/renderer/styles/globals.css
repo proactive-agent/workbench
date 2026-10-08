@@ -29,11 +29,16 @@
   font-display: swap;
 }
 
-/* Pointer cursor on everything with a Tailwind hover: style (Tailwind v4 no longer gives buttons one).
+/* Pointer cursor on everything that changes color on hover (Tailwind v4 no longer gives buttons one).
    Disabled controls and text fields keep their cursor, and explicit cursor-* utilities still win
    (this lives in the base layer). */
 @layer base {
   [class*='hover:']:hover:not(:disabled, [aria-disabled='true'], [data-disabled], input, textarea, [contenteditable='true']) {
+    cursor: pointer;
+  }
+  /* Menu, select and list items light up through focus/highlight styles instead of hover:
+     they get the pointer too */
+  :is([role='menuitem'], [role='menuitemcheckbox'], [role='menuitemradio'], [role='option'], [class*='focus:bg-'], [class*='data-[highlighted]:bg-']):hover:not(:disabled, [aria-disabled='true'], [data-disabled], input, textarea) {
     cursor: pointer;
   }
 }
