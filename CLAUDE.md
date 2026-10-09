@@ -15,10 +15,12 @@ resolves issues → User reviews and merges.
 
 - **Autonomous Tasks** — Multi-agent pipeline (planner, coder, QA) that builds features end-to-end
 - **Kanban Board** — Visual task management from planning through completion
-- **Agent Terminals** — Up to 12 parallel AI-powered terminals with task context injection
+- **Agent Terminals** — Parallel AI-powered terminals (12 by default, up to 24) with task context injection
 - **Insights** — AI chat interface for exploring and understanding a codebase
 - **Pull Requests** — Create a GitHub pull request from a task's worktree (via the `gh` CLI)
 - **Memory** — Local knowledge store that retains insights across sessions
+- **Connectors** — MCP servers for agents (Context7, Memory, Electron/Puppeteer for QA, user-added servers) with
+  app-wide defaults in Settings and per-task choices in the task dialog
 - **Isolated Workspaces** — Git worktree isolation for every build; AI-powered semantic merge
 - **Flexible Authentication** — Claude Code subscription (OAuth) or API profiles with any Anthropic-compatible endpoint
 - **Multi-Account Swapping** — When one Claude account hits a rate limit, switch to an available one automatically
@@ -42,6 +44,14 @@ only.
 **No time estimates** — Provide priority-based ordering instead of duration predictions.
 
 **PR target** — Always target the `develop` branch for PRs, not `main`. Main is reserved for releases.
+
+**Never block the main process** — IPC handlers reachable from the UI must not run synchronous child processes
+(`execFileSync`/`execSync`) or network calls; use async `execFile` (promisified). A sync `git fetch` used to freeze the
+whole app every time a dialog opened.
+
+**Don't re-fetch on open** — Pages and dialogs show stored values (Zustand stores, settings, or
+`src/renderer/lib/refresh-cache.ts` for results of slow checks) and only fetch when the user presses a refresh
+button, or once when nothing was fetched before. Shared hooks: `useProjectBranches()`, `useOllamaLlmModels()`.
 
 ## Work Approach: Orchestrator-First
 
@@ -98,11 +108,11 @@ npm run test:e2e       # End-to-end tests (Playwright)
 
 ### Packaging
 
-| Command                 | Output                                  |
-|-------------------------|-----------------------------------------|
-| `npm run package`       | Package for the current platform        |
-| `npm run package:mac`   | macOS `.dmg` + `.zip`                   |
-| `npm run package:win`   | Windows `.exe` (NSIS installer)         |
+| Command                 | Output                                           |
+|-------------------------|--------------------------------------------------|
+| `npm run package`       | Package for the current platform                 |
+| `npm run package:mac`   | macOS `.dmg` + `.zip`                            |
+| `npm run package:win`   | Windows `.exe` (NSIS installer)                  |
 | `npm run package:linux` | Linux `.deb` (check with `npm run verify:linux`) |
 
 Packages are written to `dist/`.
@@ -140,12 +150,12 @@ auto-claude/
 │   │   ├── terminal/        # PTY daemon, lifecycle, CLI integration
 │   │   ├── platform/        # Cross-platform abstraction
 │   │   ├── ipc-handlers/    # IPC handler modules by domain
-│   │   └── services/        # App services (session recovery, rate-limit resume, header icon rotation)
+│   │   └── services/        # App services (session recovery, rate-limit resume, provider API key check)
 │   ├── preload/             # Preload scripts (electronAPI bridge)
 │   ├── renderer/            # React UI (components, stores, contexts, hooks, styles)
 │   └── shared/              # Shared types, i18n, constants, utils
 ├── prompts/                 # Agent system prompts (.md)
-├── resources/               # App icons, macOS entitlements, bundled header icons
+├── resources/               # App and tray icons, macOS entitlements
 ├── e2e/                     # Playwright end-to-end tests
 └── .github/                 # Workflows and scripts (postinstall, prebuilds, deb check, bump-version)
 ```
@@ -204,10 +214,21 @@ Each spec in `.auto-claude/specs/XXX-name/` contains `spec.md`, `requirements.js
 `implementation_plan.json`, `qa_report.md`, and `QA_FIX_REQUEST.md`, plus runtime files such as `task_metadata.json`,
 `task_logs.json`, and `build-progress.txt`.
 
+### MCP Connectors
+
+Settings > Connectors (`settings.mcpConnectors`, `McpConnectorSettings`) holds the defaults: Context7, Memory, Electron
+and Puppeteer (QA agents only), plus custom servers, which must pass a connection test before they can be switched on.
+New tasks copy the enabled ids into `TaskMetadata.mcpConnectors` and can change them in the task dialog. When a task
+starts, `AgentManager.resolveTaskMcpOptions()` passes that task's connectors to its worker (so concurrent tasks don't
+affect each other); `getRequiredMcpServers()` gives every MCP-using agent all enabled connectors and
+`src/main/ai/mcp/registry.ts` builds configs for built-in and custom servers. Helpers live in
+`src/shared/utils/mcp-connectors.ts`.
+
 ### Electron MCP (agent QA of the app)
 
-Run `npm run dev:mcp` and enable the Electron MCP server for the project (`ELECTRON_MCP_ENABLED=true`). QA agents then
-drive the running app over the Chrome DevTools Protocol with `get_electron_window_info`, `take_screenshot`, `send_command_to_electron`, and `read_electron_logs`.
+Run `npm run dev:mcp` and switch on Electron in Settings > Connectors (or in the task's connectors). QA agents then
+drive the running app over the Chrome DevTools Protocol with `get_electron_window_info`, `take_screenshot`,
+`send_command_to_electron`, and `read_electron_logs`.
 
 ## Frontend
 
@@ -217,12 +238,24 @@ xterm.js 6, electron-vite 5 (Vite 7), Vitest 4 + React Testing Library + jsdom, 
 **Path aliases:** `@/*` → `src/renderer/*`, `@shared/*` → `src/shared/*`, `@preload/*` → `src/preload/*`.
 
 **State (Zustand)** — Renderer stores live in `src/renderer/stores/` (`project-store.ts`, `task-store.ts`,
-`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `kanban-settings-store.ts`). Main-process stores:
-`src/main/project-store.ts`, `src/main/terminal-session-store.ts`.
+`terminal-store.ts`, `settings-store.ts`, `insights-store.ts`, `context-store.ts`, `kanban-settings-store.ts`,
+`terminal-font-settings-store.ts`). Main-process stores: `src/main/project-store.ts`,
+`src/main/terminal-session-store.ts`.
 
 **Styling** — Tailwind CSS v4 via `@tailwindcss/postcss`; `clsx` + `tailwind-merge` through `cn()`; variants with
-`class-variance-authority`. Two color themes, **Default** and **Lime** (`src/shared/constants/themes.ts`), each with
-light/dark variants via CSS custom properties in `src/renderer/styles/globals.css`.
+`class-variance-authority`. One color theme (**Default**, `src/shared/constants/themes.ts`) with light/dark variants
+via CSS custom properties in `src/renderer/styles/globals.css`. Elements with a `hover:` (or focus/highlight) style get
+the pointer cursor automatically from a base rule.
+
+**Fonts** — Bundled in `src/renderer/assets/fonts/`: Anthropic Sans (UI), Dank Mono (terminals and agent windows,
+loaded with the FontFace API before xterm measures), Anthropic Serif (sidebar "Auto Claude" title only) and Inter
+(optional interface font). Settings > General > Appearance picks the interface and command line fonts.
+
+**Settings UI (claude.ai style)** — The dialog (`settings/AppSettings.tsx`) has app pages (General, Accounts, Agents,
+Terminal, Connectors, Developer, Updates) and project pages (General, Memory). Build pages from `SettingsSection` +
+`SettingsRows`/`SettingsRow`; controls are switches, `SegmentedControl`, borderless selects, or dropdown menus with
+`SETTINGS_MENU_TRIGGER_CLASS` (no collapsible rows). UI copy conventions: sentence case, no em dashes, no trailing
+period in setting descriptions, and no green check / red x status icons (state the status in text).
 
 **IPC** — Handlers in `src/main/ipc-handlers/` (by domain), safe APIs exposed in `src/preload/`, renderer calls
 `window.electronAPI.*`.
