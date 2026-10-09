@@ -251,8 +251,8 @@ the pointer cursor automatically from a base rule.
 loaded with the FontFace API before xterm measures), Anthropic Serif (sidebar "Auto Claude" title only) and Inter
 (optional interface font). Settings > General > Appearance picks the interface and command line fonts.
 
-**Settings UI (claude.ai style)** — The dialog (`settings/AppSettings.tsx`) has app pages (General, Accounts, Agents,
-Terminal, Connectors, Developer, Updates) and project pages (General, Memory). Build pages from `SettingsSection` +
+**Settings UI (claude.ai style)** — The dialog (`settings/AppSettings.tsx`) has one menu: General, Accounts, Agents,
+Connectors, Developer, then the selected project's pages (Project, Memory), then Updates. Build pages from `SettingsSection` +
 `SettingsRows`/`SettingsRow`; controls are switches, `SegmentedControl`, borderless selects, or dropdown menus with
 `SETTINGS_MENU_TRIGGER_CLASS` (no collapsible rows). UI copy conventions: sentence case, no em dashes, no trailing
 period in setting descriptions, and no green check / red x status icons (state the status in text).
