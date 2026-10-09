@@ -1,5 +1,5 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir, DEFAULT_MAX_PARALLEL_TASKS } from '../../../shared/constants';
+import { IPC_CHANNELS, AUTO_BUILD_PATHS, getSpecsDir, resolveMaxParallelTasks } from '../../../shared/constants';
 import type { IPCResult, TaskStartOptions, TaskStatus, ImageAttachment } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
@@ -392,7 +392,8 @@ export function registerTaskExecutionHandlers(
       return;
     }
 
-    const maxParallel = project.settings?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+    const appMaxParallel = (readSettingsFile() as { maxParallelTasks?: number } | undefined)?.maxParallelTasks;
+    const maxParallel = resolveMaxParallelTasks(appMaxParallel, project.settings?.maxParallelTasks);
     const inProgressCount = projectStore.getTasks(project.id).filter(
       (t) => t.id !== taskId && t.status === 'in_progress' && !t.metadata?.archivedAt
     ).length;

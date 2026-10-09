@@ -4,7 +4,7 @@ import { Input } from '../ui/input';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ProviderAgentTabs } from './ProviderAgentTabs';
-import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT } from '../../../shared/constants';
+import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT, DEFAULT_MAX_PARALLEL_TASKS, MIN_PARALLEL_TASKS, MAX_PARALLEL_TASKS_LIMIT } from '../../../shared/constants';
 import type {
   AppSettings,
   ToolDetectionResult
@@ -102,6 +102,7 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
 
   if (section === 'terminal') {
     return (
+      <>
       <SettingsSection title={t('general.terminals')}>
         <SettingsRows>
           <SettingsRow
@@ -126,6 +127,34 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
           </SettingsRow>
         </SettingsRows>
       </SettingsSection>
+      <SettingsSection title={t('settings:projectSections.queue.title')}>
+        <SettingsRows>
+          <SettingsRow
+            label={t('settings:projectSections.queue.maxParallelTasks')}
+            description={t('settings:projectSections.queue.maxParallelTasksDescription', {
+              min: MIN_PARALLEL_TASKS,
+              max: MAX_PARALLEL_TASKS_LIMIT
+            })}
+            htmlFor="maxParallelTasks"
+          >
+            <Input
+              id="maxParallelTasks"
+              type="number"
+              min={MIN_PARALLEL_TASKS}
+              max={MAX_PARALLEL_TASKS_LIMIT}
+              className="w-20"
+              value={settings.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                if (e.target.value === '' || !Number.isFinite(value)) return;
+                const clamped = Math.min(MAX_PARALLEL_TASKS_LIMIT, Math.max(MIN_PARALLEL_TASKS, Math.round(value)));
+                onSettingsChange({ ...settings, maxParallelTasks: clamped });
+              }}
+            />
+          </SettingsRow>
+        </SettingsRows>
+      </SettingsSection>
+      </>
     );
   }
 

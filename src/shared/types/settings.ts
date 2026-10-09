@@ -329,6 +329,8 @@ export interface AppSettings {
   featureThinking?: FeatureThinkingConfig;
   // Interface font (default Anthropic Sans)
   interfaceFont?: InterfaceFont;
+  // Maximum tasks in progress at once per project; others wait in the Queue (Settings > Terminal)
+  maxParallelTasks?: number;
   // MCP connector defaults for new tasks (Settings > Connectors)
   mcpConnectors?: McpConnectorSettings;
   // Log order setting for task detail view

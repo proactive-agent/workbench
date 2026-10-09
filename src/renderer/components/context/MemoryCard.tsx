@@ -1,6 +1,5 @@
 import { useState, useMemo } from 'react';
 import {
-  Clock,
   CheckCircle2,
   XCircle,
   Lightbulb,
@@ -18,7 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import type { RendererMemory } from '../../../shared/types';
-import { memoryTypeIcons, memoryTypeColors, memoryTypeLabels } from './constants';
+import { memoryTypeLabels } from './constants';
 import { formatDate } from './utils';
 import { PRReviewCard } from './PRReviewCard';
 import { cn } from '../../lib/utils';
@@ -116,19 +115,6 @@ function ListItem({
   );
 }
 
-function ConfidenceBar({ confidence }: { confidence: number }) {
-  const pct = Math.round(confidence * 100);
-  const color =
-    pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-muted-foreground' : 'bg-destructive';
-  return (
-    <div className="flex items-center gap-1.5" title={`Confidence: ${pct}%`}>
-      <div className="h-1.5 w-16 bg-muted rounded-full overflow-hidden">
-        <div className={cn('h-full rounded-full', color)} style={{ width: `${pct}%` }} />
-      </div>
-      <span className="text-xs text-muted-foreground">{pct}%</span>
-    </div>
-  );
-}
 
 // Check if memory content looks like a PR review (by content structure only)
 function isPRReviewMemory(memory: RendererMemory): boolean {
@@ -232,8 +218,6 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
     return <PRReviewCard memory={memory} />;
   }
 
-  const Icon = memoryTypeIcons[memory.type] || memoryTypeIcons.module_insight;
-  const typeColor = memoryTypeColors[memory.type] || '';
   const typeLabel =
     memoryTypeLabels[memory.type] ||
     t(`memory.types.${memory.type}`, { defaultValue: memory.type.replace(/_/g, ' ') });
@@ -265,79 +249,37 @@ export function MemoryCard({ memory, onVerify, onPin, onDeprecate }: MemoryCardP
   return (
     <div className="py-3">
       <div>
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className="mt-0.5 shrink-0">
-              <Icon className="h-4 w-4 text-muted-foreground" strokeWidth={1.75} />
-            </div>
-            <div className="flex-1 min-w-0">
-              {/* Type badge + session label */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Badge
-                  variant="outline"
-                  className={cn('text-xs capitalize font-medium', typeColor)}
-                >
-                  {typeLabel}
-                </Badge>
-                {sessionLabel && (
-                  <span className="text-sm font-medium text-foreground">{sessionLabel}</span>
-                )}
-                {memory.pinned && (
-                  <Pin className="h-3.5 w-3.5 text-muted-foreground shrink-0" aria-label={t('memory.badges.pinned')} />
-                )}
-                {memory.needsReview && (
-                  <Flag
-                    className="h-3.5 w-3.5 text-muted-foreground shrink-0"
-                    aria-label={t('memory.badges.needsReview')}
-                  />
-                )}
-                {memory.userVerified && (
-                  <ShieldCheck
-                    className="h-3.5 w-3.5 text-success shrink-0"
-                    aria-label={t('memory.badges.verified')}
-                  />
-                )}
-              </div>
-
-              {/* Confidence + source + timestamp */}
-              <div className="flex items-center gap-3 mt-1.5 flex-wrap">
-                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock className="h-3 w-3 shrink-0" />
-                  {formatDate(memory.createdAt)}
-                </div>
-                <ConfidenceBar confidence={memory.confidence} />
-                <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                  {sourceLabel}
-                </Badge>
-                {specId && (
-                  <span
-                    className="text-xs text-muted-foreground truncate max-w-[180px]"
-                    title={specId}
-                  >
-                    {specId}
-                  </span>
-                )}
-              </div>
-
-              {/* Tags row */}
-              {memory.tags.length > 0 && (
-                <div className="flex items-center gap-1 mt-1.5 flex-wrap">
-                  {memory.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-xs px-1.5 py-0 font-normal">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
+        {/* Header: settings-row style title and muted meta lines */}
+        <div className="flex items-start justify-between gap-7">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 text-sm text-foreground">
+              <span>{typeLabel}</span>
+              {sessionLabel && <span className="text-(--nav-label-color)">{sessionLabel}</span>}
+              {memory.pinned && (
+                <Pin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={t('memory.badges.pinned')} />
               )}
-
-              {/* Content preview for simple types */}
-              {!hasContent && memory.content && (
-                <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
-                  {memory.content}
-                </p>
+              {memory.needsReview && (
+                <Flag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={t('memory.badges.needsReview')} />
+              )}
+              {memory.userVerified && (
+                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={t('memory.badges.verified')} />
               )}
             </div>
+            <div className="mt-0.5 truncate text-sm text-(--nav-label-color)" title={specId}>
+              {[formatDate(memory.createdAt), t('memory.confidence', { value: Math.round(memory.confidence * 100) }), sourceLabel, specId]
+                .filter(Boolean)
+                .join(' · ')}
+            </div>
+            {memory.tags.length > 0 && (
+              <div className="mt-0.5 text-sm text-(--nav-label-color)">
+                {memory.tags.map((tag) => `#${tag}`).join(' ')}
+              </div>
+            )}
+
+            {/* Content preview for simple types */}
+            {!hasContent && memory.content && (
+              <p className="mt-1 line-clamp-2 text-sm text-(--nav-label-color)">{memory.content}</p>
+            )}
           </div>
 
           {hasContent && (

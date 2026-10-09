@@ -379,10 +379,6 @@
       "integrationTitle": "Memory",
       "integrationDescription": "Configure persistent cross-session memory for agents",
       "syncDescription": "Configure persistent memory"
-    },
-    "context": {
-      "title": "Context",
-      "description": "Project index and agent memories"
     }
   },
   "agentProfile": {
@@ -840,13 +836,13 @@
         "noModels": "No LLM models installed yet",
         "customUrl": "Custom URL",
         "customUrlPlaceholder": "http://localhost:11434",
-        "notInstalled": "Ollama Not Installed",
+        "notInstalled": "Ollama not installed",
         "notInstalledDescription": "Install Ollama to run open-source AI models locally",
-        "notRunning": "Ollama Not Running",
+        "notRunning": "Ollama not running",
         "notRunningDescription": "Start the Ollama service to connect",
         "install": "Install Ollama",
         "retry": "Retry",
-        "learnMore": "Learn More",
+        "learnMore": "Learn more",
         "autoConnected": "Auto-connected as local provider",
         "startCommand": "Run 'ollama serve' in your terminal"
       }
@@ -1107,14 +1103,10 @@
     "initializeFirst": "Initialize Auto-Build in the project's General settings to configure this page.",
     "general": {
       "autoBuildTitle": "Auto-Build",
-      "dataFolder": "Data folder",
-      "initialized": "Initialized",
       "notInitialized": "Not initialized",
       "notInitializedDescription": "Initialize Auto-Build to enable task creation and agent workflows",
       "initialize": "Initialize",
       "initializing": "Initializing...",
-      "checkingStatus": "Checking...",
-      "agentTitle": "Agent",
       "branches": {
         "title": "Branches",
         "defaultBranch": "Default branch",
@@ -1161,7 +1153,6 @@
       "databasePathDescription": "Optional custom storage location. Default: ~/.auto-claude/memories/"
     },
     "context": {
-      "structureTitle": "Project structure",
       "index": "Project index",
       "indexDescription": "AI-discovered knowledge about your codebase",
       "noIndex": "No index yet. Analyze the project to create one.",
@@ -1169,19 +1160,6 @@
       "refresh": "Refresh",
       "analyzing": "Analyzing project...",
       "loadFailed": "Failed to load project index",
-      "projectType": "Project type",
-      "services": "Services",
-      "root": "Root",
-      "infrastructure": "Infrastructure",
-      "deployment": "Deployment",
-      "dockerServices": "Docker services",
-      "conventions": "Conventions",
-      "pythonLinting": "Python linting",
-      "jsLinting": "JS linting",
-      "formatting": "Formatting",
-      "gitHooks": "Git hooks",
-      "enabled": "Enabled",
-      "memoryStatus": "Status",
       "score": "Score {{score}}",
       "filter": "Filter",
       "loadingMemories": "Loading memories..."

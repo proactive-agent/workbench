@@ -3,7 +3,8 @@ import { arrayMove } from '@dnd-kit/sortable';
 import type { Task, TaskStatus, SubtaskStatus, ImplementationPlan, Subtask, TaskMetadata, ExecutionProgress, ExecutionPhase, ReviewReason, TaskDraft, ImageAttachment, TaskOrderState } from '../../shared/types';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
-import { DEFAULT_MAX_PARALLEL_TASKS } from '../../shared/constants/task';
+import { useSettingsStore } from './settings-store';
+import { DEFAULT_MAX_PARALLEL_TASKS, resolveMaxParallelTasks } from '../../shared/constants/task';
 
 /** Default max parallel tasks when no project setting is configured */
 export { DEFAULT_MAX_PARALLEL_TASKS };
@@ -852,7 +853,10 @@ export async function forceCompleteTask(taskId: string): Promise<PersistStatusRe
  * @param excludeTaskId - Task ID to exclude from the count (e.g., when restarting a stuck task already in in_progress)
  */
 export function isQueueAtCapacity(excludeTaskId?: string): boolean {
-  const maxParallelTasks = useProjectStore.getState().getActiveProject()?.settings?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+  const maxParallelTasks = resolveMaxParallelTasks(
+    useSettingsStore.getState().settings.maxParallelTasks,
+    useProjectStore.getState().getActiveProject()?.settings?.maxParallelTasks
+  );
   const currentTasks = useTaskStore.getState().tasks;
   const inProgressCount = currentTasks.filter((t) =>
     t.status === 'in_progress' && !t.metadata?.archivedAt && (!excludeTaskId || t.id !== excludeTaskId)

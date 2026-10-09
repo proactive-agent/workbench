@@ -5,6 +5,5 @@ export * from './TaskCard';
 export * from './TaskCreationWizard';
 export * from './TaskEditDialog';
 export * from './AppSettings';
-export * from './Context';
 export * from './WelcomeScreen';
 export * from './AddProjectModal';

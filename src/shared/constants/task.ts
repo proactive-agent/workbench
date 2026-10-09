@@ -54,6 +54,14 @@ export const DEFAULT_MAX_PARALLEL_TASKS = 3;
 export const MIN_PARALLEL_TASKS = 1;
 export const MAX_PARALLEL_TASKS_LIMIT = 10;
 
+/**
+ * Maximum tasks in progress at once: the app setting (Settings > Terminal), otherwise a value a
+ * project saved before the setting became app-wide, otherwise the default.
+ */
+export function resolveMaxParallelTasks(appValue?: number, projectValue?: number): number {
+  return appValue ?? projectValue ?? DEFAULT_MAX_PARALLEL_TASKS;
+}
+
 // Status priority for deduplication: higher = more complete
 // Used in project-store.ts to resolve duplicate tasks (main vs worktree)
 // IMPORTANT: Must follow workflow order: backlog < queue < in_progress < review < done

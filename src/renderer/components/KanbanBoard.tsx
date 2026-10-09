@@ -28,9 +28,11 @@ import { TaskCard } from './TaskCard';
 import { SortableTaskCard } from './SortableTaskCard';
 import { TASK_STATUS_COLUMNS, TASK_STATUS_LABELS } from '../../shared/constants';
 import { cn } from '../lib/utils';
-import { persistTaskStatus, forceCompleteTask, archiveTasks, useTaskStore, isQueueAtCapacity, DEFAULT_MAX_PARALLEL_TASKS } from '../stores/task-store';
+import { persistTaskStatus, forceCompleteTask, archiveTasks, useTaskStore, isQueueAtCapacity } from '../stores/task-store';
+import { resolveMaxParallelTasks } from '../../shared/constants/task';
 import { isTaskOnRateLimitHold } from '../../shared/utils/rate-limit-hold';
 import { useProjectStore } from '../stores/project-store';
+import { useSettingsStore } from '../stores/settings-store';
 import { useToast } from '../hooks/use-toast';
 import { WorktreeCleanupDialog } from './WorktreeCleanupDialog';
 import type { Task, TaskStatus, TaskOrderState } from '../../shared/types';
@@ -399,7 +401,8 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   // Get projectId from first task
   const projectId = tasks[0]?.projectId;
   const project = projectId ? projects.find((p) => p.id === projectId) : undefined;
-  const maxParallelTasks = project?.settings?.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS;
+  const appMaxParallelTasks = useSettingsStore((state) => state.settings.maxParallelTasks);
+  const maxParallelTasks = resolveMaxParallelTasks(appMaxParallelTasks, project?.settings?.maxParallelTasks);
 
   // Queue processing lock to prevent race conditions
   const isProcessingQueueRef = useRef(false);
@@ -913,7 +916,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
               variant="ghost"
               size="sm"
               className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
-              onClick={() => window.dispatchEvent(new CustomEvent('open-project-settings', { detail: 'queue' }))}
+              onClick={() => window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'terminal-fonts' }))}
             >
               <Settings className="h-3.5 w-3.5" />
               {t('common:actions.settings')}

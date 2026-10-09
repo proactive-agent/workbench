@@ -1,13 +1,10 @@
 import { useTranslation } from 'react-i18next';
 import type { Project, ProjectSettings as ProjectSettingsType, AutoBuildVersionInfo, ProjectEnvConfig } from '../../../../shared/types';
-import { SettingsSection } from '../SettingsSection';
 import { GeneralSettings } from '../../project-settings/GeneralSettings';
 import { SecuritySettings } from '../../project-settings/SecuritySettings';
+import { ProjectMemorySections } from '../../context/ProjectMemorySections';
 import { BranchSettings } from '../../project-settings/BranchSettings';
 import { InitializationGuard } from '../common/InitializationGuard';
-import { SettingsRow, SettingsRows } from '../SettingsRow';
-import { Input } from '../../ui/input';
-import { DEFAULT_MAX_PARALLEL_TASKS, MAX_PARALLEL_TASKS_LIMIT, MIN_PARALLEL_TASKS } from '../../../../shared/constants/task';
 import type { ProjectSettingsSection } from '../ProjectSettingsContent';
 
 interface SectionRouterProps {
@@ -74,37 +71,6 @@ export function SectionRouter({
         </>
       );
 
-    case 'queue':
-      return (
-        <SettingsSection title={t('projectSections.queue.title')}>
-          <SettingsRows>
-            <SettingsRow
-              label={t('projectSections.queue.maxParallelTasks')}
-              description={t('projectSections.queue.maxParallelTasksDescription', {
-                min: MIN_PARALLEL_TASKS,
-                max: MAX_PARALLEL_TASKS_LIMIT
-              })}
-              htmlFor="maxParallelTasks"
-            >
-              <Input
-                id="maxParallelTasks"
-                type="number"
-                min={MIN_PARALLEL_TASKS}
-                max={MAX_PARALLEL_TASKS_LIMIT}
-                className="w-20"
-                value={settings.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS}
-                onChange={(e) => {
-                  const value = Number(e.target.value);
-                  if (e.target.value === '' || !Number.isFinite(value)) return;
-                  const clamped = Math.min(MAX_PARALLEL_TASKS_LIMIT, Math.max(MIN_PARALLEL_TASKS, Math.round(value)));
-                  setSettings((prev) => ({ ...prev, maxParallelTasks: clamped }));
-                }}
-              />
-            </SettingsRow>
-          </SettingsRows>
-        </SettingsSection>
-      );
-
     case 'memory':
       return (
         <InitializationGuard
@@ -122,6 +88,7 @@ export function SectionRouter({
             expanded={true}
             onToggle={() => {}}
           />
+          <ProjectMemorySections projectId={project.id} />
         </InitializationGuard>
       );
 

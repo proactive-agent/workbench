@@ -541,33 +541,16 @@
       "commit_auto": "Commit",
       "user_taught": "User"
     },
-    "health": {
-      "totalMemories": "Total memories",
-      "avgConfidence": "Average confidence",
-      "verified": "Verified"
-    },
-    "info": {
-      "database": "Database",
-      "path": "Path",
-      "embedding": "Embedding",
-      "memories": "Memories"
-    },
-    "status": {
-      "title": "Memory status",
-      "connected": "Connected",
-      "notAvailable": "Not available",
-      "notConfigured": "Memory system is not configured",
-      "enableInSettings": "To enable memory, configure it in project settings."
-    },
+    "confidence": "{{value}}% confidence",
     "search": {
       "title": "Search memories",
       "placeholder": "Search memories...",
       "resultsCount": "{{count}} result found",
-      "resultsCount_plural": "{{count}} results found"
+      "resultsCount_plural": "{{count}} results found",
+      "searching": "Searching..."
     },
     "browser": {
-      "title": "Memory browser",
-      "countOf": "{{filtered}} of {{total}} memories"
+      "title": "Memory browser"
     },
     "empty": "No memories yet. Memories are automatically created as agents work on tasks.",
     "emptyFilter": "No memories match the selected filter.",
@@ -596,12 +579,6 @@
       "pin": "Pin",
       "unpin": "Unpin",
       "deprecate": "Remove"
-    }
-  },
-  "context": {
-    "tabs": {
-      "projectIndex": "Project index",
-      "memories": "Memories"
     }
   },
   "projectsPage": {

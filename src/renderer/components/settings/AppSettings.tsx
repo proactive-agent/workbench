@@ -9,9 +9,7 @@ import {
   Download,
   FolderCog,
   History,
-  FileText,
-  Blocks,
-  ListOrdered
+  Blocks
 } from 'lucide-react';
 import { AgentOutlineIcon, GearIcon } from '../icons/app-icons';
 
@@ -33,10 +31,8 @@ import { DevToolsSettings } from './DevToolsSettings';
 import { DebugSettings } from './DebugSettings';
 import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSettings';
 import { AccountSettings } from './AccountSettings';
-import { ProjectSettingsContent, ProjectSettingsSection, STANDALONE_PROJECT_SECTIONS } from './ProjectSettingsContent';
-import { Context } from '../Context';
+import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSettingsContent';
 import { ConnectorsSettings } from './ConnectorsSettings';
-import { ErrorBoundary } from '../ui/error-boundary';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 import {
@@ -89,9 +85,7 @@ const appNavItemsConfig: NavItemConfig<AppPage>[] = [
 
 const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
   { id: 'general', icon: FolderCog },
-  { id: 'queue', icon: ListOrdered },
-  { id: 'memory', icon: History },
-  { id: 'context', icon: FileText }
+  { id: 'memory', icon: History }
 ];
 
 // Changes save on their own (claude.ai has no Save button); quick edits are batched
@@ -239,13 +233,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
     if (activeTopLevel === 'app') {
       return renderAppPage();
     }
-    if (projectSection === 'context') {
-      return selectedProject ? (
-        <ErrorBoundary>
-          <Context projectId={selectedProject.id} />
-        </ErrorBoundary>
-      ) : null;
-    }
     return (
       <ProjectSettingsContent
         project={selectedProject}
@@ -271,8 +258,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
     <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 text-muted-foreground" strokeWidth={1.5} />
   );
 
-  // Context is a full page with its own scrolling; give it the whole area
-  const isStandaloneSection = activeTopLevel === 'project' && STANDALONE_PROJECT_SECTIONS.has(projectSection);
 
   return (
     <FullScreenDialog open={open} onOpenChange={handleOpenChange}>
@@ -371,15 +356,11 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
               </div>
             )}
 
-            {isStandaloneSection ? (
-              <div className="min-h-0 flex-1 overflow-hidden">{renderContent()}</div>
-            ) : (
-              <ScrollArea className="min-h-0 flex-1">
-                <div className="mx-auto w-full max-w-[832px] px-7 pb-10">
-                  {renderContent()}
-                </div>
-              </ScrollArea>
-            )}
+            <ScrollArea className="min-h-0 flex-1">
+              <div className="mx-auto w-full max-w-[832px] px-7 pb-10">
+                {renderContent()}
+              </div>
+            </ScrollArea>
           </div>
         </DialogPrimitive.Content>
       </FullScreenDialogPortal>

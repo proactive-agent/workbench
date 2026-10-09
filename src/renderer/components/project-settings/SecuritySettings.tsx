@@ -304,6 +304,16 @@ export function SecuritySettings({
               aria-label={t('projectPages.memory.enable')}
             />
           </SettingsRow>
+          <SettingsRow
+            label={t('projectSections.general.useClaudeMd')}
+            description={t('projectSections.general.useClaudeMdDescription')}
+          >
+            <Switch
+              checked={settings.useClaudeMd ?? true}
+              onCheckedChange={(checked) => setSettings({ ...settings, useClaudeMd: checked })}
+              aria-label={t('projectSections.general.useClaudeMd')}
+            />
+          </SettingsRow>
         </SettingsRows>
       </SettingsSection>
 
