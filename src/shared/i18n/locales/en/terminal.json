@@ -59,7 +59,7 @@
     "emptyTitle": "Agents",
     "emptyDescription": "Run Claude agents side by side, each in its own terminal.",
     "newTerminal": "New terminal",
-    "count": "{{count}} / {{max}} terminals",
+    "count": "{{count}} / {{max}} windows",
     "newAgent": "New agent"
   },
   "taskSelector": {

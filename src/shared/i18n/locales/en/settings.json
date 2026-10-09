@@ -201,8 +201,8 @@
   },
   "general": {
     "terminals": "Terminals",
-    "maxTerminals": "Maximum terminals",
-    "maxTerminalsDescription": "How many agent terminals each project can run at once ({{min}}–{{max}})",
+    "maxTerminals": "Maximum windows",
+    "maxTerminalsDescription": "How many agent windows each project can have open at once ({{min}}–{{max}})",
     "featureModelSettings": "Feature models",
     "featureModelSettingsDescription": "Model and thinking level for Insights, MR review, and utility agents",
     "model": "Model",

@@ -200,7 +200,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: [],
   layouts: [],
   activeTerminalId: null,
-  // Maximum terminals per project, synced from the "Maximum terminals" app setting.
+  // Maximum terminals per project, synced from the "Maximum windows" app setting.
   // Capped to prevent excessive memory usage from terminal buffers (~1MB each)
   // and PTY process resource exhaustion.
   maxTerminals: DEFAULT_MAX_TERMINALS,
