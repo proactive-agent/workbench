@@ -187,8 +187,8 @@
     "gitOptions": {
       "title": "Git",
       "baseBranchLabel": "Base branch",
-      "useProjectDefault": "Use project default",
-      "useProjectDefaultWithBranch": "Use project default ({{branch}})",
+      "useProjectDefault": "Project default",
+      "useProjectDefaultWithBranch": "Project default ({{branch}})",
       "searchBranches": "Search branches...",
       "noBranchesFound": "No branches found",
       "helpText": "Override the branch this task's worktree will be created from. Leave empty to use the project's configured default branch.",

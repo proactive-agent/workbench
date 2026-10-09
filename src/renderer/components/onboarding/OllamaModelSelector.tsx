@@ -4,7 +4,6 @@ import {
   Check,
   Download,
   Loader2,
-  AlertCircle,
   RefreshCw
 } from 'lucide-react';
 import { ExternalLink } from '../ui/external-link';
@@ -313,259 +312,140 @@ export function OllamaModelSelector({
 
   if (isLoading) {
     return (
-      <div className={cn('flex items-center justify-center py-8', className)}>
-        <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Checking Ollama models...</span>
+      <div className={cn('flex items-center gap-2 py-2 text-sm text-(--nav-label-color)', className)}>
+        <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} />
+        {t('ollama.models.checking')}
       </div>
     );
   }
 
-  // Ollama not installed - show install option
-  if (ollamaState === 'not-installed') {
+  // Ollama not installed or not running: plain settings-style text with soft buttons
+  if (ollamaState === 'not-installed' || ollamaState === 'not-running') {
+    const notInstalled = ollamaState === 'not-installed';
+    const key = notInstalled ? 'ollama.notInstalled' : 'ollama.notRunning';
     return (
-      <div className={cn('rounded-lg border border-info/30 bg-info/10 p-4', className)}>
-        <div className="flex items-start gap-3">
-          <Download className="h-5 w-5 text-info shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-foreground">
-              {t('ollama.notInstalled.title')}
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              {t('ollama.notInstalled.description')}
-            </p>
-
-            {/* Install success message */}
-            {installSuccess && (
-              <div className="mt-3 p-2 rounded-md bg-success/10 border border-success/30">
-                <p className="text-sm text-success">
-                  {t('ollama.notInstalled.installSuccess')}
-                </p>
-              </div>
-            )}
-
-            {/* Error message */}
-            {error && (
-              <div className="mt-3 p-2 rounded-md bg-destructive/10 border border-destructive/30">
-                <p className="text-sm text-destructive">{error}</p>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 mt-3">
-              <Button
-                onClick={handleInstallOllama}
-                disabled={isInstalling}
-                size="sm"
-              >
-                {isInstalling ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                    {t('ollama.notInstalled.installing')}
-                  </>
-                ) : (
-                  <>
-                    <Download className="h-3.5 w-3.5 mr-1.5" />
-                    {t('ollama.notInstalled.installButton')}
-                  </>
-                )}
-              </Button>
-              {/* Note: isLoading is always false when this block renders because we only show
-                  this block after setIsLoading(false) is called. However, clicking Retry calls
-                  checkInstalledModels() which immediately sets isLoading=true, triggering a
-                  re-render that shows the loading block instead. This React batching behavior
-                  naturally prevents double-clicks without needing the disabled prop. */}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => checkInstalledModels()}
-              >
-                <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-                {t('ollama.notInstalled.retry')}
-              </Button>
-              <ExternalLink href="https://ollama.com">{t('ollama.notInstalled.learnMore')}</ExternalLink>
-            </div>
-
-            <p className="text-xs text-muted-foreground mt-3">
-              {t('ollama.notInstalled.fallbackNote')}
-            </p>
-          </div>
+      <div className={cn('space-y-3', className)}>
+        <div>
+          <p className="text-sm text-foreground">{t(`${key}.title`)}</p>
+          <p className="mt-0.5 text-sm text-(--nav-label-color)">{t(`${key}.description`)}</p>
         </div>
-      </div>
-    );
-  }
 
-  // Ollama installed but not running
-  if (ollamaState === 'not-running') {
-    return (
-      <div className={cn('rounded-lg border border-warning/30 bg-warning/10 p-4', className)}>
-        <div className="flex items-start gap-3">
-          <AlertCircle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-warning">
-              {t('ollama.notRunning.title')}
-            </p>
-            <p className="text-sm text-warning/80 mt-1">
-              {t('ollama.notRunning.description')}
-            </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => checkInstalledModels()}
-              className="mt-3"
-            >
-              <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-              {t('ollama.notRunning.retry')}
+        {installSuccess && <p className="text-sm text-(--nav-label-color)">{t('ollama.notInstalled.installSuccess')}</p>}
+        {error && <p className="text-sm text-destructive">{error}</p>}
+
+        <div className="flex flex-wrap items-center gap-2">
+          {notInstalled && (
+            <Button variant="outline" size="sm" onClick={handleInstallOllama} disabled={isInstalling} className="gap-1.5">
+              {isInstalling ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} /> : <Download className="h-4 w-4" strokeWidth={1.75} />}
+              {isInstalling ? t('ollama.notInstalled.installing') : t('ollama.notInstalled.installButton')}
             </Button>
-            <p className="text-xs text-muted-foreground mt-2">
-              {t('ollama.notRunning.fallbackNote')}
-            </p>
-          </div>
+          )}
+          {/* Retry re-checks (the loading state replaces this block, so it can't be double-clicked) */}
+          <Button variant="outline" size="sm" onClick={() => checkInstalledModels()} className="gap-1.5">
+            <RefreshCw className="h-4 w-4" strokeWidth={1.75} />
+            {t(`${key}.retry`)}
+          </Button>
+          {notInstalled && <ExternalLink href="https://ollama.com">{t('ollama.notInstalled.learnMore')}</ExternalLink>}
         </div>
+
+        <p className="text-xs text-(--nav-label-color)">{t(`${key}.fallbackNote`)}</p>
       </div>
     );
   }
 
+  // Model list: rows like a settings list; click an installed model to use it
   return (
-    <div className={cn('space-y-3', className)}>
-      {error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3">
-          <p className="text-sm text-destructive">{error}</p>
-        </div>
-      )}
+    <div className={cn('space-y-2', className)}>
+      {error && <p className="text-sm text-destructive">{error}</p>}
 
-       <div className="space-y-2">
-         {models.map(model => {
-           const isSelected = selectedModel === model.name;
-           const download = downloads[model.name];
-           const isCurrentlyDownloading = download?.status === 'starting' || download?.status === 'downloading';
-           const progress = download;
+      <div className="[&>*+*]:border-t [&>*+*]:border-settings-divider">
+        {models.map((model) => {
+          const isSelected = selectedModel === model.name;
+          const download = downloads[model.name];
+          const isCurrentlyDownloading = download?.status === 'starting' || download?.status === 'downloading';
+          const notes = [
+            t('ollama.models.dimensions', { dim: model.dim }),
+            model.badge ? t(`ollama.models.${model.badge}`) : null,
+            model.installed ? t('ollama.models.installed') : null,
+          ].filter(Boolean).join(' · ');
 
-           return (
-             <div
-               key={model.name}
-               className={cn(
-                 'rounded-lg border transition-colors',
-                 model.installed && !disabled
-                   ? 'cursor-pointer hover:bg-accent/50'
-                   : 'cursor-default',
-                 isSelected && 'border-primary bg-primary/5',
-                 !model.installed && 'bg-muted/30'
-               )}
-               onClick={() => handleSelect(model)}
-             >
-               <div className="flex items-center justify-between p-3">
-                 <div className="flex items-center gap-3">
-                   {/* Selection/Status indicator */}
-                   <div
-                     className={cn(
-                       'flex h-5 w-5 items-center justify-center rounded-full border-2 shrink-0',
-                       isSelected
-                         ? 'border-primary bg-primary text-primary-foreground'
-                         : model.installed
-                           ? 'border-muted-foreground/30'
-                           : 'border-muted-foreground/20 bg-muted/50'
-                     )}
-                   >
-                     {isSelected && <Check className="h-3 w-3" />}
-                   </div>
+          return (
+            <div
+              key={model.name}
+              role={model.installed ? 'button' : undefined}
+              tabIndex={model.installed && !disabled ? 0 : undefined}
+              aria-pressed={model.installed ? isSelected : undefined}
+              className={cn(
+                '-mx-2 rounded-lg px-2 py-2.5 outline-none focus-visible:shadow-(--shadow-focus)',
+                model.installed && !disabled && 'hover:bg-nav-hover'
+              )}
+              onClick={() => handleSelect(model)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleSelect(model);
+                }
+              }}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-sm text-foreground">{model.name}</div>
+                  <div className="text-sm text-(--nav-label-color)">{notes}</div>
+                  {model.description && <div className="text-sm text-(--nav-label-color)">{model.description}</div>}
+                </div>
 
-                   <div className="flex-1">
-                     <div className="flex items-center gap-2">
-                       <span className="text-sm font-medium">{model.name}</span>
-                       <span className="text-xs text-muted-foreground">
-                         ({model.dim} dim)
-                       </span>
-                       {model.badge === 'recommended' && (
-                         <span className="inline-flex items-center rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-                           Recommended
-                         </span>
-                       )}
-                       {model.badge === 'quality' && (
-                         <span className="inline-flex items-center rounded-full bg-violet-500/15 px-2 py-0.5 text-xs font-medium text-violet-600 dark:text-violet-400">
-                           Highest Quality
-                         </span>
-                       )}
-                       {model.badge === 'fast' && (
-                         <span className="inline-flex items-center rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-medium text-amber-600 dark:text-amber-400">
-                           Fastest
-                         </span>
-                       )}
-                       {model.installed && (
-                         <span className="inline-flex items-center rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
-                           Installed
-                         </span>
-                       )}
-                     </div>
-                     <p className="text-xs text-muted-foreground">{model.description}</p>
-                   </div>
-                 </div>
+                {isSelected ? (
+                  <Check className="h-4 w-4 shrink-0 text-(--menu-check)" strokeWidth={2} />
+                ) : !model.installed ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(model.name);
+                    }}
+                    disabled={isCurrentlyDownloading || disabled}
+                    className="shrink-0 gap-1.5"
+                  >
+                    {isCurrentlyDownloading ? <Loader2 className="h-4 w-4 animate-spin" strokeWidth={1.75} /> : <Download className="h-4 w-4" strokeWidth={1.75} />}
+                    {isCurrentlyDownloading ? t('ollama.models.downloading') : t('ollama.models.download')}
+                    {!isCurrentlyDownloading && model.size_estimate && (
+                      <span className="text-(--nav-label-color)">{model.size_estimate}</span>
+                    )}
+                  </Button>
+                ) : null}
+              </div>
 
-                 {/* Download button for non-installed models */}
-                 {!model.installed && (
-                   <Button
-                     variant="outline"
-                     size="sm"
-                     onClick={(e) => {
-                       e.stopPropagation();
-                       handleDownload(model.name);
-                     }}
-                     disabled={isCurrentlyDownloading || disabled}
-                     className="shrink-0"
-                   >
-                     {isCurrentlyDownloading ? (
-                       <>
-                         <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                         Downloading...
-                       </>
-                     ) : (
-                       <>
-                         <Download className="h-3.5 w-3.5 mr-1.5" />
-                         Download
-                         {model.size_estimate && (
-                           <span className="ml-1 text-muted-foreground">
-                             ({model.size_estimate})
-                           </span>
-                         )}
-                       </>
-                     )}
-                   </Button>
-                 )}
-               </div>
+              {/* Download progress */}
+              {isCurrentlyDownloading && (
+                <div className="mt-2 space-y-1">
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-segment-track">
+                    {download && download.percentage > 0 ? (
+                      <div
+                        className="h-full rounded-full bg-foreground/60 transition-all duration-300"
+                        style={{ width: `${Math.max(0, Math.min(100, download.percentage))}%` }}
+                      />
+                    ) : (
+                      <div className="h-full w-1/4 rounded-full bg-foreground/60 animate-indeterminate" />
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between text-xs text-(--nav-label-color)">
+                    <span>
+                      {download && download.percentage > 0 ? `${Math.round(download.percentage)}%` : t('ollama.models.startingDownload')}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      {download?.speed && <span>{download.speed}</span>}
+                      {download?.timeRemaining && <span>{download.timeRemaining}</span>}
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
 
-               {/* Progress bar for downloading models */}
-               {isCurrentlyDownloading && (
-                 <div className="px-3 pb-3 space-y-1.5">
-                   {/* Progress bar */}
-                   <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                     {progress && progress.percentage > 0 ? (
-                       <div
-                         className="h-full rounded-full bg-gradient-to-r from-primary via-primary to-primary/80 transition-all duration-300"
-                         style={{ width: `${Math.max(0, Math.min(100, progress.percentage))}%` }}
-                       />
-                     ) : (
-                       /* Indeterminate/sliding state while waiting for progress events */
-                       <div className="h-full w-1/4 rounded-full bg-gradient-to-r from-primary via-primary to-primary/80 animate-indeterminate" />
-                     )}
-                   </div>
-                   {/* Progress info: percentage, speed, time remaining */}
-                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                     <span className="font-medium text-foreground">
-                       {progress && progress.percentage > 0 ? `${Math.round(progress.percentage)}%` : 'Starting download...'}
-                     </span>
-                     <div className="flex items-center gap-2">
-                       {progress?.speed && <span>{progress.speed}</span>}
-                       {progress?.timeRemaining && <span className="text-primary">{progress.timeRemaining}</span>}
-                     </div>
-                   </div>
-                 </div>
-               )}
-             </div>
-           );
-         })}
-       </div>
-
-      <p className="text-xs text-muted-foreground">
-        Select an installed model for semantic search. Memory works with keyword search even without embeddings.
-      </p>
+      <p className="text-xs text-(--nav-label-color)">{t('ollama.models.selectHint')}</p>
     </div>
   );
 }

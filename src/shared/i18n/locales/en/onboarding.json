@@ -241,6 +241,18 @@
       "description": "Ollama is installed but not running. Start Ollama to use local embedding models.",
       "retry": "Retry",
       "fallbackNote": "Memory will still work with keyword search even without embeddings."
+    },
+    "models": {
+      "checking": "Checking Ollama models...",
+      "dimensions": "{{dim}} dim",
+      "recommended": "Recommended",
+      "quality": "Highest quality",
+      "fast": "Fastest",
+      "installed": "Installed",
+      "download": "Download",
+      "downloading": "Downloading...",
+      "startingDownload": "Starting download...",
+      "selectHint": "Select an installed model for semantic search. Memory works with keyword search even without embeddings."
     }
   }
 }
