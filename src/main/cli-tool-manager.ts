@@ -280,6 +280,8 @@ export function buildClaudeDetectionResult(
  */
 class CLIToolManager {
   private cache: Map<CLITool, CacheEntry> = new Map();
+  /** Full detection results for Settings > Developer > Paths, detected without blocking */
+  private infoCache: Map<CLITool, Promise<ToolDetectionResult>> = new Map();
   private userConfig: ToolConfig = {};
 
   /**
@@ -293,6 +295,7 @@ class CLIToolManager {
   configure(config: ToolConfig): void {
     this.userConfig = config;
     this.cache.clear();
+    this.infoCache.clear();
     console.warn('[CLI Tools] Configuration updated, cache cleared');
   }
 
@@ -2031,6 +2034,7 @@ class CLIToolManager {
    */
   clearCache(): void {
     this.cache.clear();
+    this.infoCache.clear();
     console.warn('[CLI Tools] Cache cleared');
   }
 
@@ -2045,6 +2049,21 @@ class CLIToolManager {
    */
   getToolInfo(tool: CLITool): ToolDetectionResult {
     return this.detectToolPath(tool);
+  }
+
+  /**
+   * Tool detection info without blocking the main process (async version checks), detected
+   * once per session (or after the tool configuration changes) and then reused
+   */
+  getToolInfoAsync(tool: CLITool): Promise<ToolDetectionResult> {
+    let pending = this.infoCache.get(tool);
+    if (!pending) {
+      pending = this.detectToolPathAsync(tool);
+      this.infoCache.set(tool, pending);
+      // A failed detection is retried next time
+      pending.catch(() => this.infoCache.delete(tool));
+    }
+    return pending;
   }
 }
 
@@ -2146,6 +2165,23 @@ export function configureTools(config: ToolConfig): void {
  */
 export function getToolInfo(tool: CLITool): ToolDetectionResult {
   return cliToolManager.getToolInfo(tool);
+}
+
+/** Tool detection info, detected asynchronously once per session and then reused */
+export function getToolInfoAsync(tool: CLITool): Promise<ToolDetectionResult> {
+  return cliToolManager.getToolInfoAsync(tool);
+}
+
+/** Tools shown in Settings > Developer > Paths */
+export const PATHS_PAGE_TOOLS: CLITool[] = ['python', 'git', 'gh', 'glab', 'claude'];
+
+/** Detect the Paths page tools in the background (at app start), so the page opens instantly */
+export function warmToolInfo(): void {
+  for (const tool of PATHS_PAGE_TOOLS) {
+    void cliToolManager.getToolInfoAsync(tool).catch(() => {
+      // Detected again when the page asks
+    });
+  }
 }
 
 /**

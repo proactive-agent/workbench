@@ -7,8 +7,9 @@
  *
  * Used in TaskCreationWizard and TaskEditDialog.
  */
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useOllamaLlmModels } from '../hooks/useOllamaLlmModels';
 import { useActiveProvider } from '../hooks/useActiveProvider';
 import { getProviderModelLabel } from '../../shared/utils/model-display';
 import { Brain, Scale, Zap, Sliders, Sparkles } from 'lucide-react';
@@ -87,33 +88,12 @@ export function AgentProfileSelector({
   const { t } = useTranslation('settings');
   const { provider: activeProvider } = useActiveProvider();
 
-  // Ollama models are user-installed — fetch dynamically from the local server
-  const [ollamaModels, setOllamaModels] = useState<Array<{ value: string; label: string }>>([]);
-
-  const fetchOllamaModels = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const result = await window.electronAPI.listOllamaModels();
-      if (signal?.aborted) return;
-      if (result?.success && Array.isArray(result?.data?.models)) {
-        const llmModels = (result.data.models as Array<{ name: string; is_embedding: boolean }>)
-          .filter(m => !m.is_embedding)
-          .map(m => ({ value: m.name, label: m.name }));
-        setOllamaModels(llmModels);
-      }
-    } catch {
-      // Ollama not available — leave empty
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeProvider !== 'ollama') {
-      setOllamaModels([]);
-      return;
-    }
-    const controller = new AbortController();
-    fetchOllamaModels(controller.signal);
-    return () => { controller.abort(); };
-  }, [activeProvider, fetchOllamaModels]);
+  // Ollama models are user-installed: the saved list (fetched once if never fetched)
+  const { models: installedOllamaModels } = useOllamaLlmModels(activeProvider === 'ollama');
+  const ollamaModels = useMemo(
+    () => installedOllamaModels.map((m) => ({ value: m.name, label: m.name })),
+    [installedOllamaModels]
+  );
 
   const isCustom = profileId === 'custom';
   const _isAuto = profileId === 'auto';

@@ -4,7 +4,11 @@ import { Download, Loader2, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import { useDownloadStore } from '../../stores/download-store';
+
+/** Shared with the model pickers (useOllamaLlmModels) */
+const MODELS_CACHE_KEY = 'ollama-llm-models';
 
 interface InstalledModel {
   name: string;
@@ -82,13 +86,26 @@ export function OllamaModelManager() {
     }
   }, []);
 
+  // On open: the last fetched list; only fetch when it never ran (Refresh fetches again)
   useEffect(() => {
     const controller = new AbortController();
-    fetchModels(controller.signal);
+    const cached = readRefreshCache<{ available: boolean; models: InstalledModel[] }>(MODELS_CACHE_KEY);
+    if (cached) {
+      setOllamaAvailable(cached.available);
+      setInstalledModels(cached.models);
+      setIsLoading(false);
+    } else {
+      void fetchModels(controller.signal);
+    }
     return () => {
       controller.abort();
     };
   }, [fetchModels]);
+
+  // Remember each finished fetch
+  useEffect(() => {
+    if (!isLoading) writeRefreshCache(MODELS_CACHE_KEY, { available: ollamaAvailable, models: installedModels });
+  }, [isLoading, ollamaAvailable, installedModels]);
 
   // Build sets for fast installed-model lookup
   const installedNames = new Set<string>();

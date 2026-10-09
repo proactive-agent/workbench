@@ -5,6 +5,7 @@ import { ExternalLink } from '../ui/external-link';
 import { ALL_AVAILABLE_MODELS, resolveModelEquivalent, type ModelOption } from '@shared/constants/models';
 import { PROVIDER_REGISTRY } from '@shared/constants/providers';
 import type { BuiltinProvider } from '@shared/types/provider-account';
+import { useOllamaLlmModels } from '../../hooks/useOllamaLlmModels';
 import { useSettingsStore } from '@/stores/settings-store';
 import { cn } from '../../lib/utils';
 import { Input } from '../ui/input';
@@ -46,46 +47,19 @@ export function MultiProviderModelSelect({
   const settings = useSettingsStore(s => s.settings);
   const providerAccounts = settings.providerAccounts ?? [];
 
-  // Dynamic Ollama model fetching
-  const [ollamaModels, setOllamaModels] = useState<ModelOption[]>([]);
-  const [ollamaLoading, setOllamaLoading] = useState(false);
-
-  useEffect(() => {
-    if (filterProvider && filterProvider !== 'ollama') return;
-    // Only fetch if there's an Ollama account configured
-    const hasOllamaAccount = providerAccounts.some(a => a.provider === 'ollama');
-    if (!hasOllamaAccount) {
-      setOllamaModels([]);
-      return;
-    }
-
-    const controller = new AbortController();
-    setOllamaLoading(true);
-
-    (async () => {
-      try {
-        const result = await window.electronAPI.listOllamaModels();
-        if (controller.signal.aborted) return;
-        if (result?.success && result.data?.models) {
-          const llmModels = result.data.models
-            .filter((m: { is_embedding: boolean }) => !m.is_embedding)
-            .map((m: { name: string; size_bytes: number; size_gb: number }): ModelOption => ({
-              value: m.name,
-              label: m.name,
-              provider: 'ollama' as BuiltinProvider,
-              description: m.size_gb >= 1 ? `${m.size_gb.toFixed(1)} GB` : `${Math.round(m.size_bytes / 1e6)} MB`,
-            }));
-          setOllamaModels(llmModels);
-        }
-      } catch {
-        // Non-fatal — leave models empty
-      } finally {
-        if (!controller.signal.aborted) setOllamaLoading(false);
-      }
-    })();
-
-    return () => controller.abort();
-  }, [filterProvider, providerAccounts]);
+  // Installed Ollama models: the saved list (fetched once if never fetched), only when an
+  // Ollama account exists and Ollama models are wanted here
+  const wantsOllama = (!filterProvider || filterProvider === 'ollama') && providerAccounts.some(a => a.provider === 'ollama');
+  const { models: installedOllamaModels, isLoading: ollamaLoading } = useOllamaLlmModels(wantsOllama);
+  const ollamaModels = useMemo<ModelOption[]>(() => installedOllamaModels.map((m) => {
+    const sizeGb = m.size_bytes / 1e9;
+    return {
+      value: m.name,
+      label: m.name,
+      provider: 'ollama' as BuiltinProvider,
+      description: sizeGb >= 1 ? `${sizeGb.toFixed(1)} GB` : `${Math.round(m.size_bytes / 1e6)} MB`,
+    };
+  }), [installedOllamaModels]);
 
   // Determine if all OpenAI accounts are OAuth-only (Codex subscription)
   const openaiIsOAuthOnly = useMemo(() => {

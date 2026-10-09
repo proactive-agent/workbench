@@ -8,7 +8,10 @@ import { Button } from '../ui/button';
 import { Switch } from '../ui/switch';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import type { AppSettings, SupportedIDE, SupportedTerminal, SupportedCLI } from '../../../shared/types';
+
+const TOOLS_CACHE_KEY = 'detected-tools';
 
 interface DevToolsSettingsProps {
   settings: AppSettings;
@@ -95,7 +98,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
   const [isDetecting, setIsDetecting] = useState(false);
   const [detectError, setDetectError] = useState<string | null>(null);
 
-  // Detect installed tools on mount
+  // Detect installed IDEs and terminals
   const detectTools = useCallback(async () => {
     setIsDetecting(true);
     setDetectError(null);
@@ -110,6 +113,7 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
       const result = await window.electronAPI.worktreeDetectTools();
       if (result.success && result.data) {
         setDetectedTools(result.data as DetectedTools);
+        writeRefreshCache(TOOLS_CACHE_KEY, result.data);
       } else {
         setDetectError(result.error || 'Failed to detect tools');
       }
@@ -120,8 +124,14 @@ export function DevToolsSettings({ settings, onSettingsChange }: DevToolsSetting
     }
   }, []);
 
+  // Show the last detection; only detect on Refresh (or when it never ran)
   useEffect(() => {
-    detectTools();
+    const cached = readRefreshCache<DetectedTools>(TOOLS_CACHE_KEY);
+    if (cached) {
+      setDetectedTools(cached);
+    } else {
+      void detectTools();
+    }
   }, [detectTools]);
 
   const handleIDEChange = (ide: SupportedIDE) => {

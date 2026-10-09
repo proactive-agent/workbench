@@ -6,6 +6,9 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { ProviderAccount } from '@shared/types/provider-account';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
+
+const CONNECTION_CACHE_KEY = 'ollama-connection';
 
 type OllamaConnectionState = 'checking' | 'not-installed' | 'not-running' | 'connected';
 
@@ -29,6 +32,13 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
 
   const hasOllamaAccount = accounts.length > 0;
 
+  // Last check result, shown when the panel opens (Retry checks again)
+  const remember = (state: OllamaConnectionState, modelCount: number | null = null) => {
+    setConnectionState(state);
+    setLlmModelCount(modelCount);
+    writeRefreshCache(CONNECTION_CACHE_KEY, { state, modelCount });
+  };
+
   const checkConnection = useCallback(async (abortSignal?: AbortSignal) => {
     setConnectionState('checking');
 
@@ -37,7 +47,7 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
       if (abortSignal?.aborted) return;
 
       if (!installResult?.success || !installResult?.data?.installed) {
-        setConnectionState('not-installed');
+        remember('not-installed');
         return;
       }
 
@@ -45,11 +55,11 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
       if (abortSignal?.aborted) return;
 
       if (!statusResult?.success || !statusResult?.data?.running) {
-        setConnectionState('not-running');
+        remember('not-running');
         return;
       }
 
-      setConnectionState('connected');
+      remember('connected');
 
       // Fetch model count (LLMs only, filter out embedding models)
       const modelsResult = await window.electronAPI.listOllamaModels(customUrl !== 'http://localhost:11434' ? customUrl : undefined);
@@ -57,7 +67,7 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
 
       if (modelsResult?.success && modelsResult?.data?.models) {
         const llmModels = modelsResult.data.models.filter((m) => !m.is_embedding);
-        setLlmModelCount(llmModels.length);
+        remember('connected', llmModels.length);
       }
 
       // Auto-create account if none exists yet
@@ -81,19 +91,28 @@ export function OllamaConnectionPanel({ accounts, onAccountCreated }: OllamaConn
       }
     } catch (err) {
       if (!abortSignal?.aborted) {
-        setConnectionState('not-running');
+        remember('not-running');
       }
     }
   }, [customUrl, hasOllamaAccount, isCreatingAccount, addProviderAccount, onAccountCreated]);
 
+  // On open: the last check's result; only check when it never ran (Retry checks again)
+  const checkConnectionRef = useRef(checkConnection);
+  checkConnectionRef.current = checkConnection;
   useEffect(() => {
+    const cached = readRefreshCache<{ state: OllamaConnectionState; modelCount: number | null }>(CONNECTION_CACHE_KEY);
+    if (cached) {
+      setConnectionState(cached.state);
+      setLlmModelCount(cached.modelCount);
+      return;
+    }
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    checkConnection(controller.signal);
+    void checkConnectionRef.current(controller.signal);
     return () => {
       controller.abort();
     };
-  }, [checkConnection]);
+  }, []);
 
   if (connectionState === 'checking') {
     return (

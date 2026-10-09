@@ -5,18 +5,42 @@ import { cn } from '../../lib/utils';
 import { SettingsRow } from '../settings/SettingsRow';
 import { StatusIndicator } from '../settings/common/StatusIndicator';
 import { useContextStore } from '../../stores/context-store';
-import { useProjectContext, useRefreshIndex } from './hooks';
+import { useRefreshIndex } from './hooks';
+import { useEffect, useState } from 'react';
+import { loadProjectContext } from '../../stores/context-store';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 
 /**
  * The project index row (Analyze/Refresh, plus loading and error), placed in the General
- * page's Auto-Build section. Loads the index for the project.
+ * page's Auto-Build section.
  */
 export function ProjectIndexRows({ projectId }: { projectId: string }) {
   const { t } = useTranslation('settings');
   const { projectIndex, indexLoading, indexError } = useContextStore();
-  useProjectContext(projectId);
-  const onRefresh = useRefreshIndex(projectId);
-  const hasIndex = !!projectIndex;
+  const refreshIndex = useRefreshIndex(projectId);
+
+  // Whether the project has an index, remembered per project so opening the page doesn't load
+  // the project context (and start the memory service) again; Analyze/Refresh updates it
+  const cacheKey = `project-index:${projectId}`;
+  const [cachedHasIndex, setCachedHasIndex] = useState(() => readRefreshCache<boolean>(cacheKey));
+  // The shared context store may hold another project's index: only trust it after this page
+  // loaded or analyzed this project
+  const [fetchedHere, setFetchedHere] = useState(false);
+  useEffect(() => {
+    const cached = readRefreshCache<boolean>(cacheKey);
+    setCachedHasIndex(cached);
+    setFetchedHere(false);
+    if (cached === undefined) void loadProjectContext(projectId).then(() => setFetchedHere(true));
+  }, [cacheKey, projectId]);
+  useEffect(() => {
+    if (!fetchedHere || indexLoading || indexError) return;
+    writeRefreshCache(cacheKey, !!projectIndex);
+    setCachedHasIndex(!!projectIndex);
+  }, [cacheKey, fetchedHere, projectIndex, indexLoading, indexError]);
+  const onRefresh = () => {
+    void refreshIndex().then(() => setFetchedHere(true));
+  };
+  const hasIndex = fetchedHere ? !!projectIndex : !!cachedHasIndex;
 
   return (
     <>

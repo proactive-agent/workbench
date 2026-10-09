@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "../ui/select";
 import { cn } from "../../lib/utils";
+import { readRefreshCache, writeRefreshCache } from "../../lib/refresh-cache";
 import { SettingsSection } from "./SettingsSection";
 import { SettingsRow, SettingsRows } from "./SettingsRow";
 import type { ClaudeCodeVersionInfo } from "../../../shared/types/cli";
@@ -44,7 +45,13 @@ function isNewerVersion(a: string, b: string): boolean {
 }
 
 // Check every 24 hours
-const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const VERSION_CACHE_KEY = 'claude-code-version';
+const VERSIONS_CACHE_KEY = 'claude-code-versions';
+
+function statusFor(info: ClaudeCodeVersionInfo): StatusType {
+  if (!info.installed) return "not-found";
+  return info.isOutdated ? "outdated" : "installed";
+}
 // Delay before re-checking version after install/update
 const VERSION_RECHECK_DELAY_MS = 5000;
 
@@ -80,16 +87,11 @@ export function ClaudeCodeSettings() {
       const result = await window.electronAPI.checkClaudeCodeVersion(forceRefresh);
 
       if (result.success && result.data) {
+        const checkedAt = new Date();
         setVersionInfo(result.data);
-        setLastChecked(new Date());
-
-        if (!result.data.installed) {
-          setStatus("not-found");
-        } else if (result.data.isOutdated) {
-          setStatus("outdated");
-        } else {
-          setStatus("installed");
-        }
+        setLastChecked(checkedAt);
+        setStatus(statusFor(result.data));
+        writeRefreshCache(VERSION_CACHE_KEY, { info: result.data, checkedAt: checkedAt.toISOString() });
       } else {
         setStatus("error");
       }
@@ -113,6 +115,7 @@ export function ClaudeCodeSettings() {
       if (result.success && result.data) {
         setAvailableVersions(result.data.versions);
         setDistTags(result.data.distTags ?? {});
+        writeRefreshCache(VERSIONS_CACHE_KEY, { versions: result.data.versions, distTags: result.data.distTags ?? {} });
       } else {
         setVersionsError(result.error || "Failed to load versions");
       }
@@ -124,24 +127,35 @@ export function ClaudeCodeSettings() {
     }
   }, []);
 
-  // Initial check and periodic re-check
+  // Show the last check's results; only check on Refresh (or when it was never checked)
   useEffect(() => {
-    checkVersion();
-
-    // Set up periodic check
-    const interval = setInterval(() => {
-      checkVersion();
-    }, CHECK_INTERVAL_MS);
-
-    return () => clearInterval(interval);
+    const cached = readRefreshCache<{ info: ClaudeCodeVersionInfo; checkedAt: string }>(VERSION_CACHE_KEY);
+    if (cached) {
+      setVersionInfo(cached.info);
+      setLastChecked(new Date(cached.checkedAt));
+      setStatus(statusFor(cached.info));
+    } else {
+      void checkVersion();
+    }
   }, [checkVersion]);
 
-  // Load the version list once Claude Code is known to be installed
+  // Version list: the last fetched one, or fetched once Claude Code is known to be installed
   useEffect(() => {
-    if (versionInfo?.installed && availableVersions.length === 0) {
-      fetchVersions();
+    if (availableVersions.length > 0 || !versionInfo?.installed) return;
+    const cached = readRefreshCache<{ versions: string[]; distTags: Record<string, string> }>(VERSIONS_CACHE_KEY);
+    if (cached) {
+      setAvailableVersions(cached.versions);
+      setDistTags(cached.distTags);
+    } else {
+      void fetchVersions();
     }
   }, [versionInfo?.installed, availableVersions.length, fetchVersions]);
+
+  // Refresh: re-check the installed version and the version list
+  const handleRefresh = () => {
+    void checkVersion(true);
+    void fetchVersions();
+  };
 
   // Perform the actual install/update
   const performInstall = async () => {
@@ -287,7 +301,7 @@ export function ClaudeCodeSettings() {
             variant="outline"
             size="sm"
             className="gap-1.5"
-            onClick={() => checkVersion(true)}
+            onClick={handleRefresh}
             disabled={status === "loading"}
           >
             <RefreshCw className={cn("h-3.5 w-3.5", status === "loading" && "animate-spin")} />

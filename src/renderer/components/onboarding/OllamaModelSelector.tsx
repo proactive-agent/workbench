@@ -9,6 +9,7 @@ import {
 import { ExternalLink } from '../ui/external-link';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import { useDownloadStore } from '../../stores/download-store';
 
 type OllamaState = 'checking' | 'not-installed' | 'not-running' | 'available';
@@ -247,10 +248,21 @@ export function OllamaModelSelector({
     }
   };
 
-  // Fetch installed models on mount with cleanup
+  // On open: the last check's result for this Ollama URL; only check when it never ran
+  // (Retry checks again)
+  const cacheKey = `ollama-embedding-models:${baseUrl ?? 'default'}`;
+  const checkRef = useRef(checkInstalledModels);
+  checkRef.current = checkInstalledModels;
   useEffect(() => {
     const controller = new AbortController();
-    checkInstalledModels(controller.signal);
+    const cached = readRefreshCache<{ state: OllamaState; models: OllamaModel[] }>(cacheKey);
+    if (cached) {
+      setOllamaState(cached.state);
+      setModels(cached.models);
+      setIsLoading(false);
+    } else {
+      void checkRef.current(controller.signal);
+    }
     return () => {
       controller.abort();
       // Clean up the install check timeout to prevent setState on unmounted component
@@ -258,7 +270,12 @@ export function OllamaModelSelector({
         clearTimeout(installCheckTimeoutRef.current);
       }
     };
-  }, [checkInstalledModels]);
+  }, [cacheKey]);
+
+  // Remember each finished check
+  useEffect(() => {
+    if (!isLoading && ollamaState !== 'checking') writeRefreshCache(cacheKey, { state: ollamaState, models });
+  }, [cacheKey, isLoading, ollamaState, models]);
 
   // Progress is now handled globally by the download store listener initialized in App.tsx
 

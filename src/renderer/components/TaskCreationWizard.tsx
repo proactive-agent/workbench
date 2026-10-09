@@ -24,7 +24,7 @@ import { FileAutocomplete } from './FileAutocomplete';
 import { createTask, saveDraft, loadDraft, clearDraft, isDraftEmpty } from '../stores/task-store';
 import { useProjectStore } from '../stores/project-store';
 import { buildBranchOptions } from '../lib/branch-utils';
-import type { TaskCategory, TaskPriority, TaskComplexity, TaskImpact, TaskMetadata, ImageAttachment, TaskDraft, ModelType, ThinkingLevel, ReferencedFile, GitBranchDetail } from '../../shared/types';
+import type { TaskCategory, TaskPriority, TaskComplexity, TaskImpact, TaskMetadata, ImageAttachment, TaskDraft, ModelType, ThinkingLevel, ReferencedFile } from '../../shared/types';
 import type { PhaseModelConfig, PhaseThinkingConfig } from '../../shared/types/settings';
 import {
   DEFAULT_AGENT_PROFILES,
@@ -35,6 +35,7 @@ import {
   getProviderPreset
 } from '../../shared/constants';
 import { useSettingsStore } from '../stores/settings-store';
+import { useProjectBranches } from '../hooks/useProjectBranches';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { useActiveProvider } from '../hooks/useActiveProvider';
 
@@ -80,10 +81,7 @@ export function TaskCreationWizard({
   const [error, setError] = useState<string | null>(null);
 
   // Git options state - using structured GitBranchDetail for type indicators
-  const [branches, setBranches] = useState<GitBranchDetail[]>([]);
-  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
   const [baseBranch, setBaseBranch] = useState<string>(PROJECT_DEFAULT_BRANCH);
-  const [projectDefaultBranch, setProjectDefaultBranch] = useState<string>('');
   // Worktree isolation - default to true for safety
   const [useWorktree, setUseWorktree] = useState(true);
   const [pushNewBranches, setPushNewBranches] = useState(true);
@@ -94,6 +92,13 @@ export function TaskCreationWizard({
     const project = projects.find((p) => p.id === projectId);
     return project?.path ?? null;
   }, [projects, projectId]);
+  // Saved branch list shared with the other branch pickers (no git calls when the dialog opens);
+  // the default is the project settings' branch, otherwise the repository's default
+  const { branches, detectedBranch, isLoading: isLoadingBranches } = useProjectBranches(projectPath);
+  const projectDefaultBranch = useMemo(() => {
+    const project = projects.find((p) => p.id === projectId);
+    return project?.settings?.mainBranch || detectedBranch;
+  }, [projects, projectId, detectedBranch]);
   const projectPushNewBranches = useMemo(() => {
     const project = projects.find((p) => p.id === projectId);
     return project?.settings?.pushNewBranches !== false;
@@ -230,52 +235,6 @@ export function TaskCreationWizard({
     }
   }, [open, projectId, projectPushNewBranches, resolvedProfileId, resolvedPhaseModels, resolvedPhaseThinking, selectedProfile.model, selectedProfile.thinkingLevel]);
 
-  // Fetch branches when dialog opens - using structured branch data with type indicators
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchBranches = async () => {
-      if (!projectPath) return;
-      if (isMounted) setIsLoadingBranches(true);
-      try {
-        // Use structured branch data with type indicators
-        const result = await window.electronAPI.getGitBranchesWithInfo(projectPath);
-        if (isMounted && result.success && result.data) {
-          setBranches(result.data);
-        }
-      } catch (err) {
-        console.error('Failed to fetch branches:', err);
-      } finally {
-        if (isMounted) setIsLoadingBranches(false);
-      }
-    };
-
-    const fetchProjectDefaultBranch = async () => {
-      if (!projectId) return;
-      try {
-        const result = await window.electronAPI.getProjectEnv(projectId);
-        if (isMounted && result.success && result.data?.defaultBranch) {
-          setProjectDefaultBranch(result.data.defaultBranch);
-        } else if (projectPath) {
-          const detectResult = await window.electronAPI.detectMainBranch(projectPath);
-          if (isMounted && detectResult.success && detectResult.data) {
-            setProjectDefaultBranch(detectResult.data);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch project default branch:', err);
-      }
-    };
-
-    if (open && projectPath) {
-      fetchBranches();
-      fetchProjectDefaultBranch();
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [open, projectPath, projectId]);
 
   /**
    * Get current form state as a draft

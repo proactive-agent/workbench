@@ -16,6 +16,7 @@ import { Switch } from '../ui/switch';
 import { Progress } from '../ui/progress';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import type {
   AppSettings,
   AppUpdateAvailableEvent,
@@ -89,7 +90,17 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
   // General update error state
   const [appUpdateError, setAppUpdateError] = useState<string | null>(null);
 
-  // Check for updates on mount, including any already-downloaded updates
+  // Last update check result, per app version (a newer install starts fresh)
+  const appUpdateCacheKey = `app-update:${version}`;
+  const rememberAppUpdateCheck = (result: Awaited<ReturnType<typeof window.electronAPI.checkAppUpdate>>) => {
+    const update = result.success ? result.data?.update ?? null : null;
+    const status: AppUpdateCheckStatus = result.success && result.data ? result.data.status : 'error';
+    setAppUpdateInfo(update);
+    setAppUpdateStatus(status);
+    if (status !== 'error') writeRefreshCache(appUpdateCacheKey, { status, update });
+  };
+
+  // On open: any already-downloaded update, otherwise the last check's result
   useEffect(() => {
     if (section !== 'updates') {
       return;
@@ -118,16 +129,20 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
         if (isCancelled) return;
       }
 
-      // Only check for available updates if no update is already downloaded
-      // (electron-updater reports no available update when one is already downloaded,
-      // which would clear our appUpdateInfo and lose the version metadata)
-      // Inline the update check with cancellation support
+      // Show the last check's result for this version; only check on the button (or when this
+      // version was never checked). An already-downloaded update (above) takes precedence:
+      // electron-updater reports no available update then, which would lose the version metadata
+      const cached = readRefreshCache<{ status: AppUpdateCheckStatus; update: AppUpdateAvailableEvent | null }>(appUpdateCacheKey);
+      if (cached) {
+        setAppUpdateInfo(cached.update);
+        setAppUpdateStatus(cached.status);
+        return;
+      }
       setIsCheckingAppUpdate(true);
       try {
         const result = await window.electronAPI.checkAppUpdate();
         if (isCancelled) return;
-        setAppUpdateInfo(result.success ? result.data?.update ?? null : null);
-        setAppUpdateStatus(result.success && result.data ? result.data.status : 'error');
+        rememberAppUpdateCheck(result);
       } catch (err) {
         console.error('Failed to check for app updates:', err);
         if (!isCancelled) setAppUpdateStatus('error');
@@ -199,8 +214,7 @@ export function AdvancedSettings({ settings, onSettingsChange, section, version 
     setIsCheckingAppUpdate(true);
     try {
       const result = await window.electronAPI.checkAppUpdate();
-      setAppUpdateInfo(result.success ? result.data?.update ?? null : null);
-      setAppUpdateStatus(result.success && result.data ? result.data.status : 'error');
+      rememberAppUpdateCheck(result);
     } catch (err) {
       console.error('Failed to check for app updates:', err);
       setAppUpdateStatus('error');

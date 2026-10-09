@@ -61,7 +61,7 @@ import { getAppLanguage, initAppLanguage } from './app-language';
 import { readSettingsFile } from './settings-utils';
 import { registerSettingsAccessor } from './ai/auth/resolver';
 import { appLog, setupErrorLogging } from './app-logger';
-import { preWarmToolCache } from './cli-tool-manager';
+import { preWarmToolCache, warmToolInfo } from './cli-tool-manager';
 import { initializeClaudeProfileManager, getClaudeProfileManager } from './claude-profile-manager';
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isMacOS, isWindows } from './platform';
@@ -686,6 +686,8 @@ app.whenReady().then(() => {
     preWarmToolCache(['claude', 'git', 'gh', 'python']).catch((error) => {
       console.warn('[main] Failed to pre-warm CLI cache:', error);
     });
+    // Detection details for Settings > Developer > Paths, so the page opens instantly
+    warmToolInfo();
   });
 
   // Initialize Claude profile manager, then start usage monitor

@@ -1,4 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
+import { useProjectBranches } from '../../hooks/useProjectBranches';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import {
@@ -24,7 +25,7 @@ import {
 import { Combobox } from '../ui/combobox';
 import { useToast } from '../../hooks/use-toast';
 import { buildBranchOptions } from '../../lib/branch-utils';
-import type { Task, TerminalWorktreeConfig, GitBranchDetail } from '../../../shared/types';
+import type { Task, TerminalWorktreeConfig } from '../../../shared/types';
 import { useProjectStore } from '../../stores/project-store';
 
 // Special value to represent "use project default" since Radix UI Select doesn't allow empty string values
@@ -99,10 +100,11 @@ export function CreateWorktreeDialog({
   );
 
   // Branch selection state - using structured GitBranchDetail for type indicators
-  const [branches, setBranches] = useState<GitBranchDetail[]>([]);
-  const [isLoadingBranches, setIsLoadingBranches] = useState(false);
+  // Saved branch list shared with the other branch pickers (no git calls when the dialog opens)
+  const { branches, detectedBranch, isLoading: isLoadingBranches } = useProjectBranches(projectPath);
   const [baseBranch, setBaseBranch] = useState<string>(PROJECT_DEFAULT_BRANCH);
-  const [projectDefaultBranch, setProjectDefaultBranch] = useState<string>('');
+  // Project settings' branch, otherwise the repository's default
+  const projectDefaultBranch = project?.settings?.mainBranch || detectedBranch;
 
   // Sanitized name for validation (without display fallback)
   const sanitizedName = useMemo(() => sanitizeWorktreeName(name, undefined, true), [name]);
@@ -110,50 +112,6 @@ export function CreateWorktreeDialog({
   // Preview name with fallback for display (using i18n)
   const previewName = sanitizedName || t('terminal:worktree.namePlaceholder');
 
-  // Fetch branches when dialog opens
-  useEffect(() => {
-    if (!open || !projectPath) return;
-
-    let isMounted = true;
-
-    const fetchBranches = async () => {
-      setIsLoadingBranches(true);
-      try {
-        // Use structured branch data with type indicators
-        const result = await window.electronAPI.getGitBranchesWithInfo(projectPath);
-        if (!isMounted) return;
-
-        if (result.success && result.data) {
-          setBranches(result.data);
-        }
-
-        // Use project settings mainBranch if available, otherwise auto-detect
-        if (project?.settings?.mainBranch) {
-          setProjectDefaultBranch(project.settings.mainBranch);
-        } else {
-          // Fallback to auto-detect if no project setting
-          const defaultResult = await window.electronAPI.detectMainBranch(projectPath);
-          if (!isMounted) return;
-
-          if (defaultResult.success && defaultResult.data) {
-            setProjectDefaultBranch(defaultResult.data);
-          }
-        }
-      } catch (err) {
-        console.error('Failed to fetch branches:', err);
-      } finally {
-        if (isMounted) {
-          setIsLoadingBranches(false);
-        }
-      }
-    };
-
-    fetchBranches();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [open, projectPath, project?.settings?.mainBranch]);
 
   const handleNameChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     // Apply lowercase and convert spaces to hyphens as user types

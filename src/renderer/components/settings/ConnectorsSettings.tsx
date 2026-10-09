@@ -15,11 +15,19 @@ import { BUILTIN_CONNECTOR_META, ConnectorRow, customServerIcon } from './Connec
 import { CustomMcpDialog } from '../CustomMcpDialog';
 import { useProjectStore } from '../../stores/project-store';
 import { getDefaultMcpConnectorIds } from '../../../shared/utils/mcp-connectors';
+import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import type { AppSettings, CustomMcpServer, McpConnectorSettings, McpHealthCheckResult } from '../../../shared/types';
 
 interface ConnectorsSettingsProps {
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
+}
+
+const HEALTH_CACHE_KEY = 'mcp-server-health';
+
+/** A custom server's connection details: a cached health result only applies while these match */
+function connectionSignature({ id, type, command, args, url }: CustomMcpServer): string {
+  return JSON.stringify({ id, type, command, args, url });
 }
 
 const BUILTIN_SETTING_KEY = {
@@ -72,7 +80,16 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
   const [editingCustomServer, setEditingCustomServer] = useState<CustomMcpServer | null>(null);
 
   // Health status tracking for custom servers
-  const [serverHealthStatus, setServerHealthStatus] = useState<Record<string, McpHealthCheckResult>>({});
+  // Last health results, shown when the page opens (keyed by server id + connection details)
+  const [serverHealthStatus, setServerHealthStatus] = useState<Record<string, McpHealthCheckResult>>(() => {
+    const cached = readRefreshCache<Record<string, { signature: string; result: McpHealthCheckResult }>>(HEALTH_CACHE_KEY) ?? {};
+    const current = settings.mcpConnectors?.customServers ?? [];
+    return Object.fromEntries(
+      current
+        .filter((server) => cached[server.id]?.signature === connectionSignature(server))
+        .map((server) => [server.id, cached[server.id].result])
+    );
+  });
   const [testingServers, setTestingServers] = useState<Set<string>>(new Set());
 
   const handleSaveCustomServer = useCallback((server: CustomMcpServer) => {
@@ -107,7 +124,14 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
     }));
   }, [updateConnectors]);
 
-  // Check health of all custom MCP servers
+  // Remember a server's latest health result
+  const rememberHealth = useCallback((server: CustomMcpServer, result: McpHealthCheckResult) => {
+    setServerHealthStatus(prev => ({ ...prev, [server.id]: result }));
+    const cached = readRefreshCache<Record<string, { signature: string; result: McpHealthCheckResult }>>(HEALTH_CACHE_KEY) ?? {};
+    writeRefreshCache(HEALTH_CACHE_KEY, { ...cached, [server.id]: { signature: connectionSignature(server), result } });
+  }, []);
+
+  // Check health of the given custom MCP servers
   const checkAllServersHealth = useCallback(async (servers: CustomMcpServer[]) => {
     for (const server of servers) {
       setServerHealthStatus(prev => ({
@@ -117,21 +141,25 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
       try {
         const result = await window.electronAPI.checkMcpHealth(server);
         if (result.success && result.data) {
-          setServerHealthStatus(prev => ({ ...prev, [server.id]: result.data! }));
+          rememberHealth(server, result.data);
         }
       } catch (_error) {
-        setServerHealthStatus(prev => ({
-          ...prev,
-          [server.id]: { serverId: server.id, status: 'unknown', message: 'Health check failed', checkedAt: new Date().toISOString() },
-        }));
+        rememberHealth(server, { serverId: server.id, status: 'unknown', message: 'Health check failed', checkedAt: new Date().toISOString() });
       }
     }
-  }, []);
+  }, [rememberHealth]);
 
-  // Check health when the custom servers' connection details change
-  const healthKey = JSON.stringify(customServers.map(({ id, type, command, args, url }) => ({ id, type, command, args, url })));
+  // Check only servers without a result for their current connection details (new or edited
+  // servers); the others keep showing their last result
+  const healthKey = JSON.stringify(customServers.map(connectionSignature));
+  const healthRef = useRef(serverHealthStatus);
+  healthRef.current = serverHealthStatus;
   useEffect(() => {
-    if (customServers.length > 0) void checkAllServersHealth(customServers);
+    const cached = readRefreshCache<Record<string, { signature: string; result: McpHealthCheckResult }>>(HEALTH_CACHE_KEY) ?? {};
+    const unchecked = customServers.filter(
+      (server) => !healthRef.current[server.id] || cached[server.id]?.signature !== connectionSignature(server)
+    );
+    if (unchecked.length > 0) void checkAllServersHealth(unchecked);
     // Re-check only when connection details change (not on name, description or switch edits)
   }, [healthKey, checkAllServersHealth]);
 
@@ -145,22 +173,16 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
         handleSaveCustomServer({ ...server, verified: true, enabled: true });
       }
       if (result.success && result.data) {
-        setServerHealthStatus(prev => ({
-          ...prev,
-          [server.id]: {
-            serverId: server.id,
-            status: result.data?.success ? 'healthy' : 'unhealthy',
-            message: result.data?.message,
-            responseTime: result.data?.responseTime,
-            checkedAt: new Date().toISOString(),
-          },
-        }));
+        rememberHealth(server, {
+          serverId: server.id,
+          status: result.data.success ? 'healthy' : 'unhealthy',
+          message: result.data.message,
+          responseTime: result.data.responseTime,
+          checkedAt: new Date().toISOString(),
+        });
       }
     } catch (_error) {
-      setServerHealthStatus(prev => ({
-        ...prev,
-        [server.id]: { serverId: server.id, status: 'unhealthy', message: 'Connection test failed', checkedAt: new Date().toISOString() },
-      }));
+      rememberHealth(server, { serverId: server.id, status: 'unhealthy', message: 'Connection test failed', checkedAt: new Date().toISOString() });
     } finally {
       setTestingServers(prev => {
         const next = new Set(prev);
@@ -168,7 +190,7 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
         return next;
       });
     }
-  }, [handleSaveCustomServer]);
+  }, [handleSaveCustomServer, rememberHealth]);
 
   // Enabled count includes Auto Claude's own server, which is always on
   const enabledCount = getDefaultMcpConnectorIds(connectors).length + 1;

@@ -1,6 +1,7 @@
 import { ipcMain } from 'electron';
 import { existsSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { execFile, execFileSync } from 'child_process';
+import { promisify } from 'util';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
   Project,
@@ -21,6 +22,8 @@ import {
 } from '../project-initializer';
 import { getToolPath } from '../cli-tool-manager';
 import type { BrowserWindow } from 'electron';
+
+const execFileAsync = promisify(execFile);
 
 // ============================================
 // Git Helper Functions
@@ -85,94 +88,55 @@ function getGitBranches(projectPath: string): string[] {
 /**
  * Get structured branch information for a directory (both local and remote)
  * Returns GitBranchDetail[] with type indicators, keeping both local and remote versions
- * when a branch exists in both places (no deduplication)
+ * when a branch exists in both places (no deduplication).
+ *
+ * Runs git asynchronously so the main process (and the UI) never waits on it. Remote refs are
+ * only updated with `git fetch` when asked (a refresh button), never just to list branches.
  */
-function getGitBranchesWithInfo(projectPath: string): GitBranchDetail[] {
+async function getGitBranchesWithInfo(projectPath: string, fetchRemote = false): Promise<GitBranchDetail[]> {
+  const git = (args: string[], timeout?: number) =>
+    execFileAsync(getToolPath('git'), args, { cwd: projectPath, encoding: 'utf-8', timeout }).then((r) => r.stdout);
+
   try {
-    // First fetch to ensure we have latest remote refs
-    try {
-      execFileSync(getToolPath('git'), ['fetch', '--prune'], {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe'],
-        timeout: 10000 // 10 second timeout for fetch
-      });
-    } catch {
-      // Fetch may fail if offline or no remote, continue with local refs
+    if (fetchRemote) {
+      try {
+        await git(['fetch', '--prune'], 10000);
+      } catch {
+        // Fetch may fail if offline or no remote, continue with local refs
+      }
     }
 
-    // Get current branch for isCurrent indicator
-    let currentBranch: string | null = null;
-    try {
-      const currentResult = execFileSync(getToolPath('git'), ['rev-parse', '--abbrev-ref', 'HEAD'], {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-      currentBranch = currentResult.trim() || null;
-    } catch {
-      // Ignore - current branch detection may fail in some edge cases
-    }
-
-    // Get local branches
-    const localResult = execFileSync(getToolPath('git'), ['branch', '--format=%(refname:short)'], {
-      cwd: projectPath,
-      encoding: 'utf-8',
-      stdio: ['pipe', 'pipe', 'pipe']
-    });
+    // Current branch (isCurrent indicator), local and remote branches, in parallel
+    const [currentResult, localResult, remoteResult] = await Promise.all([
+      git(['rev-parse', '--abbrev-ref', 'HEAD']).catch(() => ''),
+      git(['branch', '--format=%(refname:short)']),
+      git(['branch', '-r', '--format=%(refname:short)']).catch(() => ''),
+    ]);
+    const currentBranch = currentResult.trim() || null;
 
     const localBranches: GitBranchDetail[] = localResult.trim().split('\n')
       .filter(b => b.trim())
       .map(b => {
         const name = b.trim();
-        return {
-          name,
-          type: 'local' as const,
-          displayName: name,
-          isCurrent: name === currentBranch
-        };
+        return { name, type: 'local' as const, displayName: name, isCurrent: name === currentBranch };
       });
 
-    // Get remote branches
-    let remoteBranches: GitBranchDetail[] = [];
-    try {
-      const remoteResult = execFileSync(getToolPath('git'), ['branch', '-r', '--format=%(refname:short)'], {
-        cwd: projectPath,
-        encoding: 'utf-8',
-        stdio: ['pipe', 'pipe', 'pipe']
-      });
-
-      remoteBranches = remoteResult.trim().split('\n')
-        .filter(b => b.trim())
-        .map(b => b.trim())
-        // Remove HEAD pointer entries like "origin/HEAD"
-        .filter(b => !b.endsWith('/HEAD'))
-        .map(fullName => {
-          // Strip "origin/" prefix so branch names are clean for PR targets etc.
-          const name = fullName.replace(/^origin\//, '');
-          return {
-            name,
-            type: 'remote' as const,
-            displayName: name,
-            isCurrent: false
-          };
-        });
-    } catch {
-      // Remote branches may not exist, continue with local only
-    }
-
-    // Deduplicate: if a branch exists locally and remotely, keep only the local entry
+    // Remote branches without the "origin/" prefix (clean names for PR targets etc.), minus HEAD
+    // pointers and branches that also exist locally
     const localNames = new Set(localBranches.map(b => b.name));
-    remoteBranches = remoteBranches.filter(b => !localNames.has(b.name));
+    const remoteBranches: GitBranchDetail[] = remoteResult.trim().split('\n')
+      .map(b => b.trim())
+      .filter(b => b && !b.endsWith('/HEAD'))
+      .map(fullName => {
+        const name = fullName.replace(/^origin\//, '');
+        return { name, type: 'remote' as const, displayName: name, isCurrent: false };
+      })
+      .filter(b => !localNames.has(b.name));
 
-    // Combine and sort: local branches first, then remote branches, alphabetically within each group
-    const allBranches = [...localBranches, ...remoteBranches];
-
-    return allBranches.sort((a, b) => {
-      // Local branches come first
+    // Local branches first, then remote branches, alphabetically within each group
+    return [...localBranches, ...remoteBranches].sort((a, b) => {
       if (a.type === 'local' && b.type === 'remote') return -1;
       if (a.type === 'remote' && b.type === 'local') return 1;
-      // Within same type, sort alphabetically
       return a.name.localeCompare(b.name);
     });
   } catch {
@@ -467,12 +431,12 @@ export function registerProjectHandlers(
   // Get all branches with structured type information (local vs remote)
   ipcMain.handle(
     IPC_CHANNELS.GIT_GET_BRANCHES_WITH_INFO,
-    async (_, projectPath: string): Promise<IPCResult<GitBranchDetail[]>> => {
+    async (_, projectPath: string, fetchRemote?: boolean): Promise<IPCResult<GitBranchDetail[]>> => {
       try {
         if (!existsSync(projectPath)) {
           return { success: false, error: 'Directory does not exist' };
         }
-        const branches = getGitBranchesWithInfo(projectPath);
+        const branches = await getGitBranchesWithInfo(projectPath, fetchRemote === true);
         return { success: true, data: branches };
       } catch (error) {
         return {
