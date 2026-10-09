@@ -14,6 +14,7 @@ import {
 import {
   TERMINAL_FONTS,
   TERMINAL_FONT_SIZES,
+  SCROLLBACK_PRESETS,
   nearestOption,
   terminalFontChain,
 } from '../lib/font-options';
@@ -386,11 +387,23 @@ export const useTerminalFontSettingsStore = create<TerminalFontSettingsStore>()(
       // v1: Dank Mono (bundled) became the default terminal font; put it first in saved chains
       // v2: Appearance offers a fixed set of fonts and text sizes; snap saved values to them and reset
       // the line height, letter spacing and weight (no longer adjustable) to the defaults
-      version: 2,
+      // v3: scrollback is picked from presets (snap saved values to the nearest one); cursor blink
+      // and accent color are no longer adjustable, so reset them to the defaults
+      version: 3,
       migrate: (persistedState, version) => {
         const state = persistedState as Partial<TerminalFontSettings> | undefined;
         if (version < 1 && state && Array.isArray(state.fontFamily) && state.fontFamily[0] !== 'Dank Mono') {
           state.fontFamily = ['Dank Mono', ...state.fontFamily.filter((f) => f !== 'Dank Mono')];
+        }
+        if (version < 3 && state) {
+          if (typeof state.scrollback === 'number') {
+            state.scrollback = nearestOption(
+              Object.fromEntries(SCROLLBACK_PRESETS.map((v) => [String(v), v])),
+              state.scrollback
+            );
+          }
+          state.cursorBlink = true;
+          state.cursorAccentColor = '#000000';
         }
         if (version < 2 && state) {
           if (Array.isArray(state.fontFamily) && !(TERMINAL_FONTS as readonly string[]).includes(state.fontFamily[0])) {

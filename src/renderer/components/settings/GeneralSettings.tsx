@@ -13,7 +13,7 @@ import type {
 interface GeneralSettingsProps {
   settings: AppSettings;
   onSettingsChange: (settings: AppSettings) => void;
-  section: 'agent' | 'terminal' | 'paths';
+  section: 'agent' | 'paths';
 }
 
 /**
@@ -95,65 +95,57 @@ export function GeneralSettings({ settings, onSettingsChange, section }: General
 
   if (section === 'agent') {
     return (
-      // Provider-tabbed agent settings (profiles, features, model overrides)
-      <ProviderAgentTabs />
-    );
-  }
-
-  if (section === 'terminal') {
-    return (
       <>
-      <SettingsSection title={t('general.terminals')}>
-        <SettingsRows>
-          <SettingsRow
-            label={t('general.maxTerminals')}
-            description={t('general.maxTerminalsDescription', { min: MIN_TERMINALS, max: MAX_TERMINALS_LIMIT })}
-            htmlFor="maxTerminals"
-          >
-            <Input
-              id="maxTerminals"
-              type="number"
-              min={MIN_TERMINALS}
-              max={MAX_TERMINALS_LIMIT}
-              className="w-20"
-              value={settings.maxTerminals ?? DEFAULT_MAX_TERMINALS}
-              onChange={(e) => {
-                const value = Number(e.target.value);
-                if (e.target.value === '' || !Number.isFinite(value)) return;
-                const clamped = Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(value)));
-                onSettingsChange({ ...settings, maxTerminals: clamped });
-              }}
-            />
-          </SettingsRow>
-        </SettingsRows>
-      </SettingsSection>
-      <SettingsSection title={t('settings:projectSections.queue.title')}>
-        <SettingsRows>
-          <SettingsRow
-            label={t('settings:projectSections.queue.maxParallelTasks')}
-            description={t('settings:projectSections.queue.maxParallelTasksDescription', {
-              min: MIN_PARALLEL_TASKS,
-              max: MAX_PARALLEL_TASKS_LIMIT
-            })}
-            htmlFor="maxParallelTasks"
-          >
-            <Input
-              id="maxParallelTasks"
-              type="number"
-              min={MIN_PARALLEL_TASKS}
-              max={MAX_PARALLEL_TASKS_LIMIT}
-              className="w-20"
-              value={settings.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS}
-              onChange={(e) => {
-                const value = Number(e.target.value);
-                if (e.target.value === '' || !Number.isFinite(value)) return;
-                const clamped = Math.min(MAX_PARALLEL_TASKS_LIMIT, Math.max(MIN_PARALLEL_TASKS, Math.round(value)));
-                onSettingsChange({ ...settings, maxParallelTasks: clamped });
-              }}
-            />
-          </SettingsRow>
-        </SettingsRows>
-      </SettingsSection>
+        {/* Provider-tabbed agent settings (profiles, features, model overrides) */}
+        <ProviderAgentTabs />
+        {/* How many agent windows and parallel tasks a project can run */}
+        <SettingsSection title={t('general.limits')}>
+          <SettingsRows>
+            <SettingsRow
+              label={t('general.maxTerminals')}
+              description={t('general.maxTerminalsDescription', { min: MIN_TERMINALS, max: MAX_TERMINALS_LIMIT })}
+              htmlFor="maxTerminals"
+            >
+              <Input
+                id="maxTerminals"
+                type="number"
+                min={MIN_TERMINALS}
+                max={MAX_TERMINALS_LIMIT}
+                className="w-20"
+                value={settings.maxTerminals ?? DEFAULT_MAX_TERMINALS}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (e.target.value === '' || !Number.isFinite(value)) return;
+                  const clamped = Math.min(MAX_TERMINALS_LIMIT, Math.max(MIN_TERMINALS, Math.round(value)));
+                  onSettingsChange({ ...settings, maxTerminals: clamped });
+                }}
+              />
+            </SettingsRow>
+            <SettingsRow
+              label={t('settings:projectSections.queue.maxParallelTasks')}
+              description={t('settings:projectSections.queue.maxParallelTasksDescription', {
+                min: MIN_PARALLEL_TASKS,
+                max: MAX_PARALLEL_TASKS_LIMIT
+              })}
+              htmlFor="maxParallelTasks"
+            >
+              <Input
+                id="maxParallelTasks"
+                type="number"
+                min={MIN_PARALLEL_TASKS}
+                max={MAX_PARALLEL_TASKS_LIMIT}
+                className="w-20"
+                value={settings.maxParallelTasks ?? DEFAULT_MAX_PARALLEL_TASKS}
+                onChange={(e) => {
+                  const value = Number(e.target.value);
+                  if (e.target.value === '' || !Number.isFinite(value)) return;
+                  const clamped = Math.min(MAX_PARALLEL_TASKS_LIMIT, Math.max(MIN_PARALLEL_TASKS, Math.round(value)));
+                  onSettingsChange({ ...settings, maxParallelTasks: clamped });
+                }}
+              />
+            </SettingsRow>
+          </SettingsRows>
+        </SettingsSection>
       </>
     );
   }

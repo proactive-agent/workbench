@@ -293,7 +293,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
               size="sm"
               className="h-8 gap-1.5 text-[0.8125rem] text-muted-foreground hover:bg-nav-hover hover:text-foreground"
               onClick={() => {
-                window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'terminal-fonts' }));
+                window.dispatchEvent(new CustomEvent('open-app-settings', { detail: 'agent' }));
               }}
             >
               <Settings className="h-3.5 w-3.5" />

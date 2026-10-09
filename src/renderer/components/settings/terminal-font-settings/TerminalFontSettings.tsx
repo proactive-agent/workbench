@@ -1,77 +1,42 @@
 import { Copy, Download, Upload } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useMemo } from 'react';
 import { useToast } from '../../../hooks/use-toast';
 import { Button } from '../../ui/button';
-import { SettingsSection } from '../SettingsSection';
-import { SettingsRow, SettingsRows } from '../SettingsRow';
+import { SettingsRow, SegmentedControl, type SegmentedOption } from '../SettingsRow';
 import { useTerminalFontSettingsStore } from '../../../stores/terminal-font-settings-store';
-import type { TerminalFontSettings } from '../../../stores/terminal-font-settings-store';
+import type { TerminalFontSettings as TerminalSettingsValues } from '../../../stores/terminal-font-settings-store';
 import { MAX_IMPORT_FILE_SIZE } from '../../../lib/terminal-font-constants';
+import { SCROLLBACK_PRESETS } from '../../../lib/font-options';
 
-// Child components
-import { CursorConfigPanel } from './CursorConfigPanel';
-import { PerformanceConfigPanel } from './PerformanceConfigPanel';
 
 /**
- * Terminal font settings main container component
- * Orchestrates all terminal font customization panels:
- * - Cursor configuration (style, blink, accent color)
- * - Performance settings (scrollback limit)
- * - Quick presets (VS Code, IntelliJ, macOS, Ubuntu)
- * - Live preview terminal (real-time updates, 300ms debounced)
- *
- * All settings persist via localStorage through the Zustand store
- * Changes apply immediately to all active terminal instances
+ * Terminal rows for General > Appearance (after the command line font rows): cursor style,
+ * scrollback limit, and import/export of the terminal settings as JSON. Values live in the
+ * terminal settings store (localStorage) and apply to open terminals immediately.
  */
 export function TerminalFontSettings() {
   const { t } = useTranslation('settings');
   const { toast } = useToast();
 
-  // Get current settings from store using individual selectors to prevent infinite re-render loop
-  // Each selector only re-renders when its specific value changes
-  const fontFamily = useTerminalFontSettingsStore((state) => state.fontFamily);
-  const fontSize = useTerminalFontSettingsStore((state) => state.fontSize);
-  const fontWeight = useTerminalFontSettingsStore((state) => state.fontWeight);
-  const lineHeight = useTerminalFontSettingsStore((state) => state.lineHeight);
-  const letterSpacing = useTerminalFontSettingsStore((state) => state.letterSpacing);
   const cursorStyle = useTerminalFontSettingsStore((state) => state.cursorStyle);
-  const cursorBlink = useTerminalFontSettingsStore((state) => state.cursorBlink);
-  const cursorAccentColor = useTerminalFontSettingsStore((state) => state.cursorAccentColor);
   const scrollback = useTerminalFontSettingsStore((state) => state.scrollback);
+  const applySettings = useTerminalFontSettingsStore((state) => state.applySettings);
+  const handleSettingChange = <K extends keyof TerminalSettingsValues>(key: K, value: TerminalSettingsValues[K]) => {
+    applySettings({ [key]: value });
+  };
 
-  // Reconstruct settings object with stable reference using useMemo
-  // This prevents the infinite re-render loop caused by creating new object references
-  const settings = useMemo<TerminalFontSettings>(
-    () => ({
-      fontFamily,
-      fontSize,
-      fontWeight,
-      lineHeight,
-      letterSpacing,
-      cursorStyle,
-      cursorBlink,
-      cursorAccentColor,
-      scrollback,
-    }),
-    [fontFamily, fontSize, fontWeight, lineHeight, letterSpacing, cursorStyle, cursorBlink, cursorAccentColor, scrollback]
-  );
+  const cursorStyleOptions: SegmentedOption<TerminalSettingsValues['cursorStyle']>[] = [
+    { value: 'block', label: t('terminalFonts.cursorConfig.styleBlock', { defaultValue: 'Block' }) },
+    { value: 'underline', label: t('terminalFonts.cursorConfig.styleUnderline', { defaultValue: 'Underline' }) },
+    { value: 'bar', label: t('terminalFonts.cursorConfig.styleBar', { defaultValue: 'Bar' }) },
+  ];
+  const scrollbackOptions: SegmentedOption<string>[] = SCROLLBACK_PRESETS.map((value) => ({
+    value: String(value),
+    label: t('terminalFonts.performanceConfig.kValue', { defaultValue: '{{value}}K', value: value / 1000 }),
+  }));
 
-  // Get action methods from store
-  const updateSettings = useTerminalFontSettingsStore((state) => state.applySettings);
   const exportSettings = useTerminalFontSettingsStore((state) => state.exportSettings);
   const importSettings = useTerminalFontSettingsStore((state) => state.importSettings);
-
-  /**
-   * Handle individual setting updates
-   * This wrapper ensures type safety and could add validation/logging in future
-   */
-  const handleSettingChange = <K extends keyof TerminalFontSettings>(
-    key: K,
-    value: TerminalFontSettings[K]
-  ) => {
-    updateSettings({ [key]: value });
-  };
 
   /**
    * Handle export configuration to JSON file
@@ -171,56 +136,71 @@ export function TerminalFontSettings() {
   };
 
   return (
-    <div>
+    <>
+      <SettingsRow
+        label={t('terminalFonts.cursorConfig.cursorStyle', { defaultValue: 'Cursor style' })}
+        description={t('terminalFonts.cursorConfig.cursorStyleDescription', {
+          defaultValue: 'Choose the appearance of the terminal cursor',
+        })}
+      >
+        <SegmentedControl
+          value={cursorStyle}
+          options={cursorStyleOptions}
+          onValueChange={(value) => handleSettingChange('cursorStyle', value)}
+          ariaLabel={t('terminalFonts.cursorConfig.cursorStyle', { defaultValue: 'Cursor style' })}
+        />
+      </SettingsRow>
 
-      <SettingsSection title={t('terminalFonts.cursorConfig.title', { defaultValue: 'Cursor' })}>
-        <CursorConfigPanel settings={settings} onSettingChange={handleSettingChange} />
-      </SettingsSection>
-
-      <SettingsSection title={t('terminalFonts.performanceConfig.title', { defaultValue: 'Scrollback' })}>
-        <PerformanceConfigPanel settings={settings} onSettingChange={handleSettingChange} />
-      </SettingsSection>
+      <SettingsRow
+        label={t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback limit' })}
+        description={t('terminalFonts.performanceConfig.scrollbackDescription', {
+          defaultValue: 'Maximum number of lines to keep in terminal history',
+        })}
+      >
+        <SegmentedControl
+          value={String(scrollback)}
+          options={scrollbackOptions}
+          onValueChange={(value) => handleSettingChange('scrollback', Number(value))}
+          ariaLabel={t('terminalFonts.performanceConfig.scrollback', { defaultValue: 'Scrollback limit' })}
+        />
+      </SettingsRow>
 
       {/* Settings as JSON: export, import, copy */}
-      <SettingsSection title={t('terminalFonts.importExport.title', { defaultValue: 'Configuration' })}>
-        <SettingsRows>
-          <SettingsRow
-            label={t('terminalFonts.importExport.label', { defaultValue: 'Import and export' })}
-            description={t('terminalFonts.importExport.description', {
-              defaultValue: 'Save, load or copy your terminal settings as JSON',
-            })}
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={handleExport}>
-                <Download className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
-                {t('terminalFonts.export', { defaultValue: 'Export JSON' })}
-              </Button>
-              <Button variant="outline" size="sm" asChild>
-                <label className="cursor-pointer focus-within:shadow-(--shadow-focus)">
-                  <Upload className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
-                  {t('terminalFonts.import', { defaultValue: 'Import JSON' })}
-                  <input
-                    type="file"
-                    accept=".json"
-                    className="sr-only"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        handleImport(file);
-                        e.target.value = ''; // Reset to allow re-importing same file
-                      }
-                    }}
-                  />
-                </label>
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={handleCopyToClipboard}>
-                <Copy className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
-                {t('terminalFonts.copy', { defaultValue: 'Copy to clipboard' })}
-              </Button>
-            </div>
-          </SettingsRow>
-        </SettingsRows>
-      </SettingsSection>
-    </div>
+      <SettingsRow
+        label={t('terminalFonts.importExport.label', { defaultValue: 'Import and export' })}
+        description={t('terminalFonts.importExport.description', {
+          defaultValue: 'Save, load or copy your terminal settings as JSON',
+        })}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={handleExport}>
+            <Download className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+            {t('terminalFonts.export', { defaultValue: 'Export JSON' })}
+          </Button>
+          <Button variant="outline" size="sm" asChild>
+            <label className="cursor-pointer focus-within:shadow-(--shadow-focus)">
+              <Upload className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+              {t('terminalFonts.import', { defaultValue: 'Import JSON' })}
+              <input
+                type="file"
+                accept=".json"
+                className="sr-only"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    handleImport(file);
+                    e.target.value = ''; // Reset to allow re-importing same file
+                  }
+                }}
+              />
+            </label>
+          </Button>
+          <Button type="button" variant="outline" size="sm" onClick={handleCopyToClipboard}>
+            <Copy className="mr-1.5 h-3.5 w-3.5" strokeWidth={1.75} />
+            {t('terminalFonts.copy', { defaultValue: 'Copy to clipboard' })}
+          </Button>
+        </div>
+      </SettingsRow>
+    </>
   );
 }

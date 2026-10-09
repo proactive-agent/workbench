@@ -99,14 +99,11 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       expect(screen.getAllByText(/import json/i).length).toBeGreaterThan(0);
       expect(screen.getAllByText(/copy to clipboard/i).length).toBeGreaterThan(0);
 
-      // Configuration sections
-      // Font rows live in General > Appearance
-      expect(screen.queryByRole('heading', { name: 'Font' })).not.toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Cursor' })).toBeInTheDocument();
-      expect(screen.getByRole('heading', { name: 'Scrollback' })).toBeInTheDocument();
-      expect(screen.queryByRole('heading', { name: 'Presets' })).not.toBeInTheDocument();
-
-      // Preview section
+      // Rows (no sections: they sit in General > Appearance)
+      expect(screen.getByText('Cursor style')).toBeInTheDocument();
+      expect(screen.getByText('Scrollback limit')).toBeInTheDocument();
+      expect(screen.queryByText('Cursor blink')).not.toBeInTheDocument();
+      expect(screen.queryByText('Quick presets')).not.toBeInTheDocument();
       expect(screen.getAllByText(/import and export/i).length).toBeGreaterThan(0);
     });
 
@@ -117,7 +114,7 @@ describe('TerminalFontSettings - Infinite Re-render Loop Fix', () => {
       // The waitFor timeout provides the safety net for catching hangs/infinite loops
       await waitFor(
         () => {
-          expect(screen.getByRole('heading', { name: /configuration/i })).toBeInTheDocument();
+          expect(screen.getByText(/import and export/i)).toBeInTheDocument();
         },
         { timeout: 2000 }
       );

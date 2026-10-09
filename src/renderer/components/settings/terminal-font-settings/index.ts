@@ -4,5 +4,3 @@
  */
 
 export { TerminalFontSettings } from './TerminalFontSettings';
-export { CursorConfigPanel } from './CursorConfigPanel';
-export { PerformanceConfigPanel } from './PerformanceConfigPanel';

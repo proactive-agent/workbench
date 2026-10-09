@@ -204,6 +204,8 @@
    Also defines the shared design tokens other themes override.
    ============================================ */
 :root {
+  /* Native controls (number input arrows, scrollbars, pickers) follow the theme */
+  color-scheme: light;
   /* Backgrounds */
   --background: #FCFCFB;
   --foreground: #0B0B0B;
@@ -349,6 +351,8 @@
    Near-black warm neutrals sampled from Claude Desktop
    ============================================ */
 .dark {
+  /* Native controls (number input arrows, scrollbars, pickers) follow the theme */
+  color-scheme: dark;
   /* Backgrounds */
   --background: #151515;
   --foreground: #F0EFEC;

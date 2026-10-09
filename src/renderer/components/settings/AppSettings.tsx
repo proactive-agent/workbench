@@ -4,14 +4,11 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import {
   X,
   CircleUserRound,
-  SquareTerminal,
   CodeXml,
   Download,
-  FolderCog,
-  History,
   Blocks
 } from 'lucide-react';
-import { AgentOutlineIcon, GearIcon } from '../icons/app-icons';
+import { AgentOutlineIcon, GearIcon, MemoryChipIcon, ProjectOutlineIcon } from '../icons/app-icons';
 
 import {
   FullScreenDialog,
@@ -29,7 +26,6 @@ import { AdvancedSettings } from './AdvancedSettings';
 import { ClaudeCodeSettings } from './ClaudeCodeSettings';
 import { DevToolsSettings } from './DevToolsSettings';
 import { DebugSettings } from './DebugSettings';
-import { TerminalFontSettings } from './terminal-font-settings/TerminalFontSettings';
 import { AccountSettings } from './AccountSettings';
 import { ProjectSettingsContent, ProjectSettingsSection } from './ProjectSettingsContent';
 import { ConnectorsSettings } from './ConnectorsSettings';
@@ -51,12 +47,13 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings pages (claude.ai layout: related settings grouped on one page)
-type AppPage = 'general' | 'accounts' | 'agent' | 'terminal-fonts' | 'connectors' | 'devtools' | 'updates';
+type AppPage = 'general' | 'accounts' | 'agent' | 'connectors' | 'devtools' | 'updates';
 
 // Section ids accepted from the rest of the app; older ids map onto the page that now holds them
-export type AppSection = AppPage | 'appearance' | 'display' | 'notifications' | 'paths' | 'debug' | 'integrations' | 'api-profiles';
+export type AppSection = AppPage | 'terminal-fonts' | 'appearance' | 'display' | 'notifications' | 'paths' | 'debug' | 'integrations' | 'api-profiles';
 
 const LEGACY_SECTION_PAGE: Record<string, AppPage> = {
+  'terminal-fonts': 'agent',
   appearance: 'general',
   display: 'general',
   notifications: 'general',
@@ -71,21 +68,27 @@ const toAppPage = (section: AppSection): AppPage => LEGACY_SECTION_PAGE[section]
 interface NavItemConfig<T extends string> {
   id: T;
   icon: React.ElementType;
+  /** Size override for icons whose artwork reads small at the default 18px */
+  iconClassName?: string;
+  /** Stroke width to keep lines as thin as the 18px icons' when the icon is larger */
+  iconStrokeWidth?: number;
 }
 
-const appNavItemsConfig: NavItemConfig<AppPage>[] = [
-  { id: 'general', icon: GearIcon },
-  { id: 'accounts', icon: CircleUserRound },
-  { id: 'agent', icon: AgentOutlineIcon },
-  { id: 'terminal-fonts', icon: SquareTerminal },
-  { id: 'connectors', icon: Blocks },
-  { id: 'devtools', icon: CodeXml },
-  { id: 'updates', icon: Download }
-];
+// One list: app pages, then the selected project's pages (Project, Memory) above Updates
+type TopNavItem =
+  | ({ kind: 'app' } & NavItemConfig<AppPage>)
+  | ({ kind: 'project' } & NavItemConfig<ProjectSettingsSection>);
 
-const projectNavItemsConfig: NavItemConfig<ProjectSettingsSection>[] = [
-  { id: 'general', icon: FolderCog },
-  { id: 'memory', icon: History }
+const topNavItemsConfig: TopNavItem[] = [
+  { kind: 'app', id: 'general', icon: GearIcon },
+  { kind: 'app', id: 'accounts', icon: CircleUserRound },
+  // The wide, short creature reads small at 18px: 20px, with the extra 2px taken out of the gap
+  { kind: 'app', id: 'agent', icon: AgentOutlineIcon, iconClassName: '-mx-px h-5 w-5', iconStrokeWidth: 1.35 },
+  { kind: 'app', id: 'connectors', icon: Blocks },
+  { kind: 'app', id: 'devtools', icon: CodeXml },
+  { kind: 'project', id: 'general', icon: ProjectOutlineIcon },
+  { kind: 'project', id: 'memory', icon: MemoryChipIcon },
+  { kind: 'app', id: 'updates', icon: Download }
 ];
 
 // Changes save on their own (claude.ai has no Save button); quick edits are batched
@@ -199,13 +202,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <AccountSettings settings={settings} onSettingsChange={setSettings} isOpen={open} />;
       case 'agent':
         return <GeneralSettings settings={settings} onSettingsChange={setSettings} section="agent" />;
-      case 'terminal-fonts':
-        return (
-          <>
-            <GeneralSettings settings={settings} onSettingsChange={setSettings} section="terminal" />
-            <TerminalFontSettings />
-          </>
-        );
       case 'connectors':
         return <ConnectorsSettings settings={settings} onSettingsChange={setSettings} />;
       case 'devtools':
@@ -254,8 +250,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
       : 'text-muted-foreground hover:bg-nav-hover hover:text-foreground'
   );
 
-  const renderNavIcon = (Icon: React.ElementType) => (
-    <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 text-muted-foreground" strokeWidth={1.5} />
+  const renderNavIcon = (Icon: React.ElementType, sizeClassName = 'h-[1.125rem] w-[1.125rem]', strokeWidth = 1.5) => (
+    <Icon className={cn(sizeClassName, 'shrink-0 text-muted-foreground')} strokeWidth={strokeWidth} />
   );
 
 
@@ -286,21 +282,34 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
                 <div>
                   <div className="px-2 pb-2 pt-3 text-xs text-(--nav-label-color)">{t('nav.app')}</div>
                   <ul className="flex flex-col gap-px">
-                    {appNavItemsConfig.map((item) => {
-                      const isActive = activeTopLevel === 'app' && appPage === item.id;
+                    {topNavItemsConfig.map((item) => {
+                      const isProject = item.kind === 'project';
+                      const isActive = isProject
+                        ? activeTopLevel === 'project' && projectSection === item.id
+                        : activeTopLevel === 'app' && appPage === item.id;
                       return (
-                        <li key={item.id}>
+                        <li key={`${item.kind}-${item.id}`}>
                           <button
                             type="button"
                             aria-current={isActive ? 'page' : undefined}
                             onClick={() => {
-                              setActiveTopLevel('app');
-                              setAppPage(item.id);
+                              if (item.kind === 'project') {
+                                setActiveTopLevel('project');
+                                setProjectSection(item.id);
+                              } else {
+                                setActiveTopLevel('app');
+                                setAppPage(item.id);
+                              }
                             }}
+                            disabled={isProject && projectNavDisabled}
                             className={navItemClass(isActive)}
                           >
-                            {renderNavIcon(item.icon)}
-                            <span className="min-w-0 flex-1 truncate">{t(`sections.${item.id}.title`)}</span>
+                            {renderNavIcon(item.icon, item.iconClassName, item.iconStrokeWidth)}
+                            <span className="min-w-0 flex-1 truncate">
+                              {isProject
+                                ? item.id === 'general' ? t('nav.project') : t(`projectSections.${item.id}.title`)
+                                : t(`sections.${item.id}.title`)}
+                            </span>
                           </button>
                         </li>
                       );
@@ -308,31 +317,6 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
                   </ul>
                 </div>
 
-                <div>
-                  <div className="px-2 pb-2 pt-3 text-xs text-(--nav-label-color)">{t('nav.project')}</div>
-                  <ul className="flex flex-col gap-px">
-                    {projectNavItemsConfig.map((item) => {
-                      const isActive = activeTopLevel === 'project' && projectSection === item.id;
-                      return (
-                        <li key={item.id}>
-                          <button
-                            type="button"
-                            aria-current={isActive ? 'page' : undefined}
-                            onClick={() => {
-                              setActiveTopLevel('project');
-                              setProjectSection(item.id);
-                            }}
-                            disabled={projectNavDisabled}
-                            className={navItemClass(isActive)}
-                          >
-                            {renderNavIcon(item.icon)}
-                            <span className="min-w-0 flex-1 truncate">{t(`projectSections.${item.id}.title`)}</span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
               </div>
             </ScrollArea>
           </nav>

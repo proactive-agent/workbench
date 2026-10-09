@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { SettingsRow, SegmentedControl, type SegmentedOption } from './SettingsRow';
+import { TerminalFontSettings } from './terminal-font-settings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { useSettingsStore } from '../../stores/settings-store';
 import { useTerminalFontSettingsStore } from '../../stores/terminal-font-settings-store';
@@ -91,6 +92,9 @@ export function FontSettings({ settings, onSettingsChange }: FontSettingsProps) 
           ariaLabel={t('fonts.textSize')}
         />
       </SettingsRow>
+
+      {/* Cursor style, scrollback limit, and import/export of the terminal settings */}
+      <TerminalFontSettings />
     </>
   );
 }

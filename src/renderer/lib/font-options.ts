@@ -21,6 +21,9 @@ export function terminalFontChain(font: string): string[] {
 /** Terminal text sizes offered in Appearance */
 export const TERMINAL_FONT_SIZES = { small: 12, medium: 13, large: 15 } as const;
 
+/** Terminal scrollback limits (lines) offered in Appearance */
+export const SCROLLBACK_PRESETS = [1000, 10000, 50000, 100000] as const;
+
 /** The option value closest to `value` (saved settings from the old sliders snap to an option) */
 export function nearestOption(options: Record<string, number>, value: number): number {
   return Object.values(options).reduce((best, option) =>

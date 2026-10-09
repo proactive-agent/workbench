@@ -57,6 +57,30 @@ export function ProjectIcon(props: IconProps) {
   );
 }
 
+/**
+ * Project folder as an outline (same shape as ProjectIcon) for lists of stroke icons, e.g. the
+ * settings menu, so its line width matches the lucide icons next to it
+ */
+export function ProjectOutlineIcon({ strokeWidth = 1.5, ...props }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path d="M5.5 9V5.2A1.2 1.2 0 0 1 6.7 4h2.6a1.6 1.6 0 0 1 1.3.65L11.7 6.1h5.1a1.2 1.2 0 0 1 1.2 1.2V9" />
+      <path d="M4.7 9.6h14.6a1 1 0 0 1 1 1.1l-.8 7.3a2.4 2.4 0 0 1-2.4 2.1H6.9a2.4 2.4 0 0 1-2.4-2.1l-.8-7.3a1 1 0 0 1 1-1.1z" />
+      <path d="M9.75 13.3h4.5" />
+    </svg>
+  );
+}
+
 /** Branching tree — git worktrees (agent terminals) */
 export function WorktreeIcon(props: IconProps) {
   return (
@@ -107,25 +131,30 @@ export function GearIcon({ strokeWidth = 2, ...props }: IconProps) {
 }
 
 /**
- * Agent (outlined) — the Agents icon drawn as a stroke icon for lucide-style lists. The default
- * lucide `strokeWidth` (1.5) maps to a 32-unit stroke on the 1024 artboard.
+ * Pixel creature as an outline (same figure as AgentsIcon) for lists of stroke icons, e.g. the
+ * settings menu, so its line width matches the lucide icons next to it
  */
 export function AgentOutlineIcon({ strokeWidth = 1.5, ...props }: IconProps) {
   return (
     <svg
-      viewBox="0 0 1024 1024"
+      viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={(Number(strokeWidth) * 64) / 3}
+      strokeWidth={strokeWidth}
       strokeLinecap="round"
       strokeLinejoin="round"
       aria-hidden="true"
       focusable="false"
       {...props}
     >
-      <path d="M895.91 467.16H1024v132.35h-128v129.19h-63.45V853.33H768v-124.63h-63.45V853.33H640v-124.63H384V853.33H319.49v-124.63H256V853.33H191.45v-124.63H128V599.51H0v-132.27h128V213.33h767.91v253.83z" />
-      <path d="M256 467.16h63.49V345.69H256v121.47z" />
-      <path d="M704.51 467.16H768V345.69h-63.49v121.47z" />
+      {/* Body */}
+      <rect x="4.5" y="5.75" width="15" height="10" rx="1" />
+      {/* Arms */}
+      <path d="M2.25 12h2.25M19.5 12h2.25" />
+      {/* Legs */}
+      <path d="M6.4 15.75v2.5M8.9 15.75v2.5M15.1 15.75v2.5M17.6 15.75v2.5" />
+      {/* Eyes */}
+      <path d="M7.65 8.75v1.5M16.35 8.75v1.5" />
     </svg>
   );
 }
@@ -148,5 +177,14 @@ export function SettingsIcon(props: IconProps) {
         d="M360.208 623.22c-31.777 0-61.568 10.592-89.373 31.777s-45.68 47.666-53.624 79.443H94.075c-7.944 2.648-14.564 7.282-19.861 13.902s-8.606 15.227-9.93 25.819c-1.324 10.592 1.986 19.199 9.93 25.819s17.213 9.93 27.805 9.93h115.192c7.944 31.777 25.819 58.258 53.624 79.443 27.805 21.185 58.258 31.777 91.359 31.777s63.554-10.592 91.359-31.777c27.805-21.185 45.68-47.666 53.624-79.443h421.046c7.944-2.648 15.227-7.282 21.847-13.902 6.62-6.62 9.93-14.565 9.93-23.833s-3.972-17.875-11.916-25.819c-7.944-7.944-17.213-11.916-27.805-11.916H507.177c-7.944-31.777-25.819-58.258-53.624-79.443s-57.596-31.777-89.373-31.777h-3.972z m0 75.47c21.185 0 39.059 7.282 53.624 21.847 14.565 14.565 21.847 31.777 21.847 51.638s-7.282 37.073-21.847 51.638c-14.564 14.565-31.777 21.847-51.638 21.847-19.861 0-37.073-7.282-51.638-21.847s-21.847-31.777-21.847-51.638 7.282-37.073 21.847-51.638 32.439-21.847 53.624-21.847h-3.972zM662.09 102.87c-34.425 0-65.54 10.592-93.345 31.777-27.805 21.185-45.68 47.666-53.624 79.443H94.075c-7.944 2.648-14.564 7.282-19.861 13.902s-7.944 14.564-7.944 23.833 3.31 17.875 9.93 25.819c6.62 7.944 15.227 11.916 25.819 11.916h413.102c7.944 31.777 25.819 58.258 53.624 79.443 27.805 21.185 58.258 31.777 91.359 31.777 33.101 0 63.554-10.592 91.359-31.777s45.68-47.666 53.624-79.443h123.136c7.944-2.648 15.227-7.282 21.847-13.902s9.93-15.227 9.93-25.819-3.972-19.199-11.916-25.819-17.213-9.93-27.805-9.93H805.087c-7.944-31.777-25.819-58.258-53.624-79.443s-57.596-31.777-89.373-31.777z m-3.972 75.471c21.185 0 39.059 7.282 53.624 21.847 14.564 14.564 21.847 31.777 21.847 51.638s-7.282 37.073-21.847 51.638c-14.565 14.564-31.777 21.847-51.638 21.847-19.861 0-37.073-7.282-51.638-21.847s-21.847-31.777-21.847-51.638 7.282-37.073 21.847-51.638 32.439-21.847 53.624-21.847h-3.972z"
       />
     </Svg>
+  );
+}
+
+/** Memory chip (filled), for the Memory settings page; takes the text color */
+export function MemoryChipIcon({ strokeWidth: _strokeWidth, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 1024 1024" fill="currentColor" aria-hidden="true" focusable="false" {...props}>
+      <path d="M726.016 726.016l0-427.989333-427.989333 0 0 427.989333 427.989333 0zM896 470.016l-86.016 0 0 84.010667 86.016 0 0 86.016-86.016 0 0 86.016q0 34.005333-25.002667 59.008t-59.008 25.002667l-86.016 0 0 86.016-86.016 0 0-86.016-84.010667 0 0 86.016-86.016 0 0-86.016-86.016 0q-34.005333 0-59.008-25.002667t-25.002667-59.008l0-86.016-86.016 0 0-86.016 86.016 0 0-84.010667-86.016 0 0-86.016 86.016 0 0-86.016q0-34.005333 25.002667-59.008t59.008-25.002667l86.016 0 0-86.016 86.016 0 0 86.016 84.010667 0 0-86.016 86.016 0 0 86.016 86.016 0q34.005333 0 59.008 25.002667t25.002667 59.008l0 86.016 86.016 0 0 86.016zM553.984 553.984l0-84.010667-84.010667 0 0 84.010667 84.010667 0zM640 384l0 256-256 0 0-256 256 0z" />
+    </svg>
   );
 }
