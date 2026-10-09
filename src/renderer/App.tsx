@@ -95,6 +95,7 @@ export function App() {
   const [isNewTaskDialogOpen, setIsNewTaskDialogOpen] = useState(false);
   const [isSettingsDialogOpen, setIsSettingsDialogOpen] = useState(false);
   const [settingsInitialSection, setSettingsInitialSection] = useState<AppSection | undefined>(undefined);
+  const [settingsFocusId, setSettingsFocusId] = useState<string | undefined>(undefined);
   const [settingsInitialProjectSection, setSettingsInitialProjectSection] = useState<ProjectSettingsSection | undefined>(undefined);
   const [activeView, setActiveView] = useState<SidebarView>('kanban');
 
@@ -273,12 +274,14 @@ export function App() {
 
   // Listen for open-app-settings events (e.g., from project settings)
   useEffect(() => {
+    // detail: a page, or { section, focusId } to also scroll to and focus a field on that page
     const handleOpenAppSettings = (event: Event) => {
-      const customEvent = event as CustomEvent<AppSection>;
-      const section = customEvent.detail;
+      const detail = (event as CustomEvent<AppSection | { section: AppSection; focusId?: string }>).detail;
+      const section = typeof detail === 'string' ? detail : detail?.section;
       if (section) {
         setSettingsInitialSection(section);
       }
+      setSettingsFocusId(typeof detail === 'object' && detail ? detail.focusId : undefined);
       setIsSettingsDialogOpen(true);
     };
 
@@ -764,9 +767,11 @@ export function App() {
               // Reset initial sections when dialog closes
               setSettingsInitialSection(undefined);
               setSettingsInitialProjectSection(undefined);
+              setSettingsFocusId(undefined);
             }
           }}
           initialSection={settingsInitialSection}
+          focusId={settingsFocusId}
           initialProjectSection={settingsInitialProjectSection}
         />
 

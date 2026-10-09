@@ -43,6 +43,8 @@ interface AppSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialSection?: AppSection;
+  /** id of a field on the opened page to scroll to and focus */
+  focusId?: string;
   initialProjectSection?: ProjectSettingsSection;
 }
 
@@ -98,7 +100,7 @@ const AUTOSAVE_DELAY_MS = 400;
  * Settings dialog modeled on claude.ai's: a narrow navigation column (search, grouped pages)
  * next to a scrolling page of sections. Changes apply and save immediately.
  */
-export function AppSettingsDialog({ open, onOpenChange, initialSection, initialProjectSection }: AppSettingsDialogProps) {
+export function AppSettingsDialog({ open, onOpenChange, initialSection, initialProjectSection, focusId }: AppSettingsDialogProps) {
   const { t } = useTranslation('settings');
   const { settings, setSettings, error, saveSettings, commitTheme } = useSettings();
   const [version, setVersion] = useState<string>('');
@@ -124,6 +126,26 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
       }
     }
   }, [open, initialSection, initialProjectSection]);
+
+  // Scroll to and focus the requested field once its page has rendered (pages can render a
+  // moment after the dialog opens, so look for it for up to a second)
+  useEffect(() => {
+    if (!open || !focusId) return;
+    let frame = 0;
+    const started = performance.now();
+    const tryFocus = () => {
+      const field = document.getElementById(focusId);
+      if (field) {
+        field.scrollIntoView({ block: 'center' });
+        field.focus({ preventScroll: true });
+        if (field instanceof HTMLInputElement) field.select();
+        return;
+      }
+      if (performance.now() - started < 1000) frame = requestAnimationFrame(tryFocus);
+    };
+    frame = requestAnimationFrame(tryFocus);
+    return () => cancelAnimationFrame(frame);
+  }, [open, focusId]);
 
   // Project state
   const projects = useProjectStore((state) => state.projects);
