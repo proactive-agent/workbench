@@ -173,6 +173,14 @@ export function usePtyProcess({
     if (isRestored && terminalState) {
       // Restored session
       debugLog(`[usePtyProcess] Restoring session for terminal: ${terminalId}, cwd: ${terminalState.cwd}, isCLIMode: ${terminalState.isCLIMode}`);
+      // The shell starts here, which can be long after the window was restored: the grid waits for
+      // the Agents page to be shown before its windows have a size. The spinner's fallback counts
+      // from this moment. Claude Code is what it waits for when the session is still to resume, or
+      // has resumed already (the window's own queued resume may have gone in first)
+      store.setTerminalLoading(
+        terminalId,
+        terminalState.pendingCLIResume || terminalState.isCLIMode ? 'claude' : 'shell'
+      );
       window.electronAPI.restoreTerminalSession(
         {
           id: terminalState.id,

@@ -16,7 +16,6 @@ import type {
   TerminalWorktreeConfig,
   TerminalWorktreeResult,
   OtherWorktreeInfo,
-  TerminalProfileChangedEvent,
 } from '../../shared/types';
 
 /** Type for proactive swap notification events */
@@ -48,6 +47,8 @@ export interface TerminalAPI {
   ) => Promise<IPCResult<import('../../shared/types').TerminalRestoreResult>>;
   clearTerminalSessions: (projectPath: string) => Promise<IPCResult>;
   resumeClaudeInTerminal: (id: string, options?: { dangerouslySkipPermissions?: boolean }) => void;
+  listClaudeSessions: (id: string) => Promise<IPCResult<import('../../shared/types').ClaudeSessionItem[]>>;
+  openClaudeSession: (id: string, sessionId: string | null) => Promise<IPCResult>;
   activateDeferredClaudeResume: (id: string) => void;
   checkTerminalPtyAlive: (terminalId: string) => Promise<IPCResult<{ alive: boolean }>>;
   updateTerminalDisplayOrders: (
@@ -79,7 +80,6 @@ export interface TerminalAPI {
   onTerminalClaudeBusy: (callback: (id: string, isBusy: boolean) => void) => () => void;
   onTerminalClaudeExit: (callback: (id: string) => void) => () => void;
   onTerminalPendingResume: (callback: (id: string) => void) => () => void;
-  onTerminalProfileChanged: (callback: (event: TerminalProfileChangedEvent) => void) => () => void;
 
   // Claude Profile Management
   getClaudeProfiles: () => Promise<IPCResult<ClaudeProfileSettings>>;
@@ -157,6 +157,12 @@ export const createTerminalAPI = (): TerminalAPI => ({
 
   resumeClaudeInTerminal: (id: string, options?: { dangerouslySkipPermissions?: boolean }): void =>
     ipcRenderer.send(IPC_CHANNELS.TERMINAL_RESUME_CLAUDE, id, options),
+
+  listClaudeSessions: (id: string): Promise<IPCResult<import('../../shared/types').ClaudeSessionItem[]>> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_LIST_CLAUDE_SESSIONS, id),
+
+  openClaudeSession: (id: string, sessionId: string | null): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_OPEN_CLAUDE_SESSION, id, sessionId),
 
   activateDeferredClaudeResume: (id: string): void =>
     ipcRenderer.send(IPC_CHANNELS.TERMINAL_ACTIVATE_DEFERRED_RESUME, id),
@@ -339,21 +345,6 @@ export const createTerminalAPI = (): TerminalAPI => ({
     ipcRenderer.on(IPC_CHANNELS.TERMINAL_PENDING_RESUME, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_PENDING_RESUME, handler);
-    };
-  },
-
-  onTerminalProfileChanged: (
-    callback: (event: TerminalProfileChangedEvent) => void
-  ): (() => void) => {
-    const handler = (
-      _event: Electron.IpcRendererEvent,
-      data: TerminalProfileChangedEvent
-    ): void => {
-      callback(data);
-    };
-    ipcRenderer.on(IPC_CHANNELS.TERMINAL_PROFILE_CHANGED, handler);
-    return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_PROFILE_CHANGED, handler);
     };
   },
 

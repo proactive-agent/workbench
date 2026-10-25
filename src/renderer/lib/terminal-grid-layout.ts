@@ -139,3 +139,31 @@ export function computeWeightedTerminalLayout(weights: number[]): TerminalBox[] 
   });
   return boxes;
 }
+
+/** The window id a drag is over: its own sortable box, or the file drop zone inside it */
+export function overWindowId(id: string): string {
+  return id.startsWith('terminal-') ? id.slice('terminal-'.length) : id;
+}
+
+/**
+ * The grid order while a window is dragged over another, from the order at drag start: the dragged
+ * one takes the other's place, the windows between them shift by one. Unchanged (the same array)
+ * when there is nothing to move, e.g. over its own place.
+ */
+export function movePreviewOrder(order: string[], activeId: string, overId: string): string[] {
+  const from = order.indexOf(activeId);
+  const to = order.indexOf(overId);
+  if (from < 0 || to < 0 || from === to) return order;
+  const next = order.slice();
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
+
+/**
+ * The window to move the dragged one onto, so the stored order becomes the previewed one: the
+ * window that held the dragged one's final place before the drag (undefined when it didn't move).
+ */
+export function dropTargetId(original: string[], preview: string[], activeId: string): string | undefined {
+  const target = original[preview.indexOf(activeId)];
+  return target && target !== activeId ? target : undefined;
+}

@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
 import { AgentsIcon, TerminalPromptIcon } from '../icons/app-icons';
 import { TaskSelector } from './TaskSelector';
+import { SessionSelector } from './SessionSelector';
 import { WorktreeSelector } from './WorktreeSelector';
 
 interface TerminalHeaderProps {
@@ -94,6 +95,13 @@ export function TerminalHeader({
             currentWorktree={worktreeConfig}
             onCreateWorktree={onCreateWorktree}
             onSelectWorktree={onSelectWorktree}
+            labelClassName={terminalCount >= 6 ? 'max-w-20' : terminalCount >= 4 ? 'max-w-28' : 'max-w-40'}
+          />
+        )}
+        {/* Agent windows: the Claude Code session (new, or one /resume would offer) */}
+        {isCLIMode && (
+          <SessionSelector
+            terminalId={terminalId}
             labelClassName={terminalCount >= 6 ? 'max-w-20' : terminalCount >= 4 ? 'max-w-28' : 'max-w-40'}
           />
         )}

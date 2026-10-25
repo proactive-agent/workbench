@@ -12,6 +12,8 @@ import { getTerminalTheme } from '../../lib/terminal-theme';
 import { debugLog, debugError } from '../../../shared/utils/debug-logger';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { WebGLContextManagerType } from '../../lib/webgl-context-manager';
+import { isTerminalGridDragging } from '../../lib/terminal-grid-drag';
+
 
 interface UseXtermOptions {
   terminalId: string;
@@ -453,6 +455,8 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   // Handle resize on container resize with debouncing
   useEffect(() => {
     const handleResize = debounce(() => {
+      // A window being dragged around the grid changes size on every move: the drop refits once
+      if (isTerminalGridDragging()) return;
       if (fitAddonRef.current && xtermRef.current && terminalRef.current) {
         // Check if container has valid dimensions before fitting
         const rect = terminalRef.current.getBoundingClientRect();

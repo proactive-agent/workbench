@@ -1,0 +1,90 @@
+name: version
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+concurrency:
+  group: version
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    # A pull request closed without merging leaves nothing to count
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          # The version counts the merges since the current major's release tag, so the whole
+          # history and the tags have to be here
+          fetch-depth: 0
+
+      - name: Put the version the merge calls for into the merge commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.event.pull_request.base.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          # Only the merge commit is ours to rewrite: anything pushed on top of it since would be
+          # lost when the branch is moved to the new commit
+          if [ "$(git rev-parse HEAD)" != "$MERGE_SHA" ]; then
+            echo "$BRANCH has moved past $MERGE_SHA, leaving it alone"
+            exit 0
+          fi
+
+          node .github/scripts/sync-version.cjs
+
+          changed=$(git diff --name-only -- package.json package-lock.json)
+          if [ -z "$changed" ]; then
+            echo "the version already matches the history"
+            exit 0
+          fi
+
+          author=$(git log -1 --format='%an <%ae>' "$MERGE_SHA")
+          git log -1 --format=%B "$MERGE_SHA" > "$RUNNER_TEMP/merged"
+
+          # Word for word the message the merge carries, minus the trailers that would credit the
+          # new commit's own author: the token that signs it, and the merge's author, who is put
+          # back in front of the others below so they come first whatever the merge already said
+          awk -v self="Co-authored-by: $author" -v token="$TOKEN_AUTHOR" '
+            tolower($0) ~ /^co-authored-by:/ && (index($0, token) > 0 || $0 == self) { next }
+            { print }
+          ' "$RUNNER_TEMP/merged" > "$RUNNER_TEMP/stripped"
+
+          # Unless the token merged it itself, in which case it is the author and no co-author
+          case "$author" in
+            *"$TOKEN_AUTHOR"*) cp "$RUNNER_TEMP/stripped" "$RUNNER_TEMP/message" ;;
+            *) git interpret-trailers --where start --trailer "Co-authored-by: $author" \
+                 "$RUNNER_TEMP/stripped" > "$RUNNER_TEMP/message" ;;
+          esac
+
+          # The merge's own tree with the changed files laid over it, so nothing else can move
+          for file in $changed; do
+            jq -n --arg path "$file" --rawfile content "$file" \
+              '{path: $path, mode: "100644", type: "blob", content: $content}'
+          done | jq -s --arg base "$(git rev-parse "$MERGE_SHA^{tree}")" \
+            '{base_tree: $base, tree: .}' > "$RUNNER_TEMP/tree.json"
+          tree=$(gh api "repos/$REPO/git/trees" --input "$RUNNER_TEMP/tree.json" --jq .sha)
+
+          # No author or committer: the API fills in both from the token, and signs the commit
+          jq -n --rawfile message "$RUNNER_TEMP/message" --arg tree "$tree" \
+            --argjson parents "$(git log -1 --format='%P' "$MERGE_SHA" | jq -R 'split(" ")')" \
+            '{message: ($message | sub("\n+$"; "\n")), tree: $tree, parents: $parents}' \
+            > "$RUNNER_TEMP/commit.json"
+          commit=$(gh api "repos/$REPO/git/commits" --input "$RUNNER_TEMP/commit.json" --jq .sha)
+
+          # Checked once more against the live branch, since moving it is forced
+          live=$(gh api "repos/$REPO/git/ref/heads/$BRANCH" --jq .object.sha)
+          if [ "$live" != "$MERGE_SHA" ]; then
+            echo "$BRANCH is at $live, not the merge: leaving it alone"
+            exit 0
+          fi
+          gh api -X PATCH "repos/$REPO/git/refs/heads/$BRANCH" -f sha="$commit" -F force=true --jq .object.sha

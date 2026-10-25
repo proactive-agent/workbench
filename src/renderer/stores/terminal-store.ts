@@ -6,6 +6,7 @@ import type { Task, TerminalSession, TerminalTaskSessionOptions, TerminalWorktre
 import { getTaskWorktreeBranch } from '../../shared/utils/claude-run';
 import { terminalMachine, type TerminalEvent } from '@shared/state-machines';
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
+import { startTerminalLoading, stopTerminalLoading, TERMINAL_LOADING_TIMEOUT_MS, type TerminalLoadingKind } from '../lib/terminal-loading';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { DEFAULT_MAX_TERMINALS, MIN_TERMINALS, MAX_TERMINALS_LIMIT } from '../../shared/constants';
 
@@ -234,7 +235,11 @@ export interface Terminal {
   pendingTaskSession?: PendingTaskSession;  // With launchCLIOnCreate: resume this task session instead of starting a new one
   displayOrder?: number;  // Display order for tab persistence (lower = further left)
   cliNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
+  loading?: TerminalLoadingKind;  // Starting (a shell, or Claude Code): the window shows a spinner until it is ready
 }
+
+/** Each loading window's fallback timer (see setTerminalLoading) */
+const loadingTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
 interface TerminalLayout {
   id: string;
@@ -263,6 +268,8 @@ interface TerminalState {
   setActiveTerminal: (id: string | null) => void;
   setTerminalStatus: (id: string, status: TerminalStatus) => void;
   setCLIMode: (id: string, isCLIMode: boolean) => void;
+  /** Show a spinner over the window until what it starts is ready (undefined: hide it) */
+  setTerminalLoading: (id: string, kind: TerminalLoadingKind | undefined) => void;
   setAssociatedTask: (id: string, taskId: string | undefined) => void;
   setWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => void;
   setClaudeBusy: (id: string, isBusy: boolean) => void;
@@ -346,6 +353,8 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       terminals: [...state.terminals, newTerminal],
       activeTerminalId: newTerminal.id,
     }));
+    // A new window shows a spinner until its shell, or Claude Code for "New agent", is ready
+    get().setTerminalLoading(newTerminal.id, options?.launchCLI ? 'claude' : 'shell');
 
     return newTerminal;
   },
@@ -420,6 +429,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       terminals: [...state.terminals, restoredTerminal],
       activeTerminalId: state.activeTerminalId || restoredTerminal.id,
     }));
+    // A restored window starts over too (a new shell, and Claude Code again when its session is
+    // resumed): it shows a spinner instead of the buffer it replays and the start-up that follows
+    get().setTerminalLoading(restoredTerminal.id, restoredTerminal.pendingCLIResume ? 'claude' : 'shell');
 
     debugLog(`[TerminalStore] Successfully added restored terminal ${session.id} to store, isRestored: true, pendingCLIResume: ${session.isCLIMode === true}`);
     return restoredTerminal;
@@ -466,6 +478,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   removeTerminal: (id: string) => {
+    clearTimeout(loadingTimers.get(id));
+    loadingTimers.delete(id);
+    stopTerminalLoading(id);
     // Clean up buffer manager, output callback, and XState actor
     terminalBufferManager.dispose(id);
     xtermCallbacks.delete(id);
@@ -513,6 +528,21 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
       terminals: state.terminals.map((t) =>
         t.id === id ? { ...t, status } : t
       ),
+    }));
+  },
+
+  setTerminalLoading: (id: string, kind: TerminalLoadingKind | undefined) => {
+    clearTimeout(loadingTimers.get(id));
+    loadingTimers.delete(id);
+    if (kind) {
+      startTerminalLoading(id, kind);
+      // Nothing recognisable came: the window is shown as it is rather than hidden for good
+      loadingTimers.set(id, setTimeout(() => get().setTerminalLoading(id, undefined), TERMINAL_LOADING_TIMEOUT_MS));
+    } else {
+      stopTerminalLoading(id);
+    }
+    set((state) => ({
+      terminals: state.terminals.map((terminal) => (terminal.id === id ? { ...terminal, loading: kind } : terminal)),
     }));
   },
 
@@ -664,6 +694,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
           if (!get().terminals.find((t) => t.id === terminalId)?.pendingCLIResume) continue;
           debugLog(`[TerminalStore] Resuming Claude Code in terminal: ${terminalId}`);
           get().setPendingClaudeResume(terminalId, false);
+          // The spinner waits for this window's Claude Code, counting from the moment it starts:
+          // the windows resume one after another, so the later ones start well after the restore
+          get().setTerminalLoading(terminalId, 'claude');
           window.electronAPI.activateDeferredClaudeResume(terminalId);
           // The terminal now runs `claude --continue` in the project: show it in Claude mode
           get().setCLIMode(terminalId, true);

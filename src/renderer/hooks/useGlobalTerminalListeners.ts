@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
-import { isWindowTerminal, writeToTerminal } from '../stores/terminal-store';
+import { isWindowTerminal, useTerminalStore, writeToTerminal } from '../stores/terminal-store';
+import { terminalLoadingEnds } from '../lib/terminal-loading';
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
 import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 
@@ -54,6 +55,11 @@ export function useGlobalTerminalListeners(): void {
       // 1. Always buffers to terminalBufferManager for persistence
       // 2. Writes to xterm immediately if terminal has a registered callback (visible)
       writeToTerminal(terminalId, data);
+
+      // A starting window shows its content once what it starts is ready
+      if (terminalLoadingEnds(terminalId, data)) {
+        useTerminalStore.getState().setTerminalLoading(terminalId, undefined);
+      }
 
       debugLog(
         `[GlobalTerminalListeners] Processed output for ${terminalId}, buffer size: ${terminalBufferManager.getSize(terminalId)}`

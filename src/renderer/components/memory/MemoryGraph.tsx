@@ -11,6 +11,7 @@ import { useSettingsStore } from '../../stores/settings-store';
 import type { GraphifyGraph, GraphifyGraphNode } from '../../../shared/types/cli';
 import type { LayoutMessage, LayoutRequest } from './graph-layout.worker';
 import { communityColorIndex, GRAPHIFY_COMMUNITY_COLORS } from './graphify-colors';
+import { labelledNodes } from './graph-labels';
 
 interface ViewNode extends GraphifyGraphNode {
   index: number;
@@ -27,12 +28,6 @@ const HIGHLIGHT_FILL = new Color('#ffffff');
 /** Graphify's link opacity when hovered: extracted links 0.7, inferred (and others) 0.35 */
 const HOVER_LINK_ALPHA = { extracted: 0.7, inferred: 0.35 };
 
-/** Zoom level from which labels show (below it only the hovered neighbourhood's do) */
-const LABEL_ZOOM = 1.2;
-/** At most this many labels at once, so zooming in on a dense area stays smooth */
-const MAX_LABELS = 300;
-/** Screen-space cells a label occupies, so labels don't overlap */
-const LABEL_CELL = { w: 24, h: 16 };
 /** Camera distance from the graph's center, in graph radii (smaller exaggerates perspective) */
 const CAMERA_DISTANCE = 3;
 /** How fast a released spin slows down (ms for it to drop to about a third) */
@@ -85,7 +80,7 @@ function LoadingDots() {
  * the force layout runs in a Web Worker (in 3D, with d3-force-3d) and PixiJS draws the graph with
  * WebGL. Nodes and links are colored by community with Graphify's own palette, or drawn in one muted
  * color (Settings > Appearance > Graph style). Drag the background to turn the graph like a globe
- * (it keeps spinning when flicked), wheel to zoom, Shift+drag to pan, drag nodes to move them and hover to highlight a node's neighbours.
+ * (it keeps spinning when flicked), wheel to zoom, Shift+drag to pan, drag nodes to move them and hover to highlight a node's neighbours and show their names.
  * Left alone, the graph turns slowly, and 5 seconds after the last touch the view resets to it.
  */
 export function MemoryGraph({ projectId }: { projectId: string }) {
@@ -176,7 +171,6 @@ export function MemoryGraph({ projectId }: { projectId: string }) {
     let graphRadius = 1;
     // Rotation applied to the layout (row-major 3x3), changed by dragging the background
     let rotation = [1, 0, 0, 0, 1, 0, 0, 0, 1];
-    const byConnections = [...nodes].sort((a, b) => b.connections - a.connections);
 
     let dirty = false;
 
@@ -277,39 +271,10 @@ export function MemoryGraph({ projectId }: { projectId: string }) {
         return label;
       };
 
-      // Labels for nodes on screen when zoomed in, or for the hovered neighbourhood
+      // Names only for the hovered neighbourhood (none without a hovered node)
       const updateLabels = () => {
         const k = transform.k;
-        const left = -transform.x / k;
-        const top = -transform.y / k;
-        const right = left + pixi.screen.width / k;
-        const bottom = top + pixi.screen.height / k;
-        const show = new Set<number>();
-        if (hovered) {
-          show.add(hovered.index);
-          for (const index of neighbours[hovered.index]) show.add(index);
-        } else if (k >= LABEL_ZOOM) {
-          // Most-connected nodes first; skip a label where one is already drawn (screen-space grid)
-          const taken = new Set<string>();
-          for (const node of byConnections) {
-            if (show.size >= MAX_LABELS) break;
-            // Only the half facing the viewer
-            if (depth[node.index] < 0) continue;
-            const x = projectedX[node.index];
-            const y = projectedY[node.index];
-            if (x < left || x > right || y < top || y > bottom) continue;
-            const screenX = x * k + transform.x;
-            const screenY = y * k + transform.y;
-            const halfWidth = Math.min(node.label.length * 3.2, 120);
-            const cells: string[] = [];
-            for (let cx = Math.floor((screenX - halfWidth) / LABEL_CELL.w); cx <= Math.floor((screenX + halfWidth) / LABEL_CELL.w); cx++) {
-              cells.push(`${cx}:${Math.floor(screenY / LABEL_CELL.h)}`);
-            }
-            if (cells.some((cell) => taken.has(cell))) continue;
-            for (const cell of cells) taken.add(cell);
-            show.add(node.index);
-          }
-        }
+        const show = labelledNodes(hovered?.index ?? null, neighbours);
         for (const [index, label] of labels) {
           if (!show.has(index)) label.visible = false;
         }

@@ -20,6 +20,8 @@ import { useSettingsStore, saveSettings } from '../stores/settings-store';
 import { GitSetupModal } from './GitSetupModal';
 
 import { UsageIndicator } from './UsageIndicator';
+import { loadClaudeProfiles, useClaudeProfileStore } from '../stores/claude-profile-store';
+import { sidebarAccount } from '../lib/sidebar-account';
 import type { GitStatus } from '../../shared/types';
 
 export type SidebarView = 'projects' | 'kanban' | 'terminals' | 'insights' | 'memory';
@@ -59,6 +61,22 @@ export function Sidebar({
   const storeSelectedProjectId = useProjectStore((state) => state.selectedProjectId);
   const selectedProjectId = activeProjectId ?? storeSelectedProjectId;
   const settings = useSettingsStore((state) => state.settings);
+  // The account tasks and agents run on, named in place of "Settings" once there is one
+  const claudeProfiles = useClaudeProfileStore((state) => state.profiles);
+  const claudeActiveId = useClaudeProfileStore((state) => state.activeProfileId);
+  const apiProfiles = useSettingsStore((state) => state.profiles);
+  const apiActiveId = useSettingsStore((state) => state.activeProfileId);
+  const account = sidebarAccount(claudeProfiles, claudeActiveId, apiProfiles, apiActiveId);
+
+  // The app can switch accounts on its own (a usage limit): the usage updates name the account in
+  // use, so a different one means the stored accounts are out of date
+  useEffect(() => {
+    return window.electronAPI.onUsageUpdated?.((snapshot) => {
+      if (snapshot && snapshot.profileId !== useClaudeProfileStore.getState().activeProfileId) {
+        void loadClaudeProfiles();
+      }
+    });
+  }, []);
   const hasMemoryGraph = useMemoryGraphStore((state) => !!selectedProjectId && state.available[selectedProjectId] === true);
   const refreshMemoryGraph = useMemoryGraphStore((state) => state.refresh);
 
@@ -257,9 +275,25 @@ export function Sidebar({
           isCollapsed ? 'flex-col items-center gap-1' : 'items-center gap-1'
         )}>
           {withCollapsedTooltip('settings', t('tooltips.settings'), (
-            <button type="button" onClick={onSettingsClick} className={cn(rowClass(), !isCollapsed && 'min-w-0 flex-1')}>
+            <button
+              type="button"
+              onClick={onSettingsClick}
+              title={!isCollapsed && account ? t('tooltips.settings') : undefined}
+              className={cn(rowClass(), !isCollapsed && 'min-w-0 flex-1')}
+            >
               {renderRowIcon(Settings)}
-              {!isCollapsed && <span className="min-w-0 flex-1 truncate text-left">{t('actions.settings')}</span>}
+              {!isCollapsed && (account ? (
+                <span className="flex min-w-0 flex-1 items-baseline gap-1.5 text-left">
+                  <span className="min-w-0 truncate">{account.name}</span>
+                  {account.plan && (
+                    <span className="shrink-0 text-xs opacity-70">
+                      {account.planIsKey ? t(`account.plans.${account.plan}`) : account.plan}
+                    </span>
+                  )}
+                </span>
+              ) : (
+                <span className="min-w-0 flex-1 truncate text-left">{t('actions.settings')}</span>
+              ))}
             </button>
           ))}
           {!isCollapsed && <UsageIndicator />}

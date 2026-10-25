@@ -295,24 +295,6 @@ export interface ClaudeAutoSwitchSettings {
   autoSwitchOnAuthFailure: boolean;
 }
 
-/**
- * Payload for TERMINAL_PROFILE_CHANGED event.
- * Sent when profile switches and terminals need to be refreshed.
- */
-export interface TerminalProfileChangedEvent {
-  previousProfileId: string;
-  newProfileId: string;
-  terminals: Array<{
-    id: string;
-    /** Whether the project's latest Claude session was copied to the new profile */
-    sessionMigrated?: boolean;
-    /** Whether the terminal was in Claude mode (had an active Claude session) */
-    isCLIMode?: boolean;
-    /** Whether Claude was invoked with --dangerously-skip-permissions (YOLO mode) */
-    dangerouslySkipPermissions?: boolean;
-  }>;
-}
-
 // ============================================
 // Queue Routing Types (Rate Limit Recovery)
 // ============================================

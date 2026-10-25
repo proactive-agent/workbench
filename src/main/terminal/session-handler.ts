@@ -3,56 +3,9 @@
  * Manages terminal session persistence, restoration, and Claude session tracking
  */
 
-import * as fs from 'fs';
-import * as path from 'path';
-import { claudeProjectSlug, expandClaudeHome, joinClaudeHome } from '../platform/claude-home';
-import { toHostPath } from '../platform/shell-runtime';
 import type { TerminalProcess } from './types';
 import { getTerminalSessionStore, flushTerminalSessionStores, type TerminalSession } from '../terminal-session-store';
-import { debugLog, debugError } from '../../shared/utils/debug-logger';
-
-/**
- * Find the most recent Claude session file for a project (the one `claude --continue` picks up).
- *
- * Claude Code names the project's folder after the path as it sees it: in the WSL runtime the
- * Linux path (`/mnt/c/...`), which `claudeProjectSlug` translates to, under the Linux home's
- * config dir, which the app reads through its UNC path.
- */
-export function findMostRecentClaudeSession(projectPath: string, configDir?: string): string | null {
-  const slug = claudeProjectSlug(projectPath);
-  // Claude writes sessions under its config dir (CLAUDE_CONFIG_DIR of the profile, else ~/.claude);
-  // a Linux path of one is read through its UNC path
-  const configRoot = configDir ? toHostPath(expandClaudeHome(configDir)) : joinClaudeHome('.claude');
-  const claudeProjectDir = path.join(configRoot, 'projects', slug);
-
-  try {
-    if (!fs.existsSync(claudeProjectDir)) {
-      debugLog('[SessionHandler] Claude project directory not found:', claudeProjectDir);
-      return null;
-    }
-
-    const files = fs.readdirSync(claudeProjectDir)
-      .filter(f => f.endsWith('.jsonl'))
-      .map(f => ({
-        name: f,
-        path: path.join(claudeProjectDir, f),
-        mtime: fs.statSync(path.join(claudeProjectDir, f)).mtime.getTime()
-      }))
-      .sort((a, b) => b.mtime - a.mtime);
-
-    if (files.length === 0) {
-      debugLog('[SessionHandler] No Claude session files found in:', claudeProjectDir);
-      return null;
-    }
-
-    const sessionId = files[0].name.replace('.jsonl', '');
-    debugLog('[SessionHandler] Found most recent Claude session:', sessionId);
-    return sessionId;
-  } catch (error) {
-    debugError('[SessionHandler] Error finding Claude session:', error);
-    return null;
-  }
-}
+import { debugError } from '../../shared/utils/debug-logger';
 
 /**
  * Create a TerminalSession object from a TerminalProcess.

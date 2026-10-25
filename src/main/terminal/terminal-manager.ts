@@ -3,7 +3,7 @@
  * Main orchestrator for terminal lifecycle, Claude integration, and profile management
  */
 
-import type { TerminalCreateOptions } from '../../shared/types';
+import type { ClaudeSessionItem, TerminalCreateOptions } from '../../shared/types';
 import type { TerminalSession } from '../terminal-session-store';
 
 // Internal modules
@@ -294,6 +294,30 @@ export class TerminalManager {
     await ClaudeIntegration.resumeClaudeAsync(terminal, this.getWindow);
   }
 
+  /** The Claude Code sessions an agent window can open (what `/resume` lists there) */
+  async listClaudeSessions(id: string): Promise<ClaudeSessionItem[]> {
+    const terminal = this.terminals.get(id);
+    return terminal ? ClaudeIntegration.listWindowSessions(terminal) : [];
+  }
+
+  /** End an agent window's Claude Code session and open another one, or a new one (null) */
+  async openClaudeSession(id: string, sessionId: string | null, dangerouslySkipPermissions?: boolean): Promise<void> {
+    const terminal = this.terminals.get(id);
+    if (!terminal) throw new Error('Terminal not found');
+    await ClaudeIntegration.openWindowSession(terminal, sessionId, this.getWindow, dangerouslySkipPermissions);
+  }
+
+  /**
+   * Continue an agent window's own Claude Code session on another account, in place (same shell,
+   * id and place in the grid)
+   */
+  async moveAgentWindowToAccount(id: string, profileId: string, configDir: string | undefined): Promise<void> {
+    const terminal = this.terminals.get(id);
+    if (!terminal) return;
+    terminal.claudeProfileId = profileId;
+    await ClaudeIntegration.moveAgentWindowToAccount(terminal, configDir, this.getWindow);
+  }
+
   /**
    * Activate deferred Claude resume for a terminal
    * Called by the renderer once a terminal with pendingCLIResume is shown
@@ -376,13 +400,15 @@ export class TerminalManager {
   }
 
   /**
-   * Get info about all terminals for profile change operations.
-   * Returns info needed to migrate sessions and notify frontend.
+   * The windows to restart on the new account when the Claude account changes: agent windows
+   * running Claude Code. Plain terminals keep their shell, and a window following a task's run
+   * read-only keeps following (the run has its own account).
    */
   getTerminalsForProfileChange(): TerminalProfileChangeInfo[] {
     const result: TerminalProfileChangeInfo[] = [];
 
     for (const [id, terminal] of this.terminals) {
+      if (!terminal.isCLIMode || terminal.follower) continue;
       result.push({
         id,
         cwd: terminal.cwd,

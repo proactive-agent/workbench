@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import path from 'path';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
-import type { IPCResult, TerminalCreateOptions, TerminalTaskSessionOptions, ClaudeProfile, ClaudeProfileSettings, ClaudeUsageSnapshot, AllProfilesUsage } from '../../shared/types';
+import type { ClaudeSessionItem, IPCResult, TerminalCreateOptions, TerminalTaskSessionOptions, ClaudeProfile, ClaudeProfileSettings, ClaudeUsageSnapshot, AllProfilesUsage } from '../../shared/types';
 import { getClaudeProfileManager } from '../claude-profile-manager';
 import { getUsageMonitor } from '../claude-profile/usage-monitor';
 import { TerminalManager } from '../terminal-manager';
@@ -10,9 +10,7 @@ import type { AgentManager } from '../agent/agent-manager';
 import { projectStore } from '../project-store';
 import { terminalNameGenerator } from '../terminal-name-generator';
 import { readSettingsFileAsync } from '../settings-utils';
-import { debugLog, } from '../../shared/utils/debug-logger';
-import { migrateSession } from '../claude-profile/session-utils';
-import { findMostRecentClaudeSession } from '../terminal/session-handler';
+import { appLog } from '../app-logger';
 import { createProfileDirectory } from '../claude-profile/profile-utils';
 import { isValidConfigDir } from '../utils/config-path-validator';
 import { getToolInfoAsync } from '../cli-tool-manager';
@@ -327,6 +325,35 @@ export function registerTerminalHandlers(
     }
   );
 
+  // The Claude Code sessions an agent window can open, as `/resume` lists them there
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_LIST_CLAUDE_SESSIONS,
+    async (_, id: string): Promise<IPCResult<ClaudeSessionItem[]>> => {
+      try {
+        return { success: true, data: await terminalManager.listClaudeSessions(id) };
+      } catch (error) {
+        appLog.warn('[terminal-handlers] Could not list the window\'s Claude Code sessions:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Could not list the sessions' };
+      }
+    }
+  );
+
+  // End an agent window's session and open another one there (null: a new session)
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_OPEN_CLAUDE_SESSION,
+    async (_, id: string, sessionId: string | null): Promise<IPCResult> => {
+      try {
+        // A new session runs in YOLO mode when the app's setting says so, as "New agent" does
+        const settings = await readSettingsFileAsync();
+        await terminalManager.openClaudeSession(id, sessionId, settings?.dangerouslySkipPermissions === true);
+        return { success: true };
+      } catch (error) {
+        appLog.warn('[terminal-handlers] Could not open a Claude Code session in the window:', error);
+        return { success: false, error: error instanceof Error ? error.message : 'Could not open the session' };
+      }
+    }
+  );
+
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_PROFILE_SET_ACTIVE,
     async (_, profileId: string): Promise<IPCResult> => {
@@ -343,81 +370,14 @@ export function registerTerminalHandlers(
 
         const newProfile = profileManager.getProfile(profileId);
 
-        // If the profile actually changed, restart Claude in active terminals
-        // This ensures existing Claude sessions use the new profile's OAuth token
-        const profileChanged = previousProfileId !== profileId;
-
-        if (profileChanged) {
-          // Get all terminal info for profile change
-          const terminals = terminalManager.getTerminalsForProfileChange();
-          debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Terminals for profile change:', terminals.length);
-
-          // Determine config directories for session migration
-          // All profiles now have their own configDir (no special case for default)
-          const sourceConfigDir = previousProfile.configDir;
-          const targetConfigDir = newProfile?.configDir;
-
-          // Build terminal refresh info for frontend
-          const terminalsNeedingRefresh: Array<{
-            id: string;
-            sessionMigrated?: boolean;
-            isCLIMode?: boolean;
-            dangerouslySkipPermissions?: boolean;
-          }> = [];
-
-          // Process each terminal
-          for (const terminal of terminals) {
-            debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Processing terminal:', {
-              id: terminal.id,
-              isCLIMode: terminal.isCLIMode,
-              cwd: terminal.cwd
+        // Agent windows running Claude Code continue their own session on the new account, in
+        // place: same shell, id and place in the grid. Plain terminals are left as they are. Each
+        // window ends Claude Code first (up to a few seconds), so this runs after the reply
+        if (previousProfileId !== profileId) {
+          for (const terminal of terminalManager.getTerminalsForProfileChange()) {
+            terminalManager.moveAgentWindowToAccount(terminal.id, profileId, newProfile?.configDir).catch((error) => {
+              appLog.warn('[terminal-handlers] Could not move an agent window to the new account:', error);
             });
-
-            let sessionMigrated = false;
-
-            // If Claude is running, copy the project's latest session (the one `claude --continue`
-            // picks up) to the new profile, so the recreated terminal continues it there
-            const projectDir = terminal.projectPath || terminal.cwd;
-            const latestSessionId = terminal.isCLIMode && sourceConfigDir
-              ? findMostRecentClaudeSession(projectDir, sourceConfigDir)
-              : null;
-            if (latestSessionId && sourceConfigDir && targetConfigDir) {
-              debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Migrating latest session:', {
-                sessionId: latestSessionId,
-                from: sourceConfigDir,
-                to: targetConfigDir
-              });
-
-              const migrationResult = await migrateSession(
-                sourceConfigDir,
-                targetConfigDir,
-                projectDir,
-                latestSessionId
-              );
-
-              sessionMigrated = migrationResult.success;
-              debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Session migration result:', migrationResult);
-            }
-
-            // All terminals need refresh (PTY env vars can't be updated)
-            terminalsNeedingRefresh.push({
-              id: terminal.id,
-              sessionMigrated,
-              isCLIMode: terminal.isCLIMode,
-              dangerouslySkipPermissions: terminal.dangerouslySkipPermissions
-            });
-          }
-
-          debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Terminals needing refresh:', terminalsNeedingRefresh);
-
-          // Notify every project window that its terminals need to be refreshed
-          // Frontend will destroy and recreate terminals with new profile env vars
-          if (safeSendToRenderer(getMainWindow, IPC_CHANNELS.TERMINAL_PROFILE_CHANGED, {
-            previousProfileId,
-            newProfileId: profileId,
-            terminals: terminalsNeedingRefresh
-          })) {
-            debugLog('[terminal-handlers:CLAUDE_PROFILE_SET_ACTIVE] Sent TERMINAL_PROFILE_CHANGED event to frontend');
           }
         }
 

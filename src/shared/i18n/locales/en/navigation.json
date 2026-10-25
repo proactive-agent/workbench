@@ -22,6 +22,15 @@
   "tooltips": {
     "settings": "Application Settings"
   },
+  "account": {
+    "plans": {
+      "max": "Max",
+      "pro": "Pro",
+      "team": "Team",
+      "enterprise": "Enterprise",
+      "api": "API"
+    }
+  },
   "messages": {
     "initializeToCreateTasks": "Initialize Workbench to create tasks"
   },

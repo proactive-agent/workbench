@@ -1,0 +1,23 @@
+# The app version follows the history: a patch per commit, a minor per merged pull request (see
+# .github/scripts/sync-version.cjs). The new version belongs to the commit that caused it, so it is
+# amended into it rather than left for the next one.
+#
+# The amend reruns this hook, hence the guard. A commit that is already on the remote is left alone:
+# rewriting it would make the branch diverge from what was pushed.
+[ "$WORKBENCH_SKIP_VERSION_BUMP" = "1" ] && exit 0
+
+# Only take over package.json when nothing else is waiting in it: the amend would carry along edits
+# the commit deliberately left out
+git diff --quiet -- package.json package-lock.json || exit 0
+
+node .github/scripts/sync-version.cjs || exit 0
+git diff --quiet -- package.json package-lock.json && exit 0
+
+if [ -n "$(git branch -r --contains HEAD 2>/dev/null)" ]; then
+  echo "[post-commit] HEAD is already pushed: the new version is in the working tree, not amended"
+  exit 0
+fi
+
+git add -- package.json
+[ -f package-lock.json ] && git add -- package-lock.json
+WORKBENCH_SKIP_VERSION_BUMP=1 git commit --amend --no-edit --no-verify --quiet

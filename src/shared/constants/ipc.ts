@@ -97,6 +97,8 @@ export const IPC_CHANNELS = {
   TERMINAL_RESTORE_SESSION: 'terminal:restoreSession',
   TERMINAL_CLEAR_SESSIONS: 'terminal:clearSessions',
   TERMINAL_RESUME_CLAUDE: 'terminal:resumeClaude',
+  TERMINAL_LIST_CLAUDE_SESSIONS: 'terminal:listClaudeSessions',  // The Claude Code sessions an agent window can open (what /resume lists)
+  TERMINAL_OPEN_CLAUDE_SESSION: 'terminal:openClaudeSession',  // End the window's session and open another one, or a new one
   TERMINAL_RESUME_TASK_SESSION: 'terminal:resumeTaskSession',  // Resume a task's Claude Code session in an agent window
   TERMINAL_ACTIVATE_DEFERRED_RESUME: 'terminal:activateDeferredResume',  // Resume a restored terminal's Claude Code session once its window is shown
   TERMINAL_CHECK_PTY_ALIVE: 'terminal:checkPtyAlive',
@@ -121,7 +123,6 @@ export const IPC_CHANNELS = {
   TERMINAL_OAUTH_CODE_SUBMIT: 'terminal:oauthCodeSubmit',  // User submitted OAuth code to send to terminal
   TERMINAL_CLAUDE_BUSY: 'terminal:claudeBusy',  // Claude Code busy state (for visual indicator)
   TERMINAL_CLAUDE_EXIT: 'terminal:claudeExit',  // Claude Code exited (returned to shell)
-  TERMINAL_PROFILE_CHANGED: 'terminal:profileChanged',  // Profile changed, terminals need refresh (main -> renderer)
 
   // Claude profile management (multi-account support)
   CLAUDE_PROFILES_GET: 'claude:profilesGet',

@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   computeTerminalGridLayout,
   computeWeightedTerminalLayout,
+  dropTargetId,
+  movePreviewOrder,
+  overWindowId,
   type TerminalBox,
   type TerminalGridLayout,
 } from '../terminal-grid-layout';
@@ -111,5 +114,33 @@ describe('computeWeightedTerminalLayout', () => {
         expectTiled(boxes);
       }
     }
+  });
+});
+
+describe('dragging a window around the grid', () => {
+  const original = ['a', 'b', 'c', 'd'];
+
+  it('previews the dragged window in the place of the one under the cursor', () => {
+    expect(movePreviewOrder(original, 'a', 'c')).toEqual(['b', 'c', 'a', 'd']);
+    expect(movePreviewOrder(original, 'd', 'b')).toEqual(['a', 'd', 'b', 'c']);
+    // Over itself, or over something that isn't a window: the same order, unchanged
+    expect(movePreviewOrder(original, 'a', 'a')).toBe(original);
+    expect(movePreviewOrder(original, 'a', 'zone')).toBe(original);
+  });
+
+  it('reads the window from its file drop zone too', () => {
+    expect(overWindowId('terminal-b')).toBe('b');
+    expect(overWindowId('b')).toBe('b');
+  });
+
+  it('drops onto the window that held the final place, which gives the previewed order', () => {
+    // Each preview starts from the drag-start order, so a cursor position always gives the same one
+    expect(movePreviewOrder(original, 'a', 'c')).toEqual(movePreviewOrder(original, 'a', 'c'));
+    const preview = movePreviewOrder(original, 'a', 'c');
+    expect(dropTargetId(original, preview, 'a')).toBe('c');
+    expect(movePreviewOrder(original, 'd', 'a')).toEqual(['d', 'a', 'b', 'c']);
+    expect(dropTargetId(original, movePreviewOrder(original, 'd', 'a'), 'd')).toBe('a');
+    // Back over its own place: nothing to apply
+    expect(dropTargetId(original, movePreviewOrder(original, 'b', 'b'), 'b')).toBeUndefined();
   });
 });

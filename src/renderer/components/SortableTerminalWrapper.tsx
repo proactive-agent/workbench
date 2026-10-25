@@ -77,7 +77,8 @@ export const SortableTerminalWrapper = forwardRef<SortableTerminalWrapperHandle,
         style={style}
         className={cn(
           'h-full',
-          isDragging && 'opacity-50'
+          // The dragged window stays in the slot the drop would give it, as a placeholder
+          isDragging && 'rounded-md opacity-40 outline-2 outline-dashed outline-primary/70'
         )}
         {...attributes}
       >

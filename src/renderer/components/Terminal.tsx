@@ -1,5 +1,8 @@
 import { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
 import { useDroppable } from '@dnd-kit/core';
+import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { cn } from '../lib/utils';
 import '@xterm/xterm/css/xterm.css';
 import {
   buildPendingTaskSession,
@@ -69,6 +72,7 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   isExpanded,
   onToggleExpand,
 }, ref) {
+  const { t } = useTranslation(['terminal']);
   const isMountedRef = useRef(true);
   const isCreatedRef = useRef(false);
   // Track deliberate terminal recreation (e.g., worktree switching)
@@ -626,6 +630,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
       updateTerminal(id, { launchCLIOnCreate: true, pendingTaskSession: undefined });
     }
     const title = taskSession?.title ?? config.name;
+    // A spinner over the window until the new shell, or Claude Code in it, is ready
+    const windowState = useTerminalStore.getState().getTerminal(id);
+    useTerminalStore.getState().setTerminalLoading(id, taskSession || windowState?.isCLIMode ? 'claude' : 'shell');
 
     // IMPORTANT: Set isRecreatingRef BEFORE destruction to signal deliberate recreation
     // This prevents exit handlers from triggering auto-removal during controlled recreation
@@ -736,11 +743,25 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
 
       {/* The terminal, and with Live agent on the agent's graph in the second half. The row is
           always there, so showing or hiding the graph never remounts xterm (session and scrollback stay) */}
-      <div className="flex flex-1" style={{ minHeight: 0 }}>
+      <div className="relative flex flex-1" style={{ minHeight: 0 }}>
+        {/* While the window starts (its shell, or Claude Code), a spinner instead of the command the
+            app types and the start-up output; xterm stays mounted underneath */}
+        {terminal?.loading && (
+          <div
+            className="absolute inset-0 z-50 flex items-center justify-center"
+            style={{ backgroundColor: themeBackground }}
+            role="status"
+            aria-label={t('terminal:loading')}
+          >
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        )}
         {/* Padding lives on the wrapper: xterm's fit addon sizes rows from its container's height,
             which would include the container's own padding and cut off the last line */}
         <div className="min-w-0 flex-1 px-2 py-1.5" style={{ backgroundColor: themeBackground }}>
-          <div ref={terminalRef} className="h-full w-full" />
+          {/* Transparent (not removed) while the window starts: xterm sets its scrollbar's own
+              visibility, so only opacity hides it too; the size stays, so nothing refits */}
+          <div ref={terminalRef} className={cn('h-full w-full', terminal?.loading && 'pointer-events-none opacity-0')} />
         </div>
         {showGraph && effectiveCwd && graphProjectPath && (
           <div className="min-w-0 flex-1">

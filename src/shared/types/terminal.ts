@@ -206,3 +206,14 @@ export interface OtherWorktreeInfo {
   /** Display name (last directory component of path) */
   displayName: string;
 }
+
+/** A Claude Code session an agent window can open: what `/resume` lists in its directory */
+export interface ClaudeSessionItem {
+  sessionId: string;
+  /** Its title (one set for it, else the one Claude gave it, else its name or latest prompt) */
+  name?: string;
+  /** When its transcript last changed (ms) */
+  modifiedAt: number;
+  /** The session the window has open (or last had) */
+  current: boolean;
+}
