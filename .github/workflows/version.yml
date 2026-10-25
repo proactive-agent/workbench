@@ -3,7 +3,7 @@ name: version
 on:
   pull_request:
     types: [closed]
-    branches: [main]
+    branches: [version-workflow-test]
 
 concurrency:
   group: version
@@ -21,7 +21,7 @@ jobs:
       - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.base.ref }}
           # The version counts the merges since the current major's release tag, so the whole
           # history and the tags have to be here
           fetch-depth: 0
@@ -33,6 +33,15 @@ jobs:
           BRANCH: ${{ github.event.pull_request.base.ref }}
           MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
         run: |
+          # Not an identity to commit as (the token decides that), only the name to recognise it
+          # by among the people the merge credits: the author of a commit is not its co-author.
+          # It lives here and not in env:, where it once went missing and read as "every
+          # co-author is the token", leaving the merge commit crediting nobody at all
+          token_author='github-actions[bot]'
+          # An empty one would read as "every co-author is the token", which is how a merge commit
+          # once went out crediting nobody
+          : "${token_author:?the name the token commits under}"
+
           # Only the merge commit is ours to rewrite: anything pushed on top of it since would be
           # lost when the branch is moved to the new commit
           if [ "$(git rev-parse HEAD)" != "$MERGE_SHA" ]; then
@@ -54,17 +63,29 @@ jobs:
           # Word for word the message the merge carries, minus the trailers that would credit the
           # new commit's own author: the token that signs it, and the merge's author, who is put
           # back in front of the others below so they come first whatever the merge already said
-          awk -v self="Co-authored-by: $author" -v token="$TOKEN_AUTHOR" '
+          awk -v self="Co-authored-by: $author" -v token="$token_author" '
             tolower($0) ~ /^co-authored-by:/ && (index($0, token) > 0 || $0 == self) { next }
             { print }
           ' "$RUNNER_TEMP/merged" > "$RUNNER_TEMP/stripped"
 
           # Unless the token merged it itself, in which case it is the author and no co-author
           case "$author" in
-            *"$TOKEN_AUTHOR"*) cp "$RUNNER_TEMP/stripped" "$RUNNER_TEMP/message" ;;
+            *"$token_author"*) cp "$RUNNER_TEMP/stripped" "$RUNNER_TEMP/message" ;;
             *) git interpret-trailers --where start --trailer "Co-authored-by: $author" \
                  "$RUNNER_TEMP/stripped" > "$RUNNER_TEMP/message" ;;
           esac
+
+          # Nobody the merge credited may fall off the message on the way here: this commit goes
+          # out in their name too, so a missing trailer stops the job instead of being published
+          lost=$(awk -v token="$token_author" '
+            NR == FNR { kept[tolower($0)] = 1; next }
+            tolower($0) ~ /^co-authored-by:/ && index($0, token) == 0 && !kept[tolower($0)] { print }
+          ' "$RUNNER_TEMP/message" "$RUNNER_TEMP/merged")
+          if [ -n "$lost" ]; then
+            echo "the merge credits people the new message does not:"
+            echo "$lost"
+            exit 1
+          fi
 
           # The merge's own tree with the changed files laid over it, so nothing else can move
           for file in $changed; do
