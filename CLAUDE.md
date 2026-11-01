@@ -270,7 +270,9 @@ command, then watches the cache and sends the new list).
 answers `initialize` (Puppeteer is also asked to navigate once, since it needs a browser; `mcp-commands.ts` finds the
 command, and the built-in servers need npx from Node.js). Until a server is ready, its switch is off and disabled on
 the Connectors page, in the task dialog and in the chat's MCP menu, and runs leave out unavailable servers. An
-unavailable result is checked again when asked for after 30 seconds.
+unavailable result is checked again when asked for after 30 seconds. Puppeteer with a browser profile is also
+unavailable while that browser is open (`browser-profiles/in-use.ts` reads its profile lock), since runs copy the
+profile; the switch's tooltip asks to close it, and closing it enables the connector within a few seconds.
 
 ### Graphify Memory Graph
 

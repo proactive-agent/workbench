@@ -416,7 +416,8 @@
       "managed": "Puppeteer's {{browser}}",
       "download": "Download {{browser}}",
       "downloadDescription": "Opens a terminal that installs it",
-      "closeBrowserHint": "Uses a copy of {{name}}; close the browser before a run to copy its sign-ins",
+      "browserOpen": "{{browser}} is open",
+      "closeBrowser": "Close {{browser}} to use Puppeteer. Runs use a copy of its profile, which can't be copied while it's open",
       "browsers": {
         "chrome": "Chrome",
         "edge": "Edge",

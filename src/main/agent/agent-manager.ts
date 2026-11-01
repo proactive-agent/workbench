@@ -522,7 +522,7 @@ export class AgentManager extends EventEmitter {
       description: task.description?.trim() || task.title || task.specId,
       attachments,
       // The task's connectors (or the defaults), without servers that can't start
-      connectorIds: usableMcpConnectorIds(
+      connectorIds: await usableMcpConnectorIds(
         Array.isArray(task.metadata?.mcpConnectors) ? task.metadata.mcpConnectors : getDefaultMcpConnectorIds(settings.mcpConnectors),
         settings.mcpConnectors
       ),

@@ -70,7 +70,7 @@ export function InsightsMcpMenu({ value, onChange, disabled }: InsightsMcpMenuPr
               <Icon className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.75} />
               <span className="min-w-0 flex-1 truncate">{name}</span>
               {/* Why it can't be switched on shows when hovering the switch */}
-              <ConnectorSwitchTip reason={unavailable?.reason} fixCommand={unavailable?.fixCommand}>
+              <ConnectorSwitchTip reason={unavailable?.tip ?? unavailable?.reason} fixCommand={unavailable?.fixCommand}>
                 <Switch checked={checked} disabled={!!unavailable} tabIndex={-1} aria-hidden className="pointer-events-none" />
               </ConnectorSwitchTip>
             </DropdownMenuPrimitive.CheckboxItem>

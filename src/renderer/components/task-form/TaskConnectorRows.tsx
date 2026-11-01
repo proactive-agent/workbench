@@ -44,7 +44,7 @@ export function TaskConnectorRows({ value, onChange, disabled, idPrefix = '' }: 
             description={description}
             disabled={!!unavailable}
           >
-            <ConnectorSwitchTip fixCommand={unavailable?.fixCommand}>
+            <ConnectorSwitchTip reason={unavailable?.tip} fixCommand={unavailable?.fixCommand}>
               <Switch
                 id={`${idPrefix}connector-${id}`}
                 checked={value.includes(id) && !unavailable}

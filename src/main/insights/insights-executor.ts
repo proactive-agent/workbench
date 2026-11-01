@@ -56,7 +56,7 @@ const chatBrowserProfiles = new Map<string, Promise<string | null>>();
 /** The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones */
 async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
-  const chosen = usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
+  const chosen = await usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
   const browser = connectorSettings?.puppeteerBrowser;
   let browserProfileDir: string | undefined;
   if (browser && chosen.includes('puppeteer')) {

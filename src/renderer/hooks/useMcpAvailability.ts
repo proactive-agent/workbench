@@ -30,6 +30,8 @@ function listen(): void {
 export interface McpUnavailable {
   reason: string;
   fixCommand?: string;
+  /** What to do about it, for the switch's tooltip (where the row already shows the reason) */
+  tip?: string;
 }
 
 /**
@@ -70,6 +72,13 @@ export function useMcpUnavailableReason(): (connectorId: string) => McpUnavailab
     if (availability.state === 'ready') return null;
     if (availability.state === 'preparing') return { reason: t('settings:mcp.preparing') };
     if (availability.missingCommand) return { reason: commandMissingText(t, availability.missingCommand) };
+    if (availability.browserOpen) {
+      const name = browser ? t(`settings:mcp.browserProfile.browsers.${browser.browser}`) : '';
+      return {
+        reason: t('settings:mcp.browserProfile.browserOpen', { browser: name }),
+        tip: t('settings:mcp.browserProfile.closeBrowser', { browser: name }),
+      };
+    }
     return { reason: t('settings:mcp.unavailable', { reason: availability.message ?? '' }), fixCommand: availability.fixCommand };
   };
 }

@@ -105,6 +105,8 @@ export interface McpAvailability {
   message?: string;
   /** A command that makes it usable (e.g. installing Puppeteer's browser) */
   fixCommand?: string;
+  /** Puppeteer's chosen browser is open: runs can't copy its profile until it is closed */
+  browserOpen?: boolean;
 }
 
 /**

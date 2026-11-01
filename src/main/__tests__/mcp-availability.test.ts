@@ -13,6 +13,7 @@ class FakeProcess extends EventEmitter {
 
 const mocks = vi.hoisted(() => ({
   windows: false,
+  browserOpen: false,
   spawnTool: vi.fn(),
   killRuntimeProcessTree: vi.fn(),
   resolveCommand: vi.fn(),
@@ -31,6 +32,7 @@ vi.mock('../platform/runtime-exec', () => ({
 }));
 vi.mock('../platform', () => ({ isWindows: () => mocks.windows }));
 vi.mock('../cli-utils', () => ({ getToolEnvAsync: async () => ({ PATH: '/usr/bin' }) }));
+vi.mock('../browser-profiles/in-use', () => ({ isBrowserProfileInUse: async () => mocks.browserOpen }));
 vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 
 let getMcpAvailability: typeof import('../mcp-availability').getMcpAvailability;
@@ -54,6 +56,7 @@ describe('MCP availability', () => {
     installed.clear();
     for (const key of Object.keys(servers)) delete servers[key];
     mocks.windows = false;
+    mocks.browserOpen = false;
     mocks.resolveCommand.mockImplementation(async (command: string) => installed.get(command) ?? null);
     mocks.spawnTool.mockImplementation((_tool: string, args: string[]) => {
       const proc = new FakeProcess();
@@ -80,12 +83,12 @@ describe('MCP availability', () => {
       puppeteer: { state: 'preparing' },
     });
     // A run still includes servers being prepared
-    expect(usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7', 'puppeteer']);
+    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7', 'puppeteer']);
 
     await vi.waitFor(() => expect(changes).toEqual({ context7: 'ready', puppeteer: 'unavailable' }));
     expect(getMcpAvailability(['puppeteer'], undefined).puppeteer).toEqual({ state: 'unavailable', message: 'npm error 404 Not Found' });
     // ...and leaves out the ones that can't start
-    expect(usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
+    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
     stop();
   });
 
@@ -220,7 +223,7 @@ describe('MCP availability', () => {
     let now = 1_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
     getMcpAvailability(['context7', 'puppeteer'], undefined);
-    await vi.waitFor(() => expect(usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']));
+    await vi.waitFor(async () => expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']));
     expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
 
     // The user fixed it (the browser opens now): nothing is checked again right away
@@ -236,7 +239,7 @@ describe('MCP availability', () => {
     now += UNAVAILABLE_RECHECK_MS;
     // It still reads unavailable (and stays out of runs) while it is checked again...
     expect(getMcpAvailability(['context7', 'puppeteer'], undefined).puppeteer.state).toBe('unavailable');
-    expect(usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
+    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
     // ...with the command looked up again
     await vi.waitFor(() => expect(mocks.resolveCommand).toHaveBeenLastCalledWith('npx', { refresh: true }));
     await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('ready'));
@@ -275,5 +278,30 @@ describe('MCP availability', () => {
     // Puppeteer also needs its tool call answered
     second.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
     await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('ready'));
+  });
+  it("leaves Puppeteer out while its chosen browser is open, and back in once it's closed", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        if (JSON.parse(line).method === 'tools/call') proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
+      });
+      answer(proc);
+    };
+    const settings = {
+      puppeteerBrowser: {
+        id: 'firefox:x.default', browser: 'firefox' as const, engine: 'firefox' as const, profileName: 'default',
+        executablePath: '/usr/lib/firefox/firefox', userDataDir: '/home/me/.mozilla/firefox', profilePath: '/home/me/.mozilla/firefox/x.default',
+      },
+    };
+    getMcpAvailability(['puppeteer'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+
+    mocks.browserOpen = true;
+    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual([]);
+    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({ state: 'unavailable', browserOpen: true });
+
+    mocks.browserOpen = false;
+    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual(['puppeteer']);
+    stopMcpProbes();
   });
 });

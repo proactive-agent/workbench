@@ -15,18 +15,25 @@
  * fix the user ran shows up. resetMcpAvailability() forgets everything (tool paths changed).
  * A probe's server runs in its own process group and is stopped with everything it started. The Connectors page, the task dialog and the chat's MCP menu keep
  * a server's switch off and disabled until it is ready; runs leave out unavailable servers.
+ *
+ * Puppeteer with a browser profile is also unavailable while that browser is open
+ * (browser-profiles/in-use.ts): runs copy the profile, which an open browser keeps locked. It is
+ * looked at again when asked for after BROWSER_RECHECK_MS, and every BROWSER_RECHECK_MS while
+ * open, so closing the browser enables the connector without a page reload.
  */
 
 import { EventEmitter } from 'events';
 import type { ChildProcess } from 'child_process';
 import type { McpConnectorSettings } from '../shared/types/settings';
 import type { McpAvailability } from '../shared/types/project';
+import type { PuppeteerBrowserChoice } from '../shared/types/browser-profiles';
 import { mcpServerEntry, type McpServerEntry } from './claude-code/mcp-config';
 import { resetCommandLookups, resolveCommand } from './mcp-commands';
 import { getToolEnvAsync } from './cli-utils';
 import { isWindows } from './platform';
 import { getWslInfo, whenShellRuntimeReady } from './platform/shell-runtime';
 import { killRuntimeProcessTree, spawnTool } from './platform/runtime-exec';
+import { isBrowserProfileInUse } from './browser-profiles/in-use';
 
 /** How long a server may take to answer: its first start downloads it */
 const START_TIMEOUT_MS = 5 * 60 * 1000;
@@ -34,6 +41,8 @@ const START_TIMEOUT_MS = 5 * 60 * 1000;
 const HTTP_TIMEOUT_MS = 10 * 1000;
 /** How old an unavailable result may get before it is checked again */
 export const UNAVAILABLE_RECHECK_MS = 30 * 1000;
+/** How old the chosen browser's open state may get, and how often it is looked at while open */
+const BROWSER_RECHECK_MS = 3 * 1000;
 
 /** A tool call that proves a server can do its work, not only start */
 interface VerifyCall {
@@ -75,6 +84,10 @@ const probes = new Map<string, Promise<McpAvailability>>();
 const running = new Set<ChildProcess>();
 /** Bumped by resetMcpAvailability: probes started before it don't report */
 let generation = 0;
+/** Whether the Puppeteer connector's browser (by choice id) is open, and when that was seen */
+let browserOpen: { id: string; open: boolean; checkedAt: number } | undefined;
+let browserLook: Promise<boolean> | undefined;
+let browserTimer: NodeJS.Timeout | undefined;
 
 /** The command that fixes an unavailable connector (its failed check's), when it has one */
 export function getMcpFixCommand(id: string): string | undefined {
@@ -102,12 +115,50 @@ export function getMcpAvailability(ids: string[], settings: McpConnectorSettings
   return Object.fromEntries(ids.map((id) => [id, check(id, settings)]));
 }
 
-/** The connector ids a run can use: unavailable ones are left out (preparing ones stay in) */
-export function usableMcpConnectorIds(ids: string[], settings: McpConnectorSettings | undefined): string[] {
+/**
+ * The connector ids a run can use: unavailable ones are left out (preparing ones stay in). The
+ * chosen browser is looked at now, so a run never copies the profile of an open one
+ */
+export async function usableMcpConnectorIds(ids: string[], settings: McpConnectorSettings | undefined): Promise<string[]> {
+  const browser = settings?.puppeteerBrowser;
+  if (browser && ids.includes('puppeteer')) await lookAtBrowser(browser, settings);
   return ids.filter((id) => check(id, settings).state !== 'unavailable');
 }
 
 function check(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
+  const availability = checkServer(id, settings);
+  const browser = id === 'puppeteer' ? settings?.puppeteerBrowser : undefined;
+  if (!browser || browser.managed || availability.state === 'unavailable') return availability;
+  return isBrowserOpen(browser, settings) ? { state: 'unavailable', browserOpen: true } : availability;
+}
+
+/** Whether the chosen browser was open when last looked at; an old answer is looked at again */
+function isBrowserOpen(browser: PuppeteerBrowserChoice, settings: McpConnectorSettings | undefined): boolean {
+  const known = browserOpen?.id === browser.id ? browserOpen : undefined;
+  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) void lookAtBrowser(browser, settings);
+  return known?.open ?? false;
+}
+
+/** Look at the chosen browser's lock; a change is sent like any other availability change */
+function lookAtBrowser(browser: PuppeteerBrowserChoice, settings: McpConnectorSettings | undefined): Promise<boolean> {
+  if (browserLook) return browserLook;
+  const started = generation;
+  browserLook = isBrowserProfileInUse(browser).catch(() => false).then((open) => {
+    browserLook = undefined;
+    if (started !== generation) return open;
+    const changed = (browserOpen?.id === browser.id ? browserOpen.open : false) !== open;
+    browserOpen = { id: browser.id, open, checkedAt: Date.now() };
+    if (changed) events.emit('change', 'puppeteer', check('puppeteer', settings));
+    // While it is open, keep looking, so closing it enables the connector
+    clearTimeout(browserTimer);
+    browserTimer = open ? setTimeout(() => void lookAtBrowser(browser, settings), BROWSER_RECHECK_MS) : undefined;
+    browserTimer?.unref();
+    return open;
+  });
+  return browserLook;
+}
+
+function checkServer(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
   const entry = mcpServerEntry(id, settings);
   if (!entry) return { state: 'ready' };
   const key = JSON.stringify(entry);
@@ -148,6 +199,9 @@ export function resetMcpAvailability(): void {
   generation++;
   results.clear();
   probes.clear();
+  browserOpen = undefined;
+  browserLook = undefined;
+  clearTimeout(browserTimer);
   resetCommandLookups();
   stopMcpProbes();
 }
