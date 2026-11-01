@@ -7,7 +7,7 @@
  *   because a task id is only unique inside its project
  * - the board reloads after tools that change tasks
  */
-import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 import type { Task, TaskStatus } from '../../../shared/types';
 import { IPC_CHANNELS } from '../../../shared/constants';
 
@@ -24,11 +24,17 @@ vi.mock('../../project-store', () => ({
     invalidateTasksCache: vi.fn(),
   },
 }));
+let settingsFile: Record<string, unknown> = {};
 vi.mock('../../settings-utils', () => ({
-  readSettingsFile: () => ({ mcpConnectors: { context7: true } }),
+  readSettingsFile: () => ({ mcpConnectors: { context7: true }, ...settingsFile }),
 }));
 
+import { mkdtempSync, rmSync } from 'fs';
+import os from 'os';
+import path from 'path';
 import { openTaskToolsSession, closeTaskToolsServer, type TaskToolsSession } from '../task-tools-server';
+import { configureTaskMessaging, registerLiveRun, resetTaskMessagingForTests } from '../../task-messaging/broker';
+import { readInbox } from '../../task-messaging/inbox';
 
 function task(id: string, status: TaskStatus, extra: Partial<Task> = {}): Task {
   return {
@@ -58,6 +64,7 @@ const open = () => openTaskToolsSession({ projectId: 'p1', onTasksChanged });
 
 beforeEach(() => {
   vi.clearAllMocks();
+  settingsFile = {};
   tasks = [task('001-a', 'backlog'), task('002-b', 'human_review'), task('003-c', 'done', { metadata: { archivedAt: '2026-10-10' } })];
   invokeIpcHandler.mockResolvedValue({ success: true });
 });
@@ -171,6 +178,57 @@ describe('task tools server', () => {
     const merged = await call(session, 'merge_pull_request', { taskId: '002-b' });
     expect(merged.data).toMatchObject({ id: '002-b', success: true, targetBranch: 'develop' });
     expect(invokeIpcHandler).toHaveBeenLastCalledWith(IPC_CHANNELS.TASK_WORKTREE_MERGE_PR, '002-b', { targetBranch: undefined }, 'p1');
+    session.close();
+  });
+});
+
+describe('message_task', () => {
+  let projectDir: string;
+  const inbox = (specId: string) => readInbox(path.join(projectDir, '.workbench', 'tasks', specId));
+
+  beforeEach(() => {
+    projectDir = mkdtempSync(path.join(os.tmpdir(), 'chat-message-task-'));
+    tasks.push(task('004-d', 'in_progress'));
+    configureTaskMessaging({
+      getProject: (id) => (id === 'p1' ? { id: 'p1', name: 'P', path: projectDir, autoBuildPath: '.workbench', settings: {}, createdAt: new Date(), updatedAt: new Date() } as never : undefined),
+      getTasks: () => tasks,
+    });
+  });
+
+  afterEach(() => {
+    resetTaskMessagingForTests();
+    rmSync(projectDir, { recursive: true, force: true });
+  });
+
+  it("writes to a running task's session as a message from the user", async () => {
+    const sent: string[] = [];
+    const end = registerLiveRun({ projectId: 'p1', specId: '004-d', sessionName: 'wb-x', send: (text) => (sent.push(text), 'id') });
+    const session = await open();
+    const outcome = await call(session, 'message_task', { taskId: '004-d', message: 'The API moved to /v2' });
+    expect(outcome.data).toMatchObject({ task: '004-d', status: 'delivered' });
+    expect(sent).toEqual(['[Message from the user, via Workbench] The API moved to /v2']);
+    // Reading never changes tasks: the board doesn't reload
+    expect(onTasksChanged).not.toHaveBeenCalled();
+    await end([]);
+    session.close();
+  });
+
+  it('keeps the message for a task that is not running', async () => {
+    const session = await open();
+    const outcome = await call(session, 'message_task', { taskId: '002-b', message: 'Use the new logger' });
+    expect(outcome.data).toMatchObject({ task: '002-b', status: 'queued' });
+    expect((await inbox('002-b')).map((m) => [m.status, m.from.kind, m.text])).toEqual([['queued', 'user', 'Use the new logger']]);
+    session.close();
+  });
+
+  it('refuses when task messaging is off, the message is empty or the task is done', async () => {
+    const session = await open();
+    expect((await call(session, 'message_task', { taskId: '003-c', message: 'hi' })).data).toMatchObject({ status: 'refused' });
+    expect((await call(session, 'message_task', { taskId: '002-b', message: '  ' })).data).toMatchObject({ status: 'refused' });
+    settingsFile = { claudeCodeTasks: { taskMessaging: false } };
+    const off = await call(session, 'message_task', { taskId: '002-b', message: 'hi' });
+    expect(off.data).toMatchObject({ status: 'refused', detail: expect.stringContaining('Task messaging is off') });
+    expect(await inbox('002-b')).toEqual([]);
     session.close();
   });
 });
