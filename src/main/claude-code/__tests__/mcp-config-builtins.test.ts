@@ -94,6 +94,22 @@ describe('built-in MCP servers', () => {
     expect(launchOptions(entry)).toEqual({ executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy' });
   });
 
+  it("launches the snap's own Firefox binary, not the /snap/bin launcher", () => {
+    const firefox: PuppeteerBrowserChoice = {
+      id: 'firefox-snap:x.default',
+      browser: 'firefox',
+      engine: 'firefox',
+      variant: 'snap',
+      profileName: 'default',
+      executablePath: '/snap/bin/firefox',
+      userDataDir: '/home/me/snap/firefox/common/.mozilla/firefox',
+      profilePath: '/home/me/snap/firefox/common/.mozilla/firefox/x.default',
+    };
+    expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: firefox }))).toEqual({
+      executablePath: '/snap/firefox/current/usr/lib/firefox/firefox', browser: 'firefox',
+    });
+  });
+
   it("launches Puppeteer's own Firefox download without a profile", () => {
     const managed: PuppeteerBrowserChoice = {
       id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',

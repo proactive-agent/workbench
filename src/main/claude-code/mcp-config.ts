@@ -55,12 +55,22 @@ export interface McpRunOptions {
 }
 
 /**
+ * Snap launchers Puppeteer can't drive: `/snap/bin/firefox` starts Firefox in the snap's sandbox,
+ * which can't open Puppeteer's profile in /tmp, so the launch times out. The snap's own binary
+ * runs outside the sandbox and works
+ */
+const SNAP_BINARIES: Record<string, string> = {
+  '/snap/bin/firefox': '/snap/firefox/current/usr/lib/firefox/firefox',
+};
+
+/**
  * Puppeteer's launch options for the chosen browser: its executable and engine, and with a
  * profile copy its folder. Chromium's default `--password-store=basic` / `--use-mock-keychain`
  * would keep it from decrypting the copied sign-ins, so they are left out
  */
 export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserProfileDir?: string): Record<string, unknown> {
-  const launch: Record<string, unknown> = { executablePath: choice.executablePath };
+  const executablePath = SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
+  const launch: Record<string, unknown> = { executablePath };
   if (choice.engine === 'firefox') launch.browser = 'firefox';
   if (browserProfileDir) {
     launch.userDataDir = toRuntimePath(browserProfileDir);
