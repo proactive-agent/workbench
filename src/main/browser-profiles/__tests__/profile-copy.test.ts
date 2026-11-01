@@ -8,7 +8,7 @@ import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profi
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 vi.mock('../../platform/shell-runtime', () => ({ toHostPath: (p: string) => p }));
 
-import { browserProfileCopyDir, prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../profile-copy';
+import { browserProfileCopyDir, prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../profile-copy';
 
 let root: string;
 
@@ -93,6 +93,25 @@ describe('browser profile copies', () => {
     expect(await readFile(path.join(copy!, 'cookies.sqlite'), 'utf-8')).toBe('jar');
     expect(existsSync(path.join(copy!, 'parent.lock'))).toBe(false);
     expect(existsSync(path.join(copy!, 'cache2'))).toBe(false);
+  });
+
+  it("removes a task's older copies, keeping the current run's and other tasks'", async () => {
+    const profile = path.join(root, 'chrome', 'Default');
+    await put(path.join(profile, 'Cookies'));
+    const choice: PuppeteerBrowserChoice = {
+      id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Me',
+      executablePath: '/opt/google/chrome/chrome', userDataDir: path.join(root, 'chrome'), profileDirectory: 'Default', profilePath: profile,
+    };
+    const project = path.join(root, 'project');
+    const old = await prepareBrowserProfileCopy(project, choice, 'task-001-a-aaaa');
+    const other = await prepareBrowserProfileCopy(project, choice, 'task-002-b-bbbb');
+    const current = await prepareBrowserProfileCopy(project, choice, 'task-001-a-cccc');
+
+    await removeStaleBrowserProfileCopies(project, choice, 'task-001-a-', 'task-001-a-cccc');
+
+    expect(existsSync(old!)).toBe(false);
+    expect(existsSync(other!)).toBe(true);
+    expect(existsSync(current!)).toBe(true);
   });
 
   it('gives no copy when the profile is gone', async () => {

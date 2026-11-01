@@ -99,6 +99,32 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
   return target;
 }
 
+/**
+ * Remove a profile's copies whose slot starts with `prefix`, except `keep` (copies left by earlier
+ * runs of a task that never cleaned up, such as after a crash). Best effort
+ */
+export async function removeStaleBrowserProfileCopies(
+  projectPath: string,
+  choice: PuppeteerBrowserChoice,
+  prefix: string,
+  keep: string
+): Promise<void> {
+  const parent = path.dirname(browserProfileCopyDir(projectPath, choice, keep));
+  const keepName = path.basename(browserProfileCopyDir(projectPath, choice, keep));
+  const slugPrefix = slug(prefix);
+  let names: string[];
+  try {
+    names = await readdir(parent);
+  } catch {
+    return;
+  }
+  await Promise.all(
+    names
+      .filter((name) => name !== keepName && name.startsWith(slugPrefix))
+      .map((name) => removeBrowserProfileCopy(path.join(parent, name)))
+  );
+}
+
 /** Remove a run's copy (best effort: a browser that is still closing may hold files) */
 export async function removeBrowserProfileCopy(dir: string): Promise<void> {
   try {

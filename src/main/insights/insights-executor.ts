@@ -66,6 +66,8 @@ async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
       chatBrowserProfiles.set(key, copy);
     }
     browserProfileDir = (await copy) ?? undefined;
+    // A failed copy (the browser held its files) is tried again by the next turn
+    if (!browserProfileDir) chatBrowserProfiles.delete(key);
   }
   return buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers;
 }

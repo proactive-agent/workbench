@@ -42,8 +42,13 @@ export function useMcpUnavailableReason(): (connectorId: string) => McpUnavailab
   const connectors = useSettingsStore((state) => state.settings.mcpConnectors);
   const [, setVersion] = useState(0);
   const ids = [...BUILTIN_CONNECTOR_META.map(({ id }) => id), ...getUsableCustomServers(connectors).map((server) => server.id)];
-  // Edited connection details are checked again
-  const key = JSON.stringify([ids, getUsableCustomServers(connectors).map(({ id, type, command, args, url, headers }) => ({ id, type, command, args, url, headers }))]);
+  // Edited connection details (and another browser for Puppeteer) are checked again
+  const browser = connectors?.puppeteerBrowser;
+  const key = JSON.stringify([
+    ids,
+    getUsableCustomServers(connectors).map(({ id, type, command, args, url, headers }) => ({ id, type, command, args, url, headers })),
+    browser ? [browser.id, browser.executablePath] : null,
+  ]);
 
   useEffect(() => {
     const update = () => setVersion((v) => v + 1);

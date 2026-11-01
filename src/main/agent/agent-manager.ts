@@ -16,7 +16,7 @@ import { detectClaudeLimitMessage } from '../claude-code/limit';
 import { createOrGetWorktree } from '../worktree';
 import { addToWorktree } from '../live-agent/project-setup';
 import { usableMcpConnectorIds } from '../mcp-availability';
-import { prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFile } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
@@ -543,11 +543,15 @@ export class AgentManager extends EventEmitter {
 
     if (isSelfImproveEnabled(project.settings)) config.selfImprovePrompt = SELF_IMPROVE_NUDGE;
     // The Puppeteer connector's browser profile: a fresh copy per run (sign-ins as they are now),
-    // in the task's own slot so parallel tasks never share a profile folder
+    // in the run's own slot so no two runs share a profile folder
     const browser = settings.mcpConnectors?.puppeteerBrowser;
     if (browser && config.connectorIds?.includes('puppeteer')) {
       try {
-        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, `task-${task.specId}`)) ?? undefined;
+        // A slot per run: a stopped run of the task may still be cleaning up its own copy
+        const slot = `task-${task.specId}-${randomUUID().slice(0, 8)}`;
+        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot)) ?? undefined;
+        // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it
+        void removeStaleBrowserProfileCopies(project.path, browser, `task-${task.specId}-`, slot);
       } catch (error) {
         appLog.warn(`[AgentManager] Could not copy the browser profile for ${taskId}:`, error);
       }
