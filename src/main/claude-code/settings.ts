@@ -2,6 +2,7 @@ import {
   CLAUDE_EFFORTS,
   CLAUDE_MODEL_ALIASES,
   DEFAULT_CLAUDE_CODE_TASK_SETTINGS,
+  WORKFLOW_SIZES,
   type ClaudeCodeTaskSettings,
 } from '../../shared/types/claude-code';
 
@@ -15,5 +16,11 @@ export function resolveClaudeCodeTaskSettings(stored: Partial<ClaudeCodeTaskSett
   if (!['auto', 'always', 'never'].includes(merged.planning)) merged.planning = 'auto';
   if (typeof merged.taskMessaging !== 'boolean') merged.taskMessaging = DEFAULT_CLAUDE_CODE_TASK_SETTINGS.taskMessaging;
   if (typeof merged.sessionMessages !== 'boolean') merged.sessionMessages = DEFAULT_CLAUDE_CODE_TASK_SETTINGS.sessionMessages;
+  if (!WORKFLOW_SIZES.includes(merged.workflowSize)) merged.workflowSize = DEFAULT_CLAUDE_CODE_TASK_SETTINGS.workflowSize;
+  // Claude Code accepts 1 to 256; anything else means its own default
+  const concurrency = merged.workflowMaxConcurrentAgents;
+  if (concurrency !== undefined && !(Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 256)) {
+    delete merged.workflowMaxConcurrentAgents;
+  }
   return merged;
 }

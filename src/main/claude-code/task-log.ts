@@ -62,6 +62,12 @@ export function summarizeToolInput(toolName: string, input: Record<string, unkno
     case 'SendMessage':
       // Native message to another session
       return [pick('to', 'recipient'), pick('summary', 'message')].filter(Boolean).join(': ');
+    case 'Workflow': {
+      // A named or saved workflow, else the `meta.name` its inline script starts with
+      const meta = typeof input.script === 'string' ? /\bname\s*:\s*['"`]([^'"`\n]+)['"`]/.exec(input.script)?.[1] : undefined;
+      const resuming = pick('resumeFromRunId');
+      return [pick('name') || meta || pick('scriptPath'), resuming ? `resuming ${resuming}` : ''].filter(Boolean).join(', ');
+    }
     case 'mcp__workbench__message_task':
       // Workbench's message to another task
       return [pick('task'), pick('message')].filter(Boolean).join(': ');

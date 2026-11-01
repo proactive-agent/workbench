@@ -23,11 +23,13 @@ import {
   CLAUDE_EFFORTS,
   CLAUDE_MODEL_ALIASES,
   DEFAULT_CLAUDE_CODE_TASK_SETTINGS,
+  WORKFLOW_SIZES,
   type ClaudeCodeTaskSettings as TaskSettings,
   type ClaudeEffort,
   type ClaudeModelAlias,
   type PlanningPolicy,
-  type TriageMode
+  type TriageMode,
+  type WorkflowSize
 } from '../../../shared/types/claude-code';
 import type { AppSettings } from '../../../shared/types';
 import { useProjectStore } from '../../stores/project-store';
@@ -40,6 +42,9 @@ interface ClaudeCodeTaskSettingsProps {
 
 /** Fallback model choices (`--fallback-model`); 'none' leaves it unset */
 const FALLBACK_OPTIONS = ['none', 'sonnet', 'haiku', 'opus'] as const;
+
+/** Workflow agents at once (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`); 'default' leaves it unset */
+const WORKFLOW_CONCURRENCY_OPTIONS = ['default', '2', '4', '8', '16', '32'] as const;
 
 /** Task execution, permissions, agent windows and limits sections of the Agents page */
 export function ClaudeCodeTaskSettings({ settings, onSettingsChange }: ClaudeCodeTaskSettingsProps) {
@@ -86,6 +91,7 @@ export function ClaudeCodeTaskSettings({ settings, onSettingsChange }: ClaudeCod
   );
 
   const fallbackValue = current.fallbackModel && current.fallbackModel.trim() !== '' ? current.fallbackModel : 'none';
+  const concurrencyValue = current.workflowMaxConcurrentAgents ? String(current.workflowMaxConcurrentAgents) : 'default';
 
   return (
     <>
@@ -318,6 +324,52 @@ export function ClaudeCodeTaskSettings({ settings, onSettingsChange }: ClaudeCod
                 onSettingsChange({ ...settings, maxParallelTasks: clamped });
               }}
             />
+          </SettingsRow>
+
+          {/* Workflows (many subagents from one script) for tasks triage sizes as large */}
+          <SettingsRow
+            label={t('claudeCode.workflows.size')}
+            description={t('claudeCode.workflows.sizeDescription')}
+            htmlFor="claude-code-workflow-size"
+          >
+            <Select value={current.workflowSize} onValueChange={(v) => update({ workflowSize: v as WorkflowSize })}>
+              <SelectTrigger id="claude-code-workflow-size" className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKFLOW_SIZES.map((size) => (
+                  <SelectItem key={size} value={size}>
+                    {t(`claudeCode.workflows.sizes.${size}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </SettingsRow>
+          <SettingsRow
+            label={t('claudeCode.workflows.concurrency')}
+            description={t('claudeCode.workflows.concurrencyDescription')}
+            htmlFor="claude-code-workflow-concurrency"
+          >
+            <Select
+              value={concurrencyValue}
+              disabled={current.workflowSize === 'off'}
+              onValueChange={(v) => update({ workflowMaxConcurrentAgents: v === 'default' ? undefined : Number(v) })}
+            >
+              <SelectTrigger id="claude-code-workflow-concurrency" className="h-8">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {WORKFLOW_CONCURRENCY_OPTIONS.map((option) => (
+                  <SelectItem key={option} value={option}>
+                    {option === 'default' ? t('claudeCode.workflows.concurrencyDefault') : option}
+                  </SelectItem>
+                ))}
+                {/* A value set elsewhere stays selectable */}
+                {!(WORKFLOW_CONCURRENCY_OPTIONS as readonly string[]).includes(concurrencyValue) && (
+                  <SelectItem value={concurrencyValue}>{concurrencyValue}</SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </SettingsRow>
         </SettingsRows>
       </SettingsSection>

@@ -9,7 +9,8 @@
  *   implement resumes the same session with `--dangerously-skip-permissions` (the worktree
  *             isolates the run) and the triage model/effort
  *   validate  optional: same session runs the project's checks, reviews the diff with fresh
- *             eyes (/code-review or a subagent), commits, and returns a structured report
+ *             eyes (/code-review or a subagent; for a large task a workflow whose findings are
+ *             each checked, see workflows.ts), commits, and returns a structured report
  *   revise    after "request changes": same session gets the reviewer's feedback, then validates
  *
  * Planning, implementation and validation share one Claude Code session, so the context built
@@ -22,7 +23,7 @@
 
 import { randomUUID } from 'crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { cp, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { resolveClaudeEnv } from './env';
@@ -61,6 +62,7 @@ import type {
   ClaudeRuntime,
   ClaudeRunPhase,
   ClaudeRunPhaseName,
+  ClaudeRunWorkflow,
   TaskTriage,
   ValidationReport,
 } from '../../shared/types/claude-code';
@@ -69,6 +71,17 @@ import type { ExecutionPhase } from '../../shared/constants/phase-protocol';
 import type { ImageAttachment, SubtaskStatus, TaskLogPhase } from '../../shared/types/task';
 import { DATA_DIR_NAMES } from '../../shared/constants';
 import { PHASE_PROMPT_OPENINGS } from './phase-prompts';
+import {
+  interruptedWorkflowHint,
+  interruptedWorkflows,
+  parseWorkflowLaunch,
+  usesWorkflows,
+  workflowEnv,
+  workflowImplementHint,
+  workflowReviewStep,
+  workflowSettings,
+} from './workflows';
+import { appLog } from '../app-logger';
 import {
   addUnverifiedTargets,
   clearResyncRequest,
@@ -283,7 +296,7 @@ Your session is named \`${sessionName}\`. Other tasks of this project run at the
 - To reach one of the user's other running Claude Code sessions (an agent window, a terminal), use SendMessage with a name from ListAgents. Messages are plain text and reach running sessions only. Answer a cross-session message with SendMessage to its sender.` : ''}`;
 }
 
-function buildSystemPrompt(config: TaskRunConfig, specDirRelative: string, parallelTasksPrompt?: string, messagingPrompt?: string): string {
+function buildSystemPrompt(config: TaskRunConfig, specDirRelative: string, parallelTasksPrompt?: string, messagingPrompt?: string, workflows = false): string {
   const sections = [
     `You are running autonomously inside Workbench, a desktop app that hands coding tasks to Claude Code. Nobody watches this session live and nobody can answer questions: make reasonable assumptions, state them in your final summary, and keep going.`,
     config.isolated === false
@@ -298,7 +311,7 @@ function buildSystemPrompt(config: TaskRunConfig, specDirRelative: string, paral
     `## How to work
 - Follow the project's CLAUDE.md, conventions and existing patterns. Keep the change focused on the task.
 - Track work with the task list (TaskCreate / TaskUpdate) only when it has several distinct steps worth tracking; skip it for small changes.
-- Use subagents only when they help: broad searches whose raw output you don't need, or independent investigations that can run in parallel. Do the implementation itself in this conversation.
+- Use subagents only when they help: broad searches whose raw output you don't need, or independent investigations that can run in parallel. Do the implementation itself in this conversation${workflows ? ', or in a workflow where a step allows one' : ''}.
 - Use skills and MCP tools when they fit the task.
 - Verify your work with the project's own checks (tests, type checker, linter, build) for the code you changed, and fix failures you caused. Show evidence rather than asserting success.
 - When the work is done, commit it in this worktree with a descriptive message. Don't push.
@@ -484,6 +497,12 @@ export class ClaudeTaskRun {
   private nativeSends = new Map<string, { to: string; text: string }>();
   /** Lines from the base branch the session's merge fix said must go (and why), for the last check */
   private resyncDropped: Array<{ file: string; line: string }> = [];
+  /** The step and session the Claude Code process runs, for the workflow runs it launches */
+  private running: { phase: Exclude<ClaudeRunPhaseName, 'triage'>; sessionId: string } | null = null;
+  /** Workflow tool_use id -> Claude Code's background task id (from `task_started`) */
+  private workflowTaskIds = new Map<string, string>();
+  /** Workflow task id -> how it ended, for a run that ended before its launch result was read */
+  private workflowEnds = new Map<string, 'completed' | 'failed' | 'stopped'>();
 
   constructor(private readonly config: TaskRunConfig, private readonly callbacks: TaskRunCallbacks = {}) {
     this.runFile = path.join(config.specDir, CLAUDE_RUN_FILE);
@@ -846,6 +865,8 @@ export class ClaudeTaskRun {
     }
 
     const sessionId = resumeSessionId ?? randomUUID();
+    // Read before this step is recorded: workflows the same step launched in this session and never finished
+    const unfinishedWorkflows = interruptedWorkflows(this.info, name, resumeSessionId, this.config.settings);
     const phase = this.beginPhase(name, {
       model,
       effort,
@@ -862,7 +883,7 @@ export class ClaudeTaskRun {
       effort,
       sessionId,
       resume: !!resumeSessionId,
-      input: this.buildInput(name, continuing, !!resumeSessionId, inbox, resync ? { ...resync, continues: resyncContinues } : undefined),
+      input: this.buildInput(name, continuing, !!resumeSessionId, inbox, resync ? { ...resync, continues: resyncContinues } : undefined, unfinishedWorkflows),
       jsonSchema: name === 'plan' ? PLAN_SCHEMA : name === 'validate' ? VALIDATION_SCHEMA : name === 'resync' && resync?.fix ? RESYNC_FIX_SCHEMA : undefined,
       logPhase,
       inboxIds: inbox.map((m) => m.id),
@@ -959,8 +980,13 @@ export class ClaudeTaskRun {
     resume: boolean,
     inbox: TaskMessage[] = [],
     resync?: { request: ResyncRequest; fix?: ResyncCheck; continues: boolean },
+    unfinishedWorkflows: ClaudeRunWorkflow[] = [],
   ): ClaudeUserContentBlock[] {
     const triage = this.info.triage;
+    // Large tasks review with a workflow, and may implement with one (Settings > Agents > Limits)
+    const workflows = usesWorkflows(this.config.settings, triage);
+    const implementHint = workflows ? `\n\n${workflowImplementHint()}` : '';
+    const relaunch = interruptedWorkflowHint(unfinishedWorkflows);
 
     // The attachments are turned into blocks before the prompt is written, because the prompt has
     // to describe the images that will really be in the turn. Reading them is what decides that:
@@ -988,9 +1014,9 @@ The plan should name the files to change, the approach and why, edge cases, and 
         break;
       case 'implement':
         if (continuing && resume) {
-          text = `${PHASE_PROMPT_OPENINGS.continuing} Check \`git status\` and \`git log\` to see what is already done, then finish the work.`;
+          text = `${PHASE_PROMPT_OPENINGS.continuing} Check \`git status\` and \`git log\` to see what is already done, then finish the work.${relaunch || implementHint}`;
         } else if (this.info.plan && resume) {
-          text = `${PHASE_PROMPT_OPENINGS.planApproved}, verify it with ${verificationHint(triage)}, and commit the result.`;
+          text = `${PHASE_PROMPT_OPENINGS.planApproved}, verify it with ${verificationHint(triage)}, and commit the result.${implementHint}`;
         } else if (continuing || this.info.plan) {
           // A new session for work that started in another one (the runtime changed): the task,
           // the approved plan and what was done so far go with the first message
@@ -1000,19 +1026,21 @@ The plan should name the files to change, the approach and why, edge cases, and 
             : '';
           text = `${taskBlock(this.config)}${restartNotes(this.config, feedbackImages)}${plan}${started}
 
-Implement this task${plan ? ' as planned' : ''}. Verify it with ${verificationHint(triage)}, then commit the result.`;
+Implement this task${plan ? ' as planned' : ''}. Verify it with ${verificationHint(triage)}, then commit the result.${implementHint}`;
         } else {
           text = `${taskBlock(this.config)}${restartNotes(this.config, feedbackImages)}
 
-Implement this task. Verify it with ${verificationHint(triage)}, then commit the result.`;
+Implement this task. Verify it with ${verificationHint(triage)}, then commit the result.${implementHint}`;
         }
         break;
       case 'validate':
         text = `${resume ? '' : `${taskBlock(this.config)}\n\n`}${PHASE_PROMPT_OPENINGS.validate}
 1. Run ${verificationHint(triage)}. Fix failures your change caused.
-2. Review the full change against \`${this.config.baseBranch}\` (\`git diff ${this.config.baseBranch}...HEAD\` plus any uncommitted changes) with fresh eyes. Use the /code-review skill if it's available; otherwise use a subagent that sees only the diff and the task. Fix only findings that affect correctness or the task's requirements; don't gold-plate.
+2. ${workflows
+    ? workflowReviewStep(this.config.baseBranch)
+    : `Review the full change against \`${this.config.baseBranch}\` (\`git diff ${this.config.baseBranch}...HEAD\` plus any uncommitted changes) with fresh eyes. Use the /code-review skill if it's available; otherwise use a subagent that sees only the diff and the task. Fix only findings that affect correctness or the task's requirements; don't gold-plate.`}
 3. Commit any remaining changes.
-Then return the report: status "passed" when the change works and the checks pass, "partial" when some checks couldn't run, "failed" when something is still broken.`;
+Then return the report: status "passed" when the change works and the checks pass, "partial" when some checks couldn't run, "failed" when something is still broken.${relaunch}`;
         break;
       case 'revise': {
         const opening = `${resume ? '' : `${taskBlock(this.config)}\n\n`}${PHASE_PROMPT_OPENINGS.revise}`;
@@ -1115,13 +1143,15 @@ no notes came with the request, so review the change against the task with fresh
         // Make the task list available on every model, so Claude can track multi-step work
         // and the app can show it as the task's subtasks
         CLAUDE_CODE_ENABLE_TODO_TOOLS: '1',
+        // Workflow concurrency, or workflows off (Settings > Agents > Limits)
+        ...workflowEnv(settings),
       },
     });
 
     // Host path of the config dir (the transcript is copied with Windows file APIs, also in WSL)
     const configDir = env.CLAUDE_CONFIG_DIR ? toHostPath(env.CLAUDE_CONFIG_DIR) : defaultClaudeConfigDir();
     if (params.resume && this.info.configDir && this.info.configDir !== configDir) {
-      copySessionTranscript(params.sessionId, this.info.configDir, configDir);
+      await copySessionTranscript(params.sessionId, this.info.configDir, configDir);
     }
     if (this.info.profileId !== profileId || this.info.configDir !== configDir) {
       this.info.profileId = profileId;
@@ -1152,12 +1182,14 @@ no notes came with the request, so review the change against the task with fresh
       '--model', params.model,
       '--effort', params.effort,
       '--permission-prompts', 'none',
-      '--append-system-prompt', buildSystemPrompt(this.config, specDirRelative, parallelTasksPrompt, messagingPrompt),
+      '--append-system-prompt', buildSystemPrompt(this.config, specDirRelative, parallelTasksPrompt, messagingPrompt,
+        params.name !== 'plan' && usesWorkflows(settings, this.info.triage)),
       // Addressable by other sessions (native SendMessage) and by Workbench (task-messaging.ts)
       '--name', sessionName,
     ];
-    // Claude Code settings for this session only, in one `--settings` flag (left out when empty)
-    const sessionSettings: Record<string, unknown> = {};
+    // Claude Code settings for this session, on top of the user's own: one object, one `--settings`
+    // (left out when empty)
+    const sessionSettings: Record<string, unknown> = { ...(workflowSettings(settings) ?? {}) };
     if (sessionMessages) {
       // A session that skips permission checks holds each cross-session message for approval,
       // which a headless run can't give (the message expires). With the user's switch on, the run
@@ -1209,6 +1241,7 @@ no notes came with the request, so review the change against the task with fresh
 
     let promptRead = false;
     const inboxIds = params.inboxIds ?? [];
+    this.running = { phase: params.name, sessionId: params.sessionId };
     const handle = startClaudeProcess({
       command,
       args,
@@ -1243,6 +1276,7 @@ no notes came with the request, so review the change against the task with fresh
     const detach = messaging?.attach((text, id) => handle.send(text, id), inboxIds);
     const outcome = await handle.done;
     this.current = null;
+    this.endWorkflows();
     detach?.(outcome.unread.map((input) => input.id));
     const result = pickPhaseResult(outcome.results, outcome.resultOrigins);
     // The prompt was answered even when its replay never showed up
@@ -1327,6 +1361,13 @@ no notes came with the request, so review the change against the task with fresh
       return undefined;
     }
 
+    if (isTaskStarted(message) && message.task_type === 'local_workflow') {
+      if (message.tool_use_id) this.workflowTaskIds.set(message.tool_use_id, message.task_id);
+      const run = this.info.workflows?.find((w) => w.taskId === undefined && w.toolUseId === message.tool_use_id);
+      if (run) run.taskId = message.task_id;
+      return undefined;
+    }
+
     if (isTaskStarted(message) && !message.ambient && message.task_type === 'local_agent') {
       if (!this.info.subagents.some((s) => s.id === (message.tool_use_id ?? message.task_id))) {
         this.info.subagents.push({
@@ -1338,6 +1379,18 @@ no notes came with the request, so review the change against the task with fresh
         this.saveInfo();
       }
       return undefined;
+    }
+
+    if (isTaskNotification(message)) {
+      if ([...this.workflowTaskIds.values()].includes(message.task_id)) this.workflowEnds.set(message.task_id, message.status);
+      const run = this.info.workflows?.find((w) => w.taskId === message.task_id);
+      if (run) {
+        run.status = message.status;
+        run.endedAt = new Date().toISOString();
+        this.emitLog(`Workflow${run.name ? ` ${run.name}` : ''} ${message.status}`);
+        this.saveInfo();
+        return undefined;
+      }
     }
 
     if (isTaskNotification(message) && !message.ambient) {
@@ -1451,6 +1504,8 @@ no notes came with the request, so review the change against the task with fresh
         sub.endedAt = new Date().toISOString();
         this.saveInfo();
       }
+    } else if (name === 'Workflow') {
+      if (!block.is_error) this.recordWorkflow(block.tool_use_id, toolUseResult, text);
     } else if (name === 'SendMessage') {
       const sent = this.nativeSends.get(block.tool_use_id);
       this.nativeSends.delete(block.tool_use_id);
@@ -1470,6 +1525,46 @@ no notes came with the request, so review the change against the task with fresh
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
+
+  /** A workflow run the session launched (the Workflow tool's result), so a continued step can resume it */
+  private recordWorkflow(toolUseId: string, toolUseResult: unknown, text: string): void {
+    const launch = parseWorkflowLaunch(toolUseResult, text);
+    if (!launch || !this.running) return;
+    const workflows = this.info.workflows ?? (this.info.workflows = []);
+    // A relaunch with `resumeFromRunId` keeps the run id: the record starts over
+    const existing = workflows.find((w) => w.runId === launch.runId);
+    const run: ClaudeRunWorkflow = {
+      runId: launch.runId,
+      toolUseId,
+      taskId: launch.taskId ?? this.workflowTaskIds.get(toolUseId),
+      ...(launch.name ?? existing?.name ? { name: launch.name ?? existing?.name } : {}),
+      ...(launch.scriptPath ?? existing?.scriptPath ? { scriptPath: launch.scriptPath ?? existing?.scriptPath } : {}),
+      phase: this.running.phase,
+      // The id Claude Code reported for the session (`init`), which a later `--resume` uses
+      sessionId: this.info.sessionId ?? this.running.sessionId,
+      status: 'running',
+      startedAt: new Date().toISOString(),
+    };
+    // A run that failed fast can report its end before the launch result arrives
+    const ended = run.taskId ? this.workflowEnds.get(run.taskId) : undefined;
+    if (ended) Object.assign(run, { status: ended, endedAt: run.startedAt });
+    if (existing) workflows[workflows.indexOf(existing)] = run;
+    else workflows.push(run);
+    this.saveInfo();
+  }
+
+  /** The process ended: its workflow runs that never reported back stopped with it */
+  private endWorkflows(): void {
+    const unfinished = (this.info.workflows ?? []).filter((w) => w.status === 'running');
+    for (const run of unfinished) {
+      run.status = 'stopped';
+      run.endedAt = new Date().toISOString();
+    }
+    this.running = null;
+    this.workflowTaskIds.clear();
+    this.workflowEnds.clear();
+    if (unfinished.length) this.saveInfo();
+  }
 
   private hasCompleted(name: ClaudeRunPhaseName): boolean {
     return this.info.phases.some((p) => p.name === name && p.endedAt && !p.isError);
@@ -1617,9 +1712,11 @@ function defaultClaudeConfigDir(): string {
 
 /**
  * Copy a session transcript (`<configDir>/projects/<project>/<sessionId>.jsonl`) to another
- * Claude config dir, so the session can be resumed on a different profile
+ * Claude config dir, so the session can be resumed on a different profile. The session's own
+ * directory next to it goes too: it holds subagent transcripts and the saved results of its
+ * workflow runs, which a relaunch with `resumeFromRunId` reuses instead of running the agents again.
  */
-function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfigDir: string): void {
+async function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfigDir: string): Promise<void> {
   try {
     const projectsDir = path.join(fromConfigDir, 'projects');
     for (const project of readdirSync(projectsDir)) {
@@ -1628,10 +1725,13 @@ function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfi
       const targetDir = path.join(toConfigDir, 'projects', project);
       mkdirSync(targetDir, { recursive: true });
       copyFileSync(source, path.join(targetDir, `${sessionId}.jsonl`));
+      const sessionDir = path.join(projectsDir, project, sessionId);
+      // Can hold many agent transcripts: copied without blocking the main process
+      if (existsSync(sessionDir)) await cp(sessionDir, path.join(targetDir, sessionId), { recursive: true, force: true });
       return;
     }
   } catch (error) {
-    console.warn('[ClaudeTaskRun] Could not copy the session transcript to the new profile:', error);
+    appLog.warn('[ClaudeTaskRun] Could not copy the session transcript to the new profile:', error);
   }
 }
 
