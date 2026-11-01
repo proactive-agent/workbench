@@ -20,6 +20,7 @@ const chrome: BrowserProfile = {
 describe('browser profile picker helpers', () => {
   it('labels profiles with their browser', () => {
     expect(browserProfileLabel(t, chrome)).toBe('chrome · Work');
+    expect(browserProfileLabel(t, { ...chrome, variant: 'snap' })).toBe('chrome (snap) · Work');
     expect(browserProfileLabel(t, { browser: 'safari', profileName: 'Safari' })).toBe('safari');
   });
 

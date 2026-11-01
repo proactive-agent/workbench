@@ -27,6 +27,8 @@ export interface BrowserProfile {
   engine: BrowserEngine;
   /** The name the browser shows for the profile */
   profileName: string;
+  /** How the browser is packaged when that tells installs apart (`snap`, `flatpak`) */
+  variant?: string;
   /** The signed-in account, when the browser knows it */
   email?: string;
   /** Chromium: the user data folder holding `Local State`; Firefox: the folder holding profiles.ini */
@@ -47,6 +49,7 @@ export interface PuppeteerBrowserChoice {
   browser: BrowserKind;
   engine: 'chromium' | 'firefox';
   profileName: string;
+  variant?: string;
   email?: string;
   executablePath: string;
   userDataDir: string;

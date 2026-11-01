@@ -30,8 +30,10 @@ export function disabledReasonText(t: Translate, reason: BrowserProfileDisabledR
 }
 
 /** `Chrome · Work` (Safari has a single entry: just the browser) */
-export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 'browser' | 'profileName'>): string {
-  const browser = t(`settings:mcp.browserProfile.browsers.${profile.browser}`);
+export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 'browser' | 'profileName' | 'variant'>): string {
+  const name = t(`settings:mcp.browserProfile.browsers.${profile.browser}`);
+  // `Firefox (Snap)` where the same browser is installed in more than one way
+  const browser = profile.variant ? `${name} (${t(`settings:mcp.browserProfile.variants.${profile.variant}`)})` : name;
   return profile.browser === 'safari' ? browser : `${browser} · ${profile.profileName}`;
 }
 
@@ -43,6 +45,7 @@ export function toBrowserChoice(profile: BrowserProfile): PuppeteerBrowserChoice
     browser: profile.browser,
     engine: profile.engine,
     profileName: profile.profileName,
+    ...(profile.variant ? { variant: profile.variant } : {}),
     ...(profile.email ? { email: profile.email } : {}),
     executablePath: profile.executablePath,
     userDataDir: profile.userDataDir,

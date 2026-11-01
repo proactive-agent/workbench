@@ -423,6 +423,10 @@
         "firefox": "Firefox",
         "safari": "Safari"
       },
+      "variants": {
+        "snap": "Snap",
+        "flatpak": "Flatpak"
+      },
       "reasons": {
         "unsupportedEngine": "Puppeteer doesn't support Safari",
         "executableMissing": "Browser not installed",

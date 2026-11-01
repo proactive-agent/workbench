@@ -130,6 +130,8 @@ describe('browser profile detection', () => {
       ['chromium-flatpak:Default', false, undefined, 'sandboxed-package'],
       ['firefox-snap:s.default', true, '/snap/bin/firefox', undefined],
     ]);
+    // Profiles with the same name in different installs can be told apart
+    expect(profiles.map((p) => p.variant)).toEqual([undefined, 'flatpak', 'snap']);
   });
 
   it("reads the WSL distribution's browsers through host paths, with Linux paths", async () => {
