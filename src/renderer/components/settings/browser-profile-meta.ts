@@ -3,6 +3,8 @@
  * PuppeteerBrowserSelect.tsx so that file only exports components (Fast Refresh)
  */
 
+import { Globe } from 'lucide-react';
+import { ChromiumIcon, FirefoxIcon, PuppeteerIcon } from '../icons/app-icons';
 import type {
   BrowserProfile,
   BrowserProfileDisabledReason,
@@ -25,6 +27,14 @@ const REASON_KEYS: Record<BrowserProfileDisabledReason, string> = {
 /** Why a profile can't be picked, as text */
 export function disabledReasonText(t: Translate, reason: BrowserProfileDisabledReason | undefined): string | undefined {
   return reason ? t(REASON_KEYS[reason]) : undefined;
+}
+
+/** A picker item's icon: Puppeteer's for its own browsers, otherwise the browser engine's */
+export function browserProfileIcon(profile: Pick<BrowserProfile, 'engine' | 'managed'>): React.ElementType {
+  if (profile.managed) return PuppeteerIcon;
+  if (profile.engine === 'firefox') return FirefoxIcon;
+  if (profile.engine === 'chromium') return ChromiumIcon;
+  return Globe;
 }
 
 /** `Chrome · Work` (Safari has a single entry: just the browser) */

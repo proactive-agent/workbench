@@ -12,7 +12,8 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { DEFAULT_BROWSER_VALUE, browserProfileLabel, disabledReasonText, toBrowserChoice } from './browser-profile-meta';
+import { DEFAULT_BROWSER_VALUE, browserProfileIcon, browserProfileLabel, disabledReasonText, toBrowserChoice } from './browser-profile-meta';
+import { PuppeteerIcon } from '../icons/app-icons';
 import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
 
 interface PuppeteerBrowserSelectProps {
@@ -23,6 +24,9 @@ interface PuppeteerBrowserSelectProps {
 }
 
 /** A download button beside a dropdown item */
+/** A browser's icon before its name in the list */
+const ITEM_ICON = 'mr-2 inline-block h-4 w-4 align-[-3px]';
+
 function DownloadButton({ browser, onDownload, besideCheck = false }: {
   browser: DownloadableBrowser;
   onDownload: (browser: DownloadableBrowser) => void;
@@ -93,16 +97,21 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
     if (choice) onChange(choice);
   };
 
+  // The chosen browser's icon in the closed picker too
+  const SelectedIcon = value ? browserProfileIcon(value) : PuppeteerIcon;
+
   return (
     <Select value={value?.id ?? DEFAULT_BROWSER_VALUE} onValueChange={handleChange}>
       <SelectTrigger aria-label={t('settings:mcp.browserProfile.label')}>
         <SelectValue>
+          <SelectedIcon className={ITEM_ICON} />
           {value ? browserProfileLabel(t, value) : t('settings:mcp.browserProfile.default')}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
         <div className="relative">
           <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromeMissing ? 'pr-16' : undefined}>
+            <PuppeteerIcon className={ITEM_ICON} />
             {t('settings:mcp.browserProfile.default')}
             {chromeMissing && <span className="ml-2 text-(--nav-label-color)">{t('settings:mcp.browserProfile.reasons.notDownloaded')}</span>}
           </SelectItem>
@@ -116,9 +125,11 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
         {list.map((profile) => {
           const reason = disabledReasonText(t, profile.disabledReason);
           const detail = reason ?? profile.email;
+          const Icon = browserProfileIcon(profile);
           return (
             <div key={profile.id} className="relative">
               <SelectItem value={profile.id} disabled={!profile.usable}>
+                <Icon className={ITEM_ICON} />
                 {browserProfileLabel(t, profile)}
                 {detail && <span className="ml-2 text-(--nav-label-color)">{detail}</span>}
               </SelectItem>
