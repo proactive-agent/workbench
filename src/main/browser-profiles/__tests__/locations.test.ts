@@ -24,6 +24,11 @@ describe('browserLocations', () => {
     expect(find(locations, 'firefox')).toMatchObject({
       engine: 'firefox',
       dataDirs: ['C:\\Users\\me\\AppData\\Roaming\\Mozilla\\Firefox'],
+      executables: [
+        'C:\\Program Files\\Mozilla Firefox\\firefox.exe',
+        'C:\\Program Files (x86)\\Mozilla Firefox\\firefox.exe',
+        'C:\\Users\\me\\AppData\\Local\\Mozilla Firefox\\firefox.exe',
+      ],
     });
     expect(find(locations, 'safari')).toBeUndefined();
   });
@@ -57,12 +62,26 @@ describe('browserLocations', () => {
       dataDirs: ['/home/me/snap/chromium/common/chromium'],
       executables: ['/snap/bin/chromium'],
     });
-    expect(find(locations, 'firefox')?.dataDirs).toEqual(['/home/me/.mozilla/firefox']);
+    expect(find(locations, 'firefox')).toMatchObject({
+      dataDirs: ['/home/me/.mozilla/firefox', '/home/me/.config/mozilla/firefox'],
+      commands: ['firefox', 'firefox-esr'],
+    });
+    expect(find(locations, 'firefox')?.executables).toContain('/usr/lib/firefox-esr/firefox-esr');
     expect(find(locations, 'firefox', 'snap')?.dataDirs).toEqual(['/home/me/snap/firefox/common/.mozilla/firefox']);
     expect(find(locations, 'chrome', 'flatpak')).toMatchObject({
       dataDirs: ['/home/me/.var/app/com.google.Chrome/config/google-chrome'],
       disabledReason: 'sandboxed-package',
     });
     expect(find(locations, 'safari')).toBeUndefined();
+  });
+
+  it('honors an absolute XDG_CONFIG_HOME on Linux', () => {
+    const locations = browserLocations('linux', { home: '/home/me', env: { XDG_CONFIG_HOME: '/data/config' } });
+    expect(find(locations, 'chrome')?.dataDirs).toEqual(['/data/config/google-chrome']);
+    expect(find(locations, 'brave')?.dataDirs).toEqual(['/data/config/BraveSoftware/Brave-Browser']);
+    expect(find(locations, 'firefox')?.dataDirs).toEqual(['/home/me/.mozilla/firefox', '/data/config/mozilla/firefox']);
+    // Relative: invalid, ignored
+    const relative = browserLocations('linux', { home: '/home/me', env: { XDG_CONFIG_HOME: 'config' } });
+    expect(find(relative, 'chrome')?.dataDirs).toEqual(['/home/me/.config/google-chrome']);
   });
 });

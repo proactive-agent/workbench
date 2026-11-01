@@ -55,6 +55,7 @@ import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/p
 import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
 import { detectBrowserProfiles } from './browser-profiles/detect';
+import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -688,6 +689,8 @@ app.whenReady().then(async () => {
   await Promise.all(
     projectStore.getProjects().map((project) => migrateProjectDataDirs(project.path, project.autoBuildPath))
   );
+  // Browser profile copies (they hold cookies) left by a crash or a quit during a run; nothing runs yet
+  void removeLeftoverBrowserProfileCopies(projectStore.getProjects().map((project) => project.path));
 
   // Initialize agent manager
   agentManager = new AgentManager();
@@ -938,6 +941,9 @@ app.on('before-quit', (event) => {
       if (terminalManager) {
         await terminalManager.killAll();
       }
+
+      // Browser profile copies of runs still going (chat turns aren't stopped by quitting)
+      await removeLiveBrowserProfileCopies();
 
       // Shut down PTY daemon client AFTER terminal cleanup completes,
       // ensuring all kill commands reach PTY processes before the daemon disconnects

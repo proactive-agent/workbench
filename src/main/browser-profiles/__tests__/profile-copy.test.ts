@@ -8,7 +8,7 @@ import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profi
 
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
-  return { ...actual, copyFile: vi.fn(actual.copyFile) };
+  return { ...actual, copyFile: vi.fn(actual.copyFile), chmod: vi.fn(actual.chmod) };
 });
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 vi.mock('../../platform/shell-runtime', () => ({ toHostPath: (p: string) => p }));
@@ -17,6 +17,8 @@ import {
   browserProfileCopyDir,
   prepareBrowserProfileCopy,
   removeBrowserProfileCopy,
+  removeLeftoverBrowserProfileCopies,
+  removeLiveBrowserProfileCopies,
   removeOldBrowserProfileCopies,
   removeStaleBrowserProfileCopies,
 } from '../profile-copy';
@@ -203,6 +205,22 @@ describe('browser profile copies', () => {
   });
 
   it("removes a project's copies older than a day that no live run uses, for any profile", async () => {
+    const project = path.join(root, 'project');
+    const copies = path.join(project, '.workbench', 'browser-profiles');
+    const dayAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const oldOther = path.join(copies, 'firefox_y', 'chat');
+    const recent = path.join(copies, 'firefox_y', 'task-003-c-1234');
+    await put(path.join(oldOther, 'cookies.sqlite'));
+    await put(path.join(recent, 'cookies.sqlite'));
+    await utimes(oldOther, dayAgo, dayAgo);
+
+    await removeOldBrowserProfileCopies(project, { force: true });
+
+    expect(existsSync(oldOther)).toBe(false);
+    expect(existsSync(recent)).toBe(true);
+  });
+
+  it("removes an earlier choice's copies at once, keeping the current profile's recent ones and live runs'", async () => {
     const profile = path.join(root, 'chrome', 'Default');
     await put(path.join(profile, 'Cookies'));
     const choice: PuppeteerBrowserChoice = {
@@ -212,19 +230,83 @@ describe('browser profile copies', () => {
     const project = path.join(root, 'project');
     const copies = path.join(project, '.workbench', 'browser-profiles');
     const dayAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
-    const oldOther = path.join(copies, 'firefox_y', 'chat');
-    const recent = path.join(copies, 'firefox_y', 'task-003-c-1234');
-    await put(path.join(oldOther, 'cookies.sqlite'));
-    await put(path.join(recent, 'cookies.sqlite'));
-    await utimes(oldOther, dayAgo, dayAgo);
+    const otherProfile = path.join(copies, 'firefox_y', 'task-003-c-1234');
+    const oldSame = path.join(copies, 'chrome_Default', 'chat-old');
+    const recentSame = path.join(copies, 'chrome_Default', 'chat-recent');
+    await put(path.join(otherProfile, 'cookies.sqlite'));
+    await put(path.join(oldSame, 'Default', 'Cookies'));
+    await put(path.join(recentSame, 'Default', 'Cookies'));
+    await utimes(oldSame, dayAgo, dayAgo);
     const live = (await prepareBrowserProfileCopy(project, choice, 'task-004-d-5678'))!;
     await utimes(live, dayAgo, dayAgo);
 
-    await removeOldBrowserProfileCopies(project, true);
+    await removeOldBrowserProfileCopies(project, { force: true, current: choice });
 
-    expect(existsSync(oldOther)).toBe(false);
-    expect(existsSync(recent)).toBe(true);
+    expect(existsSync(otherProfile)).toBe(false);
+    expect(existsSync(oldSame)).toBe(false);
+    expect(existsSync(recentSame)).toBe(true);
     expect(existsSync(live)).toBe(true);
+    await removeBrowserProfileCopy(live);
+  });
+
+  it("removes a project's copies when runs use Puppeteer's own browser", async () => {
+    const project = path.join(root, 'project');
+    const recent = path.join(project, '.workbench', 'browser-profiles', 'chrome_Default', 'chat-1');
+    await put(path.join(recent, 'Default', 'Cookies'));
+    const managed: PuppeteerBrowserChoice = {
+      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      executablePath: '/c/firefox', userDataDir: '', profilePath: '',
+    };
+    expect(await prepareBrowserProfileCopy(project, managed, 'chat-2')).toBeNull();
+    await vi.waitFor(() => expect(existsSync(recent)).toBe(false));
+  });
+
+  it('removes every leftover copy at startup, of every project', async () => {
+    const a = path.join(root, 'a', '.workbench', 'browser-profiles', 'chrome_Default', 'chat-1');
+    const b = path.join(root, 'b', '.workbench', 'browser-profiles', 'firefox_x', 'task-001-x-1');
+    await put(path.join(a, 'Default', 'Cookies'));
+    await put(path.join(b, 'cookies.sqlite'));
+
+    await removeLeftoverBrowserProfileCopies([path.join(root, 'a'), path.join(root, 'b'), path.join(root, 'none')]);
+
+    expect(existsSync(a)).toBe(false);
+    expect(existsSync(b)).toBe(false);
+  });
+
+  it('removes the copies of runs still going on quit', async () => {
+    const profile = path.join(root, 'firefox', 'x');
+    await put(path.join(profile, 'cookies.sqlite'));
+    const choice: PuppeteerBrowserChoice = {
+      id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
+      executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
+    };
+    const copy = (await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat-1'))!;
+    expect(existsSync(copy)).toBe(true);
+
+    await removeLiveBrowserProfileCopies();
+
+    expect(existsSync(copy)).toBe(false);
+  });
+
+  it("still copies where the filesystem can't hold modes (chmod fails)", async () => {
+    const profile = path.join(root, 'firefox', 'x');
+    await put(path.join(profile, 'cookies.sqlite'), 'jar');
+    const choice: PuppeteerBrowserChoice = {
+      id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
+      executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
+    };
+    vi.mocked(fsPromises.chmod).mockRejectedValue(Object.assign(new Error('not permitted'), { code: 'EPERM' }));
+    try {
+      const copy = await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat-1');
+      expect(await readFile(path.join(copy!, 'cookies.sqlite'), 'utf-8')).toBe('jar');
+      // Other errors still fail the copy
+      vi.mocked(fsPromises.chmod).mockRejectedValue(Object.assign(new Error('io'), { code: 'EIO' }));
+      await expect(prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat-2')).rejects.toThrow('io');
+    } finally {
+      vi.mocked(fsPromises.chmod).mockReset();
+      const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
+      vi.mocked(fsPromises.chmod).mockImplementation(actual.chmod);
+    }
   });
 
   it("makes no copy for Puppeteer's own download", async () => {

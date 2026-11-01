@@ -9,11 +9,14 @@
  * `SingletonLock` -> `<host>-<pid>`), checked to be alive since a crash leaves it behind: a
  * Chromium lock from another host, a process of another user, or (on Linux, where /proc names it) a
  * process that isn't a browser reads as closed. On Windows the browser keeps the lock file open
- * (`parent.lock`, `lockfile`), so it can't be opened.
+ * (`parent.lock`, `lockfile`), so it can't be opened. A Chromium browser that keeps running
+ * without windows (Edge's Startup boost, Chrome's "Continue running background apps") holds it
+ * too, and its profile's files with it, so it counts as open: the tip says to quit it from the
+ * system tray or turn that setting off.
  * macOS Firefox keeps only `.parentlock` (an fcntl lock Node can't test), so it reads as closed.
  */
 
-import { open, readFile, readlink } from 'fs/promises';
+import { lstat, open, readFile, readlink } from 'fs/promises';
 import { hostname } from 'os';
 import path from 'path';
 import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
@@ -33,12 +36,35 @@ async function processName(pid: number): Promise<string | null> {
   }
 }
 
+/** Clock ticks per second of /proc's times (USER_HZ: 100 on every Linux architecture Node runs on) */
+const USER_HZ = 100;
+/** Slack for the start time read from /proc (whole seconds of boot time, ticks) */
+const START_SLACK_MS = 5000;
+
+/** When the process started (epoch ms, Linux), or null when /proc can't tell */
+async function processStartMs(pid: number): Promise<number | null> {
+  if (!isLinux()) return null;
+  try {
+    const [stat, procStat] = await Promise.all([readFile(`/proc/${pid}/stat`, 'utf-8'), readFile('/proc/stat', 'utf-8')]);
+    // Fields after `(comm)`, which may hold spaces and parentheses: state is field 3, starttime 22
+    const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ');
+    const ticks = Number(fields[19]);
+    const bootSeconds = Number(/^btime (\d+)$/m.exec(procStat)?.[1]);
+    if (!Number.isFinite(ticks) || !(bootSeconds > 0)) return null;
+    return bootSeconds * 1000 + (ticks / USER_HZ) * 1000;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Whether the browser that wrote a lock still runs as this process. After a crash and a reboot
  * its id can belong to anything, so a name that isn't a browser's doesn't count, and without a
- * name neither does another user's process (the user's browser runs as the user)
+ * name neither does another user's process (the user's browser runs as the user). The browser
+ * writes its lock after it starts, so a process that started after the lock was written (on
+ * Linux) took the id of the browser that left it, even when it is a browser too
  */
-async function browserRunning(pid: number, executablePath: string): Promise<boolean> {
+async function browserRunning(pid: number, executablePath: string, lockWrittenMs?: number): Promise<boolean> {
   let ours: boolean;
   try {
     process.kill(pid, 0);
@@ -51,7 +77,19 @@ async function browserRunning(pid: number, executablePath: string): Promise<bool
   const name = await processName(pid);
   if (name === null) return ours;
   const executable = path.basename(executablePath).slice(0, 15);
-  return BROWSER_PROCESS.test(name) || (executable !== '' && name === executable);
+  if (!BROWSER_PROCESS.test(name) && !(executable !== '' && name === executable)) return false;
+  if (lockWrittenMs === undefined) return true;
+  const started = await processStartMs(pid);
+  return started === null || started <= lockWrittenMs + START_SLACK_MS;
+}
+
+/** When a lock link was written (epoch ms), or undefined when it can't be read */
+async function lockWritten(link: string): Promise<number | undefined> {
+  try {
+    return (await lstat(link)).mtimeMs;
+  } catch {
+    return undefined;
+  }
 }
 
 /** A Windows lock file the browser holds open */
@@ -100,12 +138,14 @@ export async function isBrowserProfileInUse(choice: PuppeteerBrowserChoice): Pro
     return fileHeld(path.join(dir, firefox ? 'parent.lock' : 'lockfile'));
   }
   if (firefox) {
-    const target = await readLock(path.join(dir, 'lock'));
+    const link = path.join(dir, 'lock');
+    const target = await readLock(link);
     const pid = target === null ? undefined : parseFirefoxLock(target);
-    return pid !== undefined && browserRunning(pid, choice.executablePath);
+    return pid !== undefined && browserRunning(pid, choice.executablePath, await lockWritten(link));
   }
-  const target = await readLock(path.join(dir, 'SingletonLock'));
+  const link = path.join(dir, 'SingletonLock');
+  const target = await readLock(link);
   const lock = target === null ? undefined : parseChromiumLock(target);
   // Another host's lock (a shared home folder, or the host was renamed): its process isn't here to check
-  return lock !== undefined && lock.host === hostname() && browserRunning(lock.pid, choice.executablePath);
+  return lock !== undefined && lock.host === hostname() && browserRunning(lock.pid, choice.executablePath, await lockWritten(link));
 }

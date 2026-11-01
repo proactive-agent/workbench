@@ -73,7 +73,8 @@ function windowsLocations({ home, env }: BrowserLocationContext): BrowserLocatio
     {
       browser: 'firefox', engine: 'firefox',
       dataDirs: [p.join(appData, 'Mozilla', 'Firefox')],
-      executables: [p.join(programFiles, 'Mozilla Firefox', 'firefox.exe'), p.join(programFilesX86, 'Mozilla Firefox', 'firefox.exe')],
+      // Machine-wide (release and ESR install to the same folder), then a per-user install
+      executables: installed('Mozilla Firefox', 'firefox.exe'),
     },
   ];
 }
@@ -98,9 +99,11 @@ function macLocations({ home }: BrowserLocationContext): BrowserLocation[] {
   ];
 }
 
-function linuxLocations({ home }: BrowserLocationContext): BrowserLocation[] {
+function linuxLocations({ home, env }: BrowserLocationContext): BrowserLocation[] {
   const p = path.posix;
-  const config = p.join(home, '.config');
+  // Chromium browsers (and Firefox from 147 for new profiles) follow XDG_CONFIG_HOME; a relative
+  // value is invalid by the spec and ignored, as the browsers do
+  const config = env.XDG_CONFIG_HOME && p.isAbsolute(env.XDG_CONFIG_HOME) ? env.XDG_CONFIG_HOME : p.join(home, '.config');
   const flatpak = (appId: string, ...parts: string[]) => p.join(home, '.var', 'app', appId, ...parts);
   const sandboxed = { variant: 'flatpak', executables: [], disabledReason: 'sandboxed-package' as const };
   return [
@@ -135,9 +138,13 @@ function linuxLocations({ home }: BrowserLocationContext): BrowserLocation[] {
     },
     {
       browser: 'firefox', engine: 'firefox',
-      dataDirs: [p.join(home, '.mozilla', 'firefox')],
-      executables: ['/usr/lib/firefox/firefox', '/usr/lib64/firefox/firefox'],
-      commands: ['firefox'],
+      dataDirs: [p.join(home, '.mozilla', 'firefox'), p.join(config, 'mozilla', 'firefox')],
+      // Distribution packages, Mozilla's tarball in /opt, then Debian's default ESR
+      executables: [
+        '/usr/lib/firefox/firefox', '/usr/lib64/firefox/firefox', '/opt/firefox/firefox',
+        '/usr/lib/firefox-esr/firefox-esr', '/usr/lib64/firefox-esr/firefox-esr',
+      ],
+      commands: ['firefox', 'firefox-esr'],
     },
     {
       browser: 'firefox', engine: 'firefox', variant: 'snap',

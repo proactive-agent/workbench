@@ -8,7 +8,9 @@
  * parallel runs never share a folder. Caches, locks, the session to restore and Firefox's Sync
  * account are left out; files a running browser keeps locked (Windows) are skipped, so closing
  * the browser first copies every sign-in. The copies hold cookies, so the folders are private
- * (0700) and copies no live run uses are removed after a day.
+ * (0700) where the filesystem keeps modes. Copies no live run uses are removed: at startup (all of
+ * them: nothing runs yet), on quit (those of runs still going, such as chat turns), at once when
+ * they are another profile's (an earlier choice), and after a day otherwise.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies. With
@@ -45,6 +47,10 @@ const SKIPPED_NAMES = new Set(['SingletonLock', 'SingletonCookie', 'SingletonSoc
 const SKIPPABLE_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOENT']);
 /** Copies are private: they hold the user's cookies */
 const PRIVATE_MODE = 0o700;
+/** chmod errors from filesystems that can't hold modes (FAT, CIFS mounts owned by root) */
+const MODELESS_ERRORS = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'EINVAL']);
+/** How long quitting waits for the copies of runs still going to be removed */
+const QUIT_REMOVE_LIMIT_MS = 3000;
 /** A copy no live run uses is removed once it is this old (a crash, or another choice's copy) */
 const STALE_COPY_AGE_MS = 24 * 60 * 60 * 1000;
 /** How often a project's old copies are looked for */
@@ -66,6 +72,15 @@ function copiesRoot(projectPath: string): string {
 /** Where a slot's copy of a profile lives (host path) */
 export function browserProfileCopyDir(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): string {
   return path.join(copiesRoot(projectPath), slug(choice.id), slug(slot));
+}
+
+/** Make a folder private; best effort where the filesystem can't hold modes */
+async function makePrivate(dir: string): Promise<void> {
+  try {
+    await chmod(dir, PRIVATE_MODE);
+  } catch (error) {
+    if (!MODELESS_ERRORS.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
+  }
 }
 
 /** Copy a folder, leaving out SKIPPED_* and files that can't be read; returns how many were skipped */
@@ -112,26 +127,30 @@ async function disableSessionRestore(preferencesFile: string): Promise<void> {
  */
 export async function prepareBrowserProfileCopy(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): Promise<string | null> {
   // Puppeteer's own download has no profile: it starts the browser with a new one
-  if (choice.managed) return null;
+  // Not awaited: the run doesn't need it. Without a profile to copy, no copy is kept
+  if (choice.managed) {
+    void removeOldBrowserProfileCopies(projectPath, { current: null });
+    return null;
+  }
   const source = toHostPath(choice.profilePath);
   try {
-    if (!(await stat(source)).isDirectory()) return null;
+    if (!(await stat(source)).isDirectory()) throw new Error('not a folder');
   } catch {
     appLog.warn(`[BrowserProfiles] ${choice.id} not found at ${source}; Puppeteer uses the browser with a new profile`);
+    void removeOldBrowserProfileCopies(projectPath, { current: null });
     return null;
   }
   const target = browserProfileCopyDir(projectPath, choice, slot);
   liveCopies.add(target);
-  // Not awaited: the run doesn't need it
-  void removeOldBrowserProfileCopies(projectPath);
+  void removeOldBrowserProfileCopies(projectPath, { current: choice });
   let skipped: number;
   try {
     await rm(target, { recursive: true, force: true });
     // Private all the way down, also for folders made before copies were private
     const root = copiesRoot(projectPath);
     await mkdir(path.dirname(target), { recursive: true, mode: PRIVATE_MODE });
-    await chmod(root, PRIVATE_MODE);
-    await chmod(path.dirname(target), PRIVATE_MODE);
+    await makePrivate(root);
+    await makePrivate(path.dirname(target));
     if (choice.engine === 'chromium') {
       const profileDirectory = choice.profileDirectory ?? 'Default';
       await mkdir(target, { mode: PRIVATE_MODE });
@@ -184,15 +203,31 @@ export async function removeStaleBrowserProfileCopies(
   );
 }
 
+export interface BrowserProfileSweepOptions {
+  /** Look even when this project was looked at less than an hour ago */
+  force?: boolean;
+  /**
+   * The profile runs use now: other profiles' copies (an earlier choice) go at any age. null: runs
+   * use no profile (Puppeteer's own browser, or the profile is gone), so every copy goes. Unset:
+   * every copy is kept for a day
+   */
+  current?: PuppeteerBrowserChoice | null;
+  /** Every copy no live run uses goes, whatever its age (at startup, before anything runs) */
+  all?: boolean;
+}
+
 /**
- * Remove a project's copies, of any profile, that no live run uses and that are older than a day:
- * left by a crash, a deleted task or an earlier browser choice. At most once an hour per project
- * unless `force`. Best effort
+ * Remove a project's copies that no live run uses: older than a day, or as `options` says (left by
+ * a crash, a deleted task or an earlier browser choice). At most once an hour per project and
+ * current profile unless `force`. Best effort
  */
-export async function removeOldBrowserProfileCopies(projectPath: string, force = false): Promise<void> {
+export async function removeOldBrowserProfileCopies(projectPath: string, options: BrowserProfileSweepOptions = {}): Promise<void> {
   const now = Date.now();
-  if (!force && now - (lastSweep.get(projectPath) ?? 0) < SWEEP_INTERVAL_MS) return;
-  lastSweep.set(projectPath, now);
+  const { current } = options;
+  // A changed choice is looked at again at once
+  const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
+  if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
+  lastSweep.set(sweepKey, now);
   const root = copiesRoot(projectPath);
   let profiles: string[];
   try {
@@ -200,7 +235,9 @@ export async function removeOldBrowserProfileCopies(projectPath: string, force =
   } catch {
     return;
   }
+  const currentProfile = current ? slug(current.id) : undefined;
   for (const profile of profiles) {
+    const anyAge = options.all === true || current === null || (currentProfile !== undefined && profile !== currentProfile);
     let slots: string[];
     try {
       slots = await readdir(path.join(root, profile));
@@ -210,15 +247,46 @@ export async function removeOldBrowserProfileCopies(projectPath: string, force =
     for (const slot of slots) {
       const dir = path.join(root, profile, slot);
       if (liveCopies.has(dir)) continue;
-      try {
-        if (now - (await stat(dir)).mtimeMs < STALE_COPY_AGE_MS) continue;
-      } catch {
-        continue;
+      if (!anyAge) {
+        try {
+          if (now - (await stat(dir)).mtimeMs < STALE_COPY_AGE_MS) continue;
+        } catch {
+          continue;
+        }
       }
       // A run may have started in this slot while it was being checked
       if (!liveCopies.has(dir)) await removeBrowserProfileCopy(dir);
     }
   }
+}
+
+/**
+ * At startup: remove every copy in the given projects (nothing runs yet, so they are all left by a
+ * crash, a quit during a run or a cleanup that didn't finish). Not awaited by startup; one project
+ * at a time. Best effort
+ */
+export async function removeLeftoverBrowserProfileCopies(projectPaths: string[]): Promise<void> {
+  for (const projectPath of new Set(projectPaths)) {
+    await removeOldBrowserProfileCopies(projectPath, { force: true, all: true }).catch((error: unknown) => {
+      appLog.warn(`[BrowserProfiles] Could not clean up copies in ${projectPath}:`, error);
+    });
+  }
+}
+
+/**
+ * On quit: remove the copies of runs still going (chat turns aren't stopped by quitting), waiting
+ * at most `limitMs`; what a browser still holds is left to the next startup. Best effort
+ */
+export async function removeLiveBrowserProfileCopies(limitMs = QUIT_REMOVE_LIMIT_MS): Promise<void> {
+  if (liveCopies.size === 0) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([
+    Promise.all([...liveCopies].map((dir) => removeBrowserProfileCopy(dir))),
+    new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, limitMs);
+    }),
+  ]);
+  clearTimeout(timer);
 }
 
 /** Remove a run's copy (best effort: a browser that is still closing may hold files) */

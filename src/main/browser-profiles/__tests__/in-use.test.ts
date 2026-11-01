@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, readFile, rm, symlink } from 'fs/promises';
+import { lutimes, mkdtemp, readFile, rm, symlink } from 'fs/promises';
 import { hostname, tmpdir } from 'os';
 import path from 'path';
 import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
@@ -69,6 +69,20 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(firefox())).toBe(false);
     const name = (await readFile(`/proc/${process.pid}/comm`, 'utf-8')).trim();
     expect(await isBrowserProfileInUse(firefox(`/opt/browser/${name}`))).toBe(true);
+  });
+
+  it.skipIf(process.platform !== 'linux')('on Linux, reads a lock older than the process now holding its id as closed', async () => {
+    mocks.linux = true;
+    const name = (await readFile(`/proc/${process.pid}/comm`, 'utf-8')).trim();
+    const link = path.join(dir, 'SingletonLock');
+    await symlink(`${hostname()}-${process.pid}`, link);
+    const choice = { ...chrome(), executablePath: `/opt/browser/${name}` };
+    // Written after this process started: the browser that wrote it is this process
+    expect(await isBrowserProfileInUse(choice)).toBe(true);
+    // Written before it started (a crash, then the id was reused): the browser is gone
+    const before = new Date(Date.now() - process.uptime() * 1000 - 60 * 60 * 1000);
+    await lutimes(link, before, before);
+    expect(await isBrowserProfileInUse(choice)).toBe(false);
   });
 
   it("reads Chromium's SingletonLock in its user data folder, from this host only", async () => {

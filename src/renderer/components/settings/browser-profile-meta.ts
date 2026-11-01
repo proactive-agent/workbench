@@ -16,6 +16,9 @@ type Translate = (key: string, options?: Record<string, unknown>) => string;
 /** The select's value for Puppeteer's own Chrome */
 export const DEFAULT_BROWSER_VALUE = 'default';
 
+/** The select's value for a stored choice that isn't detected any more (its id may be another install's) */
+export const MISSING_BROWSER_VALUE = 'missing';
+
 const REASON_KEYS: Record<BrowserProfileDisabledReason, string> = {
   'unsupported-engine': 'settings:mcp.browserProfile.reasons.unsupportedEngine',
   'executable-missing': 'settings:mcp.browserProfile.reasons.executableMissing',
@@ -66,15 +69,41 @@ export function toBrowserChoice(profile: BrowserProfile): PuppeteerBrowserChoice
   };
 }
 
+/** A user data folder as a key: Windows paths (drive or UNC) compare without case and slash style */
+function folderKey(dir: string): string {
+  return /^[A-Za-z]:[\\/]|^\\\\/.test(dir) ? dir.replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase() : dir.replace(/\/+$/, '');
+}
+
+/**
+ * Whether a detected profile is the stored choice's install, not only its id: native Windows and
+ * WSL detection (or another install) give the same ids (`chrome:Default`) to profiles of other
+ * browsers, signed in to other accounts. Puppeteer's own downloads have no profile, so any of
+ * them will do
+ */
+function sameInstall(value: PuppeteerBrowserChoice, profile: BrowserProfile): boolean {
+  if (profile.id !== value.id || profile.engine !== value.engine) return false;
+  if (value.managed || profile.managed) return !!value.managed === !!profile.managed;
+  return folderKey(profile.userDataDir) === folderKey(value.userDataDir);
+}
+
+/** The detected profile the stored choice was made from (undefined when it isn't detected any more) */
+export function storedChoiceProfile(
+  value: PuppeteerBrowserChoice | undefined,
+  profiles: BrowserProfile[] | undefined
+): BrowserProfile | undefined {
+  return value ? profiles?.find((p) => sameInstall(value, p)) : undefined;
+}
+
 /**
  * The stored choice made again from its detected profile, when the paths runs use changed (a new
- * download of Puppeteer's browser, a runtime switch); undefined when it is up to date, gone or unusable
+ * download of Puppeteer's browser, a moved executable); undefined when it is up to date, gone or
+ * unusable. A profile with the same id from another install (a shell runtime switch) is never taken
  */
 export function refreshedBrowserChoice(
   value: PuppeteerBrowserChoice | undefined,
   profiles: BrowserProfile[] | undefined
 ): PuppeteerBrowserChoice | undefined {
-  const profile = value && profiles?.find((p) => p.id === value.id);
+  const profile = storedChoiceProfile(value, profiles);
   const choice = profile ? toBrowserChoice(profile) : undefined;
   if (!value || !choice) return undefined;
   const fields = ['engine', 'executablePath', 'userDataDir', 'profileDirectory', 'profilePath', 'managed'] as const;

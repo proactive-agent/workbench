@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { browserProfileLabel, disabledReasonText, refreshedBrowserChoice, toBrowserChoice } from '../browser-profile-meta';
+import { browserProfileLabel, disabledReasonText, refreshedBrowserChoice, storedChoiceProfile, toBrowserChoice } from '../browser-profile-meta';
 import type { BrowserProfile } from '../../../../shared/types/browser-profiles';
 
 const t = (key: string) => key.split('.').at(-1) ?? key;
@@ -60,11 +60,34 @@ describe('browser profile picker helpers', () => {
     const stored = toBrowserChoice(chrome)!;
     expect(refreshedBrowserChoice(stored, [chrome])).toBeUndefined();
     expect(refreshedBrowserChoice(stored, [{ ...chrome, executablePath: '/opt/new/chrome' }])).toEqual({ ...stored, executablePath: '/opt/new/chrome' });
-    expect(refreshedBrowserChoice(stored, [{ ...chrome, userDataDir: '/v', profilePath: '/v/Default' }]))
-      .toEqual({ ...stored, userDataDir: '/v', profilePath: '/v/Default' });
+    expect(refreshedBrowserChoice(stored, [{ ...chrome, profilePath: '/u/Default/' }])).toEqual({ ...stored, profilePath: '/u/Default/' });
     // Not detected, or no longer usable: kept as it is
     expect(refreshedBrowserChoice(stored, [])).toBeUndefined();
     expect(refreshedBrowserChoice(stored, [{ ...chrome, usable: false, executablePath: undefined }])).toBeUndefined();
     expect(refreshedBrowserChoice(undefined, [chrome])).toBeUndefined();
+  });
+
+  it("never takes another install's profile with the same id (a shell runtime switch)", () => {
+    const windows: BrowserProfile = {
+      ...chrome,
+      userDataDir: 'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\User Data',
+      profilePath: 'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\User Data\\Default',
+      executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    };
+    const wslLinux: BrowserProfile = { ...chrome, userDataDir: '/home/me/.config/google-chrome', profilePath: '/home/me/.config/google-chrome/Default' };
+    const stored = toBrowserChoice(windows)!;
+    // Native Windows -> WSL: the Linux Chrome has the same id but is another browser and account
+    expect(storedChoiceProfile(stored, [wslLinux])).toBeUndefined();
+    expect(refreshedBrowserChoice(stored, [wslLinux])).toBeUndefined();
+    // The same install, its folder spelled with other case or slashes: still it
+    const respelled = { ...windows, userDataDir: 'c:/users/me/AppData/Local/Google/Chrome/User Data/', executablePath: 'D:\\chrome.exe' };
+    expect(storedChoiceProfile(stored, [respelled])).toBe(respelled);
+    expect(refreshedBrowserChoice(stored, [respelled])?.executablePath).toBe('D:\\chrome.exe');
+    // Puppeteer's own download: any build will do
+    const managed: BrowserProfile = {
+      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      userDataDir: '', profilePath: '', executablePath: '/c/firefox', usable: true,
+    };
+    expect(refreshedBrowserChoice(toBrowserChoice(managed)!, [{ ...managed, executablePath: '/d/firefox' }])?.executablePath).toBe('/d/firefox');
   });
 });

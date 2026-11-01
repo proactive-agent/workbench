@@ -57,6 +57,18 @@ describe('chat browser profile copies', () => {
     expect(env).toContain(`/copies/${first}`);
   });
 
+  it("returns the reply without waiting for the copy's removal", async () => {
+    runInsights.mockResolvedValue(result);
+    // A browser still closing: the removal retries for a while
+    removeBrowserProfileCopy.mockReturnValue(new Promise(() => undefined));
+    const executor = new InsightsExecutor();
+
+    const reply = await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['puppeteer'] } as never);
+
+    expect(reply.fullResponse).toBe('ok');
+    expect(removeBrowserProfileCopy).toHaveBeenCalledTimes(1);
+  });
+
   it('removes the copy when the turn fails', async () => {
     runInsights.mockRejectedValue(new Error('boom'));
     const executor = new InsightsExecutor();

@@ -297,8 +297,9 @@ export class InsightsExecutor extends EventEmitter {
       throw error;
     } finally {
       taskTools?.close();
-      // The turn's Claude Code session (and its browser) has ended
-      if (browserProfileDir) await removeBrowserProfileCopy(browserProfileDir);
+      // The turn's Claude Code session (and its browser) has ended. Not awaited: the reply must be
+      // returned (and saved) right after 'done', before a next message can start a turn
+      if (browserProfileDir) void removeBrowserProfileCopy(browserProfileDir);
     }
   }
 
