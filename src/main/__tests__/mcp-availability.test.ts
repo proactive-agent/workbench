@@ -121,6 +121,49 @@ describe('MCP availability', () => {
     }));
   });
 
+  it('checks the chosen browser, offers no install command, and checks again for another choice', async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        if (JSON.parse(line).method === 'tools/call') {
+          proc.stdout.emit('data', Buffer.from(JSON.stringify({
+            jsonrpc: '2.0',
+            id: 2,
+            error: { code: -32603, message: 'Browser was not found at the configured executablePath (/opt/gone/chrome)' },
+          }) + '\n'));
+        }
+      });
+      answer(proc);
+    };
+    const choice = {
+      id: 'chrome:Default', browser: 'chrome' as const, engine: 'chromium' as const, profileName: 'Me',
+      executablePath: '/opt/gone/chrome', userDataDir: '/home/me/.config/google-chrome', profileDirectory: 'Default',
+      profilePath: '/home/me/.config/google-chrome/Default',
+    };
+    const settings = { puppeteerBrowser: choice };
+    getMcpAvailability(['puppeteer'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('unavailable'));
+    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({
+      state: 'unavailable',
+      message: 'Browser was not found at the configured executablePath (/opt/gone/chrome)',
+    });
+    // The chosen executable reaches the server, never a profile folder
+    const env = mocks.spawnTool.mock.calls[0][2].env as Record<string, string>;
+    expect(JSON.parse(env.PUPPETEER_LAUNCH_OPTIONS)).toEqual({ executablePath: '/opt/gone/chrome' });
+
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        if (JSON.parse(line).method === 'tools/call') {
+          proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{"content":[]}}\n'));
+        }
+      });
+      answer(proc);
+    };
+    const other = { puppeteerBrowser: { ...choice, id: 'chrome:Profile 1', executablePath: '/opt/google/chrome/chrome' } };
+    expect(getMcpAvailability(['puppeteer'], other).puppeteer).toEqual({ state: 'preparing' });
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], other).puppeteer.state).toBe('ready'));
+  });
+
   it('names the missing command', async () => {
     const settings = { customServers: [{ id: 'py', name: 'Py', type: 'command' as const, command: 'uvx', args: ['tool'], verified: true }] };
     getMcpAvailability(['py'], settings);

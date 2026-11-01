@@ -5,11 +5,27 @@ const platform = { windows: false, wsl: false };
 vi.mock('../../platform', () => ({ isWindows: () => platform.windows }));
 vi.mock('../../platform/shell-runtime', () => ({
   getWslInfo: () => (platform.wsl ? { distro: 'Ubuntu', tools: { npx: { path: '/usr/bin/npx' } } } : null),
+  toRuntimePath: (p: string) => (platform.wsl ? p.replace(/^C:\\/, '/mnt/c/').replace(/\\/g, '/') : p),
 }));
 vi.mock('../../platform/runtime-exec', () => ({ toRuntimeArg: (arg: string) => arg }));
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 
-import { buildMcpConfig } from '../mcp-config';
+import { buildMcpConfig, mcpServerEntry } from '../mcp-config';
+import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
+
+const chrome: PuppeteerBrowserChoice = {
+  id: 'chrome:Profile 1',
+  browser: 'chrome',
+  engine: 'chromium',
+  profileName: 'Work',
+  executablePath: '/opt/google/chrome/chrome',
+  userDataDir: '/home/me/.config/google-chrome',
+  profileDirectory: 'Profile 1',
+  profilePath: '/home/me/.config/google-chrome/Profile 1',
+};
+
+const launchOptions = (entry: unknown) =>
+  JSON.parse((entry as { env: Record<string, string> }).env.PUPPETEER_LAUNCH_OPTIONS);
 
 describe('built-in MCP servers', () => {
   beforeEach(() => {
@@ -45,5 +61,44 @@ describe('built-in MCP servers', () => {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-puppeteer'],
     });
+  });
+
+  it("launches the chosen Chromium browser with the run's profile copy", () => {
+    const settings = { puppeteerBrowser: chrome };
+    const entry = buildMcpConfig(['puppeteer'], settings, { browserProfileDir: '/p/.workbench/browser-profiles/chrome_Profile_1/task-1' })
+      .mcpServers.puppeteer;
+    expect(entry).toMatchObject({ type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] });
+    expect(launchOptions(entry)).toEqual({
+      executablePath: '/opt/google/chrome/chrome',
+      userDataDir: '/p/.workbench/browser-profiles/chrome_Profile_1/task-1',
+      args: ['--profile-directory=Profile 1'],
+      ignoreDefaultArgs: ['--password-store=basic', '--use-mock-keychain'],
+    });
+  });
+
+  it('checks the chosen browser without a profile copy', () => {
+    expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: chrome }))).toEqual({ executablePath: '/opt/google/chrome/chrome' });
+  });
+
+  it('launches Firefox with its profile copy as the user data folder', () => {
+    const firefox: PuppeteerBrowserChoice = {
+      id: 'firefox:x.default',
+      browser: 'firefox',
+      engine: 'firefox',
+      profileName: 'default',
+      executablePath: '/usr/lib/firefox/firefox',
+      userDataDir: '/home/me/.mozilla/firefox',
+      profilePath: '/home/me/.mozilla/firefox/x.default',
+    };
+    const entry = buildMcpConfig(['puppeteer'], { puppeteerBrowser: firefox }, { browserProfileDir: '/p/copy' }).mcpServers.puppeteer;
+    expect(launchOptions(entry)).toEqual({ executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy' });
+  });
+
+  it("gives the profile copy's WSL path when tools run in WSL", () => {
+    platform.windows = true;
+    platform.wsl = true;
+    const entry = buildMcpConfig(['puppeteer'], { puppeteerBrowser: chrome }, { browserProfileDir: 'C:\\code\\app\\.workbench\\browser-profiles\\x\\chat' })
+      .mcpServers.puppeteer;
+    expect(launchOptions(entry).userDataDir).toBe('/mnt/c/code/app/.workbench/browser-profiles/x/chat');
   });
 });

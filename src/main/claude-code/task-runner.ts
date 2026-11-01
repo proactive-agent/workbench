@@ -121,6 +121,8 @@ export interface TaskRunConfig {
   /** Connector ids for the task (undefined = Connectors defaults) */
   connectorIds?: string[];
   connectorSettings?: McpConnectorSettings;
+  /** This run's copy of the Puppeteer connector's browser profile (browser-profiles/profile-copy.ts) */
+  browserProfileDir?: string;
   settings: ClaudeCodeTaskSettings;
   /** The project's budget per task (`--max-budget-usd`, Settings > Project); unset = no cap */
   maxBudgetUsd?: number;
@@ -1179,7 +1181,7 @@ no notes came with the request, so review the change against the task with fresh
     if (params.jsonSchema) args.push('--json-schema', JSON.stringify(params.jsonSchema));
     if (this.config.maxBudgetUsd && this.config.maxBudgetUsd > 0) args.push('--max-budget-usd', String(this.config.maxBudgetUsd));
     if (settings.fallbackModel?.trim()) args.push('--fallback-model', settings.fallbackModel.trim());
-    const mcpConfig = buildMcpConfig(this.config.connectorIds, this.config.connectorSettings);
+    const mcpConfig = buildMcpConfig(this.config.connectorIds, this.config.connectorSettings, { browserProfileDir: this.config.browserProfileDir });
     // Time for a connector's first start, when npx downloads it (unless the user set their own)
     if (Object.keys(mcpConfig.mcpServers).length > 0 && !env.MCP_TIMEOUT) env.MCP_TIMEOUT = String(MCP_STARTUP_TIMEOUT_MS);
     if (workbenchServer && tempDir) {

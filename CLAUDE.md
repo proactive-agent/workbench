@@ -248,6 +248,12 @@ enabled ids into `TaskMetadata.mcpConnectors` and can change them in the task di
 `buildMcpConfig()` (`src/main/claude-code/mcp-config.ts`) turns that task's ids into `--mcp-config` for its Claude Code
 session, on top of the user's own Claude Code MCP configuration. Helpers live in `src/shared/utils/mcp-connectors.ts`.
 
+Puppeteer's row picks a browser profile (`McpConnectorSettings.puppeteerBrowser`): `src/main/browser-profiles/` finds
+Chrome, Edge, Brave, Chromium and Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a
+copy of the chosen profile in `.workbench/browser-profiles/<profile>/<slot>` (Chrome 136+ refuses remote debugging on
+its default data dir), passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
+server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`.
+
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
 answers `initialize` (Puppeteer is also asked to navigate once, since it needs a browser; `mcp-commands.ts` finds the
 command, and the built-in servers need npx from Node.js). Until a server is ready, its switch is off and disabled on

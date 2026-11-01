@@ -45,19 +45,27 @@ interface VerifyCall {
 
 /**
  * Puppeteer's server starts without a browser and only needs one for its tools: it opens a blank
- * page in a hidden browser (closed when the server is stopped)
+ * page in a hidden browser (closed when the server is stopped). That is the browser chosen in
+ * Settings > Connectors (its executable comes with the server's entry, with Puppeteer's own
+ * temporary profile, never the user's), otherwise Puppeteer's own Chrome
  */
-const VERIFY_CALLS: Record<string, VerifyCall> = {
-  puppeteer: {
+function verifyCall(id: string, settings: McpConnectorSettings | undefined): VerifyCall | undefined {
+  if (id !== 'puppeteer') return undefined;
+  return {
     name: 'puppeteer_navigate',
     arguments: { url: 'about:blank', launchOptions: { headless: true } },
-    // Puppeteer needs the exact Chrome build its error names ("Could not find Chrome (ver. X)")
-    fix: (error) => {
-      const version = /\(ver\. ([\d.]+)\)/.exec(error)?.[1];
-      return `npx puppeteer browsers install chrome${version ? `@${version}` : ''}`;
-    },
-  },
-};
+    // Puppeteer's own Chrome needs the exact build its error names ("Could not find Chrome (ver. X)");
+    // a chosen browser is fixed by choosing another one
+    ...(settings?.puppeteerBrowser
+      ? {}
+      : {
+        fix: (error: string) => {
+          const version = /\(ver\. ([\d.]+)\)/.exec(error)?.[1];
+          return `npx puppeteer browsers install chrome${version ? `@${version}` : ''}`;
+        },
+      }),
+  };
+}
 
 const events = new EventEmitter();
 /** Latest result per connector id and the entry it was found for */
@@ -101,19 +109,19 @@ function check(id: string, settings: McpConnectorSettings | undefined): McpAvail
   if (known?.key === key) {
     const stale = known.availability.state === 'unavailable' && Date.now() - known.checkedAt >= UNAVAILABLE_RECHECK_MS;
     // Checked again in the background: it reads unavailable (and runs leave it out) until then
-    if (stale && !probes.has(key)) startProbe(id, key, entry, true);
+    if (stale && !probes.has(key)) startProbe(id, key, entry, verifyCall(id, settings), true);
     return known.availability;
   }
   if (!probes.has(key)) {
     set(id, key, { state: 'preparing' });
-    startProbe(id, key, entry, false);
+    startProbe(id, key, entry, verifyCall(id, settings), false);
   }
   return { state: 'preparing' };
 }
 
-function startProbe(id: string, key: string, entry: McpServerEntry, recheck: boolean): void {
+function startProbe(id: string, key: string, entry: McpServerEntry, verify: VerifyCall | undefined, recheck: boolean): void {
   const started = generation;
-  const probe = probeEntry(entry, VERIFY_CALLS[id], recheck).catch((error: unknown) => ({
+  const probe = probeEntry(entry, verify, recheck).catch((error: unknown) => ({
     state: 'unavailable' as const,
     message: error instanceof Error ? error.message : String(error),
   }));

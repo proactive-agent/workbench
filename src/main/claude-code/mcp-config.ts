@@ -8,13 +8,23 @@
  *
  * When Claude Code runs in WSL it starts the servers inside the distribution: Windows paths in a
  * custom server's command and arguments are translated, and the built-in servers need npx there.
+ *
+ * Puppeteer: the MCP project's server (@modelcontextprotocol/server-puppeteer, archived but
+ * working) stays. It reads PUPPETEER_LAUNCH_OPTIONS, so a browser profile chosen in Settings >
+ * Connectors becomes its executable, its engine (Chromium or Firefox) and, for runs, a copy of the
+ * profile (browser-profiles/profile-copy.ts: Chrome 136+ refuses remote debugging on its default
+ * user data folder, and an open browser locks it). chrome-devtools-mcp was weighed and left for
+ * later: it supports Chrome only (no Firefox), its --autoConnect needs Chrome 144+ with remote
+ * debugging switched on by hand and drives the user's live browser from runs without permission
+ * checks, and its tools differ from the ones the availability check calls.
  */
 
 import type { CustomMcpServer } from '../../shared/types/project';
 import type { McpConnectorSettings } from '../../shared/types/settings';
+import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
 import { getDefaultMcpConnectorIds, getUsableCustomServers } from '../../shared/utils/mcp-connectors';
 import { appLog } from '../app-logger';
-import { getWslInfo } from '../platform/shell-runtime';
+import { getWslInfo, toRuntimePath } from '../platform/shell-runtime';
 import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
 
@@ -38,16 +48,49 @@ function electronServer(): McpServerEntry {
     : { type: 'stdio', command: 'npx', args: ['-y', 'electron-mcp-server'] };
 }
 
+/** Options for one run's servers */
+export interface McpRunOptions {
+  /** A copy of the chosen browser profile for this run (host path; see profile-copy.ts) */
+  browserProfileDir?: string;
+}
+
+/**
+ * Puppeteer's launch options for the chosen browser: its executable and engine, and with a
+ * profile copy its folder. Chromium's default `--password-store=basic` / `--use-mock-keychain`
+ * would keep it from decrypting the copied sign-ins, so they are left out
+ */
+export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserProfileDir?: string): Record<string, unknown> {
+  const launch: Record<string, unknown> = { executablePath: choice.executablePath };
+  if (choice.engine === 'firefox') launch.browser = 'firefox';
+  if (browserProfileDir) {
+    launch.userDataDir = toRuntimePath(browserProfileDir);
+    if (choice.engine === 'chromium') {
+      launch.args = [`--profile-directory=${choice.profileDirectory ?? 'Default'}`];
+      launch.ignoreDefaultArgs = ['--password-store=basic', '--use-mock-keychain'];
+    }
+  }
+  return launch;
+}
+
+/**
+ * The MCP project's Puppeteer server: Puppeteer's own Chrome (downloaded the first time), or the
+ * browser chosen in Settings > Connectors
+ */
+function puppeteerServer(choice: PuppeteerBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
+  const entry: McpServerEntry = { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
+  if (!choice) return entry;
+  return { ...entry, env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify(puppeteerLaunchOptions(choice, options.browserProfileDir)) } };
+}
+
 /** Built-in connectors (Settings > Connectors) */
-function builtinServer(id: string): McpServerEntry | undefined {
+function builtinServer(id: string, settings: McpConnectorSettings | undefined, options: McpRunOptions = {}): McpServerEntry | undefined {
   switch (id) {
     case 'context7':
       return { type: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] };
     case 'electron':
       return electronServer();
     case 'puppeteer':
-      // The MCP project's Puppeteer server (downloads Chromium the first time)
-      return { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
+      return puppeteerServer(settings?.puppeteerBrowser, options);
     default:
       return undefined;
   }
@@ -88,9 +131,12 @@ function warnWhenNpxMissingInWsl(): void {
   );
 }
 
-/** One connector's server entry, as a Claude Code run would start it (null when it can't be) */
+/**
+ * One connector's server entry, as a Claude Code run would start it (null when it can't be);
+ * without a run's browser profile copy, so a check never touches a profile
+ */
 export function mcpServerEntry(id: string, connectorSettings: McpConnectorSettings | undefined): McpServerEntry | null {
-  const builtin = builtinServer(id);
+  const builtin = builtinServer(id, connectorSettings);
   if (builtin) return builtin;
   const server = getUsableCustomServers(connectorSettings).find((s) => s.id === id);
   return server ? customServerEntry(server) : null;
@@ -100,12 +146,16 @@ export function mcpServerEntry(id: string, connectorSettings: McpConnectorSettin
  * Build the `--mcp-config` object for the given connector ids.
  * `ids` undefined means "use the Connectors defaults".
  */
-export function buildMcpConfig(ids: string[] | undefined, connectorSettings: McpConnectorSettings | undefined): ClaudeMcpConfig {
+export function buildMcpConfig(
+  ids: string[] | undefined,
+  connectorSettings: McpConnectorSettings | undefined,
+  options: McpRunOptions = {}
+): ClaudeMcpConfig {
   const enabled = ids ?? getDefaultMcpConnectorIds(connectorSettings);
   const custom = getUsableCustomServers(connectorSettings);
   const mcpServers: Record<string, McpServerEntry> = {};
   for (const id of enabled) {
-    const builtin = builtinServer(id);
+    const builtin = builtinServer(id, connectorSettings, options);
     if (builtin) {
       warnWhenNpxMissingInWsl();
       mcpServers[id] = builtin;

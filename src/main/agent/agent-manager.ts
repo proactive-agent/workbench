@@ -16,6 +16,7 @@ import { detectClaudeLimitMessage } from '../claude-code/limit';
 import { createOrGetWorktree } from '../worktree';
 import { addToWorktree } from '../live-agent/project-setup';
 import { usableMcpConnectorIds } from '../mcp-availability';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFile } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
@@ -212,6 +213,7 @@ export class AgentManager extends EventEmitter {
     // Stopped while the worktree was being prepared
     if (entry.killed) {
       config.messaging?.dispose();
+      if (config.browserProfileDir) await removeBrowserProfileCopy(config.browserProfileDir);
       resolveDone();
       return;
     }
@@ -264,9 +266,11 @@ export class AgentManager extends EventEmitter {
         const message = error instanceof Error ? error.message : String(error);
         this.handleRunFinished(taskId, entry, { status: 'failed', error: message });
       })
-      .finally(() => {
+      .finally(async () => {
         // The run's Workbench tools stop working with it
         config.messaging?.dispose();
+        // Removed before a restart of the task copies the profile again
+        if (config.browserProfileDir) await removeBrowserProfileCopy(config.browserProfileDir);
         resolveDone();
       });
   }
@@ -538,6 +542,16 @@ export class AgentManager extends EventEmitter {
     };
 
     if (isSelfImproveEnabled(project.settings)) config.selfImprovePrompt = SELF_IMPROVE_NUDGE;
+    // The Puppeteer connector's browser profile: a fresh copy per run (sign-ins as they are now),
+    // in the task's own slot so parallel tasks never share a profile folder
+    const browser = settings.mcpConnectors?.puppeteerBrowser;
+    if (browser && config.connectorIds?.includes('puppeteer')) {
+      try {
+        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, `task-${task.specId}`)) ?? undefined;
+      } catch (error) {
+        appLog.warn(`[AgentManager] Could not copy the browser profile for ${taskId}:`, error);
+      }
+    }
     // Parallel tasks message each other through Workbench (Settings > Agents)
     if (taskSettings.taskMessaging) config.messaging = createRunMessaging(project.id, task.specId);
 

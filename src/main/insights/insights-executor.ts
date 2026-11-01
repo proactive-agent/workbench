@@ -17,6 +17,7 @@ import { buildMcpConfig } from '../claude-code/mcp-config';
 import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFileAsync } from '../settings-utils';
+import { prepareBrowserProfileCopy } from '../browser-profiles/profile-copy';
 import { getToolInfoAsync } from '../cli-tool-manager';
 import { isSelfImproveEnabled } from '../self-improve/setting';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
@@ -45,11 +46,28 @@ export interface InsightsTurnOptions {
   chatSessionId?: string;
 }
 
+/**
+ * Chats' copies of the Puppeteer browser profile, per project and profile: made by the first turn
+ * that uses it in this app session and kept for later turns (a project's turns run one at a time)
+ */
+const chatBrowserProfiles = new Map<string, Promise<string | null>>();
+
 /** The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones */
-async function chatMcpServers(ids: string[] | undefined) {
+async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
-  const chosen = ids ?? getDefaultMcpConnectorIds(connectorSettings);
-  return buildMcpConfig(usableMcpConnectorIds(chosen, connectorSettings), connectorSettings).mcpServers;
+  const chosen = usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
+  const browser = connectorSettings?.puppeteerBrowser;
+  let browserProfileDir: string | undefined;
+  if (browser && chosen.includes('puppeteer')) {
+    const key = `${projectPath}|${browser.id}`;
+    let copy = chatBrowserProfiles.get(key);
+    if (!copy) {
+      copy = prepareBrowserProfileCopy(projectPath, browser, 'chat').catch(() => null);
+      chatBrowserProfiles.set(key, copy);
+    }
+    browserProfileDir = (await copy) ?? undefined;
+  }
+  return buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers;
 }
 
 /**
@@ -162,7 +180,7 @@ export class InsightsExecutor extends EventEmitter {
           },
           // The MCP servers chosen with the chat's MCP button (Connectors defaults until changed)
           // (leaving out servers that can't start)
-          mcpServers: await chatMcpServers(modelConfig?.mcpConnectors),
+          mcpServers: await chatMcpServers(modelConfig?.mcpConnectors, projectPath),
         },
         (event) => {
           switch (event.type) {
