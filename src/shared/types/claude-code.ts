@@ -45,6 +45,13 @@ export interface ClaudeCodeTaskSettings {
    * merged)
    */
   taskMessaging: boolean;
+  /**
+   * Other Claude Code sessions on this machine (agent windows, the Claude chat, `claude` in the
+   * user's own terminal) can message running tasks with Claude Code's built-in SendMessage: task
+   * runs accept cross-session messages (`crossSessionInbound: "accept"`). Applies only while
+   * `taskMessaging` is on
+   */
+  sessionMessages: boolean;
 }
 
 export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
@@ -56,6 +63,7 @@ export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
   validation: true,
   allowFable: false,
   taskMessaging: true,
+  sessionMessages: true,
 };
 
 /** Size of a task as judged by triage */

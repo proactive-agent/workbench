@@ -621,7 +621,7 @@ describe('ClaudeTaskRun', () => {
     }
     const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false };
 
-    it('keeps stdin open and gets the Workbench tools through a config file, without accepting native messages', async () => {
+    it('keeps stdin open, accepts native messages and gets the Workbench tools through a config file', async () => {
       triageMock.mockResolvedValue({ triage: triage() });
       scripts.push({ messages: [result('s30')], unread: [{ id: 'wbm-1', text: 'late' }] });
       const { value, calls } = messaging();
@@ -631,11 +631,14 @@ describe('ClaudeTaskRun', () => {
       expect(options.keepStdinOpen).toBe(true);
       expect(argValue(options.args, '--name')).toBe('wb-abc123-001-task');
       expect(options.args).toContain('--replay-user-messages');
-      // Claude Code's default holds other sessions' messages for a session that skips permission
-      // checks: no local session can add turns to an unattended run
-      expect(options.args).not.toContain('--settings');
-      expect(options.args.join(' ')).not.toContain('crossSessionInbound');
-      expect(argValue(options.args, '--append-system-prompt')).toContain('Reach other tasks with `message_task`, not SendMessage');
+      // A session that skips permission checks would hold other sessions' messages, and a
+      // headless run can't approve them: the user's sessions may message it (one --settings flag)
+      expect(options.args.filter((arg) => arg === '--settings')).toHaveLength(1);
+      expect(JSON.parse(argValue(options.args, '--settings')!)).toEqual({ crossSessionInbound: 'accept' });
+      const prompt = argValue(options.args, '--append-system-prompt')!;
+      expect(prompt).toContain('Reach other tasks with `message_task`, not SendMessage');
+      expect(prompt).toContain('use SendMessage with a name from ListAgents');
+      expect(prompt).toContain("cross-session messages from the user's other Claude Code sessions");
       expect(argValue(options.args, '--allowedTools')).toBe('mcp__workbench__message_task,mcp__workbench__list_parallel_tasks');
       expect(options.args.join(' ')).not.toContain('secret');
       expect(JSON.parse(mcpConfigs[0]).mcpServers.workbench.headers.Authorization).toBe('Bearer secret');
@@ -643,6 +646,21 @@ describe('ClaudeTaskRun', () => {
       expect(argValue(options.args, '--append-system-prompt')).toContain('Your session is named `wb-abc123-001-task`');
       expect(calls.attach).toHaveBeenCalledTimes(1);
       expect(calls.detached).toHaveBeenCalledWith(['wbm-1']);
+    });
+
+    it("holds native messages when the user's sessions may not message tasks", async () => {
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s35')] });
+      const { value } = messaging();
+      await makeRun({ settings: { ...settings, sessionMessages: false }, projectId: 'p1', messaging: value }).run();
+
+      const { args } = spawned[0];
+      expect(args).not.toContain('--settings');
+      expect(args.join(' ')).not.toContain('crossSessionInbound');
+      const prompt = argValue(args, '--append-system-prompt')!;
+      expect(prompt).toContain('message_task');
+      expect(prompt).not.toContain('ListAgents');
+      expect(prompt).not.toContain('cross-session messages');
     });
 
     it('starts the step with the messages received while not running and marks them read once read', async () => {

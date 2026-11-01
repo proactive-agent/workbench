@@ -596,6 +596,8 @@
       "validationDescription": "Run the project's checks and a fresh review of the changes before handing a task to you",
       "taskMessaging": "Task messaging",
       "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
+      "sessionMessages": "Messages from your Claude sessions",
+      "sessionMessagesDescription": "Agent windows, the Claude chat and claude in your own terminal can message running tasks",
       "fallbackModel": "Fallback model",
       "fallbackModelDescription": "Model Claude Code switches to when the chosen one is overloaded",
       "fallbackNone": "None"

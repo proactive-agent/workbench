@@ -237,7 +237,10 @@ With Task messaging on (Settings > Agents, `claudeCodeTasks.taskMessaging`, on b
 `message_task` and `list_parallel_tasks` tools (`src/main/task-messaging/`, served by the task tools server with a
 token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks change the
 same files). The broker (`broker.ts`) writes a message to a live run's stdin or keeps it in the target's
-`task_inbox.json` for its next phase. When a task is merged, the other tasks based on that branch go back to In
+`task_inbox.json` for its next phase. With Messages from your Claude sessions on (`claudeCodeTasks.sessionMessages`),
+task runs also accept Claude Code's built-in SendMessage from the user's other sessions (`--settings
+{"crossSessionInbound":"accept"}`): agent windows are told the task session names (`task-messaging/window-hint.ts`),
+and the Claude chat gets `message_task` (through the broker) plus ListAgents / SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
 Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync/`), also while messaging is off.
 
 ### MCP Connectors

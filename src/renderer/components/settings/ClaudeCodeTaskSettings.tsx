@@ -199,6 +199,18 @@ export function ClaudeCodeTaskSettings({ settings, onSettingsChange }: ClaudeCod
           </SettingsRow>
 
           <SettingsRow
+            label={t('claudeCode.execution.sessionMessages')}
+            description={t('claudeCode.execution.sessionMessagesDescription')}
+          >
+            <Switch
+              checked={current.taskMessaging && current.sessionMessages}
+              disabled={!current.taskMessaging}
+              onCheckedChange={(sessionMessages) => update({ sessionMessages })}
+              aria-label={t('claudeCode.execution.sessionMessages')}
+            />
+          </SettingsRow>
+
+          <SettingsRow
             label={t('claudeCode.execution.fallbackModel')}
             description={t('claudeCode.execution.fallbackModelDescription')}
             htmlFor="claude-code-fallback-model"
