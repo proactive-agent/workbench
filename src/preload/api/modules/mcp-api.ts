@@ -8,6 +8,7 @@ import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/constants/ipc';
 import type { IPCResult } from '../../../shared/types/common';
 import type { CustomMcpServer, McpAvailability, McpHealthCheckResult, McpTestConnectionResult } from '../../../shared/types/project';
+import type { BrowserProfile } from '../../../shared/types/browser-profiles';
 
 export interface McpAPI {
   /** Quick health check for a custom MCP server */
@@ -18,6 +19,8 @@ export interface McpAPI {
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, McpAvailability>>>;
   /** Called when a connector's availability changes */
   onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => () => void;
+  /** Local browser profiles for the Puppeteer connector (found at startup; `refresh` looks again) */
+  detectBrowserProfiles: (refresh?: boolean) => Promise<IPCResult<BrowserProfile[]>>;
 }
 
 export function createMcpAPI(): McpAPI {
@@ -30,6 +33,9 @@ export function createMcpAPI(): McpAPI {
 
     getMcpAvailability: (ids: string[]) =>
       ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_AVAILABILITY, ids),
+
+    detectBrowserProfiles: (refresh?: boolean) =>
+      ipcRenderer.invoke(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, refresh === true),
 
     onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, id: string, availability: McpAvailability) => callback(id, availability);

@@ -527,6 +527,8 @@ export interface ElectronAPI {
   testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, import('./project').McpAvailability>>>;
   onMcpAvailabilityChanged: (callback: (id: string, availability: import('./project').McpAvailability) => void) => () => void;
+  /** Local browser profiles for the Puppeteer connector (found at startup; `refresh` looks again) */
+  detectBrowserProfiles: (refresh?: boolean) => Promise<IPCResult<import('./browser-profiles').BrowserProfile[]>>;
 
   // Project windows (one project per window)
   /** Project this window was opened for (null for the first window) */

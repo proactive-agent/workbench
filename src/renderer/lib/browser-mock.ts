@@ -241,7 +241,8 @@ const browserMockAPI: ElectronAPI = {
     success: true,
     data: Object.fromEntries(ids.map((id) => [id, { state: 'ready' as const }]))
   }),
-  onMcpAvailabilityChanged: () => () => {}
+  onMcpAvailabilityChanged: () => () => {},
+  detectBrowserProfiles: async () => ({ success: true, data: [] })
 };
 
 /**

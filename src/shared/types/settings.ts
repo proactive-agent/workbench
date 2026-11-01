@@ -4,6 +4,7 @@
 
 import type { NotificationSettings, CustomMcpServer } from './project';
 import type { ClaudeCodeTaskSettings } from './claude-code';
+import type { PuppeteerBrowserChoice } from './browser-profiles';
 
 // Color theme types for multi-theme support
 export type ColorTheme = 'default';
@@ -19,6 +20,8 @@ export interface McpConnectorSettings {
   electronEnabled?: boolean;
   /** Puppeteer browser automation (default off) */
   puppeteerEnabled?: boolean;
+  /** The local browser profile Puppeteer uses (unset: Puppeteer's own Chrome with a blank profile) */
+  puppeteerBrowser?: PuppeteerBrowserChoice;
   /** User-added servers; only ones that passed a connection test can be used */
   customServers?: CustomMcpServer[];
 }

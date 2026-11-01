@@ -15,6 +15,7 @@ import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
 import { findWslCommand, isCommandAvailable } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
 import { getMcpAvailability, onMcpAvailabilityChange } from '../mcp-availability';
+import { detectBrowserProfiles } from '../browser-profiles/detect';
 import { readSettingsFileAsync } from '../settings-utils';
 import { getAllWindows } from '../window-manager';
 import type { AppSettings } from '../../shared/types';
@@ -569,6 +570,15 @@ export function registerMcpHandlers(): void {
   onMcpAvailabilityChange((id, availability) => {
     for (const window of getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_AVAILABILITY_CHANGED, id, availability);
+    }
+  });
+
+  // Browser profiles the Puppeteer connector can use (found at startup; `refresh` looks again)
+  ipcMain.handle(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, async (_event, refresh?: boolean) => {
+    try {
+      return { success: true, data: await detectBrowserProfiles({ refresh: refresh === true }) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Browser detection failed' };
     }
   });
 

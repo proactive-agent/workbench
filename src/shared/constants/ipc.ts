@@ -297,6 +297,7 @@ export const IPC_CHANNELS = {
   MCP_TEST_CONNECTION: 'mcp:testConnection',     // Full MCP protocol test
   MCP_GET_AVAILABILITY: 'mcp:getAvailability',   // Whether connectors' servers can start (checks unknown ones)
   MCP_AVAILABILITY_CHANGED: 'mcp:availabilityChanged', // Event: a connector's availability changed (main -> renderer)
+  MCP_DETECT_BROWSER_PROFILES: 'mcp:detectBrowserProfiles', // Local browser profiles for the Puppeteer connector
 
 
   // Spell check

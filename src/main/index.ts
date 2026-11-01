@@ -54,6 +54,7 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
+import { detectBrowserProfiles } from './browser-profiles/detect';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -637,6 +638,8 @@ app.whenReady().then(async () => {
   // Decide where tools run on Windows (native, or WSL with the windowsShell setting) before the
   // tool cache and Claude accounts are read; detection runs in the background, windows don't wait
   void initShellRuntime(readSettingsFile()?.windowsShell);
+  // Browser profiles for the Puppeteer connector, looked for once (after the shell runtime is known)
+  void detectBrowserProfiles();
 
   // Linux shells take the dock/taskbar icon from a desktop entry matching the window class; give the
   // development build ("Workbench Dev") its own one, or it shows a generic icon
