@@ -639,6 +639,7 @@ describe('ClaudeTaskRun', () => {
       expect(prompt).toContain('Reach other tasks with `message_task`, not SendMessage');
       expect(prompt).toContain('use SendMessage with a name from ListAgents');
       expect(prompt).toContain("cross-session messages from the user's other Claude Code sessions");
+      expect(prompt).toContain('`[Message from the user, via Workbench]` is the user writing from the Workbench chat');
       expect(argValue(options.args, '--allowedTools')).toBe('mcp__workbench__message_task,mcp__workbench__list_parallel_tasks');
       expect(options.args.join(' ')).not.toContain('secret');
       expect(JSON.parse(mcpConfigs[0]).mcpServers.workbench.headers.Authorization).toBe('Bearer secret');
