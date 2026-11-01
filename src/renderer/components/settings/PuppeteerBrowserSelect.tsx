@@ -10,6 +10,7 @@
 import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { cn } from '../../lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { DEFAULT_BROWSER_VALUE, browserProfileLabel, disabledReasonText, toBrowserChoice } from './browser-profile-meta';
 import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
@@ -22,7 +23,12 @@ interface PuppeteerBrowserSelectProps {
 }
 
 /** A download button beside a dropdown item */
-function DownloadButton({ browser, onDownload }: { browser: DownloadableBrowser; onDownload: (browser: DownloadableBrowser) => void }) {
+function DownloadButton({ browser, onDownload, besideCheck = false }: {
+  browser: DownloadableBrowser;
+  onDownload: (browser: DownloadableBrowser) => void;
+  /** The item can be selected, so its check needs the right edge: the button sits left of it */
+  besideCheck?: boolean;
+}) {
   const { t } = useTranslation(['settings']);
   const name = t(`settings:mcp.browserProfile.browsers.${browser}`);
   const label = `${t('settings:mcp.browserProfile.download', { browser: name })}. ${t('settings:mcp.browserProfile.downloadDescription')}`;
@@ -38,7 +44,11 @@ function DownloadButton({ browser, onDownload }: { browser: DownloadableBrowser;
         event.stopPropagation();
         onDownload(browser);
       }}
-      className="absolute right-9 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-nav-hover hover:text-foreground"
+      className={cn(
+        // Where the check of a selected item shows (a disabled item is never selected)
+        'absolute top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-nav-hover hover:text-foreground',
+        besideCheck ? 'right-9' : 'right-2.5'
+      )}
     >
       <Download className="h-4 w-4" strokeWidth={1.75} />
     </button>
@@ -67,7 +77,8 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
     void window.electronAPI.installPuppeteerBrowser(browser).catch(() => undefined);
   };
 
-  const list = profiles ?? [];
+  // Puppeteer's own downloads first, then the browsers found on this computer
+  const list = [...(profiles ?? [])].sort((a, b) => Number(!!b.managed) - Number(!!a.managed));
   // A stored profile that isn't detected any more stays shown (and selected) until changed
   const missing = value && profiles && !list.some((profile) => profile.id === value.id) ? value : undefined;
 
@@ -95,7 +106,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
             {t('settings:mcp.browserProfile.default')}
             {chromeMissing && <span className="ml-2 text-(--nav-label-color)">{t('settings:mcp.browserProfile.reasons.notDownloaded')}</span>}
           </SelectItem>
-          {chromeMissing && <DownloadButton browser="chrome" onDownload={download} />}
+          {chromeMissing && <DownloadButton browser="chrome" onDownload={download} besideCheck />}
         </div>
         {missing && (
           <SelectItem value={missing.id}>
@@ -107,7 +118,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
           const detail = reason ?? profile.email;
           return (
             <div key={profile.id} className="relative">
-              <SelectItem value={profile.id} disabled={!profile.usable} className={profile.downloadable ? 'pr-16' : undefined}>
+              <SelectItem value={profile.id} disabled={!profile.usable}>
                 {browserProfileLabel(t, profile)}
                 {detail && <span className="ml-2 text-(--nav-label-color)">{detail}</span>}
               </SelectItem>
