@@ -8,7 +8,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { execFileSync, spawn, execFile, type ChildProcess } from 'child_process';
+import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, lstatSync, readFileSync, promises as fsPromises } from 'fs';
 import { mkdir, rename, unlink } from 'fs/promises';
 import path from 'path';
@@ -711,7 +711,9 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     }
 
     console.warn('[Claude Code] Running AppleScript...');
-    execFileSync('osascript', ['-e', script], { stdio: 'pipe' });
+    // Async (never block the main process): Terminal may take a while to launch, and macOS may ask
+    // the user to let Workbench control it; the timeout leaves room to answer that prompt
+    await execFileAsync('osascript', ['-e', script], { timeout: 60_000 });
 
   } else if (isWindows()) {
     // Windows: Use appropriate terminal
