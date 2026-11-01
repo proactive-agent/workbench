@@ -1,7 +1,7 @@
 /**
  * The Puppeteer connector's browser profile (Settings > Connectors): Puppeteer's own Chrome or a
- * local profile. Shows the last detection (refresh-cache) and only detects again on the refresh
- * button, or once when nothing was detected before. Profiles that can't be used stay listed,
+ * local profile. Shows the last detection (refresh-cache) at once, takes the main process's startup
+ * detection when it opens, and only scans again on the refresh button. Profiles that can't be used stay listed,
  * disabled, with the reason as text.
  */
 
@@ -44,9 +44,10 @@ export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSele
     }
   }, []);
 
-  // Once, when nothing was detected before
+  // The last result is shown at once; the main process's startup detection (kept in memory, so
+  // this scans nothing) replaces it, so a restart never leaves an older list on screen
   useEffect(() => {
-    if (!readRefreshCache(BROWSER_PROFILES_CACHE_KEY)) void detect(false);
+    void detect(false);
   }, [detect]);
 
   const list = profiles ?? [];
