@@ -573,10 +573,10 @@ export function registerMcpHandlers(): void {
     }
   });
 
-  // Browser profiles the Puppeteer connector can use (found at startup; `refresh` looks again)
-  ipcMain.handle(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, async (_event, refresh?: boolean) => {
+  // Browser profiles the Puppeteer connector can use (found when the app started)
+  ipcMain.handle(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, async () => {
     try {
-      return { success: true, data: await detectBrowserProfiles({ refresh: refresh === true }) };
+      return { success: true, data: await detectBrowserProfiles() };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Browser detection failed' };
     }

@@ -29,7 +29,8 @@ export function ConnectorRow({ icon, name, description, children, disabled = fal
         <div className="text-sm text-foreground">{name}</div>
         {description && <div className="truncate text-sm text-(--nav-label-color)">{description}</div>}
       </div>
-      {children && <div className="flex shrink-0 items-center gap-2">{children}</div>}
+      {/* data-settings-control: dropdowns here get the same borderless look as in SettingsRow */}
+      {children && <div data-settings-control="" className="flex shrink-0 items-center gap-2">{children}</div>}
     </div>
   );
 }

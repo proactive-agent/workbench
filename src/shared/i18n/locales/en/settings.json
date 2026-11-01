@@ -412,7 +412,6 @@
     "browserProfile": {
       "label": "Browser profile",
       "default": "Puppeteer's Chrome",
-      "refresh": "Look for browser profiles again",
       "notFound": "{{name}} (no longer found)",
       "closeBrowserHint": "Uses a copy of {{name}}; close the browser before a run to copy its sign-ins",
       "browsers": {
