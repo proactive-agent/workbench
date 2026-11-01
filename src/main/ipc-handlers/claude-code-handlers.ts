@@ -589,8 +589,10 @@ async function openWslConsoleWithCommand(command: string): Promise<void> {
  * Supports macOS, Windows, and Linux terminals. When the app runs its tools in WSL, the command
  * (Linux syntax) runs in a WSL console instead.
  *
- * @param env Environment for the terminal on Windows (on macOS and Linux the terminal starts its
- *   own shell environment, so variables go in the command; the same for a WSL console)
+ * @param env Environment for the terminal on Windows and Linux (a terminal may still start its own
+ *   environment, gnome-terminal's server for one, so variables that matter go in the command; on
+ *   macOS and in a WSL console they must)
+ * @throws when no terminal could be opened (on Linux after trying the common terminal emulators)
  */
 export async function openTerminalWithCommand(command: string, env?: NodeJS.ProcessEnv): Promise<void> {
   if (isWslRuntime()) {
@@ -916,90 +918,94 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     // If future code needs to pass user input here, that input must be pre-sanitized.
     const bashCommand = `${command}; exec bash`;
 
-    // Try to use preferred terminal if specified
-    if (terminalId === 'gnometerminal') {
-      spawn('gnome-terminal', ['--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'konsole') {
-      spawn('konsole', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'xfce4terminal') {
-      spawn('xfce4-terminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'lxterminal') {
-      spawn('lxterminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'mate-terminal') {
-      spawn('mate-terminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'tilix') {
-      spawn('tilix', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'terminator') {
-      spawn('terminator', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'guake') {
-      spawn('guake', ['-e', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'yakuake') {
-      spawn('yakuake', ['-e', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'kitty') {
-      spawn('kitty', ['--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'alacritty') {
-      spawn('alacritty', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'wezterm') {
-      spawn('wezterm', ['start', '--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'hyper') {
-      spawn('hyper', [], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'tabby') {
-      spawn('tabby', [], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'xterm') {
-      spawn('xterm', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'urxvt') {
-      spawn('urxvt', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'st') {
-      spawn('st', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'foot') {
-      spawn('foot', ['bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    }
-
-    // Auto-detect (for 'system' or no preference): try common terminal emulators in order
-    const terminals: Array<{ cmd: string; args: string[] }> = [
-      { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand] },
-      { cmd: 'konsole', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'xfce4-terminal', args: ['-e', `bash -c "${bashCommand}"`] },
-      { cmd: 'tilix', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'terminator', args: ['-e', `bash -c "${bashCommand}"`] },
-      { cmd: 'kitty', args: ['--', 'bash', '-c', bashCommand] },
-      { cmd: 'alacritty', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'xterm', args: ['-e', 'bash', '-c', bashCommand] },
+    const quoted = `bash -c "${bashCommand}"`;
+    // How each terminal runs a command (by settings.preferredTerminal id)
+    const byId: Record<string, LinuxTerminal> = {
+      gnometerminal: { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand] },
+      konsole: { cmd: 'konsole', args: ['-e', 'bash', '-c', bashCommand] },
+      xfce4terminal: { cmd: 'xfce4-terminal', args: ['-e', quoted] },
+      lxterminal: { cmd: 'lxterminal', args: ['-e', quoted] },
+      'mate-terminal': { cmd: 'mate-terminal', args: ['-e', quoted] },
+      tilix: { cmd: 'tilix', args: ['-e', 'bash', '-c', bashCommand] },
+      terminator: { cmd: 'terminator', args: ['-e', quoted] },
+      guake: { cmd: 'guake', args: ['-e', bashCommand] },
+      yakuake: { cmd: 'yakuake', args: ['-e', bashCommand] },
+      kitty: { cmd: 'kitty', args: ['--', 'bash', '-c', bashCommand] },
+      alacritty: { cmd: 'alacritty', args: ['-e', 'bash', '-c', bashCommand] },
+      wezterm: { cmd: 'wezterm', args: ['start', '--', 'bash', '-c', bashCommand] },
+      hyper: { cmd: 'hyper', args: [] },
+      tabby: { cmd: 'tabby', args: [] },
+      xterm: { cmd: 'xterm', args: ['-e', 'bash', '-c', bashCommand] },
+      urxvt: { cmd: 'urxvt', args: ['-e', 'bash', '-c', bashCommand] },
+      st: { cmd: 'st', args: ['-e', 'bash', '-c', bashCommand] },
+      foot: { cmd: 'foot', args: ['bash', '-c', bashCommand] },
+    };
+    // The preferred terminal first, then the common ones (x-terminal-emulator is Debian's and
+    // Ubuntu's default terminal, which takes `-e command args`)
+    const candidates: LinuxTerminal[] = [
+      ...(byId[terminalId] ? [byId[terminalId]] : []),
+      byId.gnometerminal,
+      { cmd: 'x-terminal-emulator', args: ['-e', 'bash', '-c', bashCommand] },
+      byId.konsole,
+      byId.xfce4terminal,
+      byId['mate-terminal'],
+      byId.tilix,
+      byId.terminator,
+      byId.kitty,
+      byId.alacritty,
+      byId.wezterm,
+      byId.foot,
+      byId.xterm,
     ];
-
-    let opened = false;
-    for (const { cmd, args } of terminals) {
+    const tried = new Set<string>();
+    for (const terminal of candidates) {
+      if (tried.has(terminal.cmd)) continue;
+      tried.add(terminal.cmd);
       try {
-        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-        opened = true;
-        console.warn('[Claude Code] Opened terminal:', cmd);
-        break;
+        await spawnLinuxTerminal(terminal, env);
+        console.warn('[Claude Code] Opened terminal:', terminal.cmd);
+        return;
       } catch {
+        // Not installed or failed to start: the next one
       }
     }
-
-    if (!opened) {
-      throw new Error('No supported terminal emulator found');
-    }
+    throw new Error('No supported terminal emulator found');
   }
+}
+
+interface LinuxTerminal {
+  cmd: string;
+  args: string[];
+}
+
+/**
+ * Start a Linux terminal emulator. A missing one fails with ENOENT only after spawn returns, and
+ * one that can't open a window (gnome-terminal without its server) exits with an error at once, so
+ * both are waited for briefly before the terminal counts as open
+ */
+function spawnLinuxTerminal(terminal: LinuxTerminal, env?: NodeJS.ProcessEnv, waitMs = 500): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(terminal.cmd, terminal.args, { detached: true, stdio: 'ignore', env: env ?? process.env });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    const done = (error?: Error) => {
+      clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+      child.unref();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onError = (error: Error) => done(error);
+    const onExit = (code: number | null) => done(code ? new Error(`${terminal.cmd} exited with code ${code}`) : undefined);
+    const timer = setTimeout(() => done(), waitMs);
+    child.once('error', onError);
+    child.once('exit', onExit);
+  });
 }
 
 /**

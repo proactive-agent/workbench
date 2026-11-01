@@ -34,6 +34,7 @@ import { isWindows } from './platform';
 import { getWslInfo, whenShellRuntimeReady } from './platform/shell-runtime';
 import { killRuntimeProcessTree, spawnTool } from './platform/runtime-exec';
 import { isBrowserProfileInUse } from './browser-profiles/in-use';
+import { appLog } from './app-logger';
 
 /** How long a server may take to answer: its first start downloads it */
 const START_TIMEOUT_MS = 5 * 60 * 1000;
@@ -44,12 +45,33 @@ export const UNAVAILABLE_RECHECK_MS = 30 * 1000;
 /** How old the chosen browser's open state may get, and how often it is looked at while open */
 const BROWSER_RECHECK_MS = 3 * 1000;
 
+/** Display names of the built-in connectors, for log lines */
+const BUILTIN_NAMES: Record<string, string> = { context7: 'Context7', electron: 'Electron', puppeteer: 'Puppeteer' };
+const BROWSER_NAMES: Record<string, string> = {
+  chrome: 'Chrome', edge: 'Edge', brave: 'Brave', chromium: 'Chromium', firefox: 'Firefox', safari: 'Safari',
+};
+
+/**
+ * Puppeteer's error when its own browser isn't downloaded ("Could not find Chrome (ver. X)",
+ * "Could not find Firefox"); other launch failures (no usable sandbox, missing libraries) aren't
+ * fixed by a download
+ */
+const BROWSER_NOT_DOWNLOADED = /Could not find (Chrome|Firefox)\b(?: \(ver\. ([\d.]+)\))?/i;
+
+/** The command that downloads Puppeteer's own browser, when a failed launch says it's missing */
+function puppeteerInstallCommand(error: string): string | undefined {
+  const match = BROWSER_NOT_DOWNLOADED.exec(error);
+  if (!match) return undefined;
+  const browser = match[1].toLowerCase();
+  return `npx puppeteer browsers install ${browser}${match[2] ? `@${match[2]}` : ''}`;
+}
+
 /** A tool call that proves a server can do its work, not only start */
 interface VerifyCall {
   name: string;
   arguments: Record<string, unknown>;
-  /** The command that fixes a failed call, shown to the user (from the call's error) */
-  fix?: (error: string) => string;
+  /** The command that fixes a failed call, shown to the user (from the call's error), when there is one */
+  fix?: (error: string) => string | undefined;
 }
 
 /**
@@ -65,14 +87,7 @@ function verifyCall(id: string, settings: McpConnectorSettings | undefined): Ver
     arguments: { url: 'about:blank', launchOptions: { headless: true } },
     // Puppeteer's own Chrome needs the exact build its error names ("Could not find Chrome (ver. X)");
     // a chosen browser is fixed by choosing another one
-    ...(settings?.puppeteerBrowser
-      ? {}
-      : {
-        fix: (error: string) => {
-          const version = /\(ver\. ([\d.]+)\)/.exec(error)?.[1];
-          return `npx puppeteer browsers install chrome${version ? `@${version}` : ''}`;
-        },
-      }),
+    ...(settings?.puppeteerBrowser ? {} : { fix: puppeteerInstallCommand }),
   };
 }
 
@@ -142,15 +157,48 @@ export function getMcpAvailability(ids: string[], settings: McpConnectorSettings
   return Object.fromEntries(ids.map((id) => [id, check(id, settings)]));
 }
 
+/** Why a run leaves a connector out, as a log line */
+export function describeLeftOutConnector(id: string, availability: McpAvailability, settings: McpConnectorSettings | undefined): string {
+  const name = BUILTIN_NAMES[id] ?? settings?.customServers?.find((server) => server.id === id)?.name ?? id;
+  let reason: string;
+  if (availability.browserOpen) {
+    const browser = settings?.puppeteerBrowser;
+    const browserName = browser ? BROWSER_NAMES[browser.browser] ?? browser.browser : 'The chosen browser';
+    reason = `${browserName}${browser?.profileName ? ` (profile ${browser.profileName})` : ''} is open, so its profile can't be copied. Close it to use ${name} in later runs`;
+  } else if (availability.missingCommand) {
+    reason = `${availability.missingCommand} is not installed`;
+  } else {
+    reason = availability.message || 'its server could not start';
+  }
+  return `${name} connector left out of this run: ${reason}`;
+}
+
 /**
  * The connector ids a run can use: unavailable ones are left out (preparing ones stay in). The
- * chosen browser is looked at now, so a run never copies the profile of an open one
+ * chosen browser is looked at now, so a run never copies the profile of an open one. Each one left
+ * out is logged, passed to `onLeftOut` (the run's log) and sent to every window again, so a view
+ * that still shows it on catches up
  */
-export async function usableMcpConnectorIds(ids: string[], settings: McpConnectorSettings | undefined): Promise<string[]> {
+export async function usableMcpConnectorIds(
+  ids: string[],
+  settings: McpConnectorSettings | undefined,
+  onLeftOut?: (id: string, availability: McpAvailability) => void
+): Promise<string[]> {
   if (ids.includes('puppeteer')) notePuppeteerSettings(settings);
   const browser = chosenProfileBrowser(settings);
-  if (browser && ids.includes('puppeteer')) await lookAtBrowser(browser);
-  return ids.filter((id) => check(id, settings).state !== 'unavailable');
+  // Its answer counts even when a reset forgot it while looking
+  const browserIsOpen = browser && ids.includes('puppeteer') ? await lookAtBrowser(browser) : false;
+  return ids.filter((id) => {
+    const found = check(id, settings);
+    const availability: McpAvailability = id === 'puppeteer' && browserIsOpen && found.state !== 'unavailable'
+      ? { state: 'unavailable', browserOpen: true }
+      : found;
+    if (availability.state !== 'unavailable') return true;
+    appLog.info(`[MCP] ${describeLeftOutConnector(id, availability, settings)}`);
+    events.emit('change', id, availability);
+    onLeftOut?.(id, availability);
+    return false;
+  });
 }
 
 function check(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
@@ -162,10 +210,29 @@ function check(id: string, settings: McpConnectorSettings | undefined): McpAvail
   return withBrowserOpen(id, availability, settings);
 }
 
-/** Look at the chosen browser again when its last answer is missing or old */
+/**
+ * Look at the chosen browser again when its last answer is missing or old; while it is open, make
+ * sure a look is coming (a poll stopped when another browser was chosen for a moment)
+ */
 function refreshBrowserOpen(browser: PuppeteerBrowserChoice): void {
   const known = browserOpen?.id === browser.id ? browserOpen : undefined;
-  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) void lookAtBrowser(browser);
+  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) {
+    void lookAtBrowser(browser);
+  } else if (known.open && browserTimer?.id !== browser.id && browserLook?.id !== browser.id) {
+    pollBrowser(browser.id);
+  }
+}
+
+/** Look at the chosen browser again in BROWSER_RECHECK_MS (it is open) */
+function pollBrowser(id: string): void {
+  if (browserTimer) clearTimeout(browserTimer.timer);
+  const timer = setTimeout(() => {
+    browserTimer = undefined;
+    const current = chosenProfileBrowser(puppeteerSettings);
+    if (current) void lookAtBrowser(current);
+  }, BROWSER_RECHECK_MS);
+  timer.unref();
+  browserTimer = { id, timer };
 }
 
 /**
@@ -184,16 +251,11 @@ function lookAtBrowser(browser: PuppeteerBrowserChoice): Promise<boolean> {
     if (chosenProfileBrowser(puppeteerSettings)?.id !== browser.id) return open;
     if (changed) events.emit('change', 'puppeteer', check('puppeteer', puppeteerSettings));
     // While it is open, keep looking (at the browser chosen then), so closing it enables the connector
-    if (browserTimer) clearTimeout(browserTimer.timer);
-    browserTimer = undefined;
     if (open) {
-      const timer = setTimeout(() => {
-        browserTimer = undefined;
-        const current = chosenProfileBrowser(puppeteerSettings);
-        if (current) void lookAtBrowser(current);
-      }, BROWSER_RECHECK_MS);
-      timer.unref();
-      browserTimer = { id: browser.id, timer };
+      pollBrowser(browser.id);
+    } else if (browserTimer) {
+      clearTimeout(browserTimer.timer);
+      browserTimer = undefined;
     }
     return open;
   });
@@ -212,10 +274,10 @@ function checkServer(id: string, settings: McpConnectorSettings | undefined): Mc
     if (stale && !probes.has(key)) startProbe(id, key, entry, verifyCall(id, settings), true);
     return known.availability;
   }
-  if (!probes.has(key)) {
-    set(id, key, { state: 'preparing' });
-    startProbe(id, key, entry, verifyCall(id, settings), false);
-  }
+  // These details are the connector's current ones from now on (preparing while a probe runs, which
+  // may be one started for them earlier: switching A -> B -> A keeps A's first probe)
+  set(id, key, { state: 'preparing' });
+  if (!probes.has(key)) startProbe(id, key, entry, verifyCall(id, settings), false);
   return { state: 'preparing' };
 }
 
@@ -229,7 +291,7 @@ function startProbe(id: string, key: string, entry: McpServerEntry, verify: Veri
   void probe.then((availability) => {
     if (started !== generation) return;
     probes.delete(key);
-    // Only when the connector still has these connection details
+    // Only when these are still the connector's current connection details
     if (results.get(id)?.key === key) set(id, key, availability);
   });
 }
@@ -297,6 +359,10 @@ async function probeHttp(url: string, headers: Record<string, string> | undefine
   } finally {
     clearTimeout(timer);
   }
+}
+
+function withFixCommand(availability: McpAvailability, fixCommand: string | undefined): McpAvailability {
+  return fixCommand ? { ...availability, fixCommand } : availability;
 }
 
 /** The first sentence of an error (Puppeteer's go on with installation hints) */
@@ -375,7 +441,7 @@ function startAndInitialize(
             ?? (message.result?.isError ? message.result.content?.map((part) => part.text ?? '').join(' ') : undefined);
           finish(failure === undefined
             ? { state: 'ready' }
-            : { state: 'unavailable', message: firstSentence(failure) || 'Failed', ...(verify?.fix ? { fixCommand: verify.fix(failure) } : {}) });
+            : withFixCommand({ state: 'unavailable', message: firstSentence(failure) || 'Failed' }, verify?.fix?.(failure)));
           return;
         }
       }

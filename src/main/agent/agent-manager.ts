@@ -15,10 +15,12 @@ import { isClaudeRunFinished, loadClaudeRunInfo, resetClaudeRunInfo } from '../c
 import { detectClaudeLimitMessage } from '../claude-code/limit';
 import { createOrGetWorktree } from '../worktree';
 import { addToWorktree } from '../live-agent/project-setup';
-import { usableMcpConnectorIds } from '../mcp-availability';
+import { describeLeftOutConnector, usableMcpConnectorIds } from '../mcp-availability';
+import { TaskLogWriter } from '../claude-code/task-log';
+import type { TaskLogPhase } from '../../shared/types/task';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
-import { readSettingsFile } from '../settings-utils';
+import { readSettingsFile, readSettingsFileAsync } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { isSelfImproveEnabled, SELF_IMPROVE_NUDGE } from '../self-improve';
 import { getAugmentedEnvAsync } from '../env-utils';
@@ -524,10 +526,14 @@ export class AgentManager extends EventEmitter {
       // The task's connectors (or the defaults), without servers that can't start
       connectorIds: await usableMcpConnectorIds(
         Array.isArray(task.metadata?.mcpConnectors) ? task.metadata.mcpConnectors : getDefaultMcpConnectorIds(settings.mcpConnectors),
-        settings.mcpConnectors
+        settings.mcpConnectors,
+        (id, availability) => this.noteLeftOutConnector(taskId, options, specDir, describeLeftOutConnector(id, availability, settings.mcpConnectors))
       ),
       connectorSettings: settings.mcpConnectors,
       settings: taskSettings,
+      // Read again at each step, so switching Task messaging or messages from sessions off reaches a running task
+      readCurrentSettings: async () => resolveClaudeCodeTaskSettings(
+        ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.claudeCodeTasks),
       maxBudgetUsd: project.settings?.maxBudgetUsd,
       changelogPath: project.autoBuildPath ? getTaskChangelogPath(project.path, project.autoBuildPath) : undefined,
       mode,
@@ -640,6 +646,26 @@ export class AgentManager extends EventEmitter {
     const next = Math.max((this.sequences.get(key) ?? 0) + 1, Date.now());
     this.sequences.set(key, next);
     return next;
+  }
+
+  /**
+   * A connector the task chose was left out of this run (its browser is open, its server can't
+   * start): said in the task's log, live and in task_logs.json. Written before the run's own log
+   * writer loads the file, so the run keeps the entry
+   */
+  private noteLeftOutConnector(taskId: string, options: StartTaskOptions, specDir: string, line: string): void {
+    this.emit('log', taskId, `${line}\n`, options.project.id);
+    try {
+      const last = loadClaudeRunInfo(specDir)?.phases.at(-1)?.name;
+      // The step the run continues with
+      const phase: TaskLogPhase = last === 'validate' ? 'validation'
+        : options.mode === 'revise' || last === 'implement' || last === 'revise' || last === 'resync' ? 'coding' : 'planning';
+      const log = new TaskLogWriter(specDir, options.task.specId);
+      log.add(phase, 'info', line);
+      log.saveNow();
+    } catch (error) {
+      appLog.warn(`[AgentManager] Could not log a left-out connector for ${taskId}:`, error);
+    }
   }
 
   private emitTaskEvent(taskId: string, options: StartTaskOptions, type: string, payload: Record<string, unknown>): void {

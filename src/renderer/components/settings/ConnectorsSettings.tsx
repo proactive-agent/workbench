@@ -12,7 +12,7 @@ import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ConnectorRow, ConnectorSwitchTip } from './ConnectorRow';
-import { BUILTIN_CONNECTOR_META, customServerIcon } from './connector-meta';
+import { BUILTIN_CONNECTOR_META, customServerIcon, isChromeNotDownloaded } from './connector-meta';
 import { PuppeteerBrowserSelect } from './PuppeteerBrowserSelect';
 import { useMcpUnavailableReason } from '../../hooks/useMcpAvailability';
 import { CustomMcpDialog } from '../CustomMcpDialog';
@@ -208,8 +208,9 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
                 {id === 'puppeteer' && (
                   <PuppeteerBrowserSelect
                     value={connectors.puppeteerBrowser}
-                    // Puppeteer's own Chrome failed for a build that isn't downloaded (its error comes with the install command)
-                    chromeMissing={!connectors.puppeteerBrowser && !!unavailable?.fixCommand}
+                    // Puppeteer's own Chrome failed for a build that isn't downloaded (only that error comes with the
+                    // install command); other failures show their message in the description
+                    chromeMissing={!connectors.puppeteerBrowser && isChromeNotDownloaded(unavailable?.fixCommand)}
                     onChange={(choice) => updateConnectors((current) => {
                       const { puppeteerBrowser: _previous, ...rest } = current;
                       return choice ? { ...rest, puppeteerBrowser: choice } : rest;

@@ -416,8 +416,9 @@
       "managed": "Puppeteer's {{browser}}",
       "download": "Download {{browser}}",
       "downloadDescription": "Opens a terminal that installs it",
+      "downloadFailed": "Couldn't start the download",
       "browserOpen": "{{browser}} is open",
-      "closeBrowser": "Close {{browser}} to use Puppeteer. Runs use a copy of its profile, which can't be copied while it's open",
+      "closeBrowser": "Close {{browser}} to use Puppeteer. Runs use a copy of its profile, which can't be copied while it's open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
       "browsers": {
         "chrome": "Chrome",
         "edge": "Edge",

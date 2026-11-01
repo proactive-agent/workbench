@@ -34,7 +34,7 @@ vi.mock('../platform/runtime-exec', () => ({
 vi.mock('../platform', () => ({ isWindows: () => mocks.windows }));
 vi.mock('../cli-utils', () => ({ getToolEnvAsync: async () => ({ PATH: '/usr/bin' }) }));
 vi.mock('../browser-profiles/in-use', () => ({ isBrowserProfileInUse: (browser: unknown) => mocks.inUse(browser) }));
-vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn() } }));
+vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn() } }));
 
 let getMcpAvailability: typeof import('../mcp-availability').getMcpAvailability;
 let onMcpAvailabilityChange: typeof import('../mcp-availability').onMcpAvailabilityChange;
@@ -42,6 +42,7 @@ let usableMcpConnectorIds: typeof import('../mcp-availability').usableMcpConnect
 let resetMcpAvailability: typeof import('../mcp-availability').resetMcpAvailability;
 let stopMcpProbes: typeof import('../mcp-availability').stopMcpProbes;
 let UNAVAILABLE_RECHECK_MS: number;
+let describeLeftOutConnector: typeof import('../mcp-availability').describeLeftOutConnector;
 
 const answer = (proc: FakeProcess) => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":1,"result":{}}\n'));
 const crash = (proc: FakeProcess) => {
@@ -68,6 +69,7 @@ describe('MCP availability', () => {
     vi.resetModules();
     ({
       getMcpAvailability, onMcpAvailabilityChange, usableMcpConnectorIds, resetMcpAvailability, stopMcpProbes, UNAVAILABLE_RECHECK_MS,
+      describeLeftOutConnector,
     } = await import('../mcp-availability'));
   });
 
@@ -380,5 +382,142 @@ describe('MCP availability', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  /** A Puppeteer server whose browser call fails with `error`, or succeeds without one */
+  const puppeteerServer = (error?: string) => (proc: FakeProcess) => {
+    proc.stdin.write.mockImplementation((line: string) => {
+      if (JSON.parse(line).method !== 'tools/call') return;
+      proc.stdout.emit('data', Buffer.from(JSON.stringify(error
+        ? { jsonrpc: '2.0', id: 2, error: { code: -32603, message: error } }
+        : { jsonrpc: '2.0', id: 2, result: {} }) + '\n'));
+    });
+    answer(proc);
+  };
+
+  it("offers a download only when Puppeteer's browser isn't downloaded", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer(
+      'Failed to launch the browser process! [0101/000000.000:FATAL:zygote_host_impl_linux.cc(127)] No usable sandbox!'
+    );
+    getMcpAvailability(['puppeteer'], undefined);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('unavailable'));
+    const launchFailure = getMcpAvailability(['puppeteer'], undefined).puppeteer;
+    expect(launchFailure.fixCommand).toBeUndefined();
+    expect(launchFailure.message).toContain('Failed to launch the browser process');
+
+    resetMcpAvailability();
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer('Could not find Firefox (rev. 133.0). This can occur if');
+    getMcpAvailability(['puppeteer'], undefined);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('unavailable'));
+    expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.fixCommand).toBe('npx puppeteer browsers install firefox');
+  });
+
+  it('keeps the latest choice when the browser is switched back while its first check runs', async () => {
+    installed.set('npx', '/usr/bin/npx');
+    // Each probe waits until the test answers it
+    const pending: Array<() => void> = [];
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        if (JSON.parse(line).method === 'tools/call') {
+          pending.push(() => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n')));
+        }
+      });
+      answer(proc);
+    };
+    const a = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/a/firefox' } };
+    const b = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:chrome', managed: true, executablePath: '/b/chrome' } };
+    const changes: string[] = [];
+    const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability.state));
+
+    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    await vi.waitFor(() => expect(pending).toHaveLength(1));
+    expect(getMcpAvailability(['puppeteer'], b).puppeteer.state).toBe('preparing');
+    await vi.waitFor(() => expect(pending).toHaveLength(2));
+    // Back to A, whose first check is still running: no second check of A
+    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
+
+    // B finishes first: it no longer counts
+    pending[1]();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    expect(changes.at(-1)).toBe('preparing');
+    // A's result is the one kept and sent
+    pending[0]();
+    await vi.waitFor(() => expect(changes.at(-1)).toBe('ready'));
+    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('ready');
+    stop();
+    stopMcpProbes();
+  });
+
+  it('keeps looking at an open browser chosen again within moments', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      installed.set('npx', '/usr/bin/npx');
+      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      mocks.browserOpen = true;
+      const profile = { puppeteerBrowser: firefoxProfile };
+      const managed = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/m/firefox' } };
+      getMcpAvailability(['puppeteer'], profile);
+      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+
+      // Another choice stops the poll; choosing the profile again right away (its open state is
+      // still fresh) starts it again
+      getMcpAvailability(['puppeteer'], managed);
+      getMcpAvailability(['puppeteer'], profile);
+      const changes: unknown[] = [];
+      const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+      mocks.browserOpen = false;
+      await vi.advanceTimersByTimeAsync(5_000);
+      await vi.waitFor(() => expect(changes).toContainEqual(expect.objectContaining({ state: expect.not.stringMatching('unavailable') })));
+      expect(getMcpAvailability(['puppeteer'], profile).puppeteer.browserOpen).toBeUndefined();
+      stop();
+      stopMcpProbes();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tells a run, the log and every window when it leaves a connector out', async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    const settings = { puppeteerBrowser: firefoxProfile };
+    getMcpAvailability(['puppeteer'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+
+    mocks.browserOpen = true;
+    const changes: unknown[] = [];
+    const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability]));
+    const leftOut: unknown[] = [];
+    expect(await usableMcpConnectorIds(['puppeteer'], settings, (id, availability) => leftOut.push([id, availability]))).toEqual([]);
+    expect(leftOut).toEqual([['puppeteer', { state: 'unavailable', browserOpen: true }]]);
+    expect(changes).toContainEqual(['puppeteer', { state: 'unavailable', browserOpen: true }]);
+    const { appLog } = await import('../app-logger');
+    expect(appLog.info).toHaveBeenCalledWith(expect.stringContaining('Puppeteer connector left out of this run: Firefox (profile default) is open'));
+    stop();
+    stopMcpProbes();
+  });
+
+  it('leaves Puppeteer out when its browser is open even if a reset forgot the answer', async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    const settings = { puppeteerBrowser: firefoxProfile };
+    let answerLook: ((open: boolean) => void) | undefined;
+    mocks.inUse.mockImplementation(() => new Promise<boolean>((resolve) => { answerLook = resolve; }));
+    const usable = usableMcpConnectorIds(['puppeteer'], settings);
+    await vi.waitFor(() => expect(answerLook).toBeDefined());
+    // Tool paths changed while the lock was looked at
+    resetMcpAvailability();
+    answerLook?.(true);
+    expect(await usable).toEqual([]);
+    stopMcpProbes();
+  });
+
+  it('describes why a connector was left out', () => {
+    expect(describeLeftOutConnector('py', { state: 'unavailable', missingCommand: 'uvx' }, {
+      customServers: [{ id: 'py', name: 'Py tools', type: 'command', command: 'uvx' }],
+    })).toBe('Py tools connector left out of this run: uvx is not installed');
+    expect(describeLeftOutConnector('context7', { state: 'unavailable', message: 'npm error 404' }, undefined))
+      .toBe('Context7 connector left out of this run: npm error 404');
   });
 });

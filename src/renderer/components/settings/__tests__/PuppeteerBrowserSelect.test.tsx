@@ -47,4 +47,25 @@ describe('PuppeteerBrowserSelect', () => {
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(onChange).not.toHaveBeenCalled();
   });
+
+  it("shows a choice as not found when only another install's profile has its id", async () => {
+    const linuxChrome: BrowserProfile = {
+      id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Home',
+      userDataDir: '/home/me/.config/google-chrome', profileDirectory: 'Default', profilePath: '/home/me/.config/google-chrome/Default',
+      executablePath: '/opt/google/chrome/chrome', usable: true,
+    };
+    vi.mocked(window.electronAPI.detectBrowserProfiles).mockResolvedValue({ success: true, data: [linuxChrome] });
+    const stored = toBrowserChoice({
+      ...linuxChrome,
+      profileName: 'Work',
+      userDataDir: 'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\User Data',
+      profilePath: 'C:\\Users\\me\\AppData\\Local\\Google\\Chrome\\User Data\\Default',
+      executablePath: 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    })!;
+    const onChange = vi.fn();
+    const { findByText } = render(<PuppeteerBrowserSelect value={stored} onChange={onChange} />);
+    expect(await findByText(/Work \(no longer found\)/)).toBeTruthy();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

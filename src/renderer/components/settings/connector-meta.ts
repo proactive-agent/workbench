@@ -28,3 +28,11 @@ export function customServerSummary(server: CustomMcpServer): string {
 export function commandMissingText(t: (key: string, options?: Record<string, unknown>) => string, command: string): string {
   return t('settings:mcp.commandMissing', { command: command === 'npx' ? t('settings:mcp.npxCommand') : command });
 }
+
+/**
+ * Whether Puppeteer's own Chrome failed because it isn't downloaded: only that failure comes with
+ * the install command (src/main/mcp-availability.ts); other launch failures show their message
+ */
+export function isChromeNotDownloaded(fixCommand: string | undefined): boolean {
+  return /\bbrowsers install chrome(@|$)/.test(fixCommand ?? '');
+}

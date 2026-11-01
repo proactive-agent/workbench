@@ -8,11 +8,13 @@ import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/ipc';
 import type { CustomMcpServer, McpHealthCheckResult, McpHealthStatus, McpTestConnectionResult } from '../../shared/types/project';
 import { spawn, type ChildProcess } from 'child_process';
+import path from 'path';
 import { appLog } from '../app-logger';
 import { isWindows } from '../platform';
 import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
-import { findWslCommand, isCommandAvailable } from '../mcp-commands';
+import { findWslCommand, isCommandAvailable, resolveCommand } from '../mcp-commands';
+import { escapeShellArg } from '../../shared/utils/shell-escape';
 import { getToolEnvAsync } from '../cli-utils';
 import { getMcpAvailability, getMcpFixCommand, onMcpAvailabilityChange } from '../mcp-availability';
 import { detectBrowserProfiles, waitForManagedFirefox } from '../browser-profiles/detect';
@@ -557,6 +559,23 @@ async function testCommandConnection(server: CustomMcpServer, startTime: number)
 }
 
 /**
+ * An `npx ...` command as a new terminal can run it. A terminal opened from the app doesn't load
+ * the user's shell setup (on Linux it runs `bash -c` with the app's PATH), so Node.js from a
+ * version manager (nvm, fnm) isn't found by name: natively the npx Workbench finds runs by its full
+ * path with its folder (where node is) first on PATH, and on Windows the terminal gets the tool
+ * PATH. A WSL console starts a login shell, which finds npx itself
+ */
+export async function terminalNpxCommand(command: string): Promise<{ command: string; env?: NodeJS.ProcessEnv }> {
+  await whenShellRuntimeReady();
+  if (getWslInfo()) return { command };
+  const npx = await resolveCommand('npx', { refresh: true });
+  if (!npx) throw new Error('npx was not found: install Node.js, or set its path in Settings > Developer');
+  if (isWindows()) return { command, env: await getToolEnvAsync() };
+  const args = command.replace(/^npx\s+/, '');
+  return { command: `PATH=${escapeShellArg(path.dirname(npx))}:$PATH ${escapeShellArg(npx)} ${args}` };
+}
+
+/**
  * Register MCP IPC handlers.
  */
 export function registerMcpHandlers(): void {
@@ -594,7 +613,8 @@ export function registerMcpHandlers(): void {
       const command = browser === 'firefox'
         ? FIREFOX_INSTALL_COMMAND
         : getMcpFixCommand('puppeteer') ?? 'npx puppeteer browsers install chrome';
-      await openTerminalWithCommand(command);
+      const launch = await terminalNpxCommand(command);
+      await openTerminalWithCommand(launch.command, launch.env);
       if (browser === 'firefox') {
         void waitForManagedFirefox().then((profiles) => {
           if (!profiles) return;

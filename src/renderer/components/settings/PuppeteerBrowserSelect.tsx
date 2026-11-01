@@ -12,7 +12,16 @@ import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { DEFAULT_BROWSER_VALUE, browserProfileIcon, browserProfileLabel, disabledReasonText, refreshedBrowserChoice, toBrowserChoice } from './browser-profile-meta';
+import {
+  DEFAULT_BROWSER_VALUE,
+  MISSING_BROWSER_VALUE,
+  browserProfileIcon,
+  browserProfileLabel,
+  disabledReasonText,
+  refreshedBrowserChoice,
+  storedChoiceProfile,
+  toBrowserChoice,
+} from './browser-profile-meta';
 import { PuppeteerIcon } from '../icons/app-icons';
 import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
 
@@ -86,21 +95,31 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
     if (refreshed) onChangeRef.current(refreshed);
   }, [value, profiles]);
 
+  // A download that couldn't start (npx missing, no terminal): said at the top of the list
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const download = (browser: DownloadableBrowser) => {
-    void window.electronAPI.installPuppeteerBrowser(browser).catch(() => undefined);
+    setDownloadError(null);
+    void window.electronAPI.installPuppeteerBrowser(browser)
+      .then((result) => {
+        if (!result.success) setDownloadError(result.error ?? t('settings:mcp.browserProfile.downloadFailed'));
+      })
+      .catch(() => setDownloadError(t('settings:mcp.browserProfile.downloadFailed')));
   };
 
   // Puppeteer's own downloads first, then the browsers found on this computer
   const list = [...(profiles ?? [])].sort((a, b) => Number(!!b.managed) - Number(!!a.managed));
-  // A stored profile that isn't detected any more stays shown (and selected) until changed
-  const missing = value && profiles && !list.some((profile) => profile.id === value.id) ? value : undefined;
+  // A stored profile that isn't detected any more stays shown (and selected) until changed. A
+  // detected profile with its id but from another install (after a shell runtime switch) isn't it
+  const missing = value && profiles && !storedChoiceProfile(value, list) ? value : undefined;
+  const selected = missing ? MISSING_BROWSER_VALUE : value?.id ?? DEFAULT_BROWSER_VALUE;
 
   const handleChange = (id: string) => {
     if (id === DEFAULT_BROWSER_VALUE) {
       onChange(undefined);
       return;
     }
-    if (id === value?.id) {
+    if (id === MISSING_BROWSER_VALUE) return;
+    if (id === value?.id && !missing) {
       refreshSelected();
       return;
     }
@@ -119,14 +138,17 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
   const SelectedIcon = value ? browserProfileIcon(value) : PuppeteerIcon;
 
   return (
-    <Select value={value?.id ?? DEFAULT_BROWSER_VALUE} onValueChange={handleChange}>
+    <Select value={selected} onValueChange={handleChange}>
       <SelectTrigger aria-label={t('settings:mcp.browserProfile.label')}>
         <SelectValue>
           <SelectedIcon className={ITEM_ICON} />
-          {value ? browserProfileLabel(t, value) : t('settings:mcp.browserProfile.default')}
+          {missing
+            ? t('settings:mcp.browserProfile.notFound', { name: browserProfileLabel(t, missing) })
+            : value ? browserProfileLabel(t, value) : t('settings:mcp.browserProfile.default')}
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
+        {downloadError && <p className="px-3 py-2 text-xs text-destructive">{downloadError}</p>}
         <div className="relative">
           <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromeMissing ? 'pr-16' : undefined}>
             <PuppeteerIcon className={ITEM_ICON} />
@@ -136,7 +158,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
           {chromeMissing && <DownloadButton browser="chrome" onDownload={download} besideCheck />}
         </div>
         {missing && (
-          <SelectItem value={missing.id}>
+          <SelectItem value={MISSING_BROWSER_VALUE}>
             {t('settings:mcp.browserProfile.notFound', { name: browserProfileLabel(t, missing) })}
           </SelectItem>
         )}
@@ -149,7 +171,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
               <SelectItem
                 value={profile.id}
                 disabled={!profile.usable}
-                {...(profile.id === value?.id ? {
+                {...(profile.id === value?.id && !missing ? {
                   onPointerUp: refreshSelected,
                   onKeyDown: (event: React.KeyboardEvent) => {
                     if (event.key === 'Enter' || event.key === ' ') refreshSelected();

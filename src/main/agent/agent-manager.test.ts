@@ -15,8 +15,28 @@ interface MockRun {
 
 const runs: MockRun[] = [];
 
-// Runs leave out MCP servers that can't start; tests don't start any
-vi.mock('../mcp-availability', () => ({ usableMcpConnectorIds: (ids: string[]) => ids }));
+// Runs leave out MCP servers that can't start; tests don't start any. `leftOut` connectors are
+// left out as if their browser were open
+const connectorMocks = vi.hoisted(() => ({
+  leftOut: new Set<string>(),
+  logAdd: vi.fn(),
+  logSave: vi.fn(),
+}));
+vi.mock('../mcp-availability', () => ({
+  usableMcpConnectorIds: async (ids: string[], _settings: unknown, onLeftOut?: (id: string, availability: unknown) => void) =>
+    ids.filter((id) => {
+      if (!connectorMocks.leftOut.has(id)) return true;
+      onLeftOut?.(id, { state: 'unavailable', browserOpen: true });
+      return false;
+    }),
+  describeLeftOutConnector: (id: string) => `${id} connector left out of this run: the browser is open`,
+}));
+vi.mock('../claude-code/task-log', () => ({
+  TaskLogWriter: class {
+    add = connectorMocks.logAdd;
+    saveNow = connectorMocks.logSave;
+  },
+}));
 vi.mock('../claude-code/task-runner', () => ({
   ClaudeTaskRun: class {
     private resolve!: (outcome: TaskRunOutcome) => void;
@@ -233,6 +253,25 @@ describe('AgentManager', () => {
       expect((await nextRun(2)).config.resync).toBeUndefined();
     } finally {
       pendingResync.value = undefined;
+    }
+  });
+
+  it("says in the task's log when a chosen connector is left out of the run", async () => {
+    connectorMocks.leftOut.add('puppeteer');
+    try {
+      const logs: string[] = [];
+      manager.on('log', (_taskId: string, line: string) => logs.push(line));
+      const task = makeTask({ metadata: { mcpConnectors: ['context7', 'puppeteer'] } } as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+
+      expect(run.config.connectorIds).toEqual(['context7']);
+      expect(logs).toContain('puppeteer connector left out of this run: the browser is open\n');
+      // Saved in task_logs.json before the run's own log writer loads it
+      expect(connectorMocks.logAdd).toHaveBeenCalledWith('planning', 'info', 'puppeteer connector left out of this run: the browser is open');
+      expect(connectorMocks.logSave).toHaveBeenCalled();
+    } finally {
+      connectorMocks.leftOut.clear();
     }
   });
 
