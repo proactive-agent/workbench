@@ -31,6 +31,16 @@ describe('resolveClaudeCodeTaskSettings', () => {
     expect(resolved.planning).toBe('auto');
     expect(resolved.validation).toBe(false);
   });
+
+  it('keeps valid workflow limits and drops invalid ones', () => {
+    expect(resolveClaudeCodeTaskSettings(undefined).workflowSize).toBe('medium');
+    expect(resolveClaudeCodeTaskSettings({ workflowSize: 'off' }).workflowSize).toBe('off');
+    expect(resolveClaudeCodeTaskSettings({ workflowSize: 'huge' as never }).workflowSize).toBe('medium');
+    expect(resolveClaudeCodeTaskSettings({ workflowMaxConcurrentAgents: 8 }).workflowMaxConcurrentAgents).toBe(8);
+    for (const bad of [0, 257, 2.5, Number.NaN]) {
+      expect(resolveClaudeCodeTaskSettings({ workflowMaxConcurrentAgents: bad })).not.toHaveProperty('workflowMaxConcurrentAgents');
+    }
+  });
 });
 
 describe('planning policy', () => {
