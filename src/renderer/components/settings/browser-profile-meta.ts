@@ -11,9 +11,6 @@ import type {
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** refresh-cache key of the last detection */
-export const BROWSER_PROFILES_CACHE_KEY = 'browser-profiles';
-
 /** The select's value for Puppeteer's own Chrome */
 export const DEFAULT_BROWSER_VALUE = 'default';
 

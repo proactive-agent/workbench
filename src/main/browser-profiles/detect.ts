@@ -40,6 +40,8 @@ interface ScanContext {
   toHost: (p: string) => string;
   /** Whether PATH lookups apply (they look where tools run) */
   lookUpCommands: boolean;
+  /** Look commands up again instead of taking the cached answer */
+  refresh?: boolean;
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -89,7 +91,7 @@ async function findExecutable(location: BrowserLocation, context: ScanContext): 
   }
   if (!context.lookUpCommands) return undefined;
   for (const command of location.commands ?? []) {
-    const found = await resolveCommand(command);
+    const found = await resolveCommand(command, { refresh: context.refresh });
     if (found) return found;
   }
   return undefined;
@@ -190,14 +192,14 @@ function nativeOs(): BrowserOs {
   return 'linux';
 }
 
-async function detect(): Promise<BrowserProfile[]> {
+async function detect(refresh: boolean): Promise<BrowserProfile[]> {
   await whenShellRuntimeReady();
   const wsl = getWslInfo();
-  const native: ScanContext = { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p) => p, lookUpCommands: !isWindows() };
+  const native: ScanContext = { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p) => p, lookUpCommands: !isWindows(), refresh };
   if (!wsl) return scanBrowserProfiles(native);
 
   // Tools (and so Puppeteer) run in the distribution: its own browsers can be used, Windows ones can't
-  const linux = await scanBrowserProfiles({ os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true });
+  const linux = await scanBrowserProfiles({ os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh });
   const windows = (await scanBrowserProfiles({ ...native, lookUpCommands: false })).map((profile) => ({
     ...profile,
     id: `windows-${profile.id}`,
@@ -212,7 +214,7 @@ let detection: Promise<BrowserProfile[]> | null = null;
 /** The detected browser profiles (looked for once; `refresh` looks again) */
 export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Promise<BrowserProfile[]> {
   if (!detection || options.refresh) {
-    detection = detect().catch((error: unknown) => {
+    detection = detect(options.refresh === true).catch((error: unknown) => {
       appLog.warn('[BrowserProfiles] Detection failed:', error);
       return [];
     });

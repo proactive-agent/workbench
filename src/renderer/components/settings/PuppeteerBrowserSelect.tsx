@@ -1,7 +1,7 @@
 /**
  * The Puppeteer connector's browser profile (Settings > Connectors): Puppeteer's own Chrome or a
- * local profile. Shows the last detection (refresh-cache) at once, takes the main process's startup
- * detection when it opens, and only scans again on the refresh button. Profiles that can't be used stay listed,
+ * local profile. Takes the main process's startup detection when it opens, and scans again from
+ * scratch on the refresh button. Profiles that can't be used stay listed,
  * disabled, with the reason as text.
  */
 
@@ -11,9 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { cn } from '../../lib/utils';
-import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
 import {
-  BROWSER_PROFILES_CACHE_KEY,
   DEFAULT_BROWSER_VALUE,
   browserProfileLabel,
   disabledReasonText,
@@ -28,7 +26,7 @@ interface PuppeteerBrowserSelectProps {
 
 export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSelectProps) {
   const { t } = useTranslation(['settings']);
-  const [profiles, setProfiles] = useState<BrowserProfile[] | undefined>(() => readRefreshCache<BrowserProfile[]>(BROWSER_PROFILES_CACHE_KEY));
+  const [profiles, setProfiles] = useState<BrowserProfile[] | undefined>(undefined);
   const [detecting, setDetecting] = useState(false);
 
   const detect = useCallback(async (refresh: boolean) => {
@@ -37,15 +35,14 @@ export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSele
       const result = await window.electronAPI.detectBrowserProfiles(refresh);
       if (result.success && result.data) {
         setProfiles(result.data);
-        writeRefreshCache(BROWSER_PROFILES_CACHE_KEY, result.data);
       }
     } finally {
       setDetecting(false);
     }
   }, []);
 
-  // The last result is shown at once; the main process's startup detection (kept in memory, so
-  // this scans nothing) replaces it, so a restart never leaves an older list on screen
+  // The main process's startup detection (kept in memory, so this scans nothing); nothing is
+  // stored in the window, so a restart never shows an older list
   useEffect(() => {
     void detect(false);
   }, [detect]);
