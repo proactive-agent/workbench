@@ -100,6 +100,7 @@ import {
   INSIGHTS_WEB_TOOLS,
   INSIGHTS_GRAPHIFY_COMMANDS,
   INSIGHTS_TASK_TOOLS_RULE,
+  INSIGHTS_SESSION_MESSAGING_TOOLS,
   INSIGHTS_GITHUB_RULES,
   INSIGHTS_MEMORY_RULE,
   INSIGHTS_GITLAB_RULES,
@@ -249,6 +250,30 @@ describe('runInsights', () => {
     expect(Number(mcpToolTimeout)).toBeGreaterThan(10 * 60 * 1000);
     expect(systemPrompt).toContain('mcp__workbench__');
     expect(systemPrompt).toContain('__TASK_SUGGESTION__');
+  });
+
+  it('lets Claude message other running sessions with the task tools when sessions may message tasks', async () => {
+    setRun(conversation);
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    await (await run({ taskTools, sessionMessages: true })).promise;
+    const { args, systemPrompt } = record();
+
+    expect(args[args.indexOf('--tools') + 1].split(',')).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+    expect(args.slice(args.indexOf('--allowedTools') + 1)).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+    expect(systemPrompt).toContain('use SendMessage with a name from ListAgents');
+    expect(systemPrompt).toContain('use message_task');
+  });
+
+  it('keeps ListAgents and SendMessage out without the task tools or with session messages off', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    for (const overrides of [{ sessionMessages: true }, { taskTools, sessionMessages: false }]) {
+      setRun(conversation);
+      await (await run(overrides)).promise;
+      const { args, systemPrompt } = record();
+      for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(args).not.toContain(tool);
+      expect(args[args.indexOf('--tools') + 1]).not.toContain('SendMessage');
+      expect(systemPrompt).not.toContain('ListAgents');
+    }
   });
 
   it("gives the CLI the chat's MCP servers next to the task tools", async () => {

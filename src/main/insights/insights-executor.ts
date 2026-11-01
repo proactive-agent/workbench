@@ -22,6 +22,7 @@ import { getToolInfoAsync } from '../cli-tool-manager';
 import { isSelfImproveEnabled } from '../self-improve/setting';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
 import type { AppSettings } from '../../shared/types';
+import { resolveClaudeCodeTaskSettings } from '../claude-code/settings';
 
 /**
  * Message processor result
@@ -70,6 +71,13 @@ async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
     if (!browserProfileDir) chatBrowserProfiles.delete(key);
   }
   return buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers;
+}
+
+/** Settings > Agents lets the user's sessions message running tasks (Task messaging and its sub-switch) */
+async function sessionMessagesEnabled(): Promise<boolean> {
+  const stored = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.claudeCodeTasks;
+  const settings = resolveClaudeCodeTaskSettings(stored);
+  return settings.taskMessaging && settings.sessionMessages;
 }
 
 /**
@@ -183,6 +191,8 @@ export class InsightsExecutor extends EventEmitter {
           // The MCP servers chosen with the chat's MCP button (Connectors defaults until changed)
           // (leaving out servers that can't start)
           mcpServers: await chatMcpServers(modelConfig?.mcpConnectors, projectPath),
+          // With the task tools: ListAgents and SendMessage for other running sessions
+          sessionMessages: await sessionMessagesEnabled(),
         },
         (event) => {
           switch (event.type) {

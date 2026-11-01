@@ -85,6 +85,11 @@ export interface InsightsRunConfig {
   session?: InsightsSessionPlan;
   /** The chat's title, shown in Claude Code's session list for a new session */
   title?: string;
+  /**
+   * The user's sessions may message running tasks (Settings > Agents): with the task tools on,
+   * the chat also gets Claude Code's ListAgents and SendMessage for other running sessions
+   */
+  sessionMessages?: boolean;
 }
 
 /**
@@ -188,6 +193,9 @@ export function supportsSystemPromptSnapshot(version: string | null | undefined)
   return !!parsed && semver.gte(parsed, SYSTEM_PROMPT_SNAPSHOT_MIN_VERSION);
 }
 
+/** Claude Code's built-in messaging between running sessions */
+export const INSIGHTS_SESSION_MESSAGING_TOOLS = ['ListAgents', 'SendMessage'] as const;
+
 /** MCP tools rule for Workbench's task tools (every tool of the server) */
 export const INSIGHTS_TASK_TOOLS_RULE = `mcp__${TASK_TOOLS_SERVER_NAME}`;
 
@@ -216,7 +224,9 @@ export function sessionArgs(plan: InsightsSessionPlan, newSessionId: string, tit
 
 /**
  * CLI arguments for a headless turn that can't change the project's files.
- * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot)
+ * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot).
+ * `sessionMessaging`: ListAgents and SendMessage, to reach other running sessions (agent windows,
+ * tasks); they never change the project's files
  */
 export function buildInsightsArgs(
   model: string,
@@ -228,6 +238,7 @@ export function buildInsightsArgs(
   memory = false,
   session: string[] = [],
   systemPromptSnapshot = false,
+  sessionMessaging = false,
 ): string[] {
   const cliRules = [
     ...(cliTools.github ? INSIGHTS_GITHUB_RULES : []),
@@ -240,6 +251,7 @@ export function buildInsightsArgs(
     ...(withBash ? ['Bash'] : []),
     // Saving memories; every other write is denied (dontAsk allows only the rule below)
     ...(memory ? ['Write', 'Edit'] : []),
+    ...(sessionMessaging ? INSIGHTS_SESSION_MESSAGING_TOOLS : []),
   ];
   const allowed = [
     ...(memory ? [INSIGHTS_MEMORY_RULE] : []),
@@ -248,6 +260,7 @@ export function buildInsightsArgs(
     ...(mcp?.taskTools ? [INSIGHTS_TASK_TOOLS_RULE] : []),
     ...(mcp?.servers ?? []).map((server) => `mcp__${server}`),
     ...INSIGHTS_WEB_TOOLS,
+    ...(sessionMessaging ? INSIGHTS_SESSION_MESSAGING_TOOLS : []),
   ];
   return [
     '-p',
@@ -452,6 +465,8 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     }
     const taskToolsRoute = getTaskToolsRoute();
     const offeredTaskTools = taskToolsRoute === 'off' ? undefined : config.taskTools;
+    // Messaging other running sessions comes with the task tools (the Kanban button)
+    const sessionMessaging = !!offeredTaskTools && config.sessionMessages === true;
 
     // A resumed or forked session runs on the account that holds its transcript; when the
     // project's account is set to another one, or that account can't be used, a new session starts
@@ -496,6 +511,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       graphify: !!graphify,
       mcpServers: Object.keys(chatServers),
       memory: config.memory,
+      sessionMessaging,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');
@@ -517,6 +533,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
           config.memory,
           sessionArgs(turnPlan, randomUUID(), config.title),
           supportsSystemPromptSnapshot(cliVersion),
+          sessionMessaging,
         ),
         cwd: projectDir,
         env,

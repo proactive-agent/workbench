@@ -617,9 +617,26 @@
       "validationDescription": "Run the project's checks and a fresh review of the changes before handing a task to you",
       "taskMessaging": "Task messaging",
       "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
+      "sessionMessages": "Messages from your Claude sessions",
+      "sessionMessagesDescription": "Agent windows, the Claude chat and claude in your own terminal can message running tasks",
       "fallbackModel": "Fallback model",
       "fallbackModelDescription": "Model Claude Code switches to when the chosen one is overloaded",
       "fallbackNone": "None"
+    },
+    "workflows": {
+      "size": "Workflow size",
+      "sizeDescription": "Large tasks review their changes, and may make them, with a workflow of many subagents, which uses more of your usage. Sets how many agents a workflow aims for",
+      "sizes": {
+        "off": "Off",
+        "default": "Claude Code default",
+        "small": "Small (under 5 agents)",
+        "medium": "Medium (under 10 agents)",
+        "large": "Large (under 50 agents)",
+        "unrestricted": "Unrestricted"
+      },
+      "concurrency": "Workflow agents at once",
+      "concurrencyDescription": "Most workflow agents each task runs at the same time",
+      "concurrencyDefault": "Claude Code default"
     },
     "agentWindows": {
       "skipPermissions": "Skip permission prompts",
