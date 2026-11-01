@@ -114,6 +114,15 @@ describe('browser profile copies', () => {
     expect(existsSync(current!)).toBe(true);
   });
 
+  it("makes no copy for Puppeteer's own download", async () => {
+    const choice: PuppeteerBrowserChoice = {
+      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      executablePath: '/c/firefox', userDataDir: '', profilePath: '',
+    };
+    expect(await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat')).toBeNull();
+    expect(existsSync(path.join(root, 'project'))).toBe(false);
+  });
+
   it('gives no copy when the profile is gone', async () => {
     const choice: PuppeteerBrowserChoice = {
       id: 'chrome:Default',

@@ -214,6 +214,8 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
                 {id === 'puppeteer' && (
                   <PuppeteerBrowserSelect
                     value={connectors.puppeteerBrowser}
+                    // Puppeteer's own Chrome failed for a build that isn't downloaded (its error comes with the install command)
+                    chromeMissing={!connectors.puppeteerBrowser && !!unavailable?.fixCommand}
                     onChange={(choice) => updateConnectors((current) => {
                       const { puppeteerBrowser: _previous, ...rest } = current;
                       return choice ? { ...rest, puppeteerBrowser: choice } : rest;

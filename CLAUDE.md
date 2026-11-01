@@ -261,7 +261,10 @@ Puppeteer's row picks a browser profile (`McpConnectorSettings.puppeteerBrowser`
 Chrome, Edge, Brave, Chromium and Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a
 copy of the chosen profile in `.workbench/browser-profiles/<profile>/<slot>` (Chrome 136+ refuses remote debugging on
 its default data dir), passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
-server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`.
+server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`. The picker also lists browsers Puppeteer
+downloads itself (`managed.ts`: Firefox from `~/.cache/puppeteer`) as disabled items with a download button that
+opens a terminal running `npx puppeteer browsers install` (`MCP_INSTALL_BROWSER`; the main process picks the
+command, then watches the cache and sends the new list).
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
 answers `initialize` (Puppeteer is also asked to navigate once, since it needs a browser; `mcp-commands.ts` finds the

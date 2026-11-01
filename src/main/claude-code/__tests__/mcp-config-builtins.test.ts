@@ -94,6 +94,17 @@ describe('built-in MCP servers', () => {
     expect(launchOptions(entry)).toEqual({ executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy' });
   });
 
+  it("launches Puppeteer's own Firefox download without a profile", () => {
+    const managed: PuppeteerBrowserChoice = {
+      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox', userDataDir: '', profilePath: '',
+    };
+    expect(launchOptions(buildMcpConfig(['puppeteer'], { puppeteerBrowser: managed }).mcpServers.puppeteer)).toEqual({
+      executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox',
+      browser: 'firefox',
+    });
+  });
+
   it("gives the profile copy's WSL path when tools run in WSL", () => {
     platform.windows = true;
     platform.wsl = true;

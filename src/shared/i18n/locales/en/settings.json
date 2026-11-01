@@ -413,6 +413,9 @@
       "label": "Browser profile",
       "default": "Puppeteer's Chrome",
       "notFound": "{{name}} (no longer found)",
+      "managed": "Puppeteer's {{browser}}",
+      "download": "Download {{browser}}",
+      "downloadDescription": "Opens a terminal that installs it",
       "closeBrowserHint": "Uses a copy of {{name}}; close the browser before a run to copy its sign-ins",
       "browsers": {
         "chrome": "Chrome",
@@ -430,7 +433,8 @@
         "unsupportedEngine": "Puppeteer doesn't support Safari",
         "executableMissing": "Browser not installed",
         "windowsBrowserInWsl": "Windows browser; tools run in WSL",
-        "sandboxedPackage": "Flatpak browsers can't be used"
+        "sandboxedPackage": "Flatpak browsers can't be used",
+        "notDownloaded": "Not downloaded"
       }
     },
     "servers": {

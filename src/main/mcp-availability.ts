@@ -76,6 +76,12 @@ const running = new Set<ChildProcess>();
 /** Bumped by resetMcpAvailability: probes started before it don't report */
 let generation = 0;
 
+/** The command that fixes an unavailable connector (its failed check's), when it has one */
+export function getMcpFixCommand(id: string): string | undefined {
+  const known = results.get(id)?.availability;
+  return known?.state === 'unavailable' ? known.fixCommand : undefined;
+}
+
 /** Called with each connector whose availability changed */
 export function onMcpAvailabilityChange(listener: (id: string, availability: McpAvailability) => void): () => void {
   events.on('change', listener);

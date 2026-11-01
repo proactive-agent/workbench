@@ -18,7 +18,12 @@ export type BrowserProfileDisabledReason =
   /** A Windows browser while tools run in WSL, where it can't be started */
   | 'windows-browser-in-wsl'
   /** A Flatpak browser: its sandbox keeps it from being started with another profile folder */
-  | 'sandboxed-package';
+  | 'sandboxed-package'
+  /** A browser Puppeteer downloads itself, not downloaded yet */
+  | 'not-downloaded';
+
+/** Browsers Puppeteer can download itself (`npx puppeteer browsers install <name>`) */
+export type DownloadableBrowser = 'chrome' | 'firefox';
 
 export interface BrowserProfile {
   /** `<browser>:<profile folder>`, e.g. `chrome:Profile 1` */
@@ -41,6 +46,10 @@ export interface BrowserProfile {
   executablePath?: string;
   usable: boolean;
   disabledReason?: BrowserProfileDisabledReason;
+  /** Puppeteer's own download of the browser (no user profile: it starts with a new one) */
+  managed?: boolean;
+  /** Set while the browser can be downloaded: which one the download button installs */
+  downloadable?: DownloadableBrowser;
 }
 
 /** The profile the Puppeteer connector uses (unset: Puppeteer's own Chrome) */
@@ -50,6 +59,8 @@ export interface PuppeteerBrowserChoice {
   engine: 'chromium' | 'firefox';
   profileName: string;
   variant?: string;
+  /** Puppeteer's own download of the browser: no profile copy, a new profile each launch */
+  managed?: boolean;
   email?: string;
   executablePath: string;
   userDataDir: string;

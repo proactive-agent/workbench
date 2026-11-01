@@ -19,6 +19,7 @@ const REASON_KEYS: Record<BrowserProfileDisabledReason, string> = {
   'executable-missing': 'settings:mcp.browserProfile.reasons.executableMissing',
   'windows-browser-in-wsl': 'settings:mcp.browserProfile.reasons.windowsBrowserInWsl',
   'sandboxed-package': 'settings:mcp.browserProfile.reasons.sandboxedPackage',
+  'not-downloaded': 'settings:mcp.browserProfile.reasons.notDownloaded',
 };
 
 /** Why a profile can't be picked, as text */
@@ -27,10 +28,12 @@ export function disabledReasonText(t: Translate, reason: BrowserProfileDisabledR
 }
 
 /** `Chrome · Work` (Safari has a single entry: just the browser) */
-export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 'browser' | 'profileName' | 'variant'>): string {
+export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 'browser' | 'profileName' | 'variant' | 'managed'>): string {
   const name = t(`settings:mcp.browserProfile.browsers.${profile.browser}`);
   // `Firefox (Snap)` where the same browser is installed in more than one way
   const browser = profile.variant ? `${name} (${t(`settings:mcp.browserProfile.variants.${profile.variant}`)})` : name;
+  // Puppeteer's own download has no profile to name
+  if (profile.managed) return t('settings:mcp.browserProfile.managed', { browser: name });
   return profile.browser === 'safari' ? browser : `${browser} · ${profile.profileName}`;
 }
 
@@ -43,6 +46,7 @@ export function toBrowserChoice(profile: BrowserProfile): PuppeteerBrowserChoice
     engine: profile.engine,
     profileName: profile.profileName,
     ...(profile.variant ? { variant: profile.variant } : {}),
+    ...(profile.managed ? { managed: true } : {}),
     ...(profile.email ? { email: profile.email } : {}),
     executablePath: profile.executablePath,
     userDataDir: profile.userDataDir,

@@ -1,21 +1,51 @@
 /**
  * The Puppeteer connector's browser profile (Settings > Connectors): Puppeteer's own Chrome or a
  * local profile, in the common dropdown select. The list is the one found when the app started.
- * Profiles that can't be used stay listed, disabled, with the reason as text.
+ * Profiles that can't be used stay listed, disabled, with the reason as text. Browsers Puppeteer can
+ * download (Firefox, and its Chrome when the build its server needs is missing) have a download
+ * button next to them that opens a terminal running the install; the button sits beside the item,
+ * not in it, because a disabled item ignores clicks. The list updates when the download finishes.
  */
 
+import { Download } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { DEFAULT_BROWSER_VALUE, browserProfileLabel, disabledReasonText, toBrowserChoice } from './browser-profile-meta';
-import type { BrowserProfile, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
+import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
 
 interface PuppeteerBrowserSelectProps {
   value: PuppeteerBrowserChoice | undefined;
   onChange: (choice: PuppeteerBrowserChoice | undefined) => void;
+  /** Puppeteer's own Chrome can't start because its build isn't downloaded: the default item offers the download */
+  chromeMissing?: boolean;
 }
 
-export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSelectProps) {
+/** A download button beside a dropdown item */
+function DownloadButton({ browser, onDownload }: { browser: DownloadableBrowser; onDownload: (browser: DownloadableBrowser) => void }) {
+  const { t } = useTranslation(['settings']);
+  const name = t(`settings:mcp.browserProfile.browsers.${browser}`);
+  const label = `${t('settings:mcp.browserProfile.download', { browser: name })}. ${t('settings:mcp.browserProfile.downloadDescription')}`;
+  return (
+    <button
+      type="button"
+      title={label}
+      aria-label={label}
+      // The dropdown reacts to pointer events on its content: keep the click for this button
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onClick={(event) => {
+        event.stopPropagation();
+        onDownload(browser);
+      }}
+      className="absolute right-9 top-1/2 z-10 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground hover:bg-nav-hover hover:text-foreground"
+    >
+      <Download className="h-4 w-4" strokeWidth={1.75} />
+    </button>
+  );
+}
+
+export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false }: PuppeteerBrowserSelectProps) {
   const { t } = useTranslation(['settings']);
   const [profiles, setProfiles] = useState<BrowserProfile[] | undefined>(undefined);
 
@@ -25,10 +55,17 @@ export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSele
     void window.electronAPI.detectBrowserProfiles().then((result) => {
       if (!cancelled && result.success && result.data) setProfiles(result.data);
     }).catch(() => undefined);
+    // A download started from here finished: the main process found the new browser
+    const stopListening = window.electronAPI.onBrowserProfilesChanged((next) => setProfiles(next));
     return () => {
       cancelled = true;
+      stopListening();
     };
   }, []);
+
+  const download = (browser: DownloadableBrowser) => {
+    void window.electronAPI.installPuppeteerBrowser(browser).catch(() => undefined);
+  };
 
   const list = profiles ?? [];
   // A stored profile that isn't detected any more stays shown (and selected) until changed
@@ -53,7 +90,13 @@ export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSele
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        <SelectItem value={DEFAULT_BROWSER_VALUE}>{t('settings:mcp.browserProfile.default')}</SelectItem>
+        <div className="relative">
+          <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromeMissing ? 'pr-16' : undefined}>
+            {t('settings:mcp.browserProfile.default')}
+            {chromeMissing && <span className="ml-2 text-(--nav-label-color)">{t('settings:mcp.browserProfile.reasons.notDownloaded')}</span>}
+          </SelectItem>
+          {chromeMissing && <DownloadButton browser="chrome" onDownload={download} />}
+        </div>
         {missing && (
           <SelectItem value={missing.id}>
             {t('settings:mcp.browserProfile.notFound', { name: browserProfileLabel(t, missing) })}
@@ -63,10 +106,13 @@ export function PuppeteerBrowserSelect({ value, onChange }: PuppeteerBrowserSele
           const reason = disabledReasonText(t, profile.disabledReason);
           const detail = reason ?? profile.email;
           return (
-            <SelectItem key={profile.id} value={profile.id} disabled={!profile.usable}>
-              {browserProfileLabel(t, profile)}
-              {detail && <span className="ml-2 text-(--nav-label-color)">{detail}</span>}
-            </SelectItem>
+            <div key={profile.id} className="relative">
+              <SelectItem value={profile.id} disabled={!profile.usable} className={profile.downloadable ? 'pr-16' : undefined}>
+                {browserProfileLabel(t, profile)}
+                {detail && <span className="ml-2 text-(--nav-label-color)">{detail}</span>}
+              </SelectItem>
+              {profile.downloadable && <DownloadButton browser={profile.downloadable} onDownload={download} />}
+            </div>
           );
         })}
       </SelectContent>

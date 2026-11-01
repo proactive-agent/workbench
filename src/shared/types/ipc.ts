@@ -529,6 +529,10 @@ export interface ElectronAPI {
   onMcpAvailabilityChanged: (callback: (id: string, availability: import('./project').McpAvailability) => void) => () => void;
   /** Local browser profiles for the Puppeteer connector (found when the app started) */
   detectBrowserProfiles: () => Promise<IPCResult<import('./browser-profiles').BrowserProfile[]>>;
+  /** Open a terminal that downloads a browser for Puppeteer */
+  installPuppeteerBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string }>>;
+  /** Called with the new list when a started download finished */
+  onBrowserProfilesChanged: (callback: (profiles: import('./browser-profiles').BrowserProfile[]) => void) => () => void;
 
   // Project windows (one project per window)
   /** Project this window was opened for (null for the first window) */

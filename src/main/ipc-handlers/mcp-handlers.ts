@@ -14,8 +14,11 @@ import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
 import { findWslCommand, isCommandAvailable } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
-import { getMcpAvailability, onMcpAvailabilityChange } from '../mcp-availability';
-import { detectBrowserProfiles } from '../browser-profiles/detect';
+import { getMcpAvailability, getMcpFixCommand, onMcpAvailabilityChange } from '../mcp-availability';
+import { detectBrowserProfiles, waitForManagedFirefox } from '../browser-profiles/detect';
+import { FIREFOX_INSTALL_COMMAND } from '../browser-profiles/managed';
+import { openTerminalWithCommand } from './claude-code-handlers';
+import type { DownloadableBrowser } from '../../shared/types/browser-profiles';
 import { readSettingsFileAsync } from '../settings-utils';
 import { getAllWindows } from '../window-manager';
 import type { AppSettings } from '../../shared/types';
@@ -579,6 +582,31 @@ export function registerMcpHandlers(): void {
       return { success: true, data: await detectBrowserProfiles() };
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : 'Browser detection failed' };
+    }
+  });
+
+  // The download buttons of the browser picker: a terminal installs the browser. The command is
+  // chosen here (never sent by the window). Chrome's is the one Puppeteer's own error named
+  // (the build its server needs); once Firefox shows up, every window gets the new list
+  ipcMain.handle(IPC_CHANNELS.MCP_INSTALL_BROWSER, async (_event, browser: DownloadableBrowser) => {
+    try {
+      if (browser !== 'chrome' && browser !== 'firefox') return { success: false, error: 'Unknown browser' };
+      const command = browser === 'firefox'
+        ? FIREFOX_INSTALL_COMMAND
+        : getMcpFixCommand('puppeteer') ?? 'npx puppeteer browsers install chrome';
+      await openTerminalWithCommand(command);
+      if (browser === 'firefox') {
+        void waitForManagedFirefox().then((profiles) => {
+          if (!profiles) return;
+          for (const window of getAllWindows()) {
+            if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, profiles);
+          }
+        });
+      }
+      return { success: true, data: { command } };
+    } catch (error) {
+      appLog.error('Browser download error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Could not open the terminal' };
     }
   });
 

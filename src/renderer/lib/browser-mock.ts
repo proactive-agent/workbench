@@ -242,7 +242,9 @@ const browserMockAPI: ElectronAPI = {
     data: Object.fromEntries(ids.map((id) => [id, { state: 'ready' as const }]))
   }),
   onMcpAvailabilityChanged: () => () => {},
-  detectBrowserProfiles: async () => ({ success: true, data: [] })
+  detectBrowserProfiles: async () => ({ success: true, data: [] }),
+  installPuppeteerBrowser: async () => ({ success: false, error: 'Not available in browser mode' }),
+  onBrowserProfilesChanged: () => () => {}
 };
 
 /**

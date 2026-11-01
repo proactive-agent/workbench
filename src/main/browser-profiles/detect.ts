@@ -21,6 +21,7 @@ import { resolveCommand } from '../mcp-commands';
 import { appLog } from '../app-logger';
 import { browserLocations, pathApi, type BrowserLocation, type BrowserOs } from './locations';
 import { parseChromiumLocalState, parseFirefoxProfilesIni } from './parsing';
+import { findManagedFirefox, scanManagedBrowsers } from './managed';
 
 /** Profiles with no sign of use for this long are left out (leftovers of old or removed installs) */
 export const STALE_PROFILE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -29,6 +30,10 @@ const ACTIVITY_FILES = [
   'Preferences', 'Cookies', 'Network/Cookies', 'History', 'Login Data',
   'prefs.js', 'cookies.sqlite', 'places.sqlite', 'sessionstore.jsonlz4',
 ];
+
+/** How often, and for how long, a started download is looked for */
+const WATCH_INTERVAL_MS = 3000;
+const WATCH_LIMIT_MS = 15 * 60 * 1000;
 
 const BROWSER_ORDER = ['chrome', 'edge', 'brave', 'chromium', 'firefox', 'safari'];
 
@@ -42,6 +47,8 @@ interface ScanContext {
   lookUpCommands: boolean;
   /** Look commands up again instead of taking the cached answer */
   refresh?: boolean;
+  /** Leave out the browsers Puppeteer downloads itself */
+  skipManaged?: boolean;
 }
 
 async function exists(p: string): Promise<boolean> {
@@ -180,10 +187,12 @@ export async function scanBrowserProfiles(context: ScanContext): Promise<Browser
     }
   }
   // Grouped by browser in a fixed order; profiles keep the browser's own order
-  return profiles
+  const sorted = profiles
     .map((profile, index) => ({ profile, index }))
     .sort((a, b) => BROWSER_ORDER.indexOf(a.profile.browser) - BROWSER_ORDER.indexOf(b.profile.browser) || a.index - b.index)
     .map(({ profile }) => profile);
+  // Puppeteer's own downloads come last
+  return context.skipManaged ? sorted : [...sorted, ...(await scanManagedBrowsers(context).catch(() => []))];
 }
 
 function nativeOs(): BrowserOs {
@@ -200,7 +209,7 @@ async function detect(refresh: boolean): Promise<BrowserProfile[]> {
 
   // Tools (and so Puppeteer) run in the distribution: its own browsers can be used, Windows ones can't
   const linux = await scanBrowserProfiles({ os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh });
-  const windows = (await scanBrowserProfiles({ ...native, lookUpCommands: false })).map((profile) => ({
+  const windows = (await scanBrowserProfiles({ ...native, lookUpCommands: false, skipManaged: true })).map((profile) => ({
     ...profile,
     id: `windows-${profile.id}`,
     usable: false,
@@ -220,4 +229,31 @@ export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Prom
     });
   }
   return detection;
+}
+
+let watching: Promise<BrowserProfile[] | null> | null = null;
+
+/**
+ * After a download button opened a terminal: wait (up to WATCH_LIMIT_MS) for Puppeteer's Firefox to
+ * show up in its cache folder, then detect again and return the new list (null when it never did).
+ * One watch at a time; a second call shares it
+ */
+export function waitForManagedFirefox(): Promise<BrowserProfile[] | null> {
+  if (watching) return watching;
+  watching = (async () => {
+    await whenShellRuntimeReady();
+    const wsl = getWslInfo();
+    const context = wsl
+      ? { os: 'linux' as const, home: wsl.home, env: {}, toHost: toHostPath }
+      : { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p: string) => p };
+    const deadline = Date.now() + WATCH_LIMIT_MS;
+    while (Date.now() < deadline) {
+      if (await findManagedFirefox(context)) return detectBrowserProfiles({ refresh: true });
+      await new Promise((resolve) => setTimeout(resolve, WATCH_INTERVAL_MS));
+    }
+    return null;
+  })().finally(() => {
+    watching = null;
+  });
+  return watching;
 }

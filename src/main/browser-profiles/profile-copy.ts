@@ -67,9 +67,12 @@ async function copyTree(source: string, target: string, relative = ''): Promise<
 
 /**
  * Make a fresh copy of the chosen profile for a run and return its folder (host path), or null
- * when the profile is gone (the run then uses the browser with a new profile)
+ * when the profile is gone or the browser is Puppeteer's own download (the run then uses the
+ * browser with a new profile)
  */
 export async function prepareBrowserProfileCopy(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): Promise<string | null> {
+  // Puppeteer's own download has no profile: it starts the browser with a new one
+  if (choice.managed) return null;
   const source = toHostPath(choice.profilePath);
   try {
     if (!(await stat(source)).isDirectory()) return null;

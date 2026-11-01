@@ -22,6 +22,11 @@ import { STALE_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserPro
 
 let root: string;
 
+/** The browsers' own profiles (Puppeteer's downloads are tested apart) */
+async function scanUserProfiles(context: Parameters<typeof scanBrowserProfiles>[0]) {
+  return (await scanBrowserProfiles(context)).filter((profile) => !profile.managed);
+}
+
 /** A path from an OS's table -> where the fixture keeps it */
 function fixturePath(p: string): string {
   return path.join(root, p.replace(/^[A-Za-z]:/, '').replace(/\\/g, '/'));
@@ -65,7 +70,7 @@ describe('browser profile detection', () => {
     await folder(`${roaming}\\Profiles\\x.default-release`);
     await put('C:\\Program Files\\Mozilla Firefox\\firefox.exe');
 
-    const profiles = await scanBrowserProfiles({
+    const profiles = await scanUserProfiles({
       os: 'windows',
       home: 'C:\\Users\\me',
       env: { LOCALAPPDATA: local, APPDATA: 'C:\\Users\\me\\AppData\\Roaming', ProgramFiles: 'C:\\Program Files' },
@@ -103,7 +108,7 @@ describe('browser profile detection', () => {
     await put('/Applications/Brave Browser.app/Contents/MacOS/Brave Browser');
     await put('/Applications/Safari.app/Contents/MacOS/Safari');
 
-    const profiles = await scanBrowserProfiles({ os: 'macos', home: '/Users/me', env: {}, toHost: fixturePath, lookUpCommands: false });
+    const profiles = await scanUserProfiles({ os: 'macos', home: '/Users/me', env: {}, toHost: fixturePath, lookUpCommands: false });
 
     expect(profiles.map((p) => [p.id, p.usable, p.disabledReason])).toEqual([
       ['brave:Default', true, undefined],
@@ -123,7 +128,7 @@ describe('browser profile detection', () => {
     // Unreadable Local State: that browser is skipped, the others are listed
     await put('/home/me/.config/microsoft-edge/Local State', '{broken');
 
-    const profiles = await scanBrowserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: true });
+    const profiles = await scanUserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: true });
 
     expect(profiles.map((p) => [p.id, p.usable, p.executablePath, p.disabledReason])).toEqual([
       ['chrome:Default', true, '/usr/bin/google-chrome', undefined],
@@ -148,7 +153,7 @@ describe('browser profile detection', () => {
     await utimes(fixturePath(`${dir}/a.old/prefs.js`), longAgo, longAgo);
     await put('/usr/lib/firefox/firefox');
 
-    const profiles = await scanBrowserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false });
+    const profiles = await scanUserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false });
 
     expect(profiles.map((p) => p.profileName)).toEqual(['in-use', 'never-opened']);
   });
@@ -167,13 +172,46 @@ describe('browser profile detection', () => {
     expect(await isStaleProfile(fixturePath('/p/missing'))).toBe(false);
   });
 
+  it("lists Puppeteer's Firefox as downloadable until it is in the cache, then as usable", async () => {
+    const context = { os: 'linux' as const, home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false };
+    const managed = async () => (await scanBrowserProfiles(context)).filter((p) => p.managed);
+
+    expect(await managed()).toEqual([
+      expect.objectContaining({ id: 'puppeteer:firefox', usable: false, disabledReason: 'not-downloaded', downloadable: 'firefox' }),
+    ]);
+
+    await put('/home/me/.cache/puppeteer/firefox/linux-132.0.2/firefox/firefox');
+    await put('/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox');
+    const [firefox] = await managed();
+    expect(firefox).toMatchObject({ usable: true, executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox' });
+    expect(firefox.downloadable).toBeUndefined();
+  });
+
+  it('finds the download in the cache folder each OS uses', async () => {
+    await put('/Users/me/.cache/puppeteer/firefox/mac-132.0/Firefox.app/Contents/MacOS/firefox');
+    const mac = await scanBrowserProfiles({ os: 'macos', home: '/Users/me', env: {}, toHost: fixturePath, lookUpCommands: false });
+    expect(mac.find((p) => p.managed)?.executablePath).toBe('/Users/me/.cache/puppeteer/firefox/mac-132.0/Firefox.app/Contents/MacOS/firefox');
+
+    await put('D:\\cache\\firefox\\win64-132.0\\core\\firefox.exe');
+    const windows = await scanBrowserProfiles({
+      os: 'windows', home: 'C:\\Users\\me', env: { PUPPETEER_CACHE_DIR: 'D:\\cache' }, toHost: fixturePath, lookUpCommands: false,
+    });
+    expect(windows.find((p) => p.managed)?.executablePath).toBe('D:\\cache\\firefox\\win64-132.0\\core\\firefox.exe');
+  });
+
+  it("doesn't list Puppeteer's downloads for Windows browsers while tools run in WSL", async () => {
+    mocks.wslHome = '/home/wsl';
+    const profiles = await detectBrowserProfiles({ refresh: true });
+    expect(profiles.filter((p) => p.managed).map((p) => p.id)).toEqual(['puppeteer:firefox']);
+  });
+
   it("reads the WSL distribution's browsers through host paths, with Linux paths", async () => {
     mocks.wslHome = '/home/wsl';
     await put('/home/wsl/.config/chromium/Local State', localState({ Default: { name: 'In WSL' } }));
     await folder('/home/wsl/.config/chromium/Default');
     await put('/usr/lib/chromium/chromium');
 
-    const profiles = (await detectBrowserProfiles({ refresh: true })).filter((p) => !p.id.startsWith('windows-'));
+    const profiles = (await detectBrowserProfiles({ refresh: true })).filter((p) => !p.id.startsWith('windows-') && !p.managed);
 
     expect(profiles).toEqual([
       expect.objectContaining({

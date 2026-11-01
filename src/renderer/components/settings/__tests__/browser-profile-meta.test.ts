@@ -39,6 +39,17 @@ describe('browser profile picker helpers', () => {
     expect(toBrowserChoice({ ...chrome, usable: false, disabledReason: 'executable-missing', executablePath: undefined })).toBeUndefined();
   });
 
+  it("labels Puppeteer's own download without a profile name and stores it as managed", () => {
+    const firefox: BrowserProfile = {
+      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      userDataDir: '', profilePath: '', executablePath: '/c/firefox', usable: true,
+    };
+    expect(browserProfileLabel(t, firefox)).toBe('managed');
+    expect(toBrowserChoice(firefox)).toMatchObject({ id: 'puppeteer:firefox', managed: true, executablePath: '/c/firefox' });
+    expect(toBrowserChoice({ ...firefox, usable: false, executablePath: undefined, disabledReason: 'not-downloaded', downloadable: 'firefox' })).toBeUndefined();
+    expect(disabledReasonText(t, 'not-downloaded')).toBe('notDownloaded');
+  });
+
   it('gives each disabled reason as text', () => {
     expect(disabledReasonText(t, 'unsupported-engine')).toBe('unsupportedEngine');
     expect(disabledReasonText(t, 'windows-browser-in-wsl')).toBe('windowsBrowserInWsl');
