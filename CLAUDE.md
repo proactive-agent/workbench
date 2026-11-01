@@ -195,6 +195,12 @@ workbench/
     without a worktree it uses `--permission-mode auto`) and the triage model/effort.
   - `validate`: same session runs checks, reviews the diff with fresh eyes (`/code-review` or a subagent), commits,
     returns a structured `ValidationReport`. `revise` mode applies "request changes" feedback, then validates again.
+  - Workflows (`workflows.ts`): when triage sizes a task `large`, validation asks for a Claude Code workflow that
+    reviews the diff from several angles and has each finding checked before it counts, and implementation may use
+    one for many-file changes. Settings > Agents > Limits sets `workflowSizeGuideline` (passed with `--settings`) and
+    `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`, or turns workflows off. Launches are recorded in
+    `ClaudeRunInfo.workflows`, so a step continued after a stop or usage limit relaunches its run with
+    `resumeFromRunId` (finished agents reuse their results; a profile swap copies the session's directory with them).
   - State in `<specDir>/claude_run.json` (`ClaudeRunInfo`: session id, triage, plan, phases with cost, `system/init`
     info, subagents, validation) so stopped / rate-limited runs continue; logs in `task_logs.json`. Claude Code's
     task list (TaskCreate/TaskUpdate, enabled with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`) is mirrored as the task's subtasks.
@@ -354,7 +360,7 @@ Project, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_B
   notifications.
 - **Accounts** — Claude accounts, API profiles and Metrics (spending per project, `src/main/project-metrics.ts`).
 - **Agents** — how tasks run (triage, planning, validation, Fable, fallback model, Task messaging, Live agent) and
-  limits such as Maximum parallel tasks.
+  limits such as Maximum parallel tasks and the workflow size and concurrency.
 - **Project** — the selected project's page: Project (Project index: CLAUDE.md written by Claude Code's `/init`,
   `src/main/project-index.ts`; Knowledge index: Graphify; Memory index: Self-improve), Knowledge (Use CLAUDE.md, Use
   Graphify, Self-improve), Tasks, Branches. The project's `useClaudeMd`, `maxBudgetUsd` (budget per task),

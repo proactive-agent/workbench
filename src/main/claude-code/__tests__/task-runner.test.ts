@@ -416,10 +416,14 @@ describe('ClaudeTaskRun', () => {
     const { mkdirSync, writeFileSync } = await import('fs');
     mkdirSync(path.join(dirA, 'projects', 'proj'), { recursive: true });
     writeFileSync(path.join(dirA, 'projects', 'proj', 's9.jsonl'), '{}');
+    // The session's directory holds its workflow runs' saved results, which a relaunch reuses
+    mkdirSync(path.join(dirA, 'projects', 'proj', 's9', 'workflows'), { recursive: true });
+    writeFileSync(path.join(dirA, 'projects', 'proj', 's9', 'workflows', 'wf_abc123.json'), '{}');
     scripts.push({ messages: [result('s9')] });
     const outcome = await makeRun({ profileId: 'b', settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false } }).run();
     expect(outcome.status).toBe('completed');
     expect(existsSync(path.join(dirB, 'projects', 'proj', 's9.jsonl'))).toBe(true);
+    expect(existsSync(path.join(dirB, 'projects', 'proj', 's9', 'workflows', 'wf_abc123.json'))).toBe(true);
     expect(loadClaudeRunInfo(specDir)).toMatchObject({ profileId: 'b', configDir: dirB });
     envMock.mockReset();
     envMock.mockImplementation(async (options) => ({ command: 'claude', env: { ...(options?.extraEnv ?? {}) } }));
@@ -522,6 +526,98 @@ describe('ClaudeTaskRun', () => {
       rmSync(otherSpec, { recursive: true, force: true });
     }
   });
+  describe('workflows', () => {
+    const text = (index: number) => (spawned[index].input as Array<{ type: string; text?: string }>)[0].text ?? '';
+    const validated = (sessionId: string) => result(sessionId, { structured_output: { status: 'passed', summary: 'ok', checks: [], findings: [] } });
+
+    it('reviews a large task with a checked multi-angle workflow and lets it implement with one', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
+      scripts.push({ messages: [result('w1')] }, { messages: [validated('w1')] });
+      await makeRun({ settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, workflowSize: 'large', workflowMaxConcurrentAgents: 4 } }).run();
+
+      expect(text(0)).toContain('you may use a workflow (the Workflow tool)');
+      expect(text(1)).toContain('use a workflow for it');
+      expect(text(1)).toContain('has a separate agent check each finding');
+      expect(argValue(spawned[0].args, '--append-system-prompt')).toContain('or in a workflow where a step allows one');
+      for (const options of spawned) {
+        expect(JSON.parse(argValue(options.args, '--settings')!)).toEqual({ workflowSizeGuideline: 'large' });
+        expect(options.env.CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS).toBe('4');
+      }
+    });
+
+    it('keeps the single /code-review for smaller tasks', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'medium' }) });
+      scripts.push({ messages: [result('w2')] }, { messages: [validated('w2')] });
+      await makeRun().run();
+
+      expect(text(0)).not.toContain('workflow');
+      expect(text(1)).toContain('Use the /code-review skill');
+      expect(text(1)).not.toContain('Workflow tool');
+      expect(argValue(spawned[0].args, '--append-system-prompt')).not.toContain('or in a workflow');
+    });
+
+    it('turns workflows off for the session and leaves the turns as they were', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
+      scripts.push({ messages: [result('w3')] }, { messages: [validated('w3')] });
+      await makeRun({ settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, workflowSize: 'off', workflowMaxConcurrentAgents: 4 } }).run();
+
+      expect(spawned[0].args).not.toContain('--settings');
+      expect(spawned[0].env.CLAUDE_CODE_DISABLE_WORKFLOWS).toBe('1');
+      expect(spawned[0].env.CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS).toBeUndefined();
+      expect(text(0)).not.toContain('workflow');
+      expect(text(1)).toContain('Use the /code-review skill');
+    });
+
+    function launch(sessionId: string): ClaudeStreamMessage[] {
+      return [
+        { type: 'system', subtype: 'init', session_id: sessionId } as ClaudeStreamMessage,
+        { type: 'assistant', session_id: sessionId, parent_tool_use_id: null, message: { content: [
+          { type: 'tool_use', id: 'tu-wf', name: 'Workflow', input: { script: "export const meta = { name: 'migrate-files', description: 'x' }" } },
+        ] } } as ClaudeStreamMessage,
+        { type: 'system', subtype: 'task_started', task_id: 'bg-1', tool_use_id: 'tu-wf', description: 'migrate-files', task_type: 'local_workflow' } as ClaudeStreamMessage,
+        { type: 'user', session_id: sessionId, parent_tool_use_id: null,
+          message: { content: [{ type: 'tool_result', tool_use_id: 'tu-wf', content: 'Workflow launched in the background' }] },
+          tool_use_result: { status: 'async_launched', taskId: 'bg-1', runId: 'wf_run123', workflowName: 'migrate-files', scriptPath: '/runs/wf_run123.js' } } as ClaudeStreamMessage,
+      ];
+    }
+
+    it('records a workflow run and has the continued step relaunch it after a usage limit', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
+      const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false };
+      scripts.push({ messages: [...launch('w4'), result('w4', { result: "You've hit your session limit · resets 8:30pm (UTC)" })] });
+      const first = await makeRun({ settings }).run();
+      expect(first.status).toBe('rate_limited');
+      expect(loadClaudeRunInfo(specDir)?.workflows).toEqual([expect.objectContaining({
+        runId: 'wf_run123', taskId: 'bg-1', name: 'migrate-files', scriptPath: '/runs/wf_run123.js',
+        phase: 'implement', sessionId: 'w4', status: 'stopped',
+      })]);
+
+      scripts.push({ messages: [result('w4')] });
+      const second = await makeRun({ settings }).run();
+      expect(second.status).toBe('completed');
+      expect(argValue(spawned[1].args, '--resume')).toBe('w4');
+      expect(text(1)).toMatch(/^Continue the task/);
+      expect(text(1)).toContain('`wf_run123` "migrate-files", script `/runs/wf_run123.js`');
+      expect(text(1)).toContain('resumeFromRunId');
+    });
+
+    it('does not ask to relaunch a workflow that finished', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
+      const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false };
+      scripts.push({ messages: [
+        ...launch('w5'),
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'completed' } as ClaudeStreamMessage,
+        result('w5', { is_error: true, subtype: 'error_during_execution', errors: ['crash'] }),
+      ] });
+      await makeRun({ settings }).run();
+      expect(loadClaudeRunInfo(specDir)?.workflows?.[0]).toMatchObject({ status: 'completed' });
+
+      scripts.push({ messages: [result('w5')] });
+      await makeRun({ settings }).run();
+      expect(text(1)).not.toContain('resumeFromRunId');
+    });
+  });
+
   describe('in WSL', () => {
     it('reports edited files and the session cwd as host paths', async () => {
       runtimeRef.wsl = true;
@@ -633,7 +729,6 @@ describe('ClaudeTaskRun', () => {
       expect(options.args).toContain('--replay-user-messages');
       // Claude Code's default holds other sessions' messages for a session that skips permission
       // checks: no local session can add turns to an unattended run
-      expect(options.args).not.toContain('--settings');
       expect(options.args.join(' ')).not.toContain('crossSessionInbound');
       expect(argValue(options.args, '--append-system-prompt')).toContain('Reach other tasks with `message_task`, not SendMessage');
       expect(argValue(options.args, '--allowedTools')).toBe('mcp__workbench__message_task,mcp__workbench__list_parallel_tasks');
@@ -706,7 +801,8 @@ describe('ClaudeTaskRun', () => {
       await makeRun({ settings }).run();
       const { args, keepStdinOpen } = spawned[0];
       expect(keepStdinOpen).toBe(false);
-      for (const flag of ['--replay-user-messages', '--settings', '--allowedTools']) expect(args).not.toContain(flag);
+      for (const flag of ['--replay-user-messages', '--allowedTools']) expect(args).not.toContain(flag);
+      expect(args.join(' ')).not.toContain('crossSessionInbound');
       expect(argValue(args, '--name')).toMatch(/^wb-[a-z0-9]{6}-001-task$/);
     });
   });
