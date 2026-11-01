@@ -36,6 +36,19 @@ export function puppeteerCacheDir({ os, home, env }: ManagedScanContext): string
   return env.PUPPETEER_CACHE_DIR || pathApi(os).join(home, '.cache', 'puppeteer');
 }
 
+/**
+ * Whether a build is still being unpacked: @puppeteer/browsers downloads `<buildId>-<file>` next to
+ * the build's `<platform>-<buildId>` folder, unpacks it there in archive order (the executable comes
+ * before the libraries) and deletes the archive only when done. Platforms (`linux`, `mac_arm`,
+ * `win64`) have no dash, so the build id is what follows the first one
+ */
+function installing(build: string, entries: string[]): boolean {
+  const dash = build.indexOf('-');
+  if (dash < 0) return false;
+  const archivePrefix = `${build.slice(dash + 1)}-`;
+  return entries.some((entry) => entry !== build && entry.startsWith(archivePrefix));
+}
+
 /** The newest downloaded Firefox's executable (a path where tools run), or undefined */
 export async function findManagedFirefox(context: ManagedScanContext): Promise<string | undefined> {
   const p = pathApi(context.os);
@@ -49,6 +62,7 @@ export async function findManagedFirefox(context: ManagedScanContext): Promise<s
   // `linux-132.0.2`, `linux-133.0`: newest first, by version
   builds.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
   for (const build of builds) {
+    if (installing(build, builds)) continue;
     for (const parts of FIREFOX_EXECUTABLES[context.os]) {
       const executable = p.join(root, build, ...parts);
       try {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { browserProfileLabel, disabledReasonText, toBrowserChoice } from '../browser-profile-meta';
+import { browserProfileLabel, disabledReasonText, refreshedBrowserChoice, toBrowserChoice } from '../browser-profile-meta';
 import type { BrowserProfile } from '../../../../shared/types/browser-profiles';
 
 const t = (key: string) => key.split('.').at(-1) ?? key;
@@ -54,5 +54,17 @@ describe('browser profile picker helpers', () => {
     expect(disabledReasonText(t, 'unsupported-engine')).toBe('unsupportedEngine');
     expect(disabledReasonText(t, 'windows-browser-in-wsl')).toBe('windowsBrowserInWsl');
     expect(disabledReasonText(t, undefined)).toBeUndefined();
+  });
+
+  it('remakes a stored choice whose detected paths changed', () => {
+    const stored = toBrowserChoice(chrome)!;
+    expect(refreshedBrowserChoice(stored, [chrome])).toBeUndefined();
+    expect(refreshedBrowserChoice(stored, [{ ...chrome, executablePath: '/opt/new/chrome' }])).toEqual({ ...stored, executablePath: '/opt/new/chrome' });
+    expect(refreshedBrowserChoice(stored, [{ ...chrome, userDataDir: '/v', profilePath: '/v/Default' }]))
+      .toEqual({ ...stored, userDataDir: '/v', profilePath: '/v/Default' });
+    // Not detected, or no longer usable: kept as it is
+    expect(refreshedBrowserChoice(stored, [])).toBeUndefined();
+    expect(refreshedBrowserChoice(stored, [{ ...chrome, usable: false, executablePath: undefined }])).toBeUndefined();
+    expect(refreshedBrowserChoice(undefined, [chrome])).toBeUndefined();
   });
 });

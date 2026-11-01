@@ -22,6 +22,7 @@ const REASON_KEYS: Record<BrowserProfileDisabledReason, string> = {
   'windows-browser-in-wsl': 'settings:mcp.browserProfile.reasons.windowsBrowserInWsl',
   'sandboxed-package': 'settings:mcp.browserProfile.reasons.sandboxedPackage',
   'not-downloaded': 'settings:mcp.browserProfile.reasons.notDownloaded',
+  'snap-needs-newer-glibc': 'settings:mcp.browserProfile.reasons.snapNeedsNewerGlibc',
 };
 
 /** Why a profile can't be picked, as text */
@@ -63,4 +64,19 @@ export function toBrowserChoice(profile: BrowserProfile): PuppeteerBrowserChoice
     ...(profile.profileDirectory ? { profileDirectory: profile.profileDirectory } : {}),
     profilePath: profile.profilePath,
   };
+}
+
+/**
+ * The stored choice made again from its detected profile, when the paths runs use changed (a new
+ * download of Puppeteer's browser, a runtime switch); undefined when it is up to date, gone or unusable
+ */
+export function refreshedBrowserChoice(
+  value: PuppeteerBrowserChoice | undefined,
+  profiles: BrowserProfile[] | undefined
+): PuppeteerBrowserChoice | undefined {
+  const profile = value && profiles?.find((p) => p.id === value.id);
+  const choice = profile ? toBrowserChoice(profile) : undefined;
+  if (!value || !choice) return undefined;
+  const fields = ['engine', 'executablePath', 'userDataDir', 'profileDirectory', 'profilePath', 'managed'] as const;
+  return fields.some((field) => choice[field] !== value[field]) ? choice : undefined;
 }

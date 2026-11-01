@@ -14,6 +14,7 @@ class FakeProcess extends EventEmitter {
 const mocks = vi.hoisted(() => ({
   windows: false,
   browserOpen: false,
+  inUse: vi.fn(),
   spawnTool: vi.fn(),
   killRuntimeProcessTree: vi.fn(),
   resolveCommand: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock('../platform/runtime-exec', () => ({
 }));
 vi.mock('../platform', () => ({ isWindows: () => mocks.windows }));
 vi.mock('../cli-utils', () => ({ getToolEnvAsync: async () => ({ PATH: '/usr/bin' }) }));
-vi.mock('../browser-profiles/in-use', () => ({ isBrowserProfileInUse: async () => mocks.browserOpen }));
+vi.mock('../browser-profiles/in-use', () => ({ isBrowserProfileInUse: (browser: unknown) => mocks.inUse(browser) }));
 vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 
 let getMcpAvailability: typeof import('../mcp-availability').getMcpAvailability;
@@ -57,6 +58,7 @@ describe('MCP availability', () => {
     for (const key of Object.keys(servers)) delete servers[key];
     mocks.windows = false;
     mocks.browserOpen = false;
+    mocks.inUse.mockImplementation(async () => mocks.browserOpen);
     mocks.resolveCommand.mockImplementation(async (command: string) => installed.get(command) ?? null);
     mocks.spawnTool.mockImplementation((_tool: string, args: string[]) => {
       const proc = new FakeProcess();
@@ -303,5 +305,80 @@ describe('MCP availability', () => {
     mocks.browserOpen = false;
     expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual(['puppeteer']);
     stopMcpProbes();
+  });
+
+  const firefoxProfile = {
+    id: 'firefox:x.default', browser: 'firefox' as const, engine: 'firefox' as const, profileName: 'default',
+    executablePath: '/usr/lib/firefox/firefox', userDataDir: '/home/me/.mozilla/firefox', profilePath: '/home/me/.mozilla/firefox/x.default',
+  };
+
+  it("keeps Puppeteer unavailable when its probe ends while the chosen browser is open", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    let finishProbe: (() => void) | undefined;
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        if (JSON.parse(line).method === 'tools/call') {
+          finishProbe = () => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
+        }
+      });
+      answer(proc);
+    };
+    mocks.browserOpen = true;
+    const settings = { puppeteerBrowser: firefoxProfile };
+    const changes: unknown[] = [];
+    const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+
+    getMcpAvailability(['puppeteer'], settings);
+    await vi.waitFor(() => expect(changes).toContainEqual({ state: 'unavailable', browserOpen: true }));
+    await vi.waitFor(() => expect(finishProbe).toBeDefined());
+    const before = changes.length;
+    finishProbe?.();
+    await vi.waitFor(() => expect(changes.length).toBeGreaterThan(before));
+    // The server is fine, but the open browser still keeps it out
+    expect(changes.at(-1)).toEqual({ state: 'unavailable', browserOpen: true });
+    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({ state: 'unavailable', browserOpen: true });
+    stop();
+    stopMcpProbes();
+  });
+
+  it('stops looking at an open browser once another one is chosen', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      installed.set('npx', '/usr/bin/npx');
+      servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+        proc.stdin.write.mockImplementation((line: string) => {
+          if (JSON.parse(line).method === 'tools/call') proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
+        });
+        answer(proc);
+      };
+      mocks.browserOpen = true;
+      const profile = { puppeteerBrowser: firefoxProfile };
+      getMcpAvailability(['puppeteer'], profile);
+      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+
+      // Puppeteer's own Firefox is chosen, then the profile's browser closes
+      const managed = {
+        puppeteerBrowser: {
+          ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/home/me/.cache/puppeteer/firefox/firefox',
+        },
+      };
+      const changes: unknown[] = [];
+      const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+      getMcpAvailability(['puppeteer'], managed);
+      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], managed).puppeteer.state).toBe('ready'));
+      mocks.browserOpen = false;
+      const looks = mocks.inUse.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      // The old profile isn't looked at again, and nothing goes back to its entry
+      expect(mocks.inUse.mock.calls.length).toBe(looks);
+      expect(changes.at(-1)).toEqual({ state: 'ready' });
+      const lastSpawn = mocks.spawnTool.mock.calls.at(-1)?.[2].env as Record<string, string>;
+      expect(JSON.parse(lastSpawn.PUPPETEER_LAUNCH_OPTIONS).executablePath).toBe('/home/me/.cache/puppeteer/firefox/firefox');
+      stop();
+      stopMcpProbes();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

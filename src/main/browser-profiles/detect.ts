@@ -14,12 +14,20 @@
 
 import os from 'os';
 import { access, readFile, stat } from 'fs/promises';
-import type { BrowserProfile } from '../../shared/types/browser-profiles';
+import type { BrowserProfile, BrowserProfileDisabledReason } from '../../shared/types/browser-profiles';
 import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { resolveCommand } from '../mcp-commands';
+import { runTool } from '../platform/runtime-exec';
 import { appLog } from '../app-logger';
-import { browserLocations, pathApi, type BrowserLocation, type BrowserOs } from './locations';
+import {
+  SNAP_FIREFOX_BINARY,
+  SNAP_FIREFOX_LAUNCHER,
+  browserLocations,
+  pathApi,
+  type BrowserLocation,
+  type BrowserOs,
+} from './locations';
 import { parseChromiumLocalState, parseFirefoxProfilesIni } from './parsing';
 import { findManagedFirefox, scanManagedBrowsers } from './managed';
 
@@ -104,6 +112,63 @@ async function findExecutable(location: BrowserLocation, context: ScanContext): 
   return undefined;
 }
 
+/** Ubuntu's `/usr/bin/firefox` is a small script that starts the snap */
+async function startsSnapFirefox(executable: string, context: ScanContext): Promise<boolean> {
+  if (executable === SNAP_FIREFOX_LAUNCHER) return true;
+  try {
+    const host = context.toHost(executable);
+    if ((await stat(host)).size > 64 * 1024) return false;
+    const text = await readFile(host, 'utf-8');
+    return text.startsWith('#!') && text.includes(SNAP_FIREFOX_LAUNCHER);
+  } catch {
+    return false;
+  }
+}
+
+/** One check per scan: the deb and snap locations can both lead to the snap */
+const snapChecks = new WeakMap<ScanContext, Promise<BrowserProfileDisabledReason | undefined>>();
+
+/**
+ * Why snap Firefox's own binary (the one runs launch, see mcp-config.ts) can't run outside the
+ * snap. It is built on the snap's base (core24: glibc 2.38 or newer) and has no bundled libc, so
+ * on an older system the loader refuses it
+ */
+function snapFirefoxProblem(context: ScanContext): Promise<BrowserProfileDisabledReason | undefined> {
+  let check = snapChecks.get(context);
+  if (!check) {
+    check = (async () => {
+      if (!(await exists(context.toHost(SNAP_FIREFOX_BINARY)))) return 'executable-missing' as const;
+      try {
+        // Tool name aside, this runs the given binary where tools run
+        await runTool('node', ['--version'], { command: SNAP_FIREFOX_BINARY, timeout: 15_000 });
+        return undefined;
+      } catch (error) {
+        // `version `GLIBC_2.38' not found (required by ...)`; other failures are left to the connector check
+        const stderr = String((error as { stderr?: unknown }).stderr ?? '');
+        return /GLIBC(?:XX)?_[\d.]+' not found/.test(stderr) ? 'snap-needs-newer-glibc' as const : undefined;
+      }
+    })();
+    snapChecks.set(context, check);
+  }
+  return check;
+}
+
+/** The executable a location's profiles launch with, or why there is none that works */
+async function resolveLaunch(
+  location: BrowserLocation,
+  context: ScanContext
+): Promise<{ executablePath?: string; disabledReason?: BrowserProfileDisabledReason }> {
+  if (location.disabledReason) return { disabledReason: location.disabledReason };
+  const executablePath = await findExecutable(location, context);
+  if (!executablePath) return { disabledReason: 'executable-missing' };
+  if (context.os === 'linux' && location.engine === 'firefox' && (await startsSnapFirefox(executablePath, context))) {
+    // Stored as the snap's launcher, which runs map to the snap's own binary
+    const disabledReason = await snapFirefoxProblem(context);
+    return { executablePath: SNAP_FIREFOX_LAUNCHER, ...(disabledReason ? { disabledReason } : {}) };
+  }
+  return { executablePath };
+}
+
 function profileId(location: BrowserLocation, folder: string): string {
   return `${location.browser}${location.variant ? `-${location.variant}` : ''}:${folder}`;
 }
@@ -161,8 +226,7 @@ async function scanLocation(location: BrowserLocation, context: ScanContext): Pr
   }
   if (found.length === 0) return [];
 
-  const executablePath = location.disabledReason ? undefined : await findExecutable(location, context);
-  const disabledReason = location.disabledReason ?? (executablePath ? undefined : 'executable-missing');
+  const { executablePath, disabledReason } = await resolveLaunch(location, context);
   return found.map((profile) => ({
     ...profile,
     ...(executablePath ? { executablePath } : {}),

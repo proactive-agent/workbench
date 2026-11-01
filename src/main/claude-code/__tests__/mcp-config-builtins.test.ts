@@ -91,7 +91,11 @@ describe('built-in MCP servers', () => {
       profilePath: '/home/me/.mozilla/firefox/x.default',
     };
     const entry = buildMcpConfig(['puppeteer'], { puppeteerBrowser: firefox }, { browserProfileDir: '/p/copy' }).mcpServers.puppeteer;
-    expect(launchOptions(entry)).toEqual({ executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy' });
+    // The copy keeps the Firefox Account sign-in: Sync stays off so the agent's browsing isn't uploaded
+    expect(launchOptions(entry)).toEqual({
+      executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy',
+      extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },
+    });
   });
 
   it("launches the snap's own Firefox binary, not the /snap/bin launcher", () => {
@@ -107,6 +111,7 @@ describe('built-in MCP servers', () => {
     };
     expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: firefox }))).toEqual({
       executablePath: '/snap/firefox/current/usr/lib/firefox/firefox', browser: 'firefox',
+      extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },
     });
   });
 
@@ -118,6 +123,7 @@ describe('built-in MCP servers', () => {
     expect(launchOptions(buildMcpConfig(['puppeteer'], { puppeteerBrowser: managed }).mcpServers.puppeteer)).toEqual({
       executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox',
       browser: 'firefox',
+      extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },
     });
   });
 

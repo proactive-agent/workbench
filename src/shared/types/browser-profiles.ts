@@ -20,7 +20,9 @@ export type BrowserProfileDisabledReason =
   /** A Flatpak browser: its sandbox keeps it from being started with another profile folder */
   | 'sandboxed-package'
   /** A browser Puppeteer downloads itself, not downloaded yet */
-  | 'not-downloaded';
+  | 'not-downloaded'
+  /** Snap Firefox whose binary needs a newer glibc than the system has (it only runs in the snap) */
+  | 'snap-needs-newer-glibc';
 
 /** Browsers Puppeteer can download itself (`npx puppeteer browsers install <name>`) */
 export type DownloadableBrowser = 'chrome' | 'firefox';

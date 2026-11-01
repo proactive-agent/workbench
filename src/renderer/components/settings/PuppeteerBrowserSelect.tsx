@@ -8,11 +8,11 @@
  */
 
 import { Download } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../../lib/utils';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
-import { DEFAULT_BROWSER_VALUE, browserProfileIcon, browserProfileLabel, disabledReasonText, toBrowserChoice } from './browser-profile-meta';
+import { DEFAULT_BROWSER_VALUE, browserProfileIcon, browserProfileLabel, disabledReasonText, refreshedBrowserChoice, toBrowserChoice } from './browser-profile-meta';
 import { PuppeteerIcon } from '../icons/app-icons';
 import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
 
@@ -77,6 +77,15 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
     };
   }, []);
 
+  // The stored choice is a copy of the profile's paths: take the detected ones when they changed
+  // (once per stored value and list: the parent's onChange changes every render)
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    const refreshed = refreshedBrowserChoice(value, profiles);
+    if (refreshed) onChangeRef.current(refreshed);
+  }, [value, profiles]);
+
   const download = (browser: DownloadableBrowser) => {
     void window.electronAPI.installPuppeteerBrowser(browser).catch(() => undefined);
   };
@@ -91,10 +100,19 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
       onChange(undefined);
       return;
     }
-    if (id === value?.id) return;
+    if (id === value?.id) {
+      refreshSelected();
+      return;
+    }
     const profile = list.find((p) => p.id === id);
     const choice = profile ? toBrowserChoice(profile) : undefined;
     if (choice) onChange(choice);
+  };
+
+  // Picking the selected item again (the dropdown reports no change) takes its detected paths
+  const refreshSelected = () => {
+    const refreshed = refreshedBrowserChoice(value, profiles);
+    if (refreshed) onChange(refreshed);
   };
 
   // The chosen browser's icon in the closed picker too
@@ -128,7 +146,16 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
           const Icon = browserProfileIcon(profile);
           return (
             <div key={profile.id} className="relative">
-              <SelectItem value={profile.id} disabled={!profile.usable}>
+              <SelectItem
+                value={profile.id}
+                disabled={!profile.usable}
+                {...(profile.id === value?.id ? {
+                  onPointerUp: refreshSelected,
+                  onKeyDown: (event: React.KeyboardEvent) => {
+                    if (event.key === 'Enter' || event.key === ' ') refreshSelected();
+                  },
+                } : {})}
+              >
                 <Icon className={ITEM_ICON} />
                 {browserProfileLabel(t, profile)}
                 {detail && <span className="ml-2 text-(--nav-label-color)">{detail}</span>}

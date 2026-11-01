@@ -86,8 +86,12 @@ const running = new Set<ChildProcess>();
 let generation = 0;
 /** Whether the Puppeteer connector's browser (by choice id) is open, and when that was seen */
 let browserOpen: { id: string; open: boolean; checkedAt: number } | undefined;
-let browserLook: Promise<boolean> | undefined;
-let browserTimer: NodeJS.Timeout | undefined;
+/** The look at a browser's lock running now, by choice id */
+let browserLook: { id: string; promise: Promise<boolean> } | undefined;
+/** Looks at the chosen browser again while it is open (for the choice id) */
+let browserTimer: { id: string; timer: NodeJS.Timeout } | undefined;
+/** The connector settings Puppeteer was last asked about: the chosen browser now */
+let puppeteerSettings: McpConnectorSettings | undefined;
 
 /** The command that fixes an unavailable connector (its failed check's), when it has one */
 export function getMcpFixCommand(id: string): string | undefined {
@@ -103,8 +107,31 @@ export function onMcpAvailabilityChange(listener: (id: string, availability: Mcp
 
 function set(id: string, key: string, availability: McpAvailability): McpAvailability {
   results.set(id, { key, availability, checkedAt: Date.now() });
-  events.emit('change', id, availability);
+  // What check() reads: an open browser keeps Puppeteer unavailable whatever its server says
+  events.emit('change', id, withBrowserOpen(id, availability, puppeteerSettings));
   return availability;
+}
+
+/** The chosen browser whose open state matters (a profile of the user's, not Puppeteer's download) */
+function chosenProfileBrowser(settings: McpConnectorSettings | undefined): PuppeteerBrowserChoice | undefined {
+  const browser = settings?.puppeteerBrowser;
+  return browser && !browser.managed ? browser : undefined;
+}
+
+/** A server's availability with the chosen browser's last known open state on top */
+function withBrowserOpen(id: string, availability: McpAvailability, settings: McpConnectorSettings | undefined): McpAvailability {
+  const browser = id === 'puppeteer' ? chosenProfileBrowser(settings) : undefined;
+  if (!browser || availability.state === 'unavailable') return availability;
+  return browserOpen?.id === browser.id && browserOpen.open ? { state: 'unavailable', browserOpen: true } : availability;
+}
+
+/** Remember the settings Puppeteer is asked about; a poll for another browser stops */
+function notePuppeteerSettings(settings: McpConnectorSettings | undefined): void {
+  puppeteerSettings = settings;
+  if (browserTimer && browserTimer.id !== chosenProfileBrowser(settings)?.id) {
+    clearTimeout(browserTimer.timer);
+    browserTimer = undefined;
+  }
 }
 
 /**
@@ -120,42 +147,58 @@ export function getMcpAvailability(ids: string[], settings: McpConnectorSettings
  * chosen browser is looked at now, so a run never copies the profile of an open one
  */
 export async function usableMcpConnectorIds(ids: string[], settings: McpConnectorSettings | undefined): Promise<string[]> {
-  const browser = settings?.puppeteerBrowser;
-  if (browser && ids.includes('puppeteer')) await lookAtBrowser(browser, settings);
+  if (ids.includes('puppeteer')) notePuppeteerSettings(settings);
+  const browser = chosenProfileBrowser(settings);
+  if (browser && ids.includes('puppeteer')) await lookAtBrowser(browser);
   return ids.filter((id) => check(id, settings).state !== 'unavailable');
 }
 
 function check(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
+  if (id === 'puppeteer') notePuppeteerSettings(settings);
   const availability = checkServer(id, settings);
-  const browser = id === 'puppeteer' ? settings?.puppeteerBrowser : undefined;
-  if (!browser || browser.managed || availability.state === 'unavailable') return availability;
-  return isBrowserOpen(browser, settings) ? { state: 'unavailable', browserOpen: true } : availability;
+  const browser = id === 'puppeteer' ? chosenProfileBrowser(settings) : undefined;
+  // Looks again at an old answer (the result arrives as a change)
+  if (browser && availability.state !== 'unavailable') refreshBrowserOpen(browser);
+  return withBrowserOpen(id, availability, settings);
 }
 
-/** Whether the chosen browser was open when last looked at; an old answer is looked at again */
-function isBrowserOpen(browser: PuppeteerBrowserChoice, settings: McpConnectorSettings | undefined): boolean {
+/** Look at the chosen browser again when its last answer is missing or old */
+function refreshBrowserOpen(browser: PuppeteerBrowserChoice): void {
   const known = browserOpen?.id === browser.id ? browserOpen : undefined;
-  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) void lookAtBrowser(browser, settings);
-  return known?.open ?? false;
+  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) void lookAtBrowser(browser);
 }
 
-/** Look at the chosen browser's lock; a change is sent like any other availability change */
-function lookAtBrowser(browser: PuppeteerBrowserChoice, settings: McpConnectorSettings | undefined): Promise<boolean> {
-  if (browserLook) return browserLook;
+/**
+ * Look at a browser's lock; a change for the browser chosen now is sent like any other
+ * availability change, read with the latest settings
+ */
+function lookAtBrowser(browser: PuppeteerBrowserChoice): Promise<boolean> {
+  if (browserLook?.id === browser.id) return browserLook.promise;
   const started = generation;
-  browserLook = isBrowserProfileInUse(browser).catch(() => false).then((open) => {
-    browserLook = undefined;
+  const promise = isBrowserProfileInUse(browser).catch(() => false).then((open) => {
+    if (browserLook?.promise === promise) browserLook = undefined;
     if (started !== generation) return open;
     const changed = (browserOpen?.id === browser.id ? browserOpen.open : false) !== open;
     browserOpen = { id: browser.id, open, checkedAt: Date.now() };
-    if (changed) events.emit('change', 'puppeteer', check('puppeteer', settings));
-    // While it is open, keep looking, so closing it enables the connector
-    clearTimeout(browserTimer);
-    browserTimer = open ? setTimeout(() => void lookAtBrowser(browser, settings), BROWSER_RECHECK_MS) : undefined;
-    browserTimer?.unref();
+    // The choice changed while looking: this browser no longer matters
+    if (chosenProfileBrowser(puppeteerSettings)?.id !== browser.id) return open;
+    if (changed) events.emit('change', 'puppeteer', check('puppeteer', puppeteerSettings));
+    // While it is open, keep looking (at the browser chosen then), so closing it enables the connector
+    if (browserTimer) clearTimeout(browserTimer.timer);
+    browserTimer = undefined;
+    if (open) {
+      const timer = setTimeout(() => {
+        browserTimer = undefined;
+        const current = chosenProfileBrowser(puppeteerSettings);
+        if (current) void lookAtBrowser(current);
+      }, BROWSER_RECHECK_MS);
+      timer.unref();
+      browserTimer = { id: browser.id, timer };
+    }
     return open;
   });
-  return browserLook;
+  browserLook = { id: browser.id, promise };
+  return promise;
 }
 
 function checkServer(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
@@ -201,7 +244,8 @@ export function resetMcpAvailability(): void {
   probes.clear();
   browserOpen = undefined;
   browserLook = undefined;
-  clearTimeout(browserTimer);
+  if (browserTimer) clearTimeout(browserTimer.timer);
+  browserTimer = undefined;
   resetCommandLookups();
   stopMcpProbes();
 }

@@ -627,7 +627,7 @@
       "taskMessaging": "Task messaging",
       "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
       "sessionMessages": "Messages from your Claude sessions",
-      "sessionMessagesDescription": "Agent windows, the Claude chat and claude in your own terminal can message running tasks",
+      "sessionMessagesDescription": "Agent windows, the Claude chat and claude in your own terminal can message running tasks. Tasks run without permission checks, so any Claude session on this computer, including one misled by a web page or file it read, could make a task run commands or change files without asking you",
       "fallbackModel": "Fallback model",
       "fallbackModelDescription": "Model Claude Code switches to when the chosen one is overloaded",
       "fallbackNone": "None"

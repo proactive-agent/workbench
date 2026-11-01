@@ -12,6 +12,10 @@ import type { BrowserEngine, BrowserKind, BrowserProfileDisabledReason } from '.
 
 export type BrowserOs = 'windows' | 'macos' | 'linux';
 
+/** Snap Firefox's launcher (runs it in the snap's sandbox) and its own binary (runs outside it) */
+export const SNAP_FIREFOX_LAUNCHER = '/snap/bin/firefox';
+export const SNAP_FIREFOX_BINARY = '/snap/firefox/current/usr/lib/firefox/firefox';
+
 export interface BrowserLocation {
   browser: BrowserKind;
   engine: BrowserEngine;
@@ -138,7 +142,7 @@ function linuxLocations({ home }: BrowserLocationContext): BrowserLocation[] {
     {
       browser: 'firefox', engine: 'firefox', variant: 'snap',
       dataDirs: [p.join(home, 'snap', 'firefox', 'common', '.mozilla', 'firefox')],
-      executables: ['/snap/bin/firefox'],
+      executables: [SNAP_FIREFOX_LAUNCHER],
     },
     { browser: 'chrome', engine: 'chromium', dataDirs: [flatpak('com.google.Chrome', 'config', 'google-chrome')], ...sandboxed },
     { browser: 'edge', engine: 'chromium', dataDirs: [flatpak('com.microsoft.Edge', 'config', 'microsoft-edge')], ...sandboxed },

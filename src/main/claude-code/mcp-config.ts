@@ -27,6 +27,7 @@ import { appLog } from '../app-logger';
 import { getWslInfo, toRuntimePath } from '../platform/shell-runtime';
 import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
+import { SNAP_FIREFOX_BINARY, SNAP_FIREFOX_LAUNCHER } from '../browser-profiles/locations';
 
 export type McpServerEntry =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
@@ -57,10 +58,21 @@ export interface McpRunOptions {
 /**
  * Snap launchers Puppeteer can't drive: `/snap/bin/firefox` starts Firefox in the snap's sandbox,
  * which can't open Puppeteer's profile in /tmp, so the launch times out. The snap's own binary
- * runs outside the sandbox and works
+ * runs outside the sandbox and works (detect.ts also maps Ubuntu's `/usr/bin/firefox` script, which
+ * starts the snap, to the launcher, and checks that the binary runs on this system)
  */
 const SNAP_BINARIES: Record<string, string> = {
-  '/snap/bin/firefox': '/snap/firefox/current/usr/lib/firefox/firefox',
+  [SNAP_FIREFOX_LAUNCHER]: SNAP_FIREFOX_BINARY,
+};
+
+/**
+ * Firefox prefs for every launch: a profile copy keeps its Firefox Account sign-in, and Sync would
+ * then upload what the agent browses to the user's other devices. Sync starts only with both
+ * set (services-sync/Weave.sys.mjs `enabled`)
+ */
+export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
+  'identity.fxaccounts.enabled': false,
+  'services.sync.username': '',
 };
 
 /**
@@ -71,7 +83,10 @@ const SNAP_BINARIES: Record<string, string> = {
 export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserProfileDir?: string): Record<string, unknown> {
   const executablePath = SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
   const launch: Record<string, unknown> = { executablePath };
-  if (choice.engine === 'firefox') launch.browser = 'firefox';
+  if (choice.engine === 'firefox') {
+    launch.browser = 'firefox';
+    launch.extraPrefsFirefox = FIREFOX_NO_SYNC_PREFS;
+  }
   if (browserProfileDir) {
     launch.userDataDir = toRuntimePath(browserProfileDir);
     if (choice.engine === 'chromium') {

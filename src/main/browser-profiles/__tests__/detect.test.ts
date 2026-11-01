@@ -7,9 +7,11 @@ const mocks = vi.hoisted(() => ({
   commands: new Map<string, string>(),
   wslHome: null as string | null,
   toHost: (p: string) => p,
+  runTool: vi.fn(async () => ({ stdout: 'Mozilla Firefox 150.0', stderr: '' })),
 }));
 
 vi.mock('../../mcp-commands', () => ({ resolveCommand: async (command: string) => mocks.commands.get(command) ?? null }));
+vi.mock('../../platform/runtime-exec', () => ({ runTool: mocks.runTool }));
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 vi.mock('../../platform', () => ({ isWindows: () => mocks.wslHome !== null, isMacOS: () => false }));
 vi.mock('../../platform/shell-runtime', () => ({
@@ -50,6 +52,7 @@ describe('browser profile detection', () => {
     mocks.commands.clear();
     mocks.wslHome = null;
     mocks.toHost = fixturePath;
+    mocks.runTool.mockClear();
   });
 
   afterEach(async () => {
@@ -123,6 +126,7 @@ describe('browser profile detection', () => {
     await put('/home/me/snap/firefox/common/.mozilla/firefox/profiles.ini', '[Profile0]\nName=snappy\nIsRelative=1\nPath=s.default\n');
     await folder('/home/me/snap/firefox/common/.mozilla/firefox/s.default');
     await put('/snap/bin/firefox');
+    await put('/snap/firefox/current/usr/lib/firefox/firefox');
     await put('/home/me/.var/app/org.chromium.Chromium/config/chromium/Local State', localState({ Default: { name: 'Flat' } }));
     await folder('/home/me/.var/app/org.chromium.Chromium/config/chromium/Default');
     // Unreadable Local State: that browser is skipped, the others are listed
@@ -137,6 +141,47 @@ describe('browser profile detection', () => {
     ]);
     // Profiles with the same name in different installs can be told apart
     expect(profiles.map((p) => p.variant)).toEqual([undefined, 'flatpak', 'snap']);
+  });
+
+  it("treats Ubuntu's /usr/bin/firefox script as the snap and checks the snap's binary runs once", async () => {
+    await put('/home/me/.mozilla/firefox/profiles.ini', '[Profile0]\nName=deb\nIsRelative=1\nPath=d.default\n');
+    await folder('/home/me/.mozilla/firefox/d.default');
+    await put('/home/me/snap/firefox/common/.mozilla/firefox/profiles.ini', '[Profile0]\nName=snappy\nIsRelative=1\nPath=s.default\n');
+    await folder('/home/me/snap/firefox/common/.mozilla/firefox/s.default');
+    await put('/usr/bin/firefox', '#!/bin/sh\nexec /snap/bin/firefox "$@"\n');
+    mocks.commands.set('firefox', '/usr/bin/firefox');
+    await put('/snap/bin/firefox');
+    await put('/snap/firefox/current/usr/lib/firefox/firefox');
+    const context = { os: 'linux' as const, home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: true };
+
+    const profiles = await scanUserProfiles(context);
+    expect(profiles.map((p) => [p.id, p.usable, p.executablePath])).toEqual([
+      ['firefox:d.default', true, '/snap/bin/firefox'],
+      ['firefox-snap:s.default', true, '/snap/bin/firefox'],
+    ]);
+    expect(mocks.runTool).toHaveBeenCalledTimes(1);
+    expect(mocks.runTool).toHaveBeenCalledWith('node', ['--version'], expect.objectContaining({ command: '/snap/firefox/current/usr/lib/firefox/firefox' }));
+
+    // On a system older than the snap's base the binary can't load
+    mocks.runTool.mockRejectedValueOnce(Object.assign(new Error('failed'), {
+      stderr: "firefox: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.38' not found (required by firefox)",
+    }));
+    const old = await scanUserProfiles({ ...context });
+    expect(old.map((p) => [p.usable, p.disabledReason])).toEqual([
+      [false, 'snap-needs-newer-glibc'],
+      [false, 'snap-needs-newer-glibc'],
+    ]);
+  });
+
+  it('keeps a real Firefox launcher script as it is', async () => {
+    await put('/home/me/.mozilla/firefox/profiles.ini', '[Profile0]\nName=deb\nIsRelative=1\nPath=d.default\n');
+    await folder('/home/me/.mozilla/firefox/d.default');
+    await put('/usr/bin/firefox', '#!/bin/sh\nexec /usr/lib64/firefox/firefox "$@"\n');
+    mocks.commands.set('firefox', '/usr/bin/firefox');
+
+    const profiles = await scanUserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: true });
+    expect(profiles.map((p) => [p.usable, p.executablePath])).toEqual([[true, '/usr/bin/firefox']]);
+    expect(mocks.runTool).not.toHaveBeenCalled();
   });
 
   it('leaves out profiles nothing has written to for a year', async () => {
@@ -185,6 +230,18 @@ describe('browser profile detection', () => {
     const [firefox] = await managed();
     expect(firefox).toMatchObject({ usable: true, executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox' });
     expect(firefox.downloadable).toBeUndefined();
+  });
+
+  it("skips a Puppeteer download that is still being unpacked (its archive is still there)", async () => {
+    const context = { os: 'linux' as const, home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false };
+    const managed = async () => (await scanBrowserProfiles(context)).find((p) => p.managed);
+    await put('/home/me/.cache/puppeteer/firefox/linux-stable_132.0/firefox/firefox');
+    await put('/home/me/.cache/puppeteer/firefox/linux-stable_133.0/firefox/firefox');
+    await put('/home/me/.cache/puppeteer/firefox/stable_133.0-firefox-133.0.tar.xz');
+
+    expect((await managed())?.executablePath).toBe('/home/me/.cache/puppeteer/firefox/linux-stable_132.0/firefox/firefox');
+    await rm(fixturePath('/home/me/.cache/puppeteer/firefox/stable_133.0-firefox-133.0.tar.xz'));
+    expect((await managed())?.executablePath).toBe('/home/me/.cache/puppeteer/firefox/linux-stable_133.0/firefox/firefox');
   });
 
   it('finds the download in the cache folder each OS uses', async () => {
