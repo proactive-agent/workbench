@@ -1,4 +1,5 @@
 import { EventEmitter } from 'events';
+import { randomUUID } from 'crypto';
 import type {
   InsightsChatMessage,
   InsightsChatStatus,
@@ -17,7 +18,8 @@ import { buildMcpConfig } from '../claude-code/mcp-config';
 import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFileAsync } from '../settings-utils';
-import { prepareBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { appLog } from '../app-logger';
 import { getToolInfoAsync } from '../cli-tool-manager';
 import { isSelfImproveEnabled } from '../self-improve/setting';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
@@ -48,29 +50,24 @@ export interface InsightsTurnOptions {
 }
 
 /**
- * Chats' copies of the Puppeteer browser profile, per project and profile: made by the first turn
- * that uses it in this app session and kept for later turns (a project's turns run one at a time)
+ * The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones.
+ * With Puppeteer, each turn gets a fresh copy of the browser profile (sign-ins as they are now,
+ * like task runs), which the caller removes when the turn ends
  */
-const chatBrowserProfiles = new Map<string, Promise<string | null>>();
-
-/** The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones */
 async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
   const chosen = await usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
   const browser = connectorSettings?.puppeteerBrowser;
   let browserProfileDir: string | undefined;
   if (browser && chosen.includes('puppeteer')) {
-    const key = `${projectPath}|${browser.id}`;
-    let copy = chatBrowserProfiles.get(key);
-    if (!copy) {
-      copy = prepareBrowserProfileCopy(projectPath, browser, 'chat').catch(() => null);
-      chatBrowserProfiles.set(key, copy);
-    }
-    browserProfileDir = (await copy) ?? undefined;
-    // A failed copy (the browser held its files) is tried again by the next turn
-    if (!browserProfileDir) chatBrowserProfiles.delete(key);
+    // A slot per turn: a replaced turn may still be removing its own copy
+    const slot = `chat-${randomUUID().slice(0, 8)}`;
+    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot).catch((error) => {
+      appLog.warn('[Insights] Could not copy the browser profile:', error);
+      return null;
+    })) ?? undefined;
   }
-  return buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers;
+  return { mcpServers: buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers, browserProfileDir };
 }
 
 /** Settings > Agents lets the user's sessions message running tasks (Task messaging and its sub-switch) */
@@ -160,6 +157,7 @@ export class InsightsExecutor extends EventEmitter {
         onTasksChanged: () => this.emit('tasks-changed', projectId),
       }).catch(() => undefined)
       : undefined;
+    let browserProfileDir: string | undefined;
 
     try {
       const projectSettings = projectStore.getProject(projectId)?.settings;
@@ -167,6 +165,10 @@ export class InsightsExecutor extends EventEmitter {
       const graphify = (await isGraphifyEnabled(projectPath))
         ? (await getGraphifyPromptContext(projectPath)) ?? undefined
         : undefined;
+      // The MCP servers chosen with the chat's MCP button (Connectors defaults until changed)
+      // (leaving out servers that can't start)
+      const mcp = await chatMcpServers(modelConfig?.mcpConnectors, projectPath);
+      browserProfileDir = mcp.browserProfileDir;
       const result = await runInsights(
         {
           projectDir: projectPath,
@@ -188,9 +190,7 @@ export class InsightsExecutor extends EventEmitter {
             github: modelConfig?.githubTools === true && (await getToolInfoAsync('gh')).found,
             gitlab: modelConfig?.gitlabTools === true && (await getToolInfoAsync('glab')).found,
           },
-          // The MCP servers chosen with the chat's MCP button (Connectors defaults until changed)
-          // (leaving out servers that can't start)
-          mcpServers: await chatMcpServers(modelConfig?.mcpConnectors, projectPath),
+          mcpServers: mcp.mcpServers,
           // With the task tools: ListAgents and SendMessage for other running sessions
           sessionMessages: await sessionMessagesEnabled(),
         },
@@ -297,6 +297,8 @@ export class InsightsExecutor extends EventEmitter {
       throw error;
     } finally {
       taskTools?.close();
+      // The turn's Claude Code session (and its browser) has ended
+      if (browserProfileDir) await removeBrowserProfileCopy(browserProfileDir);
     }
   }
 

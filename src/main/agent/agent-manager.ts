@@ -550,7 +550,8 @@ export class AgentManager extends EventEmitter {
         // A slot per run: a stopped run of the task may still be cleaning up its own copy
         const slot = `task-${task.specId}-${randomUUID().slice(0, 8)}`;
         config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot)) ?? undefined;
-        // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it
+        // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it.
+        // Live runs' copies are kept, such as a newer launch's after this one was stopped mid-copy
         void removeStaleBrowserProfileCopies(project.path, browser, `task-${task.specId}-`, slot);
       } catch (error) {
         appLog.warn(`[AgentManager] Could not copy the browser profile for ${taskId}:`, error);
