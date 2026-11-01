@@ -13,7 +13,7 @@
  */
 
 import os from 'os';
-import { access, readFile } from 'fs/promises';
+import { access, readFile, stat } from 'fs/promises';
 import type { BrowserProfile } from '../../shared/types/browser-profiles';
 import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
@@ -21,6 +21,14 @@ import { resolveCommand } from '../mcp-commands';
 import { appLog } from '../app-logger';
 import { browserLocations, pathApi, type BrowserLocation, type BrowserOs } from './locations';
 import { parseChromiumLocalState, parseFirefoxProfilesIni } from './parsing';
+
+/** Profiles with no sign of use for this long are left out (leftovers of old or removed installs) */
+export const STALE_PROFILE_MS = 365 * 24 * 60 * 60 * 1000;
+/** Files a browser writes while a profile is in use, relative to the profile's folder */
+const ACTIVITY_FILES = [
+  'Preferences', 'Cookies', 'Network/Cookies', 'History', 'Login Data',
+  'prefs.js', 'cookies.sqlite', 'places.sqlite', 'sessionstore.jsonlz4',
+];
 
 const BROWSER_ORDER = ['chrome', 'edge', 'brave', 'chromium', 'firefox', 'safari'];
 
@@ -41,6 +49,30 @@ async function exists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether nothing in a profile's folder changed for STALE_PROFILE_MS. Judged by the files a
+ * browser writes in use (a folder's own date moves when anything is added to it); a profile
+ * without any of them counts by its folder
+ */
+export async function isStaleProfile(profileFolder: string, now = Date.now()): Promise<boolean> {
+  let newest = 0;
+  for (const file of ACTIVITY_FILES) {
+    try {
+      newest = Math.max(newest, (await stat(`${profileFolder}/${file}`)).mtimeMs);
+    } catch {
+      // Not written by this browser
+    }
+  }
+  if (newest === 0) {
+    try {
+      newest = (await stat(profileFolder)).mtimeMs;
+    } catch {
+      return false;
+    }
+  }
+  return now - newest > STALE_PROFILE_MS;
 }
 
 async function readText(p: string): Promise<string | null> {
@@ -87,6 +119,7 @@ async function scanLocation(location: BrowserLocation, context: ScanContext): Pr
         const profilePath = p.join(dataDir, entry.directory);
         // Listed in Local State but deleted since
         if (!(await exists(context.toHost(profilePath)))) continue;
+        if (await isStaleProfile(context.toHost(profilePath))) continue;
         found.push({
           id: profileId(location, entry.directory),
           browser: location.browser,
@@ -104,6 +137,7 @@ async function scanLocation(location: BrowserLocation, context: ScanContext): Pr
       if (text === null) continue;
       for (const entry of parseFirefoxProfilesIni(text, dataDir, p)) {
         if (!(await exists(context.toHost(entry.path)))) continue;
+        if (await isStaleProfile(context.toHost(entry.path))) continue;
         found.push({
           id: profileId(location, entry.folder),
           browser: location.browser,

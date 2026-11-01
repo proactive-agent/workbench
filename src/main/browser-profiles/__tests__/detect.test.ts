@@ -1,6 +1,6 @@
 import os from 'os';
 import path from 'path';
-import { mkdtemp, mkdir, rm, writeFile } from 'fs/promises';
+import { mkdtemp, mkdir, rm, utimes, writeFile } from 'fs/promises';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => mocks.toHost(p),
 }));
 
-import { detectBrowserProfiles, scanBrowserProfiles } from '../detect';
+import { STALE_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserProfiles } from '../detect';
 
 let root: string;
 
@@ -132,6 +132,39 @@ describe('browser profile detection', () => {
     ]);
     // Profiles with the same name in different installs can be told apart
     expect(profiles.map((p) => p.variant)).toEqual([undefined, 'flatpak', 'snap']);
+  });
+
+  it('leaves out profiles nothing has written to for a year', async () => {
+    const dir = '/home/me/.mozilla/firefox';
+    await put(`${dir}/profiles.ini`, [
+      '[Profile0]', 'Name=old', 'IsRelative=1', 'Path=a.old', '',
+      '[Profile1]', 'Name=in-use', 'IsRelative=1', 'Path=b.in-use', '',
+      '[Profile2]', 'Name=never-opened', 'IsRelative=1', 'Path=c.fresh',
+    ].join('\n'));
+    await put(`${dir}/a.old/prefs.js`);
+    await put(`${dir}/b.in-use/prefs.js`);
+    await folder(`${dir}/c.fresh`);
+    const longAgo = new Date(Date.now() - 2 * STALE_PROFILE_MS);
+    await utimes(fixturePath(`${dir}/a.old/prefs.js`), longAgo, longAgo);
+    await put('/usr/lib/firefox/firefox');
+
+    const profiles = await scanBrowserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false });
+
+    expect(profiles.map((p) => p.profileName)).toEqual(['in-use', 'never-opened']);
+  });
+
+  it('judges a profile by its activity files, not its folder date', async () => {
+    const folderPath = fixturePath('/p/profile');
+    await put('/p/profile/prefs.js');
+    const longAgo = new Date(Date.now() - 2 * STALE_PROFILE_MS);
+    await utimes(`${folderPath}/prefs.js`, longAgo, longAgo);
+    // The folder itself was touched just now
+    expect(await isStaleProfile(folderPath)).toBe(true);
+    // Without activity files the folder date counts
+    await folder('/p/empty');
+    await utimes(fixturePath('/p/empty'), longAgo, longAgo);
+    expect(await isStaleProfile(fixturePath('/p/empty'))).toBe(true);
+    expect(await isStaleProfile(fixturePath('/p/missing'))).toBe(false);
   });
 
   it("reads the WSL distribution's browsers through host paths, with Linux paths", async () => {
