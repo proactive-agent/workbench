@@ -22,7 +22,12 @@ beforeEach(() => {
 });
 
 describe('agentWindowMessagingHint', () => {
-  it("names the project's task sessions and how to reach them, by default", () => {
+  it('is left out by default (the user opts in to messages from sessions)', () => {
+    expect(agentWindowMessagingHint('/work/app')).toBe('');
+  });
+
+  it("names the project's task sessions and how to reach them once the user opts in", () => {
+    settingsFile = { claudeCodeTasks: { sessionMessages: true } };
     const hint = agentWindowMessagingHint('/work/app');
     expect(hint).toContain(`wb-${projectKey('proj-1')}-`);
     expect(hint).toContain('SendMessage');
@@ -43,8 +48,8 @@ describe('agentWindowMessagingHint', () => {
     expect(agentWindowMessagingHint('/work/app')).toBe('');
   });
 
-  it('treats a stored value that is not a boolean as the default (on)', () => {
+  it('treats a stored value that is not a boolean as the default (off)', () => {
     settingsFile = { claudeCodeTasks: { sessionMessages: 'yes' } };
-    expect(agentWindowMessagingHint('/work/app')).toContain('SendMessage');
+    expect(agentWindowMessagingHint('/work/app')).toBe('');
   });
 });

@@ -231,7 +231,8 @@
       "merge_pull_request": "Merging a pull request",
       "archive_tasks": "Archiving tasks",
       "unarchive_tasks": "Unarchiving tasks",
-      "delete_task": "Deleting a task"
+      "delete_task": "Deleting a task",
+      "message_task": "Messaging a task"
     },
     "mcp": {
       "label": "MCP servers"

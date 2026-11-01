@@ -23,7 +23,7 @@
 
 import { randomUUID } from 'crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { cp, mkdtemp, rm, writeFile } from 'fs/promises';
+import { cp, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { resolveClaudeEnv } from './env';
@@ -1052,14 +1052,14 @@ Then return the report: status "passed" when the change works and the checks pas
         text = requested
           ? `${opening}${requested}
 
-Apply them, verify with ${verificationHint(triage)}, and commit the result.`
+Apply them, verify with ${verificationHint(triage)}, and commit the result.${relaunch}`
           : `${opening}
 
-no notes came with the request, so review the change against the task with fresh eyes and fix whatever does not meet it. Verify with ${verificationHint(triage)}, and commit the result.`;
+no notes came with the request, so review the change against the task with fresh eyes and fix whatever does not meet it. Verify with ${verificationHint(triage)}, and commit the result.${relaunch}`;
         break;
       }
       case 'resync':
-        text = `${resume ? '' : `${taskBlock(this.config)}\n\n`}${resync ? resyncPrompt(resync, triage) : PHASE_PROMPT_OPENINGS.resync}`;
+        text = `${resume ? '' : `${taskBlock(this.config)}\n\n`}${resync ? resyncPrompt(resync, triage) : PHASE_PROMPT_OPENINGS.resync}${relaunch}`;
         break;
     }
     blocks.push({ type: 'text', text });
@@ -1173,8 +1173,10 @@ no notes came with the request, so review the change against the task with fresh
       )
       : undefined;
     const sessionName = messaging?.sessionName ?? taskSessionName(this.config.projectId ?? '', this.config.specId);
-    // The user's other Claude Code sessions may message the run (Settings > Agents)
-    const sessionMessages = !!messaging && settings.sessionMessages;
+    // The user's other Claude Code sessions may message the run (Settings > Agents, off by
+    // default), unless the user's own Claude Code settings refuse or hold such messages
+    const sessionMessages = !!messaging && settings.sessionMessages
+      && !(await userLimitsCrossSessionInbound(configDir, this.config.worktreePath));
     const messagingPrompt = messaging ? buildMessagingPrompt(sessionName, !!workbenchServer, sessionMessages) : undefined;
     const args = [
       '-p',
@@ -1196,6 +1198,10 @@ no notes came with the request, so review the change against the task with fresh
       // A session that skips permission checks holds each cross-session message for approval,
       // which a headless run can't give (the message expires). With the user's switch on, the run
       // accepts messages from the user's other sessions (agent windows, the chat, a terminal).
+      // RISK: an accepted message is a user turn in a run that skips permission checks, so any
+      // local Claude Code session (or one steered by a prompt injection) can make this run do
+      // anything the worktree's user can, with no approval. That is why the switch is opt-in and
+      // why a refuse/hold in the user's own Claude Code settings wins (see above).
       // Tasks still reach each other through Workbench (`message_task`, the inbox); native sends
       // that never show up go back to the inbox (broker.ts)
       sessionSettings.crossSessionInbound = 'accept';
@@ -1704,6 +1710,29 @@ no notes came with the request, so review the change against the task with fresh
 /** Where Claude Code runs now */
 function currentRuntime(): ClaudeRuntime {
   return getWslInfo() ? 'wsl' : 'native';
+}
+
+/**
+ * Whether the user's own Claude Code settings set `crossSessionInbound` to anything but `accept`
+ * (refuse or hold): their config dir's `settings.json` and the project's `.claude/settings.json` /
+ * `settings.local.json` in the worktree. A task run's `--settings` would override that choice, so
+ * the run then leaves it alone. Managed (enterprise) settings already win over `--settings`.
+ */
+async function userLimitsCrossSessionInbound(configDir: string, worktreePath: string): Promise<boolean> {
+  const files = [
+    path.join(configDir, 'settings.json'),
+    path.join(worktreePath, '.claude', 'settings.json'),
+    path.join(worktreePath, '.claude', 'settings.local.json'),
+  ];
+  const values = await Promise.all(files.map(async (file) => {
+    try {
+      const parsed = JSON.parse(await readFile(file, 'utf-8')) as { crossSessionInbound?: unknown };
+      return parsed && typeof parsed === 'object' ? parsed.crossSessionInbound : undefined;
+    } catch {
+      return undefined;
+    }
+  }));
+  return values.some((value) => value !== undefined && value !== 'accept');
 }
 
 /** Claude Code's default config dir (`~/.claude`) as a host path: the Linux home's in WSL */

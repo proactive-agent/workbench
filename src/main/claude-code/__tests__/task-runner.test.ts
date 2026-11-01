@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import path from 'path';
 import type { ClaudeProcessOptions } from '../process';
@@ -730,13 +730,45 @@ describe('ClaudeTaskRun', () => {
       };
       return { value, calls };
     }
-    const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false };
+    const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false, sessionMessages: true };
+    /** A run on its own Claude config dir, so the user's real ~/.claude settings never count */
+    function runWithConfig(overrides: Record<string, unknown> = {}) {
+      return makeRun({ extraEnv: { CLAUDE_CONFIG_DIR: path.join(worktree, '.config') }, ...overrides });
+    }
+
+    it("doesn't let the user's sessions message tasks unless the user opts in", async () => {
+      expect(DEFAULT_CLAUDE_CODE_TASK_SETTINGS.sessionMessages).toBe(false);
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s37')] });
+      const { value } = messaging();
+      await runWithConfig({ settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false }, projectId: 'p1', messaging: value }).run();
+      const { args } = spawned[0];
+      expect(args.join(' ')).not.toContain('crossSessionInbound');
+      expect(args).toContain('--dangerously-skip-permissions');
+    });
+
+    it.each([
+      ['the config dir', ['.config', 'settings.json'], 'refuse'],
+      ['the project', ['.claude', 'settings.json'], 'hold'],
+      ['the local project settings', ['.claude', 'settings.local.json'], 'refuse'],
+    ])("keeps the user's own crossSessionInbound from %s", async (_where, parts, mode) => {
+      mkdirSync(path.join(worktree, parts[0]), { recursive: true });
+      writeFileSync(path.join(worktree, ...parts), JSON.stringify({ crossSessionInbound: mode }));
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s38')] });
+      const { value } = messaging();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
+      const { args } = spawned[0];
+      expect(args.join(' ')).not.toContain('crossSessionInbound');
+      expect(argValue(args, '--append-system-prompt')).not.toContain('cross-session messages');
+    });
+
 
     it('keeps stdin open, accepts native messages and gets the Workbench tools through a config file', async () => {
       triageMock.mockResolvedValue({ triage: triage() });
       scripts.push({ messages: [result('s30')], unread: [{ id: 'wbm-1', text: 'late' }] });
       const { value, calls } = messaging();
-      await makeRun({ settings, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
 
       const options = spawned[0];
       expect(options.keepStdinOpen).toBe(true);
@@ -764,7 +796,7 @@ describe('ClaudeTaskRun', () => {
       triageMock.mockResolvedValue({ triage: triage() });
       scripts.push({ messages: [result('s35')] });
       const { value } = messaging();
-      await makeRun({ settings: { ...settings, sessionMessages: false }, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({ settings: { ...settings, sessionMessages: false }, projectId: 'p1', messaging: value }).run();
 
       const { args } = spawned[0];
       expect(args).not.toContain('--settings');
@@ -779,7 +811,7 @@ describe('ClaudeTaskRun', () => {
       triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
       scripts.push({ messages: [result('s36')] });
       const { value } = messaging();
-      await makeRun({ settings: { ...settings, workflowSize: 'large' }, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({ settings: { ...settings, workflowSize: 'large' }, projectId: 'p1', messaging: value }).run();
 
       const { args } = spawned[0];
       expect(args.filter((arg) => arg === '--settings')).toHaveLength(1);
@@ -795,7 +827,7 @@ describe('ClaudeTaskRun', () => {
         result('s31'),
       ] });
       const { value, calls } = messaging(inbox);
-      await makeRun({ settings, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
 
       // The messages come last, in their own block, so they can't be read as part of the task
       const blocks = spawned[0].input as Array<{ text?: string }>;
@@ -823,7 +855,7 @@ describe('ClaudeTaskRun', () => {
         result('s32'),
       ] });
       const { value, calls } = messaging();
-      await makeRun({ settings, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
       expect(calls.nativeSend).toHaveBeenCalledWith('wb-abc123-002-x', 'hi there', { success: true, msg_id: 'm1' }, false);
       expect(calls.peerMessage).toHaveBeenCalledWith('m7');
     });
@@ -835,7 +867,7 @@ describe('ClaudeTaskRun', () => {
         origins: ['task', 'message'],
       });
       const { value } = messaging();
-      const outcome = await makeRun({ settings, projectId: 'p1', messaging: value }).run();
+      const outcome = await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
       expect(outcome.status).toBe('completed');
       // The notice's turn still costs
       expect(loadClaudeRunInfo(specDir)?.phases.find((p) => p.name === 'implement')?.costUsd).toBeCloseTo(0.15, 5);
@@ -844,7 +876,7 @@ describe('ClaudeTaskRun', () => {
     it('runs as before without messaging', async () => {
       triageMock.mockResolvedValue({ triage: triage() });
       scripts.push({ messages: [result('s33')] });
-      await makeRun({ settings }).run();
+      await runWithConfig({ settings }).run();
       const { args, keepStdinOpen } = spawned[0];
       expect(keepStdinOpen).toBe(false);
       for (const flag of ['--replay-user-messages', '--allowedTools']) expect(args).not.toContain(flag);

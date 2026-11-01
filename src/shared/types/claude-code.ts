@@ -58,7 +58,8 @@ export interface ClaudeCodeTaskSettings {
    * Other Claude Code sessions on this machine (agent windows, the Claude chat, `claude` in the
    * user's own terminal) can message running tasks with Claude Code's built-in SendMessage: task
    * runs accept cross-session messages (`crossSessionInbound: "accept"`). Applies only while
-   * `taskMessaging` is on
+   * `taskMessaging` is on. Off by default: task runs skip permission checks, so an accepted
+   * message runs unattended with the run's full access (opt-in, Settings > Agents)
    */
   sessionMessages: boolean;
   /**
@@ -81,7 +82,7 @@ export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
   validation: true,
   allowFable: false,
   taskMessaging: true,
-  sessionMessages: true,
+  sessionMessages: false,
   workflowSize: 'default',
 };
 

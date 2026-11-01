@@ -435,7 +435,8 @@
         "executableMissing": "Browser not installed",
         "windowsBrowserInWsl": "Windows browser; tools run in WSL",
         "sandboxedPackage": "Flatpak browsers can't be used",
-        "notDownloaded": "Not downloaded"
+        "notDownloaded": "Not downloaded",
+        "snapNeedsNewerGlibc": "This snap needs a newer glibc than the system has"
       }
     },
     "servers": {

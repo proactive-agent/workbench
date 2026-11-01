@@ -147,7 +147,19 @@ function newMessage(from: MessageSender, text: string, status: TaskMessage['stat
 }
 
 function quote(title: string | undefined): string {
-  return title ? ` "${title.replace(/"/g, "'")}"` : '';
+  return title ? ` "${defuseMarkers(title).replace(/\s+/g, ' ').replace(/"/g, "'")}"` : '';
+}
+
+/**
+ * Text from anyone but the user, made unable to pass for another sender: the markers a run is told
+ * to trust (`[Message from the user, via Workbench]`, and also `[Message from task ...]` and
+ * `[Workbench]`) are prefixed with "quoted:", and `<workbench_messages>` tags are escaped so a body
+ * can't end the inbox block. Only the user's own messages keep the user's marker.
+ */
+export function defuseMarkers(text: string): string {
+  return text
+    .replace(/\[(?=\s*(?:message\s+from\s+(?:the\s+user|task)\b|workbench\s*\]))/gi, '[quoted: ')
+    .replace(/<(\s*\/?\s*workbench_messages)/gi, '&lt;$1');
 }
 
 /** A message as the receiving session reads it */
@@ -155,11 +167,11 @@ export function formatMessage(message: Pick<TaskMessage, 'from' | 'text'>): stri
   const { from, text } = message;
   switch (from.kind) {
     case 'task':
-      return `[Message from task ${from.specId ?? 'unknown'}${quote(from.title)}${from.sessionName ? ` (session ${from.sessionName})` : ''}]\n${text}`;
+      return `[Message from task ${from.specId ?? 'unknown'}${quote(from.title)}${from.sessionName ? ` (session ${from.sessionName})` : ''}]\n${defuseMarkers(text)}`;
     case 'user':
       return `[Message from the user, via Workbench] ${text}`;
     default:
-      return `[Workbench] ${text}`;
+      return `[Workbench] ${defuseMarkers(text)}`;
   }
 }
 
