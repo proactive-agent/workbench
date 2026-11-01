@@ -59,29 +59,34 @@ export function workflowImplementHint(): string {
 }
 
 /**
- * Workflow runs the step being continued launched and never finished: the last steps recorded are
- * attempts at the same step that ended early (stopped, rate limited, failed or crashed), the runs
+ * Workflow runs the step being continued launched and never finished. `phases` names the step (and,
+ * for a resync that carries on an interrupted implementation, the step it continues). Walking back
+ * through the recorded steps, attempts at those steps that ended early (stopped, rate limited,
+ * failed or crashed) count back to the last one that finished; other steps in between (a revise
+ * run's fresh triage, the revise before a validation, a resync) are skipped, not a stop. The runs
  * started during those attempts (an attempt that was cut off again before relaunching a run still
- * passes it on), and they belong to the session that continues the step (a run can only be resumed
- * in the session that launched it). Nothing when workflows are off: the Workflow tool is gone.
+ * passes it on) that belong to the session continuing the step (a run can only be resumed in the
+ * session that launched it) are returned. Nothing when workflows are off: the Workflow tool is gone.
  */
 export function interruptedWorkflows(
   info: ClaudeRunInfo,
-  phase: ClaudeRunPhaseName,
+  phases: ClaudeRunPhaseName | readonly ClaudeRunPhaseName[],
   sessionId: string | undefined,
   settings: ClaudeCodeTaskSettings,
 ): ClaudeRunWorkflow[] {
   if (!sessionId || settings.workflowSize === 'off') return [];
+  const wanted = new Set<ClaudeRunPhaseName>(typeof phases === 'string' ? [phases] : phases);
   let since: string | undefined;
   for (let index = info.phases.length - 1; index >= 0; index--) {
     const attempt = info.phases[index];
-    if (attempt.name !== phase || (attempt.endedAt && !attempt.isError)) break;
+    if (!wanted.has(attempt.name)) continue;
+    if (attempt.endedAt && !attempt.isError) break;
     since = attempt.startedAt;
   }
   if (!since) return [];
   const from = since;
   return (info.workflows ?? []).filter((run) =>
-    run.phase === phase && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from);
+    wanted.has(run.phase) && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from);
 }
 
 /** Tells the continued step to relaunch its interrupted workflow runs, reusing the agents that finished */

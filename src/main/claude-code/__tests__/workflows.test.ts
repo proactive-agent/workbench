@@ -91,6 +91,44 @@ describe('interruptedWorkflows', () => {
     expect(interruptedWorkflows(twice, 'implement', 's1', settings).map((r) => r.runId)).toEqual(['wf_aaaaaa']);
   });
 
+  it('looks past the steps a revise run records before continuing an interrupted step', () => {
+    const at = (minutes: number) => new Date(Date.UTC(2026, 10, 1, 12, minutes)).toISOString();
+    const base = info([], {});
+    // A validation cut off by a usage limit, then a swap restart in revise mode: triage, revise, validate
+    const validating: ClaudeRunInfo = {
+      ...base,
+      phases: [
+        { name: 'implement', startedAt: at(0), endedAt: at(10) },
+        { name: 'validate', startedAt: at(11), endedAt: at(20), isError: true },
+        { name: 'triage', startedAt: at(21), endedAt: at(22) },
+        { name: 'revise', startedAt: at(23), endedAt: at(30) },
+      ],
+      workflows: [run({ runId: 'wf_review', phase: 'validate', startedAt: at(12) }), run({ runId: 'wf_revise', phase: 'revise', startedAt: at(24) })],
+    } as ClaudeRunInfo;
+    expect(interruptedWorkflows(validating, 'validate', 's1', settings).map((r) => r.runId)).toEqual(['wf_review']);
+    // An interrupted revise continued after the fresh triage
+    const revising: ClaudeRunInfo = {
+      ...base,
+      phases: [
+        { name: 'revise', startedAt: at(0), endedAt: at(10), isError: true },
+        { name: 'triage', startedAt: at(11), endedAt: at(12) },
+      ],
+      workflows: [run({ runId: 'wf_fix', phase: 'revise', startedAt: at(1) })],
+    } as ClaudeRunInfo;
+    expect(interruptedWorkflows(revising, 'revise', 's1', settings).map((r) => r.runId)).toEqual(['wf_fix']);
+    // A validation that finished after the interrupted one is the last word
+    validating.phases.push({ name: 'validate', startedAt: at(31), endedAt: at(40) });
+    expect(interruptedWorkflows(validating, 'validate', 's1', settings)).toEqual([]);
+  });
+
+  it('gives a resync that carries on an interrupted implementation its runs', () => {
+    const withResync = info([run({})], interrupted);
+    withResync.phases.push({ name: 'resync', startedAt: '2026-11-01T12:00:00.000Z', endedAt: '2026-11-01T12:05:00.000Z', isError: true });
+    expect(interruptedWorkflows(withResync, ['resync', 'implement'], 's1', settings).map((r) => r.runId)).toEqual(['wf_aaaaaa']);
+    // A resync of its own (not continuing) doesn't relaunch the implementation's runs
+    expect(interruptedWorkflows(withResync, 'resync', 's1', settings)).toEqual([]);
+  });
+
   it('tells the step to relaunch with resumeFromRunId and the same script', () => {
     expect(interruptedWorkflowHint([])).toBe('');
     const hint = interruptedWorkflowHint([run({ name: 'migrate', scriptPath: '/runs/wf.js' })]);

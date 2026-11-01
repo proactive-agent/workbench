@@ -763,6 +763,72 @@ describe('ClaudeTaskRun', () => {
       expect(argValue(args, '--append-system-prompt')).not.toContain('cross-session messages');
     });
 
+    const refuse = JSON.stringify({ crossSessionInbound: 'refuse' });
+    it.each([
+      ['UTF-8 with a BOM', Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(refuse, 'utf-8')])],
+      ['UTF-16LE with a BOM (PowerShell 5.1)', Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(refuse, 'utf16le')])],
+      ['UTF-16LE without a BOM', Buffer.from(refuse, 'utf16le')],
+      ['UTF-16BE with a BOM', Buffer.concat([Buffer.from([0xfe, 0xff]), Buffer.from(refuse, 'utf16le').swap16()])],
+      ['a file that is not valid JSON', Buffer.from('{ "crossSessionInbound": "refuse", }', 'utf-8')],
+    ])("doesn't accept messages when the user's settings are %s", async (_what, content) => {
+      mkdirSync(path.join(worktree, '.claude'), { recursive: true });
+      writeFileSync(path.join(worktree, '.claude', 'settings.json'), content);
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s39')] });
+      const { value } = messaging();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
+      expect(spawned[0].args.join(' ')).not.toContain('crossSessionInbound');
+    });
+
+    it('reads the messaging switches again at each step of a running task', async () => {
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s41')] }, { messages: [result('s41', { structured_output: { status: 'passed', summary: 'ok', checks: [] } })] });
+      const { value, calls } = messaging();
+      const current = [{ ...settings, validation: true }, { ...settings, validation: true, sessionMessages: false }];
+      let reads = 0;
+      await runWithConfig({
+        settings: { ...settings, validation: true },
+        projectId: 'p1',
+        messaging: value,
+        readCurrentSettings: async () => current[Math.min(reads++, current.length - 1)],
+      }).run();
+      expect(spawned).toHaveLength(2);
+      // Implement: accepted; validate, after the user switched messages from sessions off: not
+      expect(JSON.parse(argValue(spawned[0].args, '--settings')!)).toMatchObject({ crossSessionInbound: 'accept' });
+      expect(spawned[1].args.join(' ')).not.toContain('crossSessionInbound');
+      expect(spawned[1].args).toContain('--replay-user-messages');
+      expect(calls.attach).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops messaging at the next step once Task messaging is switched off', async () => {
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s42')] }, { messages: [result('s42', { structured_output: { status: 'passed', summary: 'ok', checks: [] } })] });
+      const { value, calls } = messaging();
+      let reads = 0;
+      await runWithConfig({
+        settings: { ...settings, validation: true },
+        projectId: 'p1',
+        messaging: value,
+        readCurrentSettings: async () => ({ ...settings, validation: true, taskMessaging: reads++ === 0 }),
+      }).run();
+      expect(spawned[0].keepStdinOpen).toBe(true);
+      expect(spawned[1].keepStdinOpen).toBe(false);
+      for (const flag of ['--replay-user-messages', '--allowedTools', '--settings']) expect(spawned[1].args).not.toContain(flag);
+      expect(argValue(spawned[1].args, '--append-system-prompt')).not.toContain('## Messages from other sessions');
+      expect(calls.attach).toHaveBeenCalledTimes(1);
+    });
+
+    it("accepts messages when the user's settings don't limit them, in any encoding", async () => {
+      mkdirSync(path.join(worktree, '.claude'), { recursive: true });
+      writeFileSync(path.join(worktree, '.claude', 'settings.json'), Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('{"model":"opus"}', 'utf16le')]));
+      writeFileSync(path.join(worktree, '.claude', 'settings.local.json'), '');
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s40')] });
+      const { value } = messaging();
+      await runWithConfig({ settings, projectId: 'p1', messaging: value }).run();
+      expect(JSON.parse(argValue(spawned[0].args, '--settings')!)).toMatchObject({ crossSessionInbound: 'accept' });
+    });
+
 
     it('keeps stdin open, accepts native messages and gets the Workbench tools through a config file', async () => {
       triageMock.mockResolvedValue({ triage: triage() });
@@ -835,7 +901,7 @@ describe('ClaudeTaskRun', () => {
       expect(blocks[0].text).not.toContain('received while you were not running');
       const last = blocks[blocks.length - 1].text ?? '';
       expect(last.startsWith('<workbench_messages>')).toBe(true);
-      expect(last).toContain('[Workbench] Task 002 started.');
+      expect(last).toContain('<message sender="workbench">\nTask 002 started.\n</message>');
       expect(calls.markRead).toHaveBeenCalledWith(['wbm-9']);
       expect(calls.inputRead).toHaveBeenCalledWith('wbm-10');
       const logs = JSON.parse(readFileSync(path.join(specDir, 'task_logs.json'), 'utf-8'));
