@@ -553,6 +553,9 @@ describe('ClaudeTaskRun', () => {
       expect(text(0)).not.toContain('workflow');
       expect(text(1)).toContain('Use the /code-review skill');
       expect(text(1)).not.toContain('Workflow tool');
+      // The default size leaves the guideline to the user's own Claude Code configuration
+      expect(spawned[0].args).not.toContain('--settings');
+      expect(spawned[0].env.CLAUDE_CODE_DISABLE_WORKFLOWS).toBeUndefined();
       expect(argValue(spawned[0].args, '--append-system-prompt')).not.toContain('or in a workflow');
     });
 
@@ -599,6 +602,18 @@ describe('ClaudeTaskRun', () => {
       expect(text(1)).toMatch(/^Continue the task/);
       expect(text(1)).toContain('`wf_run123` "migrate-files", script `/runs/wf_run123.js`');
       expect(text(1)).toContain('resumeFromRunId');
+    });
+
+    it('records a workflow that ended before its launch result as ended', async () => {
+      triageMock.mockResolvedValue({ triage: triage({ scope: 'large' }) });
+      const [init, use, started, launched] = launch('w6');
+      scripts.push({ messages: [
+        init, use, started,
+        { type: 'system', subtype: 'task_notification', task_id: 'bg-1', status: 'failed' } as ClaudeStreamMessage,
+        launched, result('w6'),
+      ] });
+      await makeRun({ settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false } }).run();
+      expect(loadClaudeRunInfo(specDir)?.workflows?.[0]).toMatchObject({ runId: 'wf_run123', status: 'failed' });
     });
 
     it('does not ask to relaunch a workflow that finished', async () => {

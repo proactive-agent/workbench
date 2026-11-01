@@ -12,7 +12,7 @@
  *   permission checks, which an isolated task run skips. The `ultracode` keyword does not count
  *   in a `-p` prompt, but a request in plain words does, so the turns ask for a workflow directly.
  * - Settings > Agents > Limits sets the size guideline (`workflowSizeGuideline`, advice to Claude
- *   on how many agents to aim for) and how many agents run at once
+ *   on how many agents to aim for; `default` keeps the user's own) and how many agents run at once
  *   (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`); `off` disables workflows in task runs.
  * - A relaunch with `resumeFromRunId` in the same session returns the saved results of the agents
  *   that already finished. The run records each launch (`ClaudeRunInfo.workflows`), so a step
@@ -34,9 +34,13 @@ export function workflowEnv(settings: ClaudeCodeTaskSettings): Record<string, st
   return concurrency ? { CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS: String(concurrency) } : {};
 }
 
-/** Claude Code settings (`--settings`) for a task run, or undefined when workflows are off */
+/**
+ * Claude Code settings (`--settings`) for a task run, or undefined when workflows are off or the
+ * size is left to the user's own Claude Code configuration (a `--settings` value would override it)
+ */
 export function workflowSettings(settings: ClaudeCodeTaskSettings): { workflowSizeGuideline: string } | undefined {
-  return settings.workflowSize === 'off' ? undefined : { workflowSizeGuideline: settings.workflowSize };
+  const size = settings.workflowSize;
+  return size === 'off' || size === 'default' ? undefined : { workflowSizeGuideline: size };
 }
 
 /** Whether the task's turns ask for workflows: they are on, and triage sized the task as large */
@@ -55,15 +59,29 @@ export function workflowImplementHint(): string {
 }
 
 /**
- * Workflow runs the step being continued launched and never finished: the last step recorded is
- * the same one and ended early (stopped, rate limited, failed or crashed), and the runs belong to
- * the session that continues it (a run can only be resumed in the session that launched it).
+ * Workflow runs the step being continued launched and never finished: the last steps recorded are
+ * attempts at the same step that ended early (stopped, rate limited, failed or crashed), the runs
+ * started during those attempts (an attempt that was cut off again before relaunching a run still
+ * passes it on), and they belong to the session that continues the step (a run can only be resumed
+ * in the session that launched it). Nothing when workflows are off: the Workflow tool is gone.
  */
-export function interruptedWorkflows(info: ClaudeRunInfo, phase: ClaudeRunPhaseName, sessionId: string | undefined): ClaudeRunWorkflow[] {
-  const last = info.phases.at(-1);
-  if (!sessionId || !last || last.name !== phase || (last.endedAt && !last.isError)) return [];
+export function interruptedWorkflows(
+  info: ClaudeRunInfo,
+  phase: ClaudeRunPhaseName,
+  sessionId: string | undefined,
+  settings: ClaudeCodeTaskSettings,
+): ClaudeRunWorkflow[] {
+  if (!sessionId || settings.workflowSize === 'off') return [];
+  let since: string | undefined;
+  for (let index = info.phases.length - 1; index >= 0; index--) {
+    const attempt = info.phases[index];
+    if (attempt.name !== phase || (attempt.endedAt && !attempt.isError)) break;
+    since = attempt.startedAt;
+  }
+  if (!since) return [];
+  const from = since;
   return (info.workflows ?? []).filter((run) =>
-    run.phase === phase && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= last.startedAt);
+    run.phase === phase && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from);
 }
 
 /** Tells the continued step to relaunch its interrupted workflow runs, reusing the agents that finished */

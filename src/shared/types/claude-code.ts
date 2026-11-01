@@ -22,12 +22,13 @@ export type TriageMode = 'auto' | 'fixed';
 export type PlanningPolicy = 'auto' | 'always' | 'never';
 
 /**
- * Claude Code dynamic workflows for large tasks: `off` disables them for task runs, the others are
- * Claude Code's `workflowSizeGuideline` (small < 5 agents, medium < 10, large < 50, unrestricted)
+ * Claude Code dynamic workflows for large tasks: `off` disables them for task runs, `default` keeps
+ * the user's own Claude Code guideline (medium, or small on Pro), the others set Claude Code's
+ * `workflowSizeGuideline` (small < 5 agents, medium < 10, large < 50, unrestricted)
  */
-export type WorkflowSize = 'off' | 'small' | 'medium' | 'large' | 'unrestricted';
+export type WorkflowSize = 'off' | 'default' | 'small' | 'medium' | 'large' | 'unrestricted';
 
-export const WORKFLOW_SIZES: readonly WorkflowSize[] = ['off', 'small', 'medium', 'large', 'unrestricted'] as const;
+export const WORKFLOW_SIZES: readonly WorkflowSize[] = ['off', 'default', 'small', 'medium', 'large', 'unrestricted'] as const;
 
 /** App-wide defaults for running tasks with Claude Code (Settings > Claude Code) */
 export interface ClaudeCodeTaskSettings {
@@ -56,7 +57,8 @@ export interface ClaudeCodeTaskSettings {
   /**
    * Workflows (many subagents run from a script) for tasks triage sizes as large: a checked
    * multi-angle review at validation, and optionally the implementation. The size is the guideline
-   * Claude Code gives Claude (`workflowSizeGuideline`); `off` disables workflows in task runs
+   * Claude Code gives Claude (`workflowSizeGuideline`); `default` leaves it to the user's Claude Code
+   * configuration, `off` disables workflows in task runs
    */
   workflowSize: WorkflowSize;
   /** Most workflow agents a task runs at once (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`); unset = Claude Code's default */
@@ -72,7 +74,7 @@ export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
   validation: true,
   allowFable: false,
   taskMessaging: true,
-  workflowSize: 'medium',
+  workflowSize: 'default',
 };
 
 /** Size of a task as judged by triage */

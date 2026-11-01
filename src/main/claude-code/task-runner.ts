@@ -22,8 +22,8 @@
  */
 
 import { randomUUID } from 'crypto';
-import { copyFileSync, cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
+import { cp, mkdtemp, rm, writeFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { resolveClaudeEnv } from './env';
@@ -497,6 +497,8 @@ export class ClaudeTaskRun {
   private running: { phase: Exclude<ClaudeRunPhaseName, 'triage'>; sessionId: string } | null = null;
   /** Workflow tool_use id -> Claude Code's background task id (from `task_started`) */
   private workflowTaskIds = new Map<string, string>();
+  /** Workflow task id -> how it ended, for a run that ended before its launch result was read */
+  private workflowEnds = new Map<string, 'completed' | 'failed' | 'stopped'>();
 
   constructor(private readonly config: TaskRunConfig, private readonly callbacks: TaskRunCallbacks = {}) {
     this.runFile = path.join(config.specDir, CLAUDE_RUN_FILE);
@@ -860,7 +862,7 @@ export class ClaudeTaskRun {
 
     const sessionId = resumeSessionId ?? randomUUID();
     // Read before this step is recorded: workflows the same step launched in this session and never finished
-    const unfinishedWorkflows = resumeSessionId ? interruptedWorkflows(this.info, name, resumeSessionId) : [];
+    const unfinishedWorkflows = interruptedWorkflows(this.info, name, resumeSessionId, this.config.settings);
     const phase = this.beginPhase(name, {
       model,
       effort,
@@ -1145,7 +1147,7 @@ no notes came with the request, so review the change against the task with fresh
     // Host path of the config dir (the transcript is copied with Windows file APIs, also in WSL)
     const configDir = env.CLAUDE_CONFIG_DIR ? toHostPath(env.CLAUDE_CONFIG_DIR) : defaultClaudeConfigDir();
     if (params.resume && this.info.configDir && this.info.configDir !== configDir) {
-      copySessionTranscript(params.sessionId, this.info.configDir, configDir);
+      await copySessionTranscript(params.sessionId, this.info.configDir, configDir);
     }
     if (this.info.profileId !== profileId || this.info.configDir !== configDir) {
       this.info.profileId = profileId;
@@ -1370,6 +1372,7 @@ no notes came with the request, so review the change against the task with fresh
     }
 
     if (isTaskNotification(message)) {
+      if ([...this.workflowTaskIds.values()].includes(message.task_id)) this.workflowEnds.set(message.task_id, message.status);
       const run = this.info.workflows?.find((w) => w.taskId === message.task_id);
       if (run) {
         run.status = message.status;
@@ -1532,6 +1535,9 @@ no notes came with the request, so review the change against the task with fresh
       status: 'running',
       startedAt: new Date().toISOString(),
     };
+    // A run that failed fast can report its end before the launch result arrives
+    const ended = run.taskId ? this.workflowEnds.get(run.taskId) : undefined;
+    if (ended) Object.assign(run, { status: ended, endedAt: run.startedAt });
     if (existing) workflows[workflows.indexOf(existing)] = run;
     else workflows.push(run);
     this.saveInfo();
@@ -1546,6 +1552,7 @@ no notes came with the request, so review the change against the task with fresh
     }
     this.running = null;
     this.workflowTaskIds.clear();
+    this.workflowEnds.clear();
     if (unfinished.length) this.saveInfo();
   }
 
@@ -1699,7 +1706,7 @@ function defaultClaudeConfigDir(): string {
  * directory next to it goes too: it holds subagent transcripts and the saved results of its
  * workflow runs, which a relaunch with `resumeFromRunId` reuses instead of running the agents again.
  */
-function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfigDir: string): void {
+async function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfigDir: string): Promise<void> {
   try {
     const projectsDir = path.join(fromConfigDir, 'projects');
     for (const project of readdirSync(projectsDir)) {
@@ -1709,7 +1716,8 @@ function copySessionTranscript(sessionId: string, fromConfigDir: string, toConfi
       mkdirSync(targetDir, { recursive: true });
       copyFileSync(source, path.join(targetDir, `${sessionId}.jsonl`));
       const sessionDir = path.join(projectsDir, project, sessionId);
-      if (existsSync(sessionDir)) cpSync(sessionDir, path.join(targetDir, sessionId), { recursive: true, force: true });
+      // Can hold many agent transcripts: copied without blocking the main process
+      if (existsSync(sessionDir)) await cp(sessionDir, path.join(targetDir, sessionId), { recursive: true, force: true });
       return;
     }
   } catch (error) {

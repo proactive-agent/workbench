@@ -20,7 +20,9 @@ const triage = (scope: TaskTriage['scope']) => ({ scope }) as TaskTriage;
 
 describe('workflow settings', () => {
   it('passes the size guideline and the concurrency limit, or turns workflows off', () => {
-    expect(workflowSettings(settings)).toEqual({ workflowSizeGuideline: 'medium' });
+    // The default keeps the user's own Claude Code guideline
+    expect(workflowSettings(settings)).toBeUndefined();
+    expect(workflowSettings({ ...settings, workflowSize: 'small' })).toEqual({ workflowSizeGuideline: 'small' });
     expect(workflowEnv(settings)).toEqual({});
     expect(workflowEnv({ ...settings, workflowMaxConcurrentAgents: 4 })).toEqual({ CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS: '4' });
 
@@ -67,18 +69,26 @@ describe('interruptedWorkflows', () => {
 
   it("finds the unfinished runs of the step being continued in the session's own runs", () => {
     const runs = [run({}), run({ runId: 'wf_bbbbbb', status: 'failed' }), run({ runId: 'wf_cccccc', status: 'completed' })];
-    expect(interruptedWorkflows(info(runs, interrupted), 'implement', 's1').map((r) => r.runId)).toEqual(['wf_aaaaaa', 'wf_bbbbbb']);
+    expect(interruptedWorkflows(info(runs, interrupted), 'implement', 's1', settings).map((r) => r.runId)).toEqual(['wf_aaaaaa', 'wf_bbbbbb']);
     // A step that crashed without an end counts as interrupted too
-    expect(interruptedWorkflows(info(runs, {}), 'implement', 's1')).toHaveLength(2);
+    expect(interruptedWorkflows(info(runs, {}), 'implement', 's1', settings)).toHaveLength(2);
   });
 
   it('leaves out other sessions, other steps, earlier attempts and steps that finished', () => {
-    expect(interruptedWorkflows(info([run({ sessionId: 's2' })], interrupted), 'implement', 's1')).toEqual([]);
-    expect(interruptedWorkflows(info([run({ phase: 'validate' })], interrupted), 'implement', 's1')).toEqual([]);
-    expect(interruptedWorkflows(info([run({ startedAt: '2026-11-01T09:10:00.000Z' })], interrupted), 'implement', 's1')).toEqual([]);
-    expect(interruptedWorkflows(info([run({})], { endedAt: '2026-11-01T11:00:00.000Z' }), 'implement', 's1')).toEqual([]);
-    expect(interruptedWorkflows(info([run({})], interrupted), 'validate', 's1')).toEqual([]);
-    expect(interruptedWorkflows(info([run({})], interrupted), 'implement', undefined)).toEqual([]);
+    expect(interruptedWorkflows(info([run({ sessionId: 's2' })], interrupted), 'implement', 's1', settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({ phase: 'validate' })], interrupted), 'implement', 's1', settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({ startedAt: '2026-11-01T09:10:00.000Z' })], interrupted), 'implement', 's1', settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({})], { endedAt: '2026-11-01T11:00:00.000Z' }), 'implement', 's1', settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({})], interrupted), 'validate', 's1', settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({})], interrupted), 'implement', undefined, settings)).toEqual([]);
+    expect(interruptedWorkflows(info([run({})], interrupted), 'implement', 's1', { ...settings, workflowSize: 'off' })).toEqual([]);
+  });
+
+  it('passes on a run an attempt that was cut off again never relaunched', () => {
+    const runs = [run({ startedAt: '2026-11-01T09:40:00.000Z' })];
+    const twice = info(runs, interrupted);
+    twice.phases.push({ name: 'implement', startedAt: '2026-11-01T12:00:00.000Z', endedAt: '2026-11-01T12:05:00.000Z', isError: true });
+    expect(interruptedWorkflows(twice, 'implement', 's1', settings).map((r) => r.runId)).toEqual(['wf_aaaaaa']);
   });
 
   it('tells the step to relaunch with resumeFromRunId and the same script', () => {
