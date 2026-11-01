@@ -13,6 +13,8 @@ import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ConnectorRow, ConnectorSwitchTip } from './ConnectorRow';
 import { BUILTIN_CONNECTOR_META, customServerIcon } from './connector-meta';
+import { PuppeteerBrowserSelect } from './PuppeteerBrowserSelect';
+import { browserProfileLabel } from './browser-profile-meta';
 import { useMcpUnavailableReason } from '../../hooks/useMcpAvailability';
 import { CustomMcpDialog } from '../CustomMcpDialog';
 import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
@@ -194,7 +196,12 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
             // Context7 and Memory default on; browser automation defaults off
             const checked = defaultOff ? connectors[key] === true : connectors[key] !== false;
             const unavailable = unavailableReason(id);
-            const description = unavailable?.reason ?? t(`settings:mcp.servers.${id}.description`);
+            // Puppeteer with a local profile: runs use a copy of it, made when they start
+            const browser = id === 'puppeteer' ? connectors.puppeteerBrowser : undefined;
+            const description = unavailable?.reason
+              ?? (browser
+                ? t('settings:mcp.browserProfile.closeBrowserHint', { name: browserProfileLabel(t, browser) })
+                : t(`settings:mcp.servers.${id}.description`));
             return (
               <ConnectorRow
                 key={id}
@@ -203,6 +210,16 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
                 description={description}
                 disabled={!!unavailable}
               >
+                {/* Stays usable while the server is unavailable: another browser can be the fix */}
+                {id === 'puppeteer' && (
+                  <PuppeteerBrowserSelect
+                    value={connectors.puppeteerBrowser}
+                    onChange={(choice) => updateConnectors((current) => {
+                      const { puppeteerBrowser: _previous, ...rest } = current;
+                      return choice ? { ...rest, puppeteerBrowser: choice } : rest;
+                    })}
+                  />
+                )}
                 <ConnectorSwitchTip fixCommand={unavailable?.fixCommand}>
                   <Switch
                     checked={checked && !unavailable}
