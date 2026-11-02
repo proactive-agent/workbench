@@ -788,12 +788,14 @@ describe('ClaudeTaskRun', () => {
       return makeRun({ extraEnv: { CLAUDE_CONFIG_DIR: path.join(worktree, '.config') }, ...overrides });
     }
 
-    it("doesn't let the user's sessions message tasks unless the user opts in", async () => {
-      expect(DEFAULT_CLAUDE_CODE_TASK_SETTINGS.sessionMessages).toBe(false);
+    it("lets the user's sessions message tasks by default, and not once switched off", async () => {
+      expect(DEFAULT_CLAUDE_CODE_TASK_SETTINGS.sessionMessages).toBe(true);
       triageMock.mockResolvedValue({ triage: triage() });
       scripts.push({ messages: [result('s37')] });
       const { value } = messaging();
-      await runWithConfig({ settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false }, projectId: 'p1', messaging: value }).run();
+      await runWithConfig({
+        settings: { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, validation: false, sessionMessages: false }, projectId: 'p1', messaging: value,
+      }).run();
       const { args } = spawned[0];
       expect(args.join(' ')).not.toContain('crossSessionInbound');
       expect(args).toContain('--dangerously-skip-permissions');

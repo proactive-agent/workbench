@@ -82,7 +82,7 @@ export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
   validation: true,
   allowFable: false,
   taskMessaging: true,
-  sessionMessages: false,
+  sessionMessages: true,
   workflowSize: 'default',
 };
 

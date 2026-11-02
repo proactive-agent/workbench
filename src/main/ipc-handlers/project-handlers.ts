@@ -12,6 +12,7 @@ import type {
   ProjectCostMetrics
 } from '../../shared/types';
 import { appLog } from '../app-logger';
+import { setLiveAgentEnabled } from '../live-agent/live-agent-projects';
 import { projectStore } from '../project-store';
 import { applyProjectMemory, removeProjectMemory } from '../self-improve';
 import { getProjectCostMetrics, warmProjectMetrics } from '../project-metrics';
@@ -404,6 +405,10 @@ export function registerProjectHandlers(
         if (result.success) {
           // Update project's autoBuildPath
           projectStore.updateAutoBuildPath(projectId, '.workbench');
+          // Live agent is on for newly set up projects (projects set up before keep their choice)
+          void setLiveAgentEnabled(project.path, true).catch((error: unknown) => {
+            appLog.warn(`[Project] Could not switch Live agent on for ${project.path}:`, error);
+          });
         }
 
         return { success: result.success, data: result, error: result.error };

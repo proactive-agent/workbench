@@ -243,10 +243,11 @@ With Task messaging on (Settings > Agents, `claudeCodeTasks.taskMessaging`, on b
 `message_task` and `list_parallel_tasks` tools (`src/main/task-messaging/`, served by the task tools server with a
 token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks change the
 same files). The broker (`broker.ts`) writes a message to a live run's stdin or keeps it in the target's
-`task_inbox.json` for its next phase. With Messages from your Claude sessions on (`claudeCodeTasks.sessionMessages`),
-task runs also accept Claude Code's built-in SendMessage from the user's other sessions (`--settings
-{"crossSessionInbound":"accept"}`): agent windows are told the task session names (`task-messaging/window-hint.ts`),
-and the Claude chat gets `message_task` (through the broker) plus ListAgents / SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
+`task_inbox.json` for its next phase. With Messages from your Claude sessions on
+(`claudeCodeTasks.sessionMessages`, on by default), task runs also accept Claude Code's built-in SendMessage from the
+user's other sessions (`--settings {"crossSessionInbound":"accept"}`): agent windows are told the task session names
+(`task-messaging/window-hint.ts`), and the Claude chat gets `message_task` (through the broker) plus ListAgents /
+SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
 Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync/`), also while messaging is off.
 
 ### MCP Connectors
@@ -263,7 +264,8 @@ copy of the chosen profile in the app's data folder, `<userData>/browser-profile
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
 `~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
 cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
-(`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
+(`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
+copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
 server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`. The picker also lists browsers Puppeteer
 downloads itself (`managed.ts`: Firefox from `~/.cache/puppeteer`) as disabled items with a download button that
 opens a terminal running `npx puppeteer browsers install` (`MCP_INSTALL_BROWSER`; the main process picks the
@@ -336,8 +338,9 @@ Switching off moves the memories aside to `.workbench/compeng.disabled` unless g
 The Live agent switch (Settings > Agents) shows agent-flow's graph of a project's Claude Code sessions next to each
 agent window (`src/main/live-agent/`, `src/renderer/components/live-agent/`). It installs `.workbench/flow/hook.cjs`
 and Claude Code hooks in the project's and its worktrees' `.claude/settings.local.json` (`project-setup.ts`); the
-`.workbench/flow` folder's existence is the setting. A relay worker (`live-agent-relay.ts`, `relay/`) runs while any
-project has it on; each window's graph shows only the sessions run in it, never headless ones.
+`.workbench/flow` folder's existence is the setting, switched on when a project is set up. A relay worker
+(`live-agent-relay.ts`, `relay/`) runs while any project has it on; each window's graph shows only the sessions run in
+it, never headless ones.
 
 ### Electron MCP (testing the app from a task)
 

@@ -49,7 +49,9 @@ function writeSettings(dir: string, content: string | Buffer) {
 }
 
 describe('agentWindowMessagingHint', () => {
-  it('is left out by default (the user opts in to messages from sessions)', () => {
+  it('is given by default, and left out once messages from sessions are switched off', () => {
+    expect(agentWindowMessagingHint(dirs.project)).toContain('SendMessage');
+    settingsFile = { claudeCodeTasks: { sessionMessages: false } };
     expect(agentWindowMessagingHint(dirs.project)).toBe('');
   });
 
@@ -76,9 +78,9 @@ describe('agentWindowMessagingHint', () => {
     expect(agentWindowMessagingHint(dirs.project)).toBe('');
   });
 
-  it('treats a stored value that is not a boolean as the default (off)', () => {
+  it('treats a stored value that is not a boolean as the default (on)', () => {
     settingsFile = { claudeCodeTasks: { sessionMessages: 'yes' } };
-    expect(agentWindowMessagingHint(dirs.project)).toBe('');
+    expect(agentWindowMessagingHint(dirs.project)).toContain('SendMessage');
   });
 
   it.each([
