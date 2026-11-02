@@ -630,14 +630,14 @@
       "taskMessaging": "Task messaging",
       "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
       "sessionMessages": "Messages from your Claude sessions",
-      "sessionMessagesDescription": "Agent windows, the Claude chat and claude in your own terminal can message running tasks. Tasks run without permission checks, so any Claude session on this computer, including one misled by a web page or file it read, could make a task run commands or change files without asking you",
+      "sessionMessagesDescription": "Agent windows, the chat and your terminal can message running tasks, which skip permission checks, so any local Claude session could steer them",
       "fallbackModel": "Fallback model",
       "fallbackModelDescription": "Model Claude Code switches to when the chosen one is overloaded",
       "fallbackNone": "None"
     },
     "workflows": {
       "size": "Workflow size",
-      "sizeDescription": "Tasks triage sizes as large review their changes, and may make them, with a workflow of many subagents, which uses more of your usage. With a fixed model and effort, only workflows Claude Code starts on its own use it. Sets how many agents a workflow aims for",
+      "sizeDescription": "How many agents a workflow aims for. Large tasks review, and may make, their changes with workflows, which use more of your usage",
       "sizes": {
         "off": "Off",
         "default": "Claude Code default",
