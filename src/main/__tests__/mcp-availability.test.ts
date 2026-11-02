@@ -616,6 +616,33 @@ describe('MCP availability', () => {
     }
   });
 
+  it("looks at a task's own browser for its run, leaving the windows' result alone", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    const open = new Set<string>();
+    mocks.inUse.mockImplementation(async (browser: { id: string }) => open.has(browser.id));
+    const settings = { puppeteerEnabled: true, puppeteerBrowser: chromeProfile };
+    getMcpAvailability(['puppeteer'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+
+    // The task's browser is open: its run leaves Puppeteer out, the windows still read it ready
+    open.add(firefoxProfile.id);
+    const changes: unknown[] = [];
+    const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, firefoxProfile)).toEqual([]);
+    expect(changes).not.toContainEqual({ state: 'unavailable', browserOpen: true });
+    expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready');
+
+    // The Settings browser is open, the task's isn't (or the task uses Puppeteer's own Chrome)
+    open.clear();
+    open.add(chromeProfile.id);
+    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual([]);
+    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, firefoxProfile)).toEqual(['puppeteer']);
+    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, null)).toEqual(['puppeteer']);
+    stop();
+    stopMcpProbes();
+  });
+
   it('keeps looking at an open browser while Puppeteer is off, so closing it enables the switch', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {

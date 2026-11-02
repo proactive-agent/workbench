@@ -18,7 +18,8 @@ import { addToWorktree } from '../live-agent/project-setup';
 import { describeLeftOutConnector, usableMcpConnectorIds } from '../mcp-availability';
 import type { TaskLogPhase } from '../../shared/types/task';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
-import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
+import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
+import { getDefaultMcpConnectorIds, getTaskPuppeteerBrowser } from '../../shared/utils/mcp-connectors';
 import { readSettingsFile, readSettingsFileAsync } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { isSelfImproveEnabled, SELF_IMPROVE_NUDGE } from '../self-improve';
@@ -30,7 +31,7 @@ import { getOperationRegistry } from '../claude-profile/operation-registry';
 import { getAPIProfileEnv } from '../services/profile';
 import { getSpecsDir } from '../../shared/constants';
 import { getTaskWorktreeBranch } from '../../shared/utils/claude-run';
-import type { AppSettings } from '../../shared/types/settings';
+import type { AppSettings, McpConnectorSettings } from '../../shared/types/settings';
 import { appLog } from '../app-logger';
 import { resolveBaseBranch, resolveDefaultBaseBranch } from '../utils/base-branch';
 import { taskHooks } from '../task-hooks';
@@ -512,6 +513,12 @@ export class AgentManager extends EventEmitter {
 
     // Connectors the run leaves out, for the start of its task log
     const startNotes: { phase: TaskLogPhase; line: string }[] = [];
+    // The Puppeteer connector's browser: the task's own choice, else the one in Settings > Connectors
+    const taskBrowser = task.metadata?.puppeteerBrowser;
+    const browser = getTaskPuppeteerBrowser(taskBrowser, settings.mcpConnectors);
+    const connectorSettings: McpConnectorSettings | undefined = taskBrowser === undefined
+      ? settings.mcpConnectors
+      : { ...settings.mcpConnectors, puppeteerBrowser: browser };
     const config: TaskRunConfig = {
       taskId,
       projectId: project.id,
@@ -529,10 +536,11 @@ export class AgentManager extends EventEmitter {
         Array.isArray(task.metadata?.mcpConnectors) ? task.metadata.mcpConnectors : getDefaultMcpConnectorIds(settings.mcpConnectors),
         settings.mcpConnectors,
         (id, availability) => startNotes.push(this.noteLeftOutConnector(
-          taskId, options, specDir, describeLeftOutConnector(id, availability, settings.mcpConnectors), resync && mode !== 'revise' ? 'resync' : mode))
+          taskId, options, specDir, describeLeftOutConnector(id, availability, connectorSettings), resync && mode !== 'revise' ? 'resync' : mode)),
+        taskBrowser === undefined ? undefined : browser ?? null
       ),
       startNotes,
-      connectorSettings: settings.mcpConnectors,
+      connectorSettings,
       settings: taskSettings,
       // Read again at each step, so switching Task messaging or messages from sessions off reaches a running task
       readCurrentSettings: async () => resolveClaudeCodeTaskSettings(
@@ -553,12 +561,13 @@ export class AgentManager extends EventEmitter {
     if (isSelfImproveEnabled(project.settings)) config.selfImprovePrompt = SELF_IMPROVE_NUDGE;
     // The Puppeteer connector's browser profile: a fresh copy per run (sign-ins as they are now),
     // in the run's own slot so no two runs share a profile folder
-    const browser = settings.mcpConnectors?.puppeteerBrowser;
     if (browser && config.connectorIds?.includes('puppeteer')) {
       try {
         // A slot per run: a stopped run of the task may still be cleaning up its own copy
         const slot = `task-${task.specId}-${randomUUID().slice(0, 8)}`;
-        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot)) ?? undefined;
+        // Copies of profiles still chosen (Settings, other tasks) are kept by its sweep
+        const inUse = await browserChoicesInUse(project.path, settings.mcpConnectors?.puppeteerBrowser);
+        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot, inUse)) ?? undefined;
         // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it.
         // Live runs' copies are kept, such as a newer launch's after this one was stopped mid-copy
         void removeStaleBrowserProfileCopies(project.path, browser, `task-${task.specId}-`, slot);

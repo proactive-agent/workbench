@@ -268,8 +268,11 @@ copy of the chosen profile in the app's data folder, `<userData>/browser-profile
 `~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
 cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
 (`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
-copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
-server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`. The picker also lists browsers Puppeteer
+copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. The task
+dialog's Puppeteer row picks a profile for that task (`TaskMetadata.puppeteerBrowser`, null for Puppeteer's own Chrome;
+unset follows Settings), which its runs use instead; sweeps keep the copies of every profile Settings or a task still
+chooses (`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
+`mcp-config.ts`. The picker also lists browsers Puppeteer
 downloads itself (`managed.ts`: Firefox from `~/.cache/puppeteer`) as disabled items with a download button that
 opens a terminal running `npx puppeteer browsers install` (`MCP_INSTALL_BROWSER`; the main process picks the
 command, then watches the cache and sends the new list).

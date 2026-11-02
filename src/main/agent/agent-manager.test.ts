@@ -1,7 +1,7 @@
 /**
  * Tests for AgentManager: wiring of ClaudeTaskRun (Claude Code task runner) to manager events
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import type { Project, Task } from '../../shared/types';
 import type { TaskRunCallbacks, TaskRunConfig, TaskRunOutcome } from '../claude-code/task-runner';
@@ -19,14 +19,23 @@ const runs: MockRun[] = [];
 // left out as if their browser were open
 const connectorMocks = vi.hoisted(() => ({
   leftOut: new Set<string>(),
+  /** The run's own Puppeteer browser each call was given (a task's choice) */
+  runBrowsers: [] as unknown[],
 }));
 vi.mock('../mcp-availability', () => ({
-  usableMcpConnectorIds: async (ids: string[], _settings: unknown, onLeftOut?: (id: string, availability: unknown) => void) =>
-    ids.filter((id) => {
+  usableMcpConnectorIds: async (
+    ids: string[],
+    _settings: unknown,
+    onLeftOut?: (id: string, availability: unknown) => void,
+    runBrowser?: unknown
+  ) => {
+    connectorMocks.runBrowsers.push(runBrowser);
+    return ids.filter((id) => {
       if (!connectorMocks.leftOut.has(id)) return true;
       onLeftOut?.(id, { state: 'unavailable', browserOpen: true });
       return false;
-    }),
+    });
+  },
   describeLeftOutConnector: (id: string) => `${id} connector left out of this run: the browser is open`,
 }));
 vi.mock('../claude-code/task-runner', () => ({
@@ -56,6 +65,21 @@ vi.mock('../worktree', () => ({
 
 vi.mock('../settings-utils', () => ({
   readSettingsFile: vi.fn(() => ({ claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' } })),
+}));
+
+// The profiles still chosen (Settings and other tasks), which a copy's sweep keeps
+vi.mock('../browser-profiles/choices-in-use', () => ({
+  browserChoicesInUse: vi.fn(async (_projectPath: string, settingsChoice: unknown) => ({
+    project: settingsChoice ? [settingsChoice] : [],
+    all: settingsChoice ? [settingsChoice] : [],
+  })),
+}));
+
+// Copies of the Puppeteer connector's browser profile: a folder per run, nothing on disk
+vi.mock('../browser-profiles/profile-copy', () => ({
+  prepareBrowserProfileCopy: vi.fn(async (_projectPath: string, choice: { id: string }, slot: string) => `/copies/${choice.id}/${slot}`),
+  removeBrowserProfileCopy: vi.fn(async () => undefined),
+  removeStaleBrowserProfileCopies: vi.fn(async () => undefined),
 }));
 
 vi.mock('../graphify', () => ({
@@ -294,6 +318,61 @@ describe('AgentManager', () => {
       connectorMocks.leftOut.clear();
       vi.mocked(loadClaudeRunInfo).mockReturnValue(null);
     }
+  });
+
+  describe("the Puppeteer connector's browser profile", () => {
+    const settingsBrowser = { id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Person 1', executablePath: '/chrome', userDataDir: '/c', profilePath: '/c/Default' };
+    const taskBrowser = { id: 'firefox:work', browser: 'firefox', engine: 'firefox', profileName: 'work', executablePath: '/firefox', userDataDir: '/f', profilePath: '/f/work' };
+
+    beforeEach(async () => {
+      const { readSettingsFile } = await import('../settings-utils');
+      vi.mocked(readSettingsFile).mockReturnValue({
+        claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' },
+        mcpConnectors: { puppeteerEnabled: true, puppeteerBrowser: settingsBrowser },
+      });
+      connectorMocks.runBrowsers.length = 0;
+    });
+
+    afterEach(async () => {
+      const { readSettingsFile } = await import('../settings-utils');
+      vi.mocked(readSettingsFile).mockReturnValue({ claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' } });
+    });
+
+    it('follows Settings > Connectors when the task picked none', async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.puppeteerBrowser).toEqual(settingsBrowser);
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(settingsBrowser);
+      expect(connectorMocks.runBrowsers).toEqual([undefined]);
+    });
+
+    it("uses the task's own browser for the profile copy and the server", async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'], puppeteerBrowser: taskBrowser } } as unknown as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.puppeteerBrowser).toEqual(taskBrowser);
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(taskBrowser);
+      expect(run.config.browserProfileDir).toMatch(/^\/copies\/firefox:work\//);
+      // Its sweep keeps the Settings profile's copies
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[3]).toEqual({ project: [settingsBrowser], all: [settingsBrowser] });
+      // Availability looks at the task's browser
+      expect(connectorMocks.runBrowsers).toEqual([taskBrowser]);
+    });
+
+    it("uses Puppeteer's own Chrome when the task picked it", async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      vi.mocked(prepareBrowserProfileCopy).mockClear();
+      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'], puppeteerBrowser: null } } as unknown as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.puppeteerBrowser).toBeUndefined();
+      expect(run.config.browserProfileDir).toBeUndefined();
+      expect(prepareBrowserProfileCopy).not.toHaveBeenCalled();
+      expect(connectorMocks.runBrowsers).toEqual([null]);
+    });
   });
 
   it('runs in the project directory when worktrees are off', async () => {

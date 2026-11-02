@@ -187,27 +187,38 @@ export function describeLeftOutConnector(id: string, availability: McpAvailabili
 
 /**
  * The connector ids a run can use: unavailable ones are left out (preparing ones stay in). The
- * chosen browser is looked at now, so a run never copies the profile of an open one. Each one left
+ * run's browser is looked at now, so a run never copies the profile of an open one. Each one left
  * out is logged, passed to `onLeftOut` (the run's log) and sent to every window again, so a view
- * that still shows it on catches up
+ * that still shows it on catches up. `runBrowser` is the run's own Puppeteer browser when it isn't
+ * the one in `settings` (a task's own choice, TaskMetadata.puppeteerBrowser; null: Puppeteer's own
+ * Chrome): only its lock is looked at, the server's check stays the one for `settings`, so a task's
+ * choice never replaces the result the windows show
  */
 export async function usableMcpConnectorIds(
   ids: string[],
   settings: McpConnectorSettings | undefined,
-  onLeftOut?: (id: string, availability: McpAvailability) => void
+  onLeftOut?: (id: string, availability: McpAvailability) => void,
+  runBrowser?: PuppeteerBrowserChoice | null
 ): Promise<string[]> {
+  const runSettings: McpConnectorSettings | undefined = runBrowser === undefined
+    ? settings
+    : { ...settings, puppeteerBrowser: runBrowser ?? undefined };
   // The run's own browser (its settings may be older than the chosen one): looked at, never chosen
-  const browser = chosenProfileBrowser(settings);
+  const browser = chosenProfileBrowser(runSettings);
   // Its answer counts even when a reset forgot it while looking
   const browserIsOpen = browser && ids.includes('puppeteer') ? await lookAtBrowser(browser) : false;
   return ids.filter((id) => {
-    const found = check(id, settings);
+    const found = runBrowser === undefined || id !== 'puppeteer'
+      ? check(id, settings)
+      // The server's own check, without the chosen browser's open state (the run's browser counts)
+      : checkServer(id, settings);
     const availability: McpAvailability = id === 'puppeteer' && browserIsOpen && found.state !== 'unavailable'
       ? { state: 'unavailable', browserOpen: true }
       : found;
     if (availability.state !== 'unavailable') return true;
-    appLog.info(`[MCP] ${describeLeftOutConnector(id, availability, settings)}`);
-    events.emit('change', id, availability);
+    appLog.info(`[MCP] ${describeLeftOutConnector(id, availability, runSettings)}`);
+    // A task's own browser being open says nothing about the one the windows show
+    if (!(availability.browserOpen && runBrowser !== undefined)) events.emit('change', id, availability);
     onLeftOut?.(id, availability);
     return false;
   });

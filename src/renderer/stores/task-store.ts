@@ -1122,7 +1122,7 @@ const DRAFT_KEY_PREFIX = 'task-creation-draft';
  */
 export type TaskCreationDraft = Pick<
   TaskDraft,
-  'projectId' | 'description' | 'images' | 'mcpConnectors' | 'pushNewBranches' | 'savedAt'
+  'projectId' | 'description' | 'images' | 'mcpConnectors' | 'puppeteerBrowser' | 'pushNewBranches' | 'savedAt'
 >;
 
 /**
@@ -1170,6 +1170,10 @@ export function loadDraft(projectId: string): TaskCreationDraft | null {
       description: typeof raw.description === 'string' ? raw.description : '',
       images: Array.isArray(raw.images) ? (raw.images as ImageAttachment[]) : [],
       mcpConnectors: Array.isArray(raw.mcpConnectors) ? (raw.mcpConnectors as string[]) : undefined,
+      // null: Puppeteer's own Chrome was picked; missing: follow Settings > Connectors
+      ...(raw.puppeteerBrowser === null || (raw.puppeteerBrowser && typeof raw.puppeteerBrowser === 'object')
+        ? { puppeteerBrowser: raw.puppeteerBrowser as TaskCreationDraft['puppeteerBrowser'] }
+        : {}),
       pushNewBranches: typeof raw.pushNewBranches === 'boolean' ? raw.pushNewBranches : undefined,
       // Convert savedAt back to Date
       savedAt: new Date(typeof raw.savedAt === 'string' ? raw.savedAt : Date.now())

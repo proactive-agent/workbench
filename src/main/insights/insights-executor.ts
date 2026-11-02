@@ -19,6 +19,7 @@ import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFileAsync } from '../settings-utils';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
 import { appLog } from '../app-logger';
 import { getToolInfoAsync } from '../cli-tool-manager';
 import { isSelfImproveEnabled } from '../self-improve/setting';
@@ -62,7 +63,9 @@ async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   if (browser && chosen.includes('puppeteer')) {
     // A slot per turn: a replaced turn may still be removing its own copy
     const slot = `chat-${randomUUID().slice(0, 8)}`;
-    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot).catch((error) => {
+    // Copies of profiles tasks still choose are kept by its sweep
+    const inUse = await browserChoicesInUse(projectPath, browser).catch(() => undefined);
+    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot, inUse).catch((error) => {
       appLog.warn('[Insights] Could not copy the browser profile:', error);
       return null;
     })) ?? undefined;

@@ -24,6 +24,11 @@ vi.mock('../../settings-utils', () => ({
   }),
 }));
 vi.mock('../task-tools-server', () => ({ openTaskToolsSession: async () => undefined }));
+// A task elsewhere picked another profile: its copies are kept by the chat copy's sweep
+const taskPick = { id: 'firefox:work', browser: 'firefox', engine: 'firefox', profileName: 'Work', executablePath: '/f', userDataDir: '/f', profilePath: '/f/work' };
+vi.mock('../../browser-profiles/choices-in-use', () => ({
+  browserChoicesInUse: async (_projectPath: string, settingsChoice: unknown) => ({ project: [settingsChoice], all: [settingsChoice, taskPick] }),
+}));
 vi.mock('../../browser-profiles/profile-copy', () => ({
   prepareBrowserProfileCopy: (...args: unknown[]) => prepareBrowserProfileCopy(...args),
   removeBrowserProfileCopy: (...args: unknown[]) => removeBrowserProfileCopy(...args),
@@ -49,6 +54,8 @@ describe('chat browser profile copies', () => {
     await executor.execute('p1', '/project', 'two', [], { mcpConnectors: ['puppeteer'] } as never);
 
     expect(prepareBrowserProfileCopy).toHaveBeenCalledTimes(2);
+    // The profiles still chosen go with each copy, so its sweep keeps them
+    expect(prepareBrowserProfileCopy.mock.calls[0][3]).toEqual(expect.objectContaining({ all: [expect.objectContaining({ id: 'chrome:Default' }), taskPick] }));
     const [first, second] = prepareBrowserProfileCopy.mock.calls.map((call) => call[2] as string);
     expect(first).toMatch(/^chat-/);
     expect(second).not.toBe(first);

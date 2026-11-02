@@ -32,6 +32,7 @@ interface PuppeteerBrowserSelectProps {
   onChange: (choice: PuppeteerBrowserChoice | undefined) => void;
   /** Puppeteer's own Chrome can't start because its build isn't downloaded: the default item offers the download */
   chromeMissing?: boolean;
+  disabled?: boolean;
 }
 
 /** A browser's icon before its name in the list */
@@ -78,7 +79,7 @@ function DownloadButton({ browser, onDownload, downloading = false, besideCheck 
   );
 }
 
-export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false }: PuppeteerBrowserSelectProps) {
+export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false, disabled = false }: PuppeteerBrowserSelectProps) {
   const { t } = useTranslation(['settings']);
   const [profiles, setProfiles] = useState<BrowserProfile[] | undefined>(undefined);
 
@@ -190,7 +191,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
   const SelectedIcon = value ? browserProfileIcon(value) : PuppeteerIcon;
 
   return (
-    <Select value={selected} onValueChange={handleChange}>
+    <Select value={selected} onValueChange={handleChange} disabled={disabled}>
       <SelectTrigger aria-label={t('settings:mcp.browserProfile.label')}>
         <SelectValue>
           <SelectedIcon className={ITEM_ICON} />

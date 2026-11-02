@@ -23,15 +23,17 @@
  * hour has ended. Copies no live run uses are removed: at startup (all of them, in every place
  * above, and on Windows also in a running WSL distribution's home after a switch back from WSL,
  * except copies another running Workbench owns), on quit (those of runs still going, such as
- * chat turns), at once when they are another profile's (an earlier choice), and after a day
+ * chat turns), at once when no one chooses their profile any more, and after a day
  * otherwise; a copy whose owner is another live Workbench process is never swept.
  *
  * Each profile also has one saved copy (`<base>/_saved/<profile>/<time>`), made in the background
  * whenever a run or a look at the browser finds it closed (at most every SAVED_REFRESH_MS). A run
  * that starts while the browser is open copies the saved copy instead of the live profile, which
  * the open browser keeps locked and half written; only without a saved copy does an open browser
- * keep Puppeteer from runs (browserProfileCopyBlocked). The saved copy is kept until the choice
- * moves to another profile.
+ * keep Puppeteer from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
+ * chooses the profile: Settings > Connectors or a task's own pick (TaskMetadata.puppeteerBrowser,
+ * listed by choices-in-use.ts); a project's run copies likewise go at once only when neither
+ * Settings nor the project's tasks choose their profile.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
@@ -482,10 +484,11 @@ async function removeSavedCopies(parent: string, keep?: string): Promise<void> {
 }
 
 /**
- * Remove saved copies of profiles other than `current` (every one when null): the choice moved to
- * another profile or to none. Saves being written now are left alone. Best effort
+ * Remove saved copies of profiles not in `keep` (every one when it is empty): no one chooses them
+ * any more. Saves being written now are left alone. Best effort
  */
-async function removeOtherSavedCopies(current: PuppeteerBrowserChoice | null): Promise<void> {
+async function removeOtherSavedCopies(keep: PuppeteerBrowserChoice[]): Promise<void> {
+  const kept = new Set(keep.map((choice) => slug(choice.id)));
   for (const base of new Set(runtimeCopiesBases())) {
     const savedRoot = path.join(base, SAVED_FOLDER);
     let profiles: string[];
@@ -495,24 +498,38 @@ async function removeOtherSavedCopies(current: PuppeteerBrowserChoice | null): P
       continue;
     }
     for (const profile of profiles) {
-      if (current && profile === slug(current.id)) continue;
+      if (kept.has(profile)) continue;
       const writing = [...savedRefreshes.keys()].some((id) => slug(id) === profile);
       if (!writing) await removeSavedCopies(path.join(savedRoot, profile));
     }
   }
 }
 
+/** The profiles still chosen, whose copies a sweep keeps (choices-in-use.ts) */
+export interface BrowserChoicesInUse {
+  /** Chosen for runs in this project: Settings > Connectors and the project's tasks */
+  project: PuppeteerBrowserChoice[];
+  /** Chosen anywhere: Settings and every project's tasks (saved copies are shared by projects) */
+  all: PuppeteerBrowserChoice[];
+}
+
 /**
  * Make a fresh copy of the chosen profile for a run and return its folder (host path), or null
  * when the profile is gone or the browser is Puppeteer's own download (the run then uses the
  * browser with a new profile). A copy that fails (a full disk) is removed before the error is
- * thrown. The copy counts as live until removeBrowserProfileCopy
+ * thrown. The copy counts as live until removeBrowserProfileCopy. Copies of profiles no one
+ * chooses any more (not in `inUse`, nor this run's) are swept meanwhile
  */
-export async function prepareBrowserProfileCopy(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): Promise<string | null> {
+export async function prepareBrowserProfileCopy(
+  projectPath: string,
+  choice: PuppeteerBrowserChoice,
+  slot: string,
+  inUse: BrowserChoicesInUse = { project: [], all: [] }
+): Promise<string | null> {
   // Puppeteer's own download has no profile: it starts the browser with a new one
-  // Not awaited: the run doesn't need it. Without a profile to copy, no copy is kept
+  // Not awaited: the run doesn't need it. Without a profile to copy, no copy is kept for this run
   if (choice.managed) {
-    void removeOldBrowserProfileCopies(projectPath, { current: null });
+    void removeOldBrowserProfileCopies(projectPath, { keep: inUse.project, keepSaved: inUse.all });
     return null;
   }
   const source = toHostPath(choice.profilePath);
@@ -520,13 +537,13 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
     if (!(await stat(source)).isDirectory()) throw new Error('not a folder');
   } catch {
     appLog.warn(`[BrowserProfiles] ${choice.id} not found at ${source}; Puppeteer uses the browser with a new profile`);
-    void removeOldBrowserProfileCopies(projectPath, { current: null });
+    void removeOldBrowserProfileCopies(projectPath, { keep: inUse.project, keepSaved: inUse.all });
     return null;
   }
   const target = browserProfileCopyDir(projectPath, choice, slot);
   liveCopies.add(target);
   startOwnerHeartbeat();
-  void removeOldBrowserProfileCopies(projectPath, { current: choice });
+  void removeOldBrowserProfileCopies(projectPath, { keep: [...inUse.project, choice], keepSaved: [...inUse.all, choice] });
   let skipped: number;
   try {
     await rm(target, { recursive: true, force: true });
@@ -603,11 +620,16 @@ export interface BrowserProfileSweepOptions {
   /** Look even when this project was looked at less than an hour ago */
   force?: boolean;
   /**
-   * The profile runs use now: other profiles' copies (an earlier choice) go at any age. null: runs
-   * use no profile (Puppeteer's own browser, or the profile is gone), so every copy goes. Unset:
-   * every copy is kept for a day
+   * The profiles runs in this project still choose: their copies are kept for a day, other
+   * profiles' (no one chooses them any more) go at any age; empty: every copy goes. Unset: every
+   * copy is kept for a day
    */
-  current?: PuppeteerBrowserChoice | null;
+  keep?: PuppeteerBrowserChoice[];
+  /**
+   * The profiles chosen anywhere, whose saved copies stay (others' go). Unset: `keep`, or with
+   * neither set, saved copies are left alone
+   */
+  keepSaved?: PuppeteerBrowserChoice[];
   /** Every copy no live run uses goes, whatever its age (at startup, before anything runs) */
   all?: boolean;
 }
@@ -618,16 +640,15 @@ export interface BrowserProfileSweepOptions {
  */
 async function sweepCopies(root: string, options: BrowserProfileSweepOptions): Promise<void> {
   const now = Date.now();
-  const { current } = options;
+  const kept = options.keep ? new Set(options.keep.map((choice) => slug(choice.id))) : undefined;
   let profiles: string[];
   try {
     profiles = await readdir(root);
   } catch {
     return;
   }
-  const currentProfile = current ? slug(current.id) : undefined;
   for (const profile of profiles) {
-    const anyAge = options.all === true || current === null || (currentProfile !== undefined && profile !== currentProfile);
+    const anyAge = options.all === true || (kept !== undefined && !kept.has(profile));
     let slots: string[];
     try {
       slots = await readdir(path.join(root, profile));
@@ -653,17 +674,19 @@ async function sweepCopies(root: string, options: BrowserProfileSweepOptions): P
 
 /**
  * Remove a project's copies that no live run uses (nor another running Workbench): older than a
- * day, or as `options` says (left by a crash, a deleted task or an earlier browser choice). At most
- * once an hour per project and current profile unless `force`. Best effort
+ * day, or as `options` says (left by a crash, a deleted task or a browser no one chooses any more).
+ * At most once an hour per project and set of chosen profiles unless `force`. Best effort
  */
 export async function removeOldBrowserProfileCopies(projectPath: string, options: BrowserProfileSweepOptions = {}): Promise<void> {
   const now = Date.now();
-  const { current } = options;
+  const keepSaved = options.keepSaved ?? options.keep;
+  const profileKey = (list: PuppeteerBrowserChoice[] | undefined) =>
+    list === undefined ? '' : `[${[...new Set(list.map((choice) => slug(choice.id)))].sort().join(',')}]`;
   // A changed choice is looked at again at once
-  const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
+  const sweepKey = `${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;
   if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
   lastSweep.set(sweepKey, now);
-  if (current !== undefined) await removeOtherSavedCopies(current);
+  if (keepSaved !== undefined) await removeOtherSavedCopies(keepSaved);
   // Every place copies may be: a confined snap's folder too, after a choice of another browser
   for (const base of new Set(runtimeCopiesBases())) {
     await sweepCopies(path.join(base, projectFolder(projectPath)), options);

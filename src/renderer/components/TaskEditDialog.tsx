@@ -25,6 +25,7 @@ import { useProjectStore } from '../stores/project-store';
 import type { Task, TaskMetadata, ImageAttachment } from '../../shared/types';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
+import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
 
 /**
  * Props for the TaskEditDialog component
@@ -63,6 +64,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   // connectors were per task. Saving changes only this task
   const taskConnectors = task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(settings.mcpConnectors);
   const [mcpConnectors, setMcpConnectors] = useState<string[]>(taskConnectors);
+  // The Puppeteer connector's browser profile picked for the task; unset follows Settings > Connectors
+  const [puppeteerBrowser, setPuppeteerBrowser] = useState<PuppeteerBrowserChoice | null | undefined>(task.metadata?.puppeteerBrowser);
 
   // Git options: the task's own base branch, listed even when the project no longer has it, and
   // whether its branch is pushed (unset follows the project's own setting)
@@ -78,6 +81,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       setDescription(task.description);
       setImages(task.metadata?.attachedImages || []);
       setMcpConnectors(task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(settings.mcpConnectors));
+      setPuppeteerBrowser(task.metadata?.puppeteerBrowser);
       setBaseBranch(task.metadata?.baseBranch || PROJECT_DEFAULT_BRANCH);
       setPushNewBranches(task.metadata?.pushNewBranches ?? gitOptions.projectPushNewBranches);
       setError(null);
@@ -96,6 +100,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
     const hasChanges =
       trimmedDescription !== task.description ||
       [...mcpConnectors].sort().join(',') !== [...taskConnectors].sort().join(',') ||
+      JSON.stringify(puppeteerBrowser) !== JSON.stringify(task.metadata?.puppeteerBrowser) ||
       baseBranch !== taskBaseBranch ||
       pushNewBranches !== taskPushNewBranches ||
       JSON.stringify(images) !== JSON.stringify(task.metadata?.attachedImages || []);
@@ -124,6 +129,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
       // Always set attachedImages to persist removal when all images are deleted
       attachedImages: images,
       mcpConnectors,
+      // Only once a browser was picked for the task: until then it follows Settings
+      ...(puppeteerBrowser !== undefined ? { puppeteerBrowser } : {}),
       baseBranch: resolvedBaseBranch,
       useLocalBranch,
       // Unset again when it matches the project's own setting, so the task follows it
@@ -182,6 +189,8 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
         onImagesChange={setImages}
         mcpConnectors={mcpConnectors}
         onMcpConnectorsChange={setMcpConnectors}
+        puppeteerBrowser={puppeteerBrowser}
+        onPuppeteerBrowserChange={setPuppeteerBrowser}
         disabled={isSaving}
         error={error}
         onError={setError}

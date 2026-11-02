@@ -314,7 +314,7 @@ describe('browser profile copies', () => {
     const live = (await prepareBrowserProfileCopy(project, choice, 'task-004-d-5678'))!;
     await utimes(live, dayAgo, dayAgo);
 
-    await removeOldBrowserProfileCopies(project, { force: true, current: choice });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [choice] });
 
     expect(existsSync(otherProfile)).toBe(false);
     expect(existsSync(oldSame)).toBe(false);
@@ -375,7 +375,7 @@ describe('browser profile copies', () => {
     await put(path.join(legacyFresh, 'Default', 'Cookies'));
 
     await removeLeftoverBrowserProfileCopies([project]);
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
 
     expect(existsSync(others)).toBe(true);
     expect(existsSync(settingUp)).toBe(true);
@@ -383,7 +383,7 @@ describe('browser profile copies', () => {
 
     // Once its owner is gone, it goes
     await put(path.join(others, OWNER_FILE), JSON.stringify({ pid: DEAD_PID, host: hostname() }));
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
     expect(existsSync(others)).toBe(false);
   });
 
@@ -394,7 +394,7 @@ describe('browser profile copies', () => {
     // The parent process's id, but another boot: a process that took the id of a Workbench gone since
     await put(path.join(copy, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname(), boot: 'another-boot', start: '1' }));
 
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
 
     expect(existsSync(copy)).toBe(false);
   });
@@ -464,7 +464,7 @@ describe('browser profile copies', () => {
     // Another choice sweeps the snap's copies too
     await removeBrowserProfileCopy(copy);
     await leftover(copy, 'Default/Cookies');
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
     expect(existsSync(copy)).toBe(false);
 
     // And so does startup
@@ -521,10 +521,10 @@ describe('browser profile copies', () => {
     const other = path.join(browserProfileCopiesRoot(project), 'firefox_y', 'chat-2');
     await put(path.join(other, 'cookies.sqlite'));
     await put(path.join(other, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname() }));
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
     expect(existsSync(other)).toBe(true);
     await utimes(path.join(other, OWNER_FILE), twoHoursAgo, twoHoursAgo);
-    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
     expect(existsSync(other)).toBe(false);
   });
 
@@ -599,8 +599,37 @@ describe('browser profile copies', () => {
       await removeLeftoverBrowserProfileCopies([project]);
       expect(existsSync(saved)).toBe(true);
 
-      await removeOldBrowserProfileCopies(project, { force: true, current: firefox('firefox:y.default') });
+      await removeOldBrowserProfileCopies(project, { force: true, keep: [firefox('firefox:y.default')] });
       expect(existsSync(saved)).toBe(false);
+    });
+
+    it('keeps the copies of every profile still chosen when a run uses another one', async () => {
+      const settingsChoice = firefox();
+      const taskChoice = firefox('firefox:y.default');
+      const dropped = firefox('firefox:z.default');
+      for (const choice of [settingsChoice, taskChoice, dropped]) await put(path.join(choice.profilePath, 'cookies.sqlite'));
+      const project = path.join(root, 'project');
+      mocks.inUse = false;
+      for (const choice of [settingsChoice, taskChoice, dropped]) await refreshSavedBrowserProfileCopy(choice);
+      const copies = browserProfileCopiesRoot(project);
+      const settingsCopy = path.join(copies, 'firefox_x_default', 'chat-old');
+      const droppedCopy = path.join(copies, 'firefox_z_default', 'task-002-b-1234');
+      await leftover(settingsCopy, 'cookies.sqlite');
+      await leftover(droppedCopy, 'cookies.sqlite');
+
+      // A task's run on its own profile, while Settings still chooses another one
+      const run = (await prepareBrowserProfileCopy(project, taskChoice, 'task-001-a-1234', { project: [settingsChoice], all: [settingsChoice] }))!;
+      await vi.waitFor(() => expect(existsSync(droppedCopy)).toBe(false));
+      await vi.waitFor(() => expect(existsSync(path.join(savedRoot(), 'firefox_z_default'))).toBe(false));
+      expect(existsSync(settingsCopy)).toBe(true);
+      expect(existsSync(path.join(savedRoot(), 'firefox_x_default'))).toBe(true);
+      expect(existsSync(path.join(savedRoot(), 'firefox_y_default'))).toBe(true);
+
+      // Puppeteer's own browser for a run: profiles chosen elsewhere keep their copies
+      await removeOldBrowserProfileCopies(project, { force: true, keep: [settingsChoice], keepSaved: [settingsChoice, taskChoice] });
+      expect(existsSync(settingsCopy)).toBe(true);
+      expect(existsSync(path.join(savedRoot(), 'firefox_y_default'))).toBe(true);
+      await removeBrowserProfileCopy(run);
     });
   });
 });
