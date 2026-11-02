@@ -132,20 +132,28 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
     if (refreshed) onChangeRef.current(refreshed);
   }, [value, profiles]);
 
-  // A download that couldn't start (npx missing, no terminal): said at the top of the list
-  const [downloadError, setDownloadError] = useState<string | null>(null);
+  // A download that couldn't start (npx missing, no terminal), or one that was already started
+  // (from another window, or before this list opened): said at the top of the list
+  const [downloadNote, setDownloadNote] = useState<{ text: string; error: boolean } | null>(null);
   const download = (browser: DownloadableBrowser) => {
     if (downloading.has(browser)) return;
-    setDownloadError(null);
+    setDownloadNote(null);
     setDownloading((current) => new Set(current).add(browser));
     downloadTimers.current.set(browser, setTimeout(() => endDownload(browser), DOWNLOAD_WAIT_MS));
     const failed = (error?: string) => {
       endDownload(browser);
-      setDownloadError(error ?? t('settings:mcp.browserProfile.downloadFailed'));
+      setDownloadNote({ text: error ?? t('settings:mcp.browserProfile.downloadFailed'), error: true });
     };
     void window.electronAPI.installPuppeteerBrowser(browser)
       .then((result) => {
-        if (!result.success) failed(result.error);
+        if (!result.success) {
+          failed(result.error);
+        } else if (result.data?.alreadyRunning) {
+          // Nothing started from here: no waiting pulse, the earlier terminal is said instead
+          endDownload(browser);
+          const name = t(`settings:mcp.browserProfile.browsers.${browser}`);
+          setDownloadNote({ text: t('settings:mcp.browserProfile.alreadyDownloading', { browser: name }), error: false });
+        }
       })
       .catch(() => failed());
   };
@@ -192,7 +200,9 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false 
         </SelectValue>
       </SelectTrigger>
       <SelectContent>
-        {downloadError && <p className="px-3 py-2 text-xs text-destructive">{downloadError}</p>}
+        {downloadNote && (
+          <p className={cn('px-3 py-2 text-xs', downloadNote.error ? 'text-destructive' : 'text-muted-foreground')}>{downloadNote.text}</p>
+        )}
         <div className="relative">
           <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromeMissing ? 'pr-16' : undefined}>
             <PuppeteerIcon className={ITEM_ICON} />

@@ -592,9 +592,15 @@ async function openWslConsoleWithCommand(command: string): Promise<void> {
  * @param env Environment for the terminal on Windows and Linux (a terminal may still start its own
  *   environment, gnome-terminal's server for one, so variables that matter go in the command; on
  *   macOS and in a WSL console they must)
+ * @param options.windowsBashCommand On Windows, the command for a terminal that runs bash (Git Bash,
+ *   Cygwin, MSYS2) when it differs from the PowerShell one
  * @throws when no terminal could be opened (on Linux after trying the common terminal emulators)
  */
-export async function openTerminalWithCommand(command: string, env?: NodeJS.ProcessEnv): Promise<void> {
+export async function openTerminalWithCommand(
+  command: string,
+  env?: NodeJS.ProcessEnv,
+  options: { windowsBashCommand?: string } = {}
+): Promise<void> {
   if (isWslRuntime()) {
     await openWslConsoleWithCommand(command);
     return;
@@ -774,7 +780,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         await spawnWindowsTerminal('wt', ['new-tab', 'powershell', '-NoExit', '-Command', escapedCommand]);
       } else if (terminalId === 'gitbash') {
         // Git Bash - use the passed command (escaped for bash context)
-        const escapedBashCommand = escapeGitBashCommand(command);
+        const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
         const gitBashPaths = [
           'C:\\Program Files\\Git\\git-bash.exe',
           'C:\\Program Files (x86)\\Git\\git-bash.exe',
@@ -867,7 +873,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         const cygwinPath = cygwinPaths.find(p => existsSync(p));
         if (cygwinPath) {
           // mintty with bash, escaping for bash context
-          const escapedBashCommand = escapeGitBashCommand(command);
+          const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
           await spawnWindowsTerminal(cygwinPath, ['-e', '/bin/bash', '-lc', escapedBashCommand]);
         } else {
           console.warn('[Claude Code] Cygwin not found, falling back to PowerShell');
@@ -882,7 +888,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         ];
         const msys2Path = msys2Paths.find(p => existsSync(p));
         if (msys2Path) {
-          const escapedBashCommand = escapeGitBashCommand(command);
+          const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
           if (msys2Path.endsWith('.cmd')) {
             // Use the shell launcher script
             await spawnWindowsTerminal(msys2Path, ['-mingw64', '-c', escapedBashCommand]);
@@ -920,7 +926,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     const quoted = `bash -c "${bashCommand}"`;
     // How each terminal runs a command (by settings.preferredTerminal id)
     const byId: Record<string, LinuxTerminal> = {
-      gnometerminal: { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand] },
+      gnometerminal: { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand], exitsWhenOpened: true },
       konsole: { cmd: 'konsole', args: ['-e', 'bash', '-c', bashCommand] },
       xfce4terminal: { cmd: 'xfce4-terminal', args: ['-e', quoted] },
       lxterminal: { cmd: 'lxterminal', args: ['-e', quoted] },
@@ -941,10 +947,16 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     // Ubuntu's default terminal, which takes `-e command args`)
     // Hyper and Tabby can't be given a command to run, so they aren't used here (opening one with
     // nothing running in it isn't running the command)
+    const xTerminal = await xTerminalEmulatorKind(env);
     const candidates: LinuxTerminal[] = [
       ...(byId[terminalId] ? [byId[terminalId]] : []),
       byId.gnometerminal,
-      { cmd: 'x-terminal-emulator', args: ['-e', 'bash', '-c', bashCommand] },
+      // Old qterminal (1.1 and earlier) runs only the first word after -e, which isn't the command
+      ...(xTerminal === 'qterminal' ? [] : [{
+        cmd: 'x-terminal-emulator',
+        args: ['-e', 'bash', '-c', bashCommand],
+        exitsWhenOpened: xTerminal === 'gnome-terminal',
+      }]),
       byId.konsole,
       byId.xfce4terminal,
       byId['mate-terminal'],
@@ -975,6 +987,32 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
 interface LinuxTerminal {
   cmd: string;
   args: string[];
+  /**
+   * A client that hands the window to a server and then exits (gnome-terminal): its exit code
+   * says whether the window opened, and it can wait on D-Bus for a long while first
+   */
+  exitsWhenOpened?: boolean;
+}
+
+/** How long a terminal client that exits once its window opened is waited for */
+const TERMINAL_CLIENT_WAIT_MS = 30_000;
+
+/**
+ * Which terminal Debian's and Ubuntu's x-terminal-emulator is (the alternative it links to:
+ * `gnome-terminal.wrapper`, `qterminal`, ...), or null when it isn't found
+ */
+async function xTerminalEmulatorKind(env?: NodeJS.ProcessEnv): Promise<'gnome-terminal' | 'qterminal' | 'other' | null> {
+  for (const dir of ((env ?? process.env).PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    try {
+      const target = path.basename(await fsPromises.realpath(path.join(dir, 'x-terminal-emulator')));
+      if (target.startsWith('gnome-terminal')) return 'gnome-terminal';
+      if (target.startsWith('qterminal')) return 'qterminal';
+      return 'other';
+    } catch {
+      // Not in this folder
+    }
+  }
+  return null;
 }
 
 /** How long osascript may run: longer than AppleScript's own ~120 s wait for the Automation prompt */
@@ -995,10 +1033,12 @@ function terminalAppScript(escapedCommand: string): string {
 
 /**
  * Start a Linux terminal emulator. A missing one fails with ENOENT only after spawn returns, and
- * one that can't open a window (gnome-terminal without its server) exits with an error at once, so
- * both are waited for briefly before the terminal counts as open
+ * one that can't open a window exits with an error, so a terminal that keeps running counts as
+ * open once it ran for `waitMs`. A client such as gnome-terminal is waited for until it exits
+ * (up to TERMINAL_CLIENT_WAIT_MS): it can wait on D-Bus for ~25 s and then fail
  */
 function spawnLinuxTerminal(terminal: LinuxTerminal, env?: NodeJS.ProcessEnv, waitMs = 500): Promise<void> {
+  if (terminal.exitsWhenOpened) waitMs = TERMINAL_CLIENT_WAIT_MS;
   return new Promise((resolve, reject) => {
     let child: ChildProcess;
     try {

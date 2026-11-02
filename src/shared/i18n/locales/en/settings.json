@@ -418,6 +418,7 @@
       "downloadDescription": "Opens a terminal that installs it",
       "downloadFailed": "Couldn't start the download",
       "downloading": "Downloading {{browser}} in a terminal",
+      "alreadyDownloading": "Already downloading {{browser}} in a terminal",
       "browserOpen": "{{browser}} is open",
       "closeBrowser": "Close {{browser}} to use Puppeteer. Runs use a copy of its profile, which can't be copied while it's open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
       "browsers": {
@@ -636,7 +637,7 @@
     },
     "workflows": {
       "size": "Workflow size",
-      "sizeDescription": "Large tasks review their changes, and may make them, with a workflow of many subagents, which uses more of your usage. Sets how many agents a workflow aims for",
+      "sizeDescription": "Tasks triage sizes as large review their changes, and may make them, with a workflow of many subagents, which uses more of your usage. With a fixed model and effort, only workflows Claude Code starts on its own use it. Sets how many agents a workflow aims for",
       "sizes": {
         "off": "Off",
         "default": "Claude Code default",

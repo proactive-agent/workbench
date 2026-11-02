@@ -616,26 +616,63 @@ describe('MCP availability', () => {
     }
   });
 
-  it("doesn't keep looking at an open browser while Puppeteer is off in the defaults", async () => {
+  it('keeps looking at an open browser while Puppeteer is off, so closing it enables the switch', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       installed.set('npx', '/usr/bin/npx');
       servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
       mocks.browserOpen = true;
+      // Off by default: its switch is disabled while the browser is open, so it can't be switched on first
       const off = { puppeteerBrowser: firefoxProfile };
+      const changes: Array<[string, string]> = [];
+      const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability.state]));
       getMcpAvailability(['puppeteer'], off);
       await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], off).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
       const looks = mocks.inUse.mock.calls.length;
-      await vi.advanceTimersByTimeAsync(20_000);
-      expect(mocks.inUse.mock.calls.length).toBe(looks);
-
-      // Switched on: looked at (the old answer is stale) and polled again
-      getMcpAvailability(['puppeteer'], { ...off, puppeteerEnabled: true });
       await vi.advanceTimersByTimeAsync(10_000);
       expect(mocks.inUse.mock.calls.length).toBeGreaterThan(looks + 1);
+
+      // Closed: the next look sends the change, with no window asking again
+      changes.length = 0;
+      mocks.browserOpen = false;
+      await vi.advanceTimersByTimeAsync(4_000);
+      expect(changes).toContainEqual(['puppeteer', 'ready']);
+      // And the looks stop once it is closed
+      const closedLooks = mocks.inUse.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(mocks.inUse.mock.calls.length).toBe(closedLooks);
+      stop();
       stopMcpProbes();
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("never lets a server that was only started vouch for Puppeteer's browser", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    const calls: string[] = [];
+    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      proc.stdin.write.mockImplementation((line: string) => {
+        const { method } = JSON.parse(line);
+        calls.push(method);
+        if (method === 'tools/call') {
+          proc.stdout.emit('data', Buffer.from(JSON.stringify({ jsonrpc: '2.0', id: 2, error: { code: -32603, message: 'Failed to launch the browser process' } }) + '\n'));
+        }
+      });
+      answer(proc);
+    };
+    // A custom server with the built-in Puppeteer's command: it is ready once it starts
+    const settings = {
+      customServers: [
+        { id: 'my-puppeteer', name: 'My Puppeteer', type: 'command' as const, command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'], verified: true },
+      ],
+    };
+    getMcpAvailability(['my-puppeteer', 'puppeteer'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['my-puppeteer'], settings)['my-puppeteer'].state).toBe('ready'));
+    // The built-in one gets its own probe, which asks for a browser
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('unavailable'));
+    expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
+    expect(calls).toContain('tools/call');
+    stopMcpProbes();
   });
 });

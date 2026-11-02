@@ -21,8 +21,11 @@ export interface McpAPI {
   onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => () => void;
   /** Local browser profiles for the Puppeteer connector (found when the app started) */
   detectBrowserProfiles: () => Promise<IPCResult<BrowserProfile[]>>;
-  /** Open a terminal that downloads a browser for Puppeteer */
-  installPuppeteerBrowser: (browser: DownloadableBrowser) => Promise<IPCResult<{ command: string }>>;
+  /**
+   * Open a terminal that downloads a browser for Puppeteer. `alreadyRunning`: a download of it
+   * started earlier still counts as running, so no terminal was opened
+   */
+  installPuppeteerBrowser: (browser: DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
   /** Called with the new list when a started download finished */
   onBrowserProfilesChanged: (callback: (profiles: BrowserProfile[]) => void) => () => void;
 }

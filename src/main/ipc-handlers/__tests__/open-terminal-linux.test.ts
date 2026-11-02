@@ -3,7 +3,7 @@
  * skipped for the next common one, and no terminal at all is an error, not a silent success. On
  * macOS, a command-line terminal that doesn't open falls back to Terminal.app
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 
 const mocks = vi.hoisted(() => ({
@@ -13,7 +13,25 @@ const mocks = vi.hoisted(() => ({
   /** Terminals that exist, and the exit code (or signal) each ends with right away (undefined: stays open) */
   installed: new Map<string, number | NodeJS.Signals | undefined>(),
   settings: {} as Record<string, unknown>,
+  /** What x-terminal-emulator links to (undefined: not found) */
+  xTerminalTarget: undefined as string | undefined,
+  /** Terminals that exit only after this long (ms), with their code */
+  slowExit: new Map<string, { after: number; code: number }>(),
 }));
+
+vi.mock('fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('fs')>();
+  return {
+    ...actual,
+    promises: {
+      ...actual.promises,
+      realpath: vi.fn(async (p: string) => {
+        if (String(p).endsWith('x-terminal-emulator') && mocks.xTerminalTarget) return mocks.xTerminalTarget;
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      }),
+    },
+  };
+});
 
 vi.mock('child_process', async (importOriginal) => ({
   ...(await importOriginal<typeof import('child_process')>()),
@@ -40,11 +58,18 @@ beforeEach(() => {
   mocks.installed.clear();
   mocks.settings = {};
   mocks.mac = false;
+  mocks.xTerminalTarget = undefined;
+  mocks.slowExit.clear();
   mocks.execFile.mockImplementation((_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: string, stderr: string) => void) => {
     callback(null, '', '');
   });
   mocks.spawn.mockImplementation((cmd: string) => {
     const child = Object.assign(new EventEmitter(), { unref: vi.fn() });
+    const slow = mocks.slowExit.get(cmd);
+    if (slow) {
+      setTimeout(() => child.emit('exit', slow.code, null), slow.after);
+      return child;
+    }
     setTimeout(() => {
       if (!mocks.installed.has(cmd)) child.emit('error', Object.assign(new Error(`spawn ${cmd} ENOENT`), { code: 'ENOENT' }));
       else if (typeof mocks.installed.get(cmd) === 'string') child.emit('exit', null, mocks.installed.get(cmd));
@@ -92,10 +117,69 @@ describe('openTerminalWithCommand on Linux', () => {
       mocks.spawn.mockClear();
       mocks.settings = { preferredTerminal };
       mocks.installed.set(preferredTerminal, undefined);
-      mocks.installed.set('gnome-terminal', undefined);
+      // gnome-terminal's client exits once its server opened the window
+      mocks.installed.set('gnome-terminal', 0);
       await openTerminalWithCommand('echo hi');
       expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal']);
     }
+  });
+});
+
+describe('openTerminalWithCommand on Linux: terminal clients and x-terminal-emulator', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waits for gnome-terminal's exit: a D-Bus failure after 25 s tries the next terminal", async () => {
+    mocks.slowExit.set('gnome-terminal', { after: 25_000, code: 1 });
+    mocks.installed.set('x-terminal-emulator', undefined);
+    const opened = openTerminalWithCommand('echo hi');
+    await vi.advanceTimersByTimeAsync(26_000);
+    await opened;
+    expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal', 'x-terminal-emulator']);
+  });
+
+  it('counts gnome-terminal exiting with 0 (after a slow D-Bus) as opened', async () => {
+    mocks.slowExit.set('gnome-terminal', { after: 3_000, code: 0 });
+    const opened = openTerminalWithCommand('echo hi');
+    await vi.advanceTimersByTimeAsync(3_000);
+    await opened;
+    expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal']);
+  });
+
+  it('waits for x-terminal-emulator when it is the gnome-terminal wrapper', async () => {
+    mocks.installed.set('gnome-terminal', 1);
+    mocks.xTerminalTarget = '/usr/bin/gnome-terminal.wrapper';
+    mocks.slowExit.set('x-terminal-emulator', { after: 25_000, code: 1 });
+    mocks.installed.set('konsole', undefined);
+    const opened = openTerminalWithCommand('echo hi');
+    await vi.advanceTimersByTimeAsync(26_000);
+    await opened;
+    expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal', 'x-terminal-emulator', 'konsole']);
+  });
+
+  it('keeps the 500 ms rule for an x-terminal-emulator that stays running (xterm)', async () => {
+    mocks.installed.set('gnome-terminal', 1);
+    mocks.xTerminalTarget = '/usr/bin/xterm';
+    mocks.installed.set('x-terminal-emulator', undefined);
+    const opened = openTerminalWithCommand('echo hi');
+    await vi.advanceTimersByTimeAsync(600);
+    await opened;
+    expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal', 'x-terminal-emulator']);
+  });
+
+  it('skips an x-terminal-emulator that is qterminal (old ones run only the first word after -e)', async () => {
+    mocks.installed.set('gnome-terminal', 1);
+    mocks.xTerminalTarget = '/usr/bin/qterminal';
+    mocks.installed.set('x-terminal-emulator', undefined);
+    mocks.installed.set('konsole', undefined);
+    const opened = openTerminalWithCommand('echo hi');
+    await vi.advanceTimersByTimeAsync(600);
+    await opened;
+    expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal', 'konsole']);
   });
 });
 

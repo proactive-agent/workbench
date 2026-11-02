@@ -97,4 +97,14 @@ describe('PuppeteerBrowserSelect', () => {
     expect(await findByText('npx was not found')).toBeTruthy();
     expect((await findByRole('button', { name: /^Download Chrome/ })).hasAttribute('disabled')).toBe(false);
   });
+
+  it('says a download already runs in a terminal, without a waiting pulse, when the main process started none', async () => {
+    const install = vi.fn(async () => ({ success: true, data: { command: 'npx puppeteer browsers install chrome', alreadyRunning: true } }));
+    (window.electronAPI as unknown as { installPuppeteerBrowser: unknown }).installPuppeteerBrowser = install;
+    const { getByRole, findByRole, findByText } = render(<PuppeteerBrowserSelect value={undefined} onChange={vi.fn()} chromeMissing />);
+    fireEvent.keyDown(getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(await findByRole('button', { name: /^Download Chrome/ }));
+    expect(await findByText('Already downloading Chrome in a terminal')).toBeTruthy();
+    expect((await findByRole('button', { name: /^Download Chrome/ })).hasAttribute('disabled')).toBe(false);
+  });
 });

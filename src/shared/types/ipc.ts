@@ -530,7 +530,7 @@ export interface ElectronAPI {
   /** Local browser profiles for the Puppeteer connector (found when the app started) */
   detectBrowserProfiles: () => Promise<IPCResult<import('./browser-profiles').BrowserProfile[]>>;
   /** Open a terminal that downloads a browser for Puppeteer */
-  installPuppeteerBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string }>>;
+  installPuppeteerBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
   /** Called with the new list when a started download finished */
   onBrowserProfilesChanged: (callback: (profiles: import('./browser-profiles').BrowserProfile[]) => void) => () => void;
 

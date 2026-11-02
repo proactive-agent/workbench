@@ -50,6 +50,8 @@ export function useMcpUnavailableReason(): (connectorId: string) => McpUnavailab
     ids,
     getUsableCustomServers(connectors).map(({ id, type, command, args, url, headers }) => ({ id, type, command, args, url, headers })),
     browser ? [browser.id, browser.executablePath] : null,
+    // The main process keeps the settings each ask carries (the chosen browser and its switch)
+    connectors?.puppeteerEnabled === true,
   ]);
 
   useEffect(() => {

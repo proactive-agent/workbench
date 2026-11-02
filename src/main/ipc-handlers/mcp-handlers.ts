@@ -561,21 +561,38 @@ async function testCommandConnection(server: CustomMcpServer, startTime: number)
   });
 }
 
+/** How an `npx ...` command reaches a new terminal (see terminalNpxCommand) */
+interface TerminalNpxLaunch {
+  command: string;
+  env?: NodeJS.ProcessEnv;
+  /** On Windows, the command for a terminal that runs bash (Git Bash, Cygwin, MSYS2) */
+  windowsBashCommand?: string;
+}
+
 /**
  * An `npx ...` command as a new terminal can run it. A terminal opened from the app doesn't load
  * the user's shell setup (on Linux it runs `bash -c` with the app's PATH), so Node.js from a
  * version manager (nvm, fnm) isn't found by name: natively the npx Workbench finds runs by its full
- * path with its folder (where node is) first on PATH, and on Windows the terminal gets the tool
- * PATH. A WSL console starts a login shell, which finds npx itself
+ * path with its folder (where node is) first on PATH (through `env`, which any login shell a
+ * macOS terminal starts can run, csh and fish included). On Windows the terminal also gets the
+ * tool PATH, and PowerShell runs `npx.cmd` by its path: a bare `npx` would resolve `npx.ps1`,
+ * which Windows PowerShell's default execution policy blocks. A bash terminal on Windows runs npm's
+ * `npx` shell script next to it. A WSL console starts a login shell, which finds npx itself
  */
-export async function terminalNpxCommand(command: string): Promise<{ command: string; env?: NodeJS.ProcessEnv }> {
+export async function terminalNpxCommand(command: string): Promise<TerminalNpxLaunch> {
   await whenShellRuntimeReady();
   if (getWslInfo()) return { command };
   const npx = await resolveCommand('npx', { refresh: true });
   if (!npx) throw new Error('npx was not found: install Node.js, or set its path in Settings > Developer');
-  if (isWindows()) return { command, env: await getToolEnvAsync() };
   const args = command.replace(/^npx\s+/, '');
-  return { command: `PATH=${escapeShellArg(path.dirname(npx))}:$PATH ${escapeShellArg(npx)} ${args}` };
+  if (isWindows()) {
+    // The terminal escapes `&`, `$` and parentheses for PowerShell, so the call operator can't be
+    // used: a quoted path runs with the dot operator, which also runs a native command
+    const powershell = /^[\w:\\.-]+$/.test(npx) ? `${npx} ${args}` : `. '${npx.replace(/'/g, "''")}' ${args}`;
+    const bashNpx = npx.replace(/\.cmd$/i, '').replace(/\\/g, '/');
+    return { command: powershell, env: await getToolEnvAsync(), windowsBashCommand: `${escapeShellArg(bashNpx)} ${args}` };
+  }
+  return { command: `env PATH=${escapeShellArg(path.dirname(npx))}:"$PATH" ${escapeShellArg(npx)} ${args}` };
 }
 
 /** How often, and for how long, Puppeteer's cache is looked at after a Chrome download started */
@@ -629,6 +646,8 @@ async function waitForPuppeteerChrome(command: string): Promise<boolean> {
   const version = /install chrome@([\w.]+)/.exec(command)?.[1];
   const context = await puppeteerCacheContext();
   const before = new Set(finishedChromeBuilds(await chromeCacheEntries(context), version));
+  // The build the command names is already there (finished before the watch started)
+  if (version && before.size > 0) return true;
   const deadline = Date.now() + CHROME_WATCH_LIMIT_MS;
   while (Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, CHROME_WATCH_INTERVAL_MS));
@@ -638,12 +657,24 @@ async function waitForPuppeteerChrome(command: string): Promise<boolean> {
   return false;
 }
 
-/** Downloads started from the browser picker and not known to be over, by browser */
-const installsRunning = new Map<DownloadableBrowser, NodeJS.Timeout>();
+/**
+ * Downloads started from the browser picker and not known to be over, by browser. Each has a
+ * token of its own, so an earlier download ending never ends a later one's guard
+ */
+const installsRunning = new Map<DownloadableBrowser, { token: symbol; timer: NodeJS.Timeout }>();
 
-function endInstall(browser: DownloadableBrowser): void {
-  const timer = installsRunning.get(browser);
-  if (timer) clearTimeout(timer);
+function startInstall(browser: DownloadableBrowser): symbol {
+  const token = Symbol(browser);
+  const timer = setTimeout(() => endInstall(browser, token), BROWSER_INSTALL_GUARD_MS);
+  timer.unref?.();
+  installsRunning.set(browser, { token, timer });
+  return token;
+}
+
+function endInstall(browser: DownloadableBrowser, token: symbol): void {
+  const install = installsRunning.get(browser);
+  if (install?.token !== token) return;
+  clearTimeout(install.timer);
   installsRunning.delete(browser);
 }
 
@@ -688,20 +719,18 @@ export function registerMcpHandlers(): void {
       : getMcpFixCommand('puppeteer') ?? 'npx puppeteer browsers install chrome';
     if (installsRunning.has(browser)) return { success: true, data: { command, alreadyRunning: true } };
     // Taken before anything is awaited, so a quick second click finds it
-    const guard = setTimeout(() => installsRunning.delete(browser), BROWSER_INSTALL_GUARD_MS);
-    guard.unref?.();
-    installsRunning.set(browser, guard);
+    const token = startInstall(browser);
     try {
       const launch = await terminalNpxCommand(command);
-      await openTerminalWithCommand(launch.command, launch.env);
+      await openTerminalWithCommand(launch.command, launch.env, { windowsBashCommand: launch.windowsBashCommand });
     } catch (error) {
-      endInstall(browser);
+      endInstall(browser, token);
       appLog.error('Browser download error:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Could not open the terminal' };
     }
     if (browser === 'firefox') {
       void waitForManagedFirefox().then((profiles) => {
-        endInstall(browser);
+        endInstall(browser, token);
         if (!profiles) return;
         for (const window of getAllWindows()) {
           if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, profiles);
@@ -709,12 +738,12 @@ export function registerMcpHandlers(): void {
       });
     } else {
       void waitForPuppeteerChrome(command).then(async (found) => {
-        endInstall(browser);
+        endInstall(browser, token);
         if (!found) return;
         const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
         recheckMcpConnector('puppeteer', settings?.mcpConnectors);
       }).catch((error: unknown) => {
-        endInstall(browser);
+        endInstall(browser, token);
         appLog.warn('Watching the Chrome download failed:', error);
       });
     }

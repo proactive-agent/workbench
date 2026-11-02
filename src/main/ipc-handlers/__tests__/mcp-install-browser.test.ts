@@ -70,19 +70,28 @@ beforeEach(() => {
 });
 
 describe('terminalNpxCommand', () => {
-  it("runs Workbench's npx by its full path with node's folder on PATH", async () => {
+  it("runs Workbench's npx by its full path with node's folder on PATH, through env (any login shell)", async () => {
     expect(await terminalNpxCommand('npx puppeteer browsers install firefox')).toEqual({
-      command: "PATH='/home/me/.nvm/versions/node/v22.1.0/bin':$PATH '/home/me/.nvm/versions/node/v22.1.0/bin/npx' puppeteer browsers install firefox",
+      command: "env PATH='/home/me/.nvm/versions/node/v22.1.0/bin':\"$PATH\" '/home/me/.nvm/versions/node/v22.1.0/bin/npx' puppeteer browsers install firefox",
     });
   });
 
-  it("gives a Windows terminal the tool PATH", async () => {
+  it('runs npx.cmd by its path on Windows (a bare npx resolves the blocked npx.ps1), with the tool PATH', async () => {
     mocks.windows = true;
     mocks.npx = 'C:\\nvm4w\\nodejs\\npx.cmd';
     expect(await terminalNpxCommand('npx puppeteer browsers install firefox')).toEqual({
-      command: 'npx puppeteer browsers install firefox',
+      command: 'C:\\nvm4w\\nodejs\\npx.cmd puppeteer browsers install firefox',
       env: { PATH: 'C:\\nvm4w\\nodejs;C:\\Windows' },
+      windowsBashCommand: "'C:/nvm4w/nodejs/npx' puppeteer browsers install firefox",
     });
+  });
+
+  it('quotes a Windows npx path with spaces with the dot operator (the terminal escapes &)', async () => {
+    mocks.windows = true;
+    mocks.npx = "C:\\Program Files\\node's\\npx.cmd";
+    const launch = await terminalNpxCommand('npx puppeteer browsers install chrome');
+    expect(launch.command).toBe(". 'C:\\Program Files\\node''s\\npx.cmd' puppeteer browsers install chrome");
+    expect(launch.command).not.toMatch(/[&$()]/);
   });
 
   it("leaves the command to a WSL console's login shell", async () => {
@@ -111,7 +120,8 @@ describe('MCP_INSTALL_BROWSER', () => {
       expect((await install('chrome')).success).toBe(true);
       expect(mocks.openTerminal).toHaveBeenCalledWith(
         expect.stringMatching(/'\/home\/me\/\.nvm\/versions\/node\/v22\.1\.0\/bin\/npx' puppeteer browsers install chrome@131\.0\.6778\.204$/),
-        undefined
+        undefined,
+        { windowsBashCommand: undefined }
       );
       // Still unpacking: not yet
       mocks.chromeCache = ['linux-131.0.6778.204', '131.0.6778.204-chrome-linux64.zip'];
@@ -147,9 +157,65 @@ describe('MCP_INSTALL_BROWSER', () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
-  it('reports a terminal that could not open', async () => {
+  it("checks Puppeteer again at once when the named Chrome build was already downloaded", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      mocks.chromeCache = ['linux-131.0.6778.204'];
+      expect((await install('chrome')).success).toBe(true);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(mocks.recheck).toHaveBeenCalledWith('puppeteer', { puppeteerEnabled: true });
+      // and the download is over
+      expect((await install('chrome')).data?.alreadyRunning).toBeUndefined();
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("an earlier download ending leaves a later download's guard in place", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const finishers: Array<(profiles: null) => void> = [];
+      mocks.waitForFirefox.mockImplementation(() => new Promise((resolve) => { finishers.push(resolve); }));
+      // The first download's guard runs out (terminal closed?) while its watch goes on
+      await install('firefox');
+      await vi.advanceTimersByTimeAsync(5 * 60 * 1000 + 1);
+      expect((await install('firefox')).data?.alreadyRunning).toBeUndefined();
+      expect(mocks.openTerminal).toHaveBeenCalledTimes(2);
+      // The first watch ends: the second download still counts as running
+      finishers[0](null);
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await install('firefox')).data?.alreadyRunning).toBe(true);
+      expect(mocks.openTerminal).toHaveBeenCalledTimes(2);
+      finishers[1](null);
+      await vi.advanceTimersByTimeAsync(0);
+      expect((await install('firefox')).data?.alreadyRunning).toBeUndefined();
+      finishers[2]?.(null);
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('passes the Windows bash command along to the terminal', async () => {
+    mocks.windows = true;
+    mocks.npx = 'C:\\nvm4w\\nodejs\\npx.cmd';
+    await install('firefox');
+    expect(mocks.openTerminal).toHaveBeenCalledWith(
+      'C:\\nvm4w\\nodejs\\npx.cmd puppeteer browsers install firefox',
+      { PATH: 'C:\\nvm4w\\nodejs;C:\\Windows' },
+      { windowsBashCommand: "'C:/nvm4w/nodejs/npx' puppeteer browsers install firefox" }
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  it('reports a terminal that could not open, and lets the next click try again', async () => {
     mocks.openTerminal.mockRejectedValue(new Error('No supported terminal emulator found'));
     expect(await install('firefox')).toEqual({ success: false, error: 'No supported terminal emulator found' });
+    mocks.openTerminal.mockResolvedValue(undefined);
+    expect((await install('firefox')).data?.alreadyRunning).toBeUndefined();
+    expect(mocks.openTerminal).toHaveBeenCalledTimes(2);
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('reports a missing npx without opening a terminal', async () => {

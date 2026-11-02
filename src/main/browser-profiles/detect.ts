@@ -296,13 +296,16 @@ export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Prom
 }
 
 let watching: Promise<BrowserProfile[] | null> | null = null;
+/** When the running watch gives up: each new download moves it to WATCH_LIMIT_MS from then */
+let watchDeadline = 0;
 
 /**
- * After a download button opened a terminal: wait (up to WATCH_LIMIT_MS) for Puppeteer's Firefox to
- * show up in its cache folder, then detect again and return the new list (null when it never did).
- * One watch at a time; a second call shares it
+ * After a download button opened a terminal: wait (up to WATCH_LIMIT_MS after the latest call) for
+ * Puppeteer's Firefox to show up in its cache folder, then detect again and return the new list
+ * (null when it never did). One watch at a time; a later call shares it and extends its deadline
  */
 export function waitForManagedFirefox(): Promise<BrowserProfile[] | null> {
+  watchDeadline = Math.max(watchDeadline, Date.now() + WATCH_LIMIT_MS);
   if (watching) return watching;
   watching = (async () => {
     await whenShellRuntimeReady();
@@ -310,14 +313,14 @@ export function waitForManagedFirefox(): Promise<BrowserProfile[] | null> {
     const context = wsl
       ? { os: 'linux' as const, home: wsl.home, env: {}, toHost: toHostPath }
       : { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p: string) => p };
-    const deadline = Date.now() + WATCH_LIMIT_MS;
-    while (Date.now() < deadline) {
+    while (Date.now() < watchDeadline) {
       if (await findManagedFirefox(context)) return detectBrowserProfiles({ refresh: true });
       await new Promise((resolve) => setTimeout(resolve, WATCH_INTERVAL_MS));
     }
     return null;
   })().finally(() => {
     watching = null;
+    watchDeadline = 0;
   });
   return watching;
 }
