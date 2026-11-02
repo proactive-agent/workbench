@@ -58,35 +58,53 @@ export function workflowImplementHint(): string {
   return `This task is large, so you may use a workflow (the Workflow tool) for changes that span many files and can be made independently: give each agent its own files so no two agents edit the same file, keep the scale within the workflow size guideline, and verify and commit the combined result yourself in this session. Work directly when the changes are tightly coupled.`;
 }
 
+/** Steps that change the task's code: one recorded after a launch can make the launch's agents' results stale */
+const CODE_STEPS: readonly ClaudeRunPhaseName[] = ['implement', 'revise', 'resync'];
+
 /**
  * Workflow runs the step being continued launched and never finished. `phases` names the step (and,
  * for a resync that carries on an interrupted implementation, the step it continues). Walking back
  * through the recorded steps, attempts at those steps that ended early (stopped, rate limited,
- * failed or crashed) count back to the last one that finished; other steps in between (a revise
- * run's fresh triage, the revise before a validation, a resync) are skipped, not a stop. The runs
- * started during those attempts (an attempt that was cut off again before relaunching a run still
- * passes it on) that belong to the session continuing the step (a run can only be resumed in the
- * session that launched it) are returned. Nothing when workflows are off: the Workflow tool is gone.
+ * failed or crashed) count back to the last one that finished. Steps in between that only assess
+ * the task (a revise run's fresh triage, a plan) are skipped. A step that changed the code after
+ * the launch (a finished implement or revise, a resync that ran, since even a failed one may have
+ * merged) ends the walk: the runs' agents worked on code that is no longer there, so they are not
+ * offered. An implement or revise that ended early is skipped (it may not have changed anything);
+ * for a validation, `head` (the branch's commit now) also drops runs launched on another commit.
+ * The runs started during those attempts (an attempt that was cut off again before relaunching a
+ * run still passes it on) that belong to the session continuing the step (a run can only be
+ * resumed in the session that launched it) are returned. Nothing when workflows are off: the
+ * Workflow tool is gone.
  */
 export function interruptedWorkflows(
   info: ClaudeRunInfo,
   phases: ClaudeRunPhaseName | readonly ClaudeRunPhaseName[],
   sessionId: string | undefined,
   settings: ClaudeCodeTaskSettings,
+  head?: string,
 ): ClaudeRunWorkflow[] {
   if (!sessionId || settings.workflowSize === 'off') return [];
   const wanted = new Set<ClaudeRunPhaseName>(typeof phases === 'string' ? [phases] : phases);
   let since: string | undefined;
+  let changedAt: string | undefined;
   for (let index = info.phases.length - 1; index >= 0; index--) {
     const attempt = info.phases[index];
-    if (!wanted.has(attempt.name)) continue;
+    if (!wanted.has(attempt.name)) {
+      const finished = !!attempt.endedAt && !attempt.isError;
+      if (CODE_STEPS.includes(attempt.name) && (finished || (attempt.name === 'resync' && attempt.endedAt))) {
+        changedAt = attempt.startedAt;
+      }
+      continue;
+    }
     if (attempt.endedAt && !attempt.isError) break;
+    if (changedAt) break;
     since = attempt.startedAt;
   }
   if (!since) return [];
   const from = since;
   return (info.workflows ?? []).filter((run) =>
-    wanted.has(run.phase) && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from);
+    wanted.has(run.phase) && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from
+    && (run.phase !== 'validate' || !head || !run.head || run.head === head));
 }
 
 /** Tells the continued step to relaunch its interrupted workflow runs, reusing the agents that finished */

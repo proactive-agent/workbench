@@ -171,6 +171,8 @@ export interface ClaudeRunWorkflow {
   status: 'running' | 'completed' | 'failed' | 'stopped';
   startedAt: string;
   endedAt?: string;
+  /** The branch's commit when it was launched: a validation's review run is only relaunched on the same commit */
+  head?: string;
 }
 
 interface ValidationCheck {

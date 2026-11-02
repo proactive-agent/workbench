@@ -105,7 +105,24 @@ describe('interruptedWorkflows', () => {
       ],
       workflows: [run({ runId: 'wf_review', phase: 'validate', startedAt: at(12) }), run({ runId: 'wf_revise', phase: 'revise', startedAt: at(24) })],
     } as ClaudeRunInfo;
-    expect(interruptedWorkflows(validating, 'validate', 's1', settings).map((r) => r.runId)).toEqual(['wf_review']);
+    // The revise changed the code after the review was launched: its agents' findings are stale
+    expect(interruptedWorkflows(validating, 'validate', 's1', settings)).toEqual([]);
+    // A revise that was cut off (nothing finished) is looked past
+    const cutOff = { ...validating, phases: validating.phases.map((p) => p.name === 'revise' ? { ...p, isError: true } : p) };
+    expect(interruptedWorkflows(cutOff, 'validate', 's1', settings).map((r) => r.runId)).toEqual(['wf_review']);
+    // ... unless the commit the review saw moved on
+    cutOff.workflows = [run({ runId: 'wf_review', phase: 'validate', startedAt: at(12), head: 'aaa' })];
+    expect(interruptedWorkflows(cutOff, 'validate', 's1', settings, 'aaa').map((r) => r.runId)).toEqual(['wf_review']);
+    expect(interruptedWorkflows(cutOff, 'validate', 's1', settings, 'bbb')).toEqual([]);
+    // A resync after the review, even a failed one, may have merged: stale
+    const resynced = { ...cutOff, phases: [...cutOff.phases, { name: 'resync' as const, startedAt: at(31), endedAt: at(32), isError: true }] };
+    expect(interruptedWorkflows(resynced, 'validate', 's1', settings, 'aaa')).toEqual([]);
+    // A validation cut off again after the revise passes on only the runs launched since
+    validating.phases.push({ name: 'validate', startedAt: at(31), endedAt: at(35), isError: true });
+    validating.workflows!.push(run({ runId: 'wf_review2', phase: 'validate', startedAt: at(32) }));
+    expect(interruptedWorkflows(validating, 'validate', 's1', settings).map((r) => r.runId)).toEqual(['wf_review2']);
+    validating.phases.pop();
+    validating.workflows!.pop();
     // An interrupted revise continued after the fresh triage
     const revising: ClaudeRunInfo = {
       ...base,
