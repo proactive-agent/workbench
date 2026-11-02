@@ -11,14 +11,17 @@ vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   return { ...actual, copyFile: vi.fn(actual.copyFile), chmod: vi.fn(actual.chmod) };
 });
-vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
+vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn() } }));
 const mocks = vi.hoisted(() => ({
   userData: '',
   windows: false,
   wslRoot: '',
   wslDistros: [] as string[],
   wslRunning: '',
+  // Whether the chosen browser is open: open by default, so runs copy the live profile and save nothing
+  inUse: true,
 }));
+vi.mock('../in-use', () => ({ isBrowserProfileInUse: async () => mocks.inUse }));
 vi.mock('electron', () => ({ app: { getPath: () => mocks.userData } }));
 vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => p,
@@ -55,6 +58,8 @@ vi.mock('../../platform/runtime-exec', () => ({ runTool: vi.fn(async () => ({ st
 
 import {
   browserProfileCopiesRoot,
+  browserProfileCopyBlocked,
+  refreshSavedBrowserProfileCopy,
   browserProfileCopyDir,
   prepareBrowserProfileCopy,
   removeBrowserProfileCopy,
@@ -92,6 +97,7 @@ describe('browser profile copies', () => {
     mocks.wslRoot = path.join(root, 'wsl');
     mocks.wslDistros = [];
     mocks.wslRunning = '';
+    mocks.inUse = true;
     // Snap copies go to the home's ~/snap: the test's own home instead of the user's
     process.env.HOME = path.join(root, 'home');
   });
@@ -543,5 +549,58 @@ describe('browser profile copies', () => {
       profilePath: path.join(root, 'missing', 'Default'),
     };
     expect(await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat')).toBeNull();
+  });
+  describe('saved copies', () => {
+    const firefox = (id = 'firefox:x.default'): PuppeteerBrowserChoice => ({
+      id, browser: 'firefox', engine: 'firefox', profileName: 'default', executablePath: '/usr/lib/firefox/firefox',
+      userDataDir: path.join(root, 'firefox'), profilePath: path.join(root, 'firefox', id.split(':')[1]),
+    });
+    const savedRoot = () => path.join(mocks.userData, 'browser-profiles', '_saved');
+
+    it('saves a closed browser\'s profile and copies the saved one while the browser is open', async () => {
+      const choice = firefox();
+      await put(path.join(choice.profilePath, 'cookies.sqlite'), 'signed in');
+      const project = path.join(root, 'project');
+      mocks.inUse = false;
+
+      // Closed: the run copies the live profile, and a saved copy is made meanwhile
+      const first = await prepareBrowserProfileCopy(project, choice, 'chat-a');
+      expect(await readFile(path.join(first!, 'cookies.sqlite'), 'utf-8')).toBe('signed in');
+      await refreshSavedBrowserProfileCopy(choice);
+      expect(await browserProfileCopyBlocked(choice)).toBe(false);
+
+      // Open: the live profile changes under the browser, the run gets the saved copy
+      mocks.inUse = true;
+      await put(path.join(choice.profilePath, 'cookies.sqlite'), 'half written');
+      expect(await browserProfileCopyBlocked(choice)).toBe(false);
+      const second = await prepareBrowserProfileCopy(project, choice, 'chat-b');
+      expect(await readFile(path.join(second!, 'cookies.sqlite'), 'utf-8')).toBe('signed in');
+      expect(existsSync(path.join(second!, '.workbench-saved-complete'))).toBe(false);
+      expect(JSON.parse(await readFile(path.join(second!, OWNER_FILE), 'utf-8'))).toMatchObject({ pid: process.pid });
+    });
+
+    it('blocks runs only while the browser is open with no saved copy', async () => {
+      const choice = firefox();
+      await put(path.join(choice.profilePath, 'cookies.sqlite'));
+      expect(await browserProfileCopyBlocked(choice)).toBe(true);
+      expect(existsSync(savedRoot())).toBe(false);
+      expect(await browserProfileCopyBlocked({ ...choice, managed: true })).toBe(false);
+    });
+
+    it("keeps saved copies at startup, and removes them when another profile is chosen", async () => {
+      const choice = firefox();
+      await put(path.join(choice.profilePath, 'cookies.sqlite'));
+      const project = path.join(root, 'project');
+      mocks.inUse = false;
+      await refreshSavedBrowserProfileCopy(choice);
+      const saved = path.join(savedRoot(), 'firefox_x_default');
+      expect(existsSync(saved)).toBe(true);
+
+      await removeLeftoverBrowserProfileCopies([project]);
+      expect(existsSync(saved)).toBe(true);
+
+      await removeOldBrowserProfileCopies(project, { force: true, current: firefox('firefox:y.default') });
+      expect(existsSync(saved)).toBe(false);
+    });
   });
 });

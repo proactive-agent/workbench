@@ -33,7 +33,7 @@ vi.mock('../platform/runtime-exec', () => ({
 }));
 vi.mock('../platform', () => ({ isWindows: () => mocks.windows }));
 vi.mock('../cli-utils', () => ({ getToolEnvAsync: async () => ({ PATH: '/usr/bin' }) }));
-vi.mock('../browser-profiles/in-use', () => ({ isBrowserProfileInUse: (browser: unknown) => mocks.inUse(browser) }));
+vi.mock('../browser-profiles/profile-copy', () => ({ browserProfileCopyBlocked: (browser: unknown) => mocks.inUse(browser) }));
 vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn() } }));
 
 let getMcpAvailability: typeof import('../mcp-availability').getMcpAvailability;

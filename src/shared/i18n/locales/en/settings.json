@@ -420,7 +420,7 @@
       "downloading": "Downloading {{browser}} in a terminal",
       "alreadyDownloading": "Already downloading {{browser}} in a terminal",
       "browserOpen": "{{browser}} is open",
-      "closeBrowser": "Close {{browser}} to use Puppeteer. Runs use a copy of its profile, which can't be copied while it's open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
+      "closeBrowser": "Close {{browser}} once to use Puppeteer. Workbench then saves a copy of its profile, and runs use that copy while the browser is open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
       "browsers": {
         "chrome": "Chrome",
         "edge": "Edge",

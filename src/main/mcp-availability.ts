@@ -43,7 +43,7 @@ import { getToolEnvAsync } from './cli-utils';
 import { isWindows } from './platform';
 import { getWslInfo, whenShellRuntimeReady } from './platform/shell-runtime';
 import { killRuntimeProcessTree, spawnTool } from './platform/runtime-exec';
-import { isBrowserProfileInUse } from './browser-profiles/in-use';
+import { browserProfileCopyBlocked } from './browser-profiles/profile-copy';
 import { appLog } from './app-logger';
 
 /** How long a server may take to answer: its first start downloads it */
@@ -176,7 +176,7 @@ export function describeLeftOutConnector(id: string, availability: McpAvailabili
   if (availability.browserOpen) {
     const browser = settings?.puppeteerBrowser;
     const browserName = browser ? BROWSER_NAMES[browser.browser] ?? browser.browser : 'The chosen browser';
-    reason = `${browserName}${browser?.profileName ? ` (profile ${browser.profileName})` : ''} is open, so its profile can't be copied. Close it to use ${name} in later runs`;
+    reason = `${browserName}${browser?.profileName ? ` (profile ${browser.profileName})` : ''} is open and has no saved copy of its profile yet. Close it once to use ${name} in later runs`;
   } else if (availability.missingCommand) {
     reason = `${availability.missingCommand} is not installed`;
   } else {
@@ -259,7 +259,8 @@ function lookAtBrowser(browser: PuppeteerBrowserChoice): Promise<boolean> {
   const running = browserLooks.get(browser.id);
   if (running) return running;
   const started = generation;
-  const promise = isBrowserProfileInUse(browser).catch(() => false).then((open) => {
+  // Open with no saved copy to use instead (an open browser with a saved copy doesn't block runs)
+  const promise = browserProfileCopyBlocked(browser).catch(() => false).then((open) => {
     if (browserLooks.get(browser.id) === promise) browserLooks.delete(browser.id);
     if (started !== generation) return open;
     const changed = (browserOpen.get(browser.id)?.open ?? false) !== open;

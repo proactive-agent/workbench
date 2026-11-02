@@ -26,6 +26,13 @@
  * chat turns), at once when they are another profile's (an earlier choice), and after a day
  * otherwise; a copy whose owner is another live Workbench process is never swept.
  *
+ * Each profile also has one saved copy (`<base>/_saved/<profile>/<time>`), made in the background
+ * whenever a run or a look at the browser finds it closed (at most every SAVED_REFRESH_MS). A run
+ * that starts while the browser is open copies the saved copy instead of the live profile, which
+ * the open browser keeps locked and half written; only without a saved copy does an open browser
+ * keep Puppeteer from runs (browserProfileCopyBlocked). The saved copy is kept until the choice
+ * moves to another profile.
+ *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
  */
@@ -43,6 +50,7 @@ import { isWslUncPath, windowsPathKey, wslToWindows } from '../platform/wsl-path
 import { checkWslAvailable, decodeWslOutput, getWslExePath, parseDistroList } from '../platform/wsl-detect';
 import { runTool } from '../platform/runtime-exec';
 import { CONFINED_SNAPS, confinedSnapName } from './locations';
+import { isBrowserProfileInUse } from './in-use';
 import { appLog } from '../app-logger';
 
 /** Folders and files (relative to the profile, with `/`) a copy leaves out */
@@ -64,7 +72,7 @@ const SKIPPED_FOLDERS = new Set([
   'cache', 'cache2',
 ]);
 /** File names left out wherever they are */
-const SKIPPED_NAMES = new Set(['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile']);
+const SKIPPED_NAMES = new Set(['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lockfile', '.workbench-saved-complete']);
 /** Errors from files a running browser holds, or that vanished during the copy */
 const SKIPPABLE_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOENT']);
 /** Copies are private: they hold the user's cookies */
@@ -95,6 +103,16 @@ const WSL_CHMOD_TIMEOUT_MS = 15_000;
 
 /** Copies made or being made for runs of this app session (host paths), never swept */
 const liveCopies = new Set<string>();
+/** Where the saved copies live, under each copies base (never a project's folder: no hash suffix) */
+const SAVED_FOLDER = '_saved';
+/** Written into a saved copy once it is complete */
+const SAVED_COMPLETE = '.workbench-saved-complete';
+/** How old a saved copy may get before a closed browser's profile is saved again */
+const SAVED_REFRESH_MS = 5 * 60 * 1000;
+/** A saved copy being written, by profile id */
+const savedRefreshes = new Map<string, Promise<void>>();
+/** Saved copies runs of this process are copying from now (not removed while read) */
+const savedReaders = new Map<string, number>();
 const lastSweep = new Map<string, number>();
 let heartbeat: ReturnType<typeof setInterval> | undefined;
 
@@ -354,6 +372,136 @@ async function disableSessionRestore(preferencesFile: string): Promise<void> {
   }
 }
 
+/** Copy a profile into `target` in the layout runs use; returns how many files were skipped */
+async function copyProfileInto(choice: PuppeteerBrowserChoice, source: string, target: string): Promise<number> {
+  if (choice.engine !== 'chromium') return copyTree(source, target);
+  const profileDirectory = choice.profileDirectory ?? 'Default';
+  let skipped = await copyTree(source, path.join(target, profileDirectory));
+  await disableSessionRestore(path.join(target, profileDirectory, 'Preferences'));
+  try {
+    await copyFile(path.join(toHostPath(choice.userDataDir), 'Local State'), path.join(target, 'Local State'));
+  } catch {
+    skipped++;
+  }
+  // No first-run pages in the copy
+  await writeFile(path.join(target, 'First Run'), '');
+  return skipped;
+}
+
+/** Where a profile's saved copies live (host path): one folder per save, named by its time */
+function savedProfileDir(choice: PuppeteerBrowserChoice): string {
+  return path.join(copiesBaseFor(choice), SAVED_FOLDER, slug(choice.id));
+}
+
+/** The newest complete saved copy of a profile, or null */
+async function newestSavedCopy(choice: PuppeteerBrowserChoice): Promise<{ dir: string; at: number } | null> {
+  const parent = savedProfileDir(choice);
+  let names: string[];
+  try {
+    names = await readdir(parent);
+  } catch {
+    return null;
+  }
+  const times = names.filter((name) => /^\d+$/.test(name)).map(Number).sort((a, b) => b - a);
+  for (const at of times) {
+    const dir = path.join(parent, String(at));
+    try {
+      await stat(path.join(dir, SAVED_COMPLETE));
+      return { dir, at };
+    } catch {
+      // Still being written, or left unfinished
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether runs can't get a usable copy of the profile now: the browser is open (its files locked
+ * and half written) and no saved copy exists. A closed browser's profile is saved meanwhile, so
+ * once it has been closed, runs work while it is open again
+ */
+export async function browserProfileCopyBlocked(choice: PuppeteerBrowserChoice): Promise<boolean> {
+  if (choice.managed) return false;
+  if (!(await isBrowserProfileInUse(choice))) {
+    void refreshSavedBrowserProfileCopy(choice);
+    return false;
+  }
+  return (await newestSavedCopy(choice)) === null;
+}
+
+/**
+ * Save a copy of a closed browser's profile (at most every SAVED_REFRESH_MS, one at a time per
+ * profile). A save is dropped when files couldn't be read or the browser opened meanwhile; older
+ * saves go once the new one is complete. Best effort, never thrown
+ */
+export function refreshSavedBrowserProfileCopy(choice: PuppeteerBrowserChoice): Promise<void> {
+  if (choice.managed) return Promise.resolve();
+  const running = savedRefreshes.get(choice.id);
+  if (running) return running;
+  const promise = (async () => {
+    const newest = await newestSavedCopy(choice);
+    if (newest && Date.now() - newest.at < SAVED_REFRESH_MS) return;
+    if (await isBrowserProfileInUse(choice).catch(() => true)) return;
+    const source = toHostPath(choice.profilePath);
+    const parent = savedProfileDir(choice);
+    const dir = path.join(parent, String(Date.now()));
+    try {
+      await mkdir(dir, { recursive: true, mode: PRIVATE_MODE });
+      await makeFoldersPrivate([path.dirname(path.dirname(parent)), path.dirname(parent), parent, dir]);
+      const skipped = await copyProfileInto(choice, source, dir);
+      if (skipped > 0 || (await isBrowserProfileInUse(choice).catch(() => true))) {
+        await rm(dir, { recursive: true, force: true });
+        return;
+      }
+      await writeFile(path.join(dir, SAVED_COMPLETE), '');
+    } catch (error) {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      appLog.warn(`[BrowserProfiles] Could not save a copy of ${choice.id}:`, error);
+      return;
+    }
+    await removeSavedCopies(parent, dir);
+  })().finally(() => savedRefreshes.delete(choice.id));
+  savedRefreshes.set(choice.id, promise);
+  return promise;
+}
+
+/** Remove the saves in `parent` except `keep` and those being read (best effort) */
+async function removeSavedCopies(parent: string, keep?: string): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(parent);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    const dir = path.join(parent, name);
+    if (dir === keep || savedReaders.has(dir)) continue;
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
+  if (!keep) await rmdir(parent).catch(() => undefined);
+}
+
+/**
+ * Remove saved copies of profiles other than `current` (every one when null): the choice moved to
+ * another profile or to none. Saves being written now are left alone. Best effort
+ */
+async function removeOtherSavedCopies(current: PuppeteerBrowserChoice | null): Promise<void> {
+  for (const base of new Set(runtimeCopiesBases())) {
+    const savedRoot = path.join(base, SAVED_FOLDER);
+    let profiles: string[];
+    try {
+      profiles = await readdir(savedRoot);
+    } catch {
+      continue;
+    }
+    for (const profile of profiles) {
+      if (current && profile === slug(current.id)) continue;
+      const writing = [...savedRefreshes.keys()].some((id) => slug(id) === profile);
+      if (!writing) await removeSavedCopies(path.join(savedRoot, profile));
+    }
+  }
+}
+
 /**
  * Make a fresh copy of the chosen profile for a run and return its folder (host path), or null
  * when the profile is gone or the browser is Puppeteer's own download (the run then uses the
@@ -388,19 +536,22 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
     // Private all the way down, also for folders made before copies were private
     const projectRoot = browserProfileCopiesRoot(projectPath, choice);
     await makeFoldersPrivate([path.dirname(projectRoot), projectRoot, path.dirname(target), target]);
-    if (choice.engine === 'chromium') {
-      const profileDirectory = choice.profileDirectory ?? 'Default';
-      skipped = await copyTree(source, path.join(target, profileDirectory));
-      await disableSessionRestore(path.join(target, profileDirectory, 'Preferences'));
+    // The browser is open: the saved copy (consistent), when there is one, instead of the live profile
+    const saved = (await isBrowserProfileInUse(choice).catch(() => false)) ? await newestSavedCopy(choice) : null;
+    if (saved) {
+      savedReaders.set(saved.dir, (savedReaders.get(saved.dir) ?? 0) + 1);
       try {
-        await copyFile(path.join(toHostPath(choice.userDataDir), 'Local State'), path.join(target, 'Local State'));
-      } catch {
-        skipped++;
+        skipped = await copyTree(saved.dir, target);
+      } finally {
+        const readers = (savedReaders.get(saved.dir) ?? 1) - 1;
+        if (readers > 0) savedReaders.set(saved.dir, readers);
+        else savedReaders.delete(saved.dir);
       }
-      // No first-run pages in the copy
-      await writeFile(path.join(target, 'First Run'), '');
+      appLog.info(`[BrowserProfiles] ${choice.id} is open; this run uses its copy saved ${new Date(saved.at).toISOString()}`);
     } else {
-      skipped = await copyTree(source, target);
+      skipped = await copyProfileInto(choice, source, target);
+      // Closed now: keep the saved copy fresh for runs that start while it is open
+      void refreshSavedBrowserProfileCopy(choice);
     }
   } catch (error) {
     // A full disk (ENOSPC, EDQUOT) or another error: no partial copy is left behind
@@ -512,6 +663,7 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
   const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
   if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
   lastSweep.set(sweepKey, now);
+  if (current !== undefined) await removeOtherSavedCopies(current);
   // Every place copies may be: a confined snap's folder too, after a choice of another browser
   for (const base of new Set(runtimeCopiesBases())) {
     await sweepCopies(path.join(base, projectFolder(projectPath)), options);
@@ -553,7 +705,8 @@ export async function removeLeftoverBrowserProfileCopies(projectPaths: string[])
   const roots: string[] = [];
   for (const base of bases) {
     try {
-      roots.push(...(await readdir(base)).map((name) => path.join(base, name)));
+      // The saved copies are kept across sessions
+      roots.push(...(await readdir(base)).filter((name) => name !== SAVED_FOLDER).map((name) => path.join(base, name)));
     } catch {
       // No copies there yet
     }
