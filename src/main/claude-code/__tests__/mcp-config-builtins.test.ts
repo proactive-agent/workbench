@@ -60,6 +60,8 @@ describe('built-in MCP servers', () => {
       type: 'stdio',
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-puppeteer'],
+      // Pages fill the window instead of an emulated 800x600 viewport
+      env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify({ defaultViewport: null }) },
     });
   });
 
@@ -69,6 +71,7 @@ describe('built-in MCP servers', () => {
       .mcpServers.puppeteer;
     expect(entry).toMatchObject({ type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] });
     expect(launchOptions(entry)).toEqual({
+      defaultViewport: null,
       executablePath: '/opt/google/chrome/chrome',
       userDataDir: '/p/.workbench/browser-profiles/chrome_Profile_1/task-1',
       args: ['--profile-directory=Profile 1'],
@@ -77,7 +80,7 @@ describe('built-in MCP servers', () => {
   });
 
   it('checks the chosen browser without a profile copy', () => {
-    expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: chrome }))).toEqual({ executablePath: '/opt/google/chrome/chrome' });
+    expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: chrome }))).toEqual({ defaultViewport: null, executablePath: '/opt/google/chrome/chrome' });
   });
 
   it('launches Firefox with its profile copy as the user data folder', () => {
@@ -93,6 +96,7 @@ describe('built-in MCP servers', () => {
     const entry = buildMcpConfig(['puppeteer'], { puppeteerBrowser: firefox }, { browserProfileDir: '/p/copy' }).mcpServers.puppeteer;
     // The copy keeps the Firefox Account sign-in: Sync stays off so the agent's browsing isn't uploaded
     expect(launchOptions(entry)).toEqual({
+      defaultViewport: null,
       executablePath: '/usr/lib/firefox/firefox', browser: 'firefox', userDataDir: '/p/copy',
       extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },
     });
@@ -110,6 +114,7 @@ describe('built-in MCP servers', () => {
       profilePath: '/home/me/snap/firefox/common/.mozilla/firefox/x.default',
     };
     expect(launchOptions(mcpServerEntry('puppeteer', { puppeteerBrowser: firefox }))).toEqual({
+      defaultViewport: null,
       executablePath: '/snap/firefox/current/usr/lib/firefox/firefox', browser: 'firefox',
       extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },
     });
@@ -121,6 +126,7 @@ describe('built-in MCP servers', () => {
       executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox', userDataDir: '', profilePath: '',
     };
     expect(launchOptions(buildMcpConfig(['puppeteer'], { puppeteerBrowser: managed }).mcpServers.puppeteer)).toEqual({
+      defaultViewport: null,
       executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox',
       browser: 'firefox',
       extraPrefsFirefox: { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' },

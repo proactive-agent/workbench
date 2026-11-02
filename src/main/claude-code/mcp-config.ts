@@ -75,13 +75,19 @@ export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
 };
 
 /**
+ * Pages fill the browser window: without it Puppeteer emulates an 800x600 viewport, which Chrome
+ * draws in a corner of its larger window
+ */
+const WINDOW_SIZED_VIEWPORT = { defaultViewport: null };
+
+/**
  * Puppeteer's launch options for the chosen browser: its executable and engine, and with a
  * profile copy its folder. Chromium's default `--password-store=basic` / `--use-mock-keychain`
  * would keep it from decrypting the copied sign-ins, so they are left out
  */
 export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserProfileDir?: string): Record<string, unknown> {
   const executablePath = SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
-  const launch: Record<string, unknown> = { executablePath };
+  const launch: Record<string, unknown> = { ...WINDOW_SIZED_VIEWPORT, executablePath };
   if (choice.engine === 'firefox') {
     launch.browser = 'firefox';
     launch.extraPrefsFirefox = FIREFOX_NO_SYNC_PREFS;
@@ -102,7 +108,7 @@ export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserPr
  */
 function puppeteerServer(choice: PuppeteerBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
   const entry: McpServerEntry = { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
-  if (!choice) return entry;
+  if (!choice) return { ...entry, env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify(WINDOW_SIZED_VIEWPORT) } };
   return { ...entry, env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify(puppeteerLaunchOptions(choice, options.browserProfileDir)) } };
 }
 

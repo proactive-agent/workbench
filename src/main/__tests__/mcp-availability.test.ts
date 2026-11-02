@@ -156,7 +156,7 @@ describe('MCP availability', () => {
     });
     // The chosen executable reaches the server, never a profile folder
     const env = mocks.spawnTool.mock.calls[0][2].env as Record<string, string>;
-    expect(JSON.parse(env.PUPPETEER_LAUNCH_OPTIONS)).toEqual({ executablePath: '/opt/gone/chrome' });
+    expect(JSON.parse(env.PUPPETEER_LAUNCH_OPTIONS)).toEqual({ defaultViewport: null, executablePath: '/opt/gone/chrome' });
 
     servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
