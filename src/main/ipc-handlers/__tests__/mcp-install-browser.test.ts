@@ -9,7 +9,20 @@ const mocks = vi.hoisted(() => ({
   windows: false,
   npx: '/home/me/.nvm/versions/node/v22.1.0/bin/npx' as string | null,
   openTerminal: vi.fn(),
+  recheck: vi.fn(),
+  /** Puppeteer's chrome cache folder's entries */
+  chromeCache: [] as string[],
+  waitForFirefox: vi.fn(),
 }));
+
+vi.mock('fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('fs/promises')>()),
+  readdir: vi.fn(async (dir: string) => {
+    if (String(dir).endsWith('chrome')) return [...mocks.chromeCache];
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
+}));
+vi.mock('../../settings-utils', () => ({ readSettingsFileAsync: async () => ({ mcpConnectors: { puppeteerEnabled: true } }) }));
 
 vi.mock('../../platform/shell-runtime', () => ({
   whenShellRuntimeReady: async () => ({}),
@@ -29,19 +42,20 @@ vi.mock('../../mcp-availability', () => ({
   getMcpAvailability: vi.fn(),
   getMcpFixCommand: () => 'npx puppeteer browsers install chrome@131.0.6778.204',
   onMcpAvailabilityChange: vi.fn(),
+  recheckMcpConnector: mocks.recheck,
 }));
-vi.mock('../../browser-profiles/detect', () => ({ detectBrowserProfiles: vi.fn(), waitForManagedFirefox: vi.fn(async () => null) }));
+vi.mock('../../browser-profiles/detect', () => ({ detectBrowserProfiles: vi.fn(), waitForManagedFirefox: mocks.waitForFirefox }));
 vi.mock('../claude-code-handlers', () => ({ openTerminalWithCommand: mocks.openTerminal }));
 vi.mock('../../app-logger', () => ({ appLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/constants/ipc';
-import { registerMcpHandlers, terminalNpxCommand } from '../mcp-handlers';
+import { finishedChromeBuilds, registerMcpHandlers, terminalNpxCommand } from '../mcp-handlers';
 
 registerMcpHandlers();
 
 const install = (browser: string) =>
-  (ipcMain as unknown as { invokeHandler: (c: string, e: unknown, ...a: unknown[]) => Promise<{ success: boolean; error?: string }> })
+  (ipcMain as unknown as { invokeHandler: (c: string, e: unknown, ...a: unknown[]) => Promise<{ success: boolean; error?: string; data?: { alreadyRunning?: boolean } }> })
     .invokeHandler(IPC_CHANNELS.MCP_INSTALL_BROWSER, {}, browser);
 
 beforeEach(() => {
@@ -50,6 +64,9 @@ beforeEach(() => {
   mocks.windows = false;
   mocks.npx = '/home/me/.nvm/versions/node/v22.1.0/bin/npx';
   mocks.openTerminal.mockResolvedValue(undefined);
+  mocks.chromeCache = [];
+  // A Firefox download ends at once unless a test keeps it running
+  mocks.waitForFirefox.mockResolvedValue(null);
 });
 
 describe('terminalNpxCommand', () => {
@@ -79,13 +96,55 @@ describe('terminalNpxCommand', () => {
   });
 });
 
+describe('finishedChromeBuilds', () => {
+  it('counts a build folder only once its archive is gone', () => {
+    expect(finishedChromeBuilds(['linux-131.0.6778.204', '131.0.6778.204-chrome-linux64.zip'])).toEqual([]);
+    expect(finishedChromeBuilds(['linux-131.0.6778.204', 'linux-120.0.1'])).toEqual(['linux-131.0.6778.204', 'linux-120.0.1']);
+    expect(finishedChromeBuilds(['linux-131.0.6778.204', 'linux-120.0.1'], '131.0.6778.204')).toEqual(['linux-131.0.6778.204']);
+  });
+});
+
 describe('MCP_INSTALL_BROWSER', () => {
-  it("installs the Chrome build Puppeteer's error named", async () => {
-    expect((await install('chrome')).success).toBe(true);
-    expect(mocks.openTerminal).toHaveBeenCalledWith(
-      expect.stringMatching(/'\/home\/me\/\.nvm\/versions\/node\/v22\.1\.0\/bin\/npx' puppeteer browsers install chrome@131\.0\.6778\.204$/),
-      undefined
-    );
+  it("installs the Chrome build Puppeteer's error named, and checks Puppeteer again once it is downloaded", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      expect((await install('chrome')).success).toBe(true);
+      expect(mocks.openTerminal).toHaveBeenCalledWith(
+        expect.stringMatching(/'\/home\/me\/\.nvm\/versions\/node\/v22\.1\.0\/bin\/npx' puppeteer browsers install chrome@131\.0\.6778\.204$/),
+        undefined
+      );
+      // Still unpacking: not yet
+      mocks.chromeCache = ['linux-131.0.6778.204', '131.0.6778.204-chrome-linux64.zip'];
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(mocks.recheck).not.toHaveBeenCalled();
+      // A second click while it runs opens no other terminal
+      expect(await install('chrome')).toEqual(expect.objectContaining({ success: true, data: expect.objectContaining({ alreadyRunning: true }) }));
+      expect(mocks.openTerminal).toHaveBeenCalledTimes(1);
+
+      mocks.chromeCache = ['linux-131.0.6778.204'];
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(mocks.recheck).toHaveBeenCalledWith('puppeteer', { puppeteerEnabled: true });
+      // Done: a new download may start
+      expect((await install('chrome')).data?.alreadyRunning).toBeUndefined();
+      expect(mocks.openTerminal).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refuses a second Firefox download while one runs, and allows one after it failed to start', async () => {
+    let finish: ((profiles: null) => void) | undefined;
+    mocks.waitForFirefox.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const [first, second] = await Promise.all([install('firefox'), install('firefox')]);
+    expect(first.data?.alreadyRunning).toBeUndefined();
+    expect(second.data?.alreadyRunning).toBe(true);
+    expect(mocks.openTerminal).toHaveBeenCalledTimes(1);
+    finish?.(null);
+    await vi.waitFor(async () => expect((await install('firefox')).data?.alreadyRunning).toBeUndefined());
+    expect(mocks.openTerminal).toHaveBeenCalledTimes(2);
+    // Ends the second download for the next tests
+    finish?.(null);
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 
   it('reports a terminal that could not open', async () => {

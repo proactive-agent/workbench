@@ -16,10 +16,17 @@
  * A probe's server runs in its own process group and is stopped with everything it started. The Connectors page, the task dialog and the chat's MCP menu keep
  * a server's switch off and disabled until it is ready; runs leave out unavailable servers.
  *
+ * Results are kept per connector but found per connection details: connectors with the same
+ * details (a custom server with the built-in Context7's command) share one probe, and its result
+ * goes to each of them.
+ *
  * Puppeteer with a browser profile is also unavailable while that browser is open
- * (browser-profiles/in-use.ts): runs copy the profile, which an open browser keeps locked. It is
- * looked at again when asked for after BROWSER_RECHECK_MS, and every BROWSER_RECHECK_MS while
- * open, so closing the browser enables the connector without a page reload.
+ * (browser-profiles/in-use.ts): runs copy the profile, which an open browser keeps locked. Open
+ * states are kept per browser. The chosen browser is the one in the settings the windows ask with
+ * (read from the settings file each time); a run's settings may be older, so a run looks at its own
+ * browser's lock without changing the chosen one. The chosen browser is looked at again when asked
+ * for after BROWSER_RECHECK_MS, and every BROWSER_RECHECK_MS while open and Puppeteer is on in the
+ * defaults, so closing the browser enables the connector without a page reload.
  */
 
 import { EventEmitter } from 'events';
@@ -99,13 +106,13 @@ const probes = new Map<string, Promise<McpAvailability>>();
 const running = new Set<ChildProcess>();
 /** Bumped by resetMcpAvailability: probes started before it don't report */
 let generation = 0;
-/** Whether the Puppeteer connector's browser (by choice id) is open, and when that was seen */
-let browserOpen: { id: string; open: boolean; checkedAt: number } | undefined;
-/** The look at a browser's lock running now, by choice id */
-let browserLook: { id: string; promise: Promise<boolean> } | undefined;
+/** Whether each browser (by choice id) is open, and when that was seen */
+const browserOpen = new Map<string, { open: boolean; checkedAt: number }>();
+/** The looks at browsers' locks running now, by choice id */
+const browserLooks = new Map<string, Promise<boolean>>();
 /** Looks at the chosen browser again while it is open (for the choice id) */
 let browserTimer: { id: string; timer: NodeJS.Timeout } | undefined;
-/** The connector settings Puppeteer was last asked about: the chosen browser now */
+/** The latest connector settings the windows asked with: the chosen browser now */
 let puppeteerSettings: McpConnectorSettings | undefined;
 
 /** The command that fixes an unavailable connector (its failed check's), when it has one */
@@ -137,13 +144,21 @@ function chosenProfileBrowser(settings: McpConnectorSettings | undefined): Puppe
 function withBrowserOpen(id: string, availability: McpAvailability, settings: McpConnectorSettings | undefined): McpAvailability {
   const browser = id === 'puppeteer' ? chosenProfileBrowser(settings) : undefined;
   if (!browser || availability.state === 'unavailable') return availability;
-  return browserOpen?.id === browser.id && browserOpen.open ? { state: 'unavailable', browserOpen: true } : availability;
+  return browserOpen.get(browser.id)?.open ? { state: 'unavailable', browserOpen: true } : availability;
 }
 
-/** Remember the settings Puppeteer is asked about; a poll for another browser stops */
+/** Whether the chosen browser is looked at again while open: only while Puppeteer is on by default */
+function pollsChosenBrowser(): boolean {
+  return puppeteerSettings?.puppeteerEnabled === true;
+}
+
+/**
+ * Remember the latest settings (the chosen browser); a poll for another browser, or one Puppeteer
+ * switched off no longer needs, stops
+ */
 function notePuppeteerSettings(settings: McpConnectorSettings | undefined): void {
   puppeteerSettings = settings;
-  if (browserTimer && browserTimer.id !== chosenProfileBrowser(settings)?.id) {
+  if (browserTimer && (browserTimer.id !== chosenProfileBrowser(settings)?.id || !pollsChosenBrowser())) {
     clearTimeout(browserTimer.timer);
     browserTimer = undefined;
   }
@@ -151,9 +166,11 @@ function notePuppeteerSettings(settings: McpConnectorSettings | undefined): void
 
 /**
  * The connectors' availability now; servers not checked yet (or whose connection details
- * changed) start being checked and read "preparing"
+ * changed) start being checked and read "preparing". `settings` are the latest saved ones (the
+ * IPC handler reads the settings file): their Puppeteer browser becomes the chosen one
  */
 export function getMcpAvailability(ids: string[], settings: McpConnectorSettings | undefined): Record<string, McpAvailability> {
+  if (ids.includes('puppeteer')) notePuppeteerSettings(settings);
   return Object.fromEntries(ids.map((id) => [id, check(id, settings)]));
 }
 
@@ -184,7 +201,7 @@ export async function usableMcpConnectorIds(
   settings: McpConnectorSettings | undefined,
   onLeftOut?: (id: string, availability: McpAvailability) => void
 ): Promise<string[]> {
-  if (ids.includes('puppeteer')) notePuppeteerSettings(settings);
+  // The run's own browser (its settings may be older than the chosen one): looked at, never chosen
   const browser = chosenProfileBrowser(settings);
   // Its answer counts even when a reset forgot it while looking
   const browserIsOpen = browser && ids.includes('puppeteer') ? await lookAtBrowser(browser) : false;
@@ -202,7 +219,6 @@ export async function usableMcpConnectorIds(
 }
 
 function check(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
-  if (id === 'puppeteer') notePuppeteerSettings(settings);
   const availability = checkServer(id, settings);
   const browser = id === 'puppeteer' ? chosenProfileBrowser(settings) : undefined;
   // Looks again at an old answer (the result arrives as a change)
@@ -215,12 +231,17 @@ function check(id: string, settings: McpConnectorSettings | undefined): McpAvail
  * sure a look is coming (a poll stopped when another browser was chosen for a moment)
  */
 function refreshBrowserOpen(browser: PuppeteerBrowserChoice): void {
-  const known = browserOpen?.id === browser.id ? browserOpen : undefined;
+  const known = browserOpen.get(browser.id);
   if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) {
     void lookAtBrowser(browser);
-  } else if (known.open && browserTimer?.id !== browser.id && browserLook?.id !== browser.id) {
+  } else if (known.open && isChosenBrowser(browser.id) && pollsChosenBrowser()
+    && browserTimer?.id !== browser.id && !browserLooks.has(browser.id)) {
     pollBrowser(browser.id);
   }
+}
+
+function isChosenBrowser(id: string): boolean {
+  return chosenProfileBrowser(puppeteerSettings)?.id === id;
 }
 
 /** Look at the chosen browser again in BROWSER_RECHECK_MS (it is open) */
@@ -236,22 +257,23 @@ function pollBrowser(id: string): void {
 }
 
 /**
- * Look at a browser's lock; a change for the browser chosen now is sent like any other
- * availability change, read with the latest settings
+ * Look at a browser's lock and keep the answer for that browser; a change for the browser chosen
+ * now is sent like any other availability change, read with the latest settings
  */
 function lookAtBrowser(browser: PuppeteerBrowserChoice): Promise<boolean> {
-  if (browserLook?.id === browser.id) return browserLook.promise;
+  const running = browserLooks.get(browser.id);
+  if (running) return running;
   const started = generation;
   const promise = isBrowserProfileInUse(browser).catch(() => false).then((open) => {
-    if (browserLook?.promise === promise) browserLook = undefined;
+    if (browserLooks.get(browser.id) === promise) browserLooks.delete(browser.id);
     if (started !== generation) return open;
-    const changed = (browserOpen?.id === browser.id ? browserOpen.open : false) !== open;
-    browserOpen = { id: browser.id, open, checkedAt: Date.now() };
-    // The choice changed while looking: this browser no longer matters
-    if (chosenProfileBrowser(puppeteerSettings)?.id !== browser.id) return open;
+    const changed = (browserOpen.get(browser.id)?.open ?? false) !== open;
+    browserOpen.set(browser.id, { open, checkedAt: Date.now() });
+    // Not the chosen browser (a run's older choice, or the choice changed while looking): nothing to send
+    if (!isChosenBrowser(browser.id)) return open;
     if (changed) events.emit('change', 'puppeteer', check('puppeteer', puppeteerSettings));
-    // While it is open, keep looking (at the browser chosen then), so closing it enables the connector
-    if (open) {
+    // While it is open, keep looking, so closing it enables the connector (only while Puppeteer is on)
+    if (open && pollsChosenBrowser()) {
       pollBrowser(browser.id);
     } else if (browserTimer) {
       clearTimeout(browserTimer.timer);
@@ -259,7 +281,7 @@ function lookAtBrowser(browser: PuppeteerBrowserChoice): Promise<boolean> {
     }
     return open;
   });
-  browserLook = { id: browser.id, promise };
+  browserLooks.set(browser.id, promise);
   return promise;
 }
 
@@ -271,17 +293,17 @@ function checkServer(id: string, settings: McpConnectorSettings | undefined): Mc
   if (known?.key === key) {
     const stale = known.availability.state === 'unavailable' && Date.now() - known.checkedAt >= UNAVAILABLE_RECHECK_MS;
     // Checked again in the background: it reads unavailable (and runs leave it out) until then
-    if (stale && !probes.has(key)) startProbe(id, key, entry, verifyCall(id, settings), true);
+    if (stale && !probes.has(key)) startProbe(key, entry, verifyCall(id, settings), true);
     return known.availability;
   }
   // These details are the connector's current ones from now on (preparing while a probe runs, which
   // may be one started for them earlier: switching A -> B -> A keeps A's first probe)
   set(id, key, { state: 'preparing' });
-  if (!probes.has(key)) startProbe(id, key, entry, verifyCall(id, settings), false);
+  if (!probes.has(key)) startProbe(key, entry, verifyCall(id, settings), false);
   return { state: 'preparing' };
 }
 
-function startProbe(id: string, key: string, entry: McpServerEntry, verify: VerifyCall | undefined, recheck: boolean): void {
+function startProbe(key: string, entry: McpServerEntry, verify: VerifyCall | undefined, recheck: boolean): void {
   const started = generation;
   const probe = probeEntry(entry, verify, recheck).catch((error: unknown) => ({
     state: 'unavailable' as const,
@@ -291,9 +313,21 @@ function startProbe(id: string, key: string, entry: McpServerEntry, verify: Veri
   void probe.then((availability) => {
     if (started !== generation) return;
     probes.delete(key);
-    // Only when these are still the connector's current connection details
-    if (results.get(id)?.key === key) set(id, key, availability);
+    // Every connector whose current connection details these are (another connector with the same
+    // details waited on this probe), not only the one that started it
+    for (const [otherId, known] of [...results]) {
+      if (known.key === key) set(otherId, key, availability);
+    }
   });
+}
+
+/**
+ * Check a connector again now, whatever its result's age (a fix finished: Puppeteer's Chrome was
+ * downloaded). It reads "preparing" until the new check ends, and every window is told
+ */
+export function recheckMcpConnector(id: string, settings: McpConnectorSettings | undefined): void {
+  results.delete(id);
+  getMcpAvailability([id], settings);
 }
 
 /**
@@ -304,8 +338,8 @@ export function resetMcpAvailability(): void {
   generation++;
   results.clear();
   probes.clear();
-  browserOpen = undefined;
-  browserLook = undefined;
+  browserOpen.clear();
+  browserLooks.clear();
   if (browserTimer) clearTimeout(browserTimer.timer);
   browserTimer = undefined;
   resetCommandLookups();

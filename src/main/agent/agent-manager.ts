@@ -16,7 +16,6 @@ import { detectClaudeLimitMessage } from '../claude-code/limit';
 import { createOrGetWorktree } from '../worktree';
 import { addToWorktree } from '../live-agent/project-setup';
 import { describeLeftOutConnector, usableMcpConnectorIds } from '../mcp-availability';
-import { TaskLogWriter } from '../claude-code/task-log';
 import type { TaskLogPhase } from '../../shared/types/task';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
@@ -511,6 +510,8 @@ export class AgentManager extends EventEmitter {
       resetClaudeRunInfo(specDir);
     }
 
+    // Connectors the run leaves out, for the start of its task log
+    const startNotes: { phase: TaskLogPhase; line: string }[] = [];
     const config: TaskRunConfig = {
       taskId,
       projectId: project.id,
@@ -527,8 +528,10 @@ export class AgentManager extends EventEmitter {
       connectorIds: await usableMcpConnectorIds(
         Array.isArray(task.metadata?.mcpConnectors) ? task.metadata.mcpConnectors : getDefaultMcpConnectorIds(settings.mcpConnectors),
         settings.mcpConnectors,
-        (id, availability) => this.noteLeftOutConnector(taskId, options, specDir, describeLeftOutConnector(id, availability, settings.mcpConnectors))
+        (id, availability) => startNotes.push(this.noteLeftOutConnector(
+          taskId, options, specDir, describeLeftOutConnector(id, availability, settings.mcpConnectors), resync && mode !== 'revise' ? 'resync' : mode))
       ),
+      startNotes,
       connectorSettings: settings.mcpConnectors,
       settings: taskSettings,
       // Read again at each step, so switching Task messaging or messages from sessions off reaches a running task
@@ -651,21 +654,25 @@ export class AgentManager extends EventEmitter {
   /**
    * A connector the task chose was left out of this run (its browser is open, its server can't
    * start): said in the task's log, live and in task_logs.json. Written before the run's own log
-   * writer loads the file, so the run keeps the entry
+   * writer loads the file, so the run keeps the entry. The log step is the one the run starts
+   * with: a change request and a resync begin with coding (the resync's merge is logged there), a
+   * new run with planning (triage), and a continued one with the step it stopped in
    */
-  private noteLeftOutConnector(taskId: string, options: StartTaskOptions, specDir: string, line: string): void {
+  /** Shows a left-out connector now; the run writes the returned note to the task log with its own writer */
+  private noteLeftOutConnector(
+    taskId: string, options: StartTaskOptions, specDir: string, line: string, start: 'start' | 'revise' | 'resync'
+  ): { phase: TaskLogPhase; line: string } {
     this.emit('log', taskId, `${line}\n`, options.project.id);
+    let last: string | undefined;
     try {
-      const last = loadClaudeRunInfo(specDir)?.phases.at(-1)?.name;
-      // The step the run continues with
-      const phase: TaskLogPhase = last === 'validate' ? 'validation'
-        : options.mode === 'revise' || last === 'implement' || last === 'revise' || last === 'resync' ? 'coding' : 'planning';
-      const log = new TaskLogWriter(specDir, options.task.specId);
-      log.add(phase, 'info', line);
-      log.saveNow();
-    } catch (error) {
-      appLog.warn(`[AgentManager] Could not log a left-out connector for ${taskId}:`, error);
+      last = start === 'start' ? loadClaudeRunInfo(specDir)?.phases.at(-1)?.name : undefined;
+    } catch {
+      // No run state yet: a new run
     }
+    const phase: TaskLogPhase = start !== 'start' ? 'coding'
+      : last === 'validate' ? 'validation'
+        : last === 'implement' || last === 'revise' || last === 'resync' ? 'coding' : 'planning';
+    return { phase, line };
   }
 
   private emitTaskEvent(taskId: string, options: StartTaskOptions, type: string, payload: Record<string, unknown>): void {

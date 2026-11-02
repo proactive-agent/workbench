@@ -5,7 +5,7 @@
  * The Puppeteer browser picker keeps the stored choice's paths in step with detection
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { fireEvent, render, waitFor } from '@testing-library/react';
 import '../../../../shared/i18n';
 import { PuppeteerBrowserSelect } from '../PuppeteerBrowserSelect';
 import { toBrowserChoice } from '../browser-profile-meta';
@@ -67,5 +67,34 @@ describe('PuppeteerBrowserSelect', () => {
     expect(await findByText(/Work \(no longer found\)/)).toBeTruthy();
     await new Promise((resolve) => setTimeout(resolve, 10));
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('disables a download button while its download runs, until Chrome is no longer missing', async () => {
+    const install = vi.fn(async () => ({ success: true, data: { command: 'npx puppeteer browsers install chrome' } }));
+    (window.electronAPI as unknown as { installPuppeteerBrowser: unknown }).installPuppeteerBrowser = install;
+    const { getByRole, findByRole, rerender } = render(<PuppeteerBrowserSelect value={undefined} onChange={vi.fn()} chromeMissing />);
+    await waitFor(() => expect(window.electronAPI.detectBrowserProfiles).toHaveBeenCalled());
+    fireEvent.keyDown(getByRole('combobox'), { key: 'Enter' });
+    const button = await findByRole('button', { name: /^Download Chrome/ });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    await waitFor(() => expect(getByRole('button', { name: /Downloading Chrome/ })).toHaveProperty('disabled', true));
+    fireEvent.click(getByRole('button', { name: /Downloading Chrome/ }));
+    expect(install).toHaveBeenCalledTimes(1);
+
+    // Downloaded (Puppeteer checked again): the next time Chrome is missing, it can be downloaded again
+    rerender(<PuppeteerBrowserSelect value={undefined} onChange={vi.fn()} chromeMissing={false} />);
+    rerender(<PuppeteerBrowserSelect value={undefined} onChange={vi.fn()} chromeMissing />);
+    expect((await findByRole('button', { name: /^Download Chrome/ })).hasAttribute('disabled')).toBe(false);
+  });
+
+  it('enables the button again when the download could not start', async () => {
+    const install = vi.fn(async () => ({ success: false, error: 'npx was not found' }));
+    (window.electronAPI as unknown as { installPuppeteerBrowser: unknown }).installPuppeteerBrowser = install;
+    const { getByRole, findByRole, findByText } = render(<PuppeteerBrowserSelect value={undefined} onChange={vi.fn()} chromeMissing />);
+    fireEvent.keyDown(getByRole('combobox'), { key: 'Enter' });
+    fireEvent.click(await findByRole('button', { name: /^Download Chrome/ }));
+    expect(await findByText('npx was not found')).toBeTruthy();
+    expect((await findByRole('button', { name: /^Download Chrome/ })).hasAttribute('disabled')).toBe(false);
   });
 });

@@ -354,12 +354,13 @@ describe('MCP availability', () => {
         answer(proc);
       };
       mocks.browserOpen = true;
-      const profile = { puppeteerBrowser: firefoxProfile };
+      const profile = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
       getMcpAvailability(['puppeteer'], profile);
       await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
 
       // Puppeteer's own Firefox is chosen, then the profile's browser closes
       const managed = {
+        puppeteerEnabled: true,
         puppeteerBrowser: {
           ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/home/me/.cache/puppeteer/firefox/firefox',
         },
@@ -456,8 +457,8 @@ describe('MCP availability', () => {
       installed.set('npx', '/usr/bin/npx');
       servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
       mocks.browserOpen = true;
-      const profile = { puppeteerBrowser: firefoxProfile };
-      const managed = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/m/firefox' } };
+      const profile = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
+      const managed = { puppeteerEnabled: true, puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/m/firefox' } };
       getMcpAvailability(['puppeteer'], profile);
       await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
 
@@ -519,5 +520,122 @@ describe('MCP availability', () => {
     })).toBe('Py tools connector left out of this run: uvx is not installed');
     expect(describeLeftOutConnector('context7', { state: 'unavailable', message: 'npm error 404' }, undefined))
       .toBe('Context7 connector left out of this run: npm error 404');
+  });
+
+  it('gives a probe\'s result to every connector with the same connection details', async () => {
+    installed.set('npx', '/usr/bin/npx');
+    let finish: (() => void) | undefined;
+    servers['-y @upstash/context7-mcp@latest'] = (proc) => {
+      finish = () => answer(proc);
+    };
+    // A custom server with the built-in Context7's command, and two HTTP servers with one URL
+    const settings = {
+      customServers: [
+        { id: 'my-context7', name: 'My Context7', type: 'command' as const, command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'], verified: true },
+      ],
+    };
+    const changes: Array<[string, string]> = [];
+    const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability.state]));
+    expect(getMcpAvailability(['context7', 'my-context7'], settings)).toEqual({
+      context7: { state: 'preparing' },
+      'my-context7': { state: 'preparing' },
+    });
+    await vi.waitFor(() => expect(finish).toBeDefined());
+    // One probe for both
+    expect(mocks.spawnTool).toHaveBeenCalledTimes(1);
+    finish?.();
+    await vi.waitFor(() => expect(getMcpAvailability(['my-context7'], settings)['my-context7'].state).toBe('ready'));
+    expect(getMcpAvailability(['context7'], settings).context7.state).toBe('ready');
+    expect(changes).toContainEqual(['context7', 'ready']);
+    expect(changes).toContainEqual(['my-context7', 'ready']);
+    stop();
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('', { status: 405 }));
+    const http = {
+      customServers: [
+        { id: 'one', name: 'One', type: 'http' as const, url: 'http://localhost:9000/mcp', verified: true },
+        { id: 'two', name: 'Two', type: 'http' as const, url: 'http://localhost:9000/mcp', verified: true },
+      ],
+    };
+    getMcpAvailability(['one', 'two'], http);
+    await vi.waitFor(() => expect(getMcpAvailability(['one', 'two'], http)).toEqual({ one: { state: 'ready' }, two: { state: 'ready' } }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  const chromeProfile = {
+    id: 'chrome:Default', browser: 'chrome' as const, engine: 'chromium' as const, profileName: 'Default',
+    executablePath: '/usr/bin/google-chrome', userDataDir: '/home/me/.config/google-chrome', profilePath: '/home/me/.config/google-chrome/Default',
+  };
+
+  it("keeps each browser's open state: a late look at the old choice doesn't change the new one's", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    const looks = new Map<string, (open: boolean) => void>();
+    mocks.inUse.mockImplementation((browser: { id: string }) => new Promise<boolean>((resolve) => looks.set(browser.id, resolve)));
+    const a = { puppeteerBrowser: firefoxProfile };
+    const b = { puppeteerBrowser: chromeProfile };
+
+    getMcpAvailability(['puppeteer'], a);
+    getMcpAvailability(['puppeteer'], b);
+    await vi.waitFor(() => expect([...looks.keys()]).toEqual([firefoxProfile.id, chromeProfile.id]));
+    looks.get(chromeProfile.id)?.(false);
+    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], b).puppeteer.state).toBe('ready'));
+    // A (no longer chosen) turns out open: B stays usable
+    looks.get(firefoxProfile.id)?.(true);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(getMcpAvailability(['puppeteer'], b).puppeteer).toEqual({ state: 'ready' });
+    stopMcpProbes();
+  });
+
+  it("lets a run with older settings look at its browser without changing the chosen one", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      installed.set('npx', '/usr/bin/npx');
+      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      const open = new Set<string>([chromeProfile.id]);
+      mocks.inUse.mockImplementation(async (browser: { id: string }) => open.has(browser.id));
+      const older = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
+      const latest = { puppeteerEnabled: true, puppeteerBrowser: chromeProfile };
+      // The user chose B (open): it is looked at every few seconds
+      getMcpAvailability(['puppeteer'], latest);
+      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], latest).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+
+      // A run started with A looks at A only
+      expect(await usableMcpConnectorIds(['puppeteer'], older)).toEqual(['puppeteer']);
+      const changes: unknown[] = [];
+      const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+      // B's poll goes on: closing B enables the connector
+      open.clear();
+      await vi.advanceTimersByTimeAsync(5_000);
+      expect(mocks.inUse.mock.calls.filter(([browser]) => browser.id === chromeProfile.id).length).toBeGreaterThan(1);
+      await vi.waitFor(() => expect(changes.at(-1)).toEqual(expect.objectContaining({ state: expect.not.stringMatching('unavailable') })));
+      stop();
+      stopMcpProbes();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("doesn't keep looking at an open browser while Puppeteer is off in the defaults", async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      installed.set('npx', '/usr/bin/npx');
+      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      mocks.browserOpen = true;
+      const off = { puppeteerBrowser: firefoxProfile };
+      getMcpAvailability(['puppeteer'], off);
+      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], off).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+      const looks = mocks.inUse.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(mocks.inUse.mock.calls.length).toBe(looks);
+
+      // Switched on: looked at (the old answer is stale) and polled again
+      getMcpAvailability(['puppeteer'], { ...off, puppeteerEnabled: true });
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(mocks.inUse.mock.calls.length).toBeGreaterThan(looks + 1);
+      stopMcpProbes();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -19,8 +19,6 @@ const runs: MockRun[] = [];
 // left out as if their browser were open
 const connectorMocks = vi.hoisted(() => ({
   leftOut: new Set<string>(),
-  logAdd: vi.fn(),
-  logSave: vi.fn(),
 }));
 vi.mock('../mcp-availability', () => ({
   usableMcpConnectorIds: async (ids: string[], _settings: unknown, onLeftOut?: (id: string, availability: unknown) => void) =>
@@ -30,12 +28,6 @@ vi.mock('../mcp-availability', () => ({
       return false;
     }),
   describeLeftOutConnector: (id: string) => `${id} connector left out of this run: the browser is open`,
-}));
-vi.mock('../claude-code/task-log', () => ({
-  TaskLogWriter: class {
-    add = connectorMocks.logAdd;
-    saveNow = connectorMocks.logSave;
-  },
 }));
 vi.mock('../claude-code/task-runner', () => ({
   ClaudeTaskRun: class {
@@ -267,11 +259,40 @@ describe('AgentManager', () => {
 
       expect(run.config.connectorIds).toEqual(['context7']);
       expect(logs).toContain('puppeteer connector left out of this run: the browser is open\n');
-      // Saved in task_logs.json before the run's own log writer loads it
-      expect(connectorMocks.logAdd).toHaveBeenCalledWith('planning', 'info', 'puppeteer connector left out of this run: the browser is open');
-      expect(connectorMocks.logSave).toHaveBeenCalled();
+      // Handed to the run, whose own log writer saves it in task_logs.json
+      expect(run.config.startNotes).toEqual([{ phase: 'planning', line: 'puppeteer connector left out of this run: the browser is open' }]);
     } finally {
       connectorMocks.leftOut.clear();
+    }
+  });
+
+  it('logs a left-out connector under the step the run starts with', async () => {
+    const { loadClaudeRunInfo } = await import('../claude-code/task-runner');
+    // The last run stopped in validation
+    vi.mocked(loadClaudeRunInfo).mockReturnValue({ phases: [{ name: 'validate' }] } as unknown as ReturnType<typeof loadClaudeRunInfo>);
+    connectorMocks.leftOut.add('puppeteer');
+    const line = 'puppeteer connector left out of this run: the browser is open';
+    try {
+      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      // A change request begins with coding
+      await manager.startTask(task.id, { project, task, mode: 'revise', feedback: 'Fix it' });
+      expect((await nextRun(1)).config.startNotes).toEqual([{ phase: 'coding', line }]);
+
+      // So does a resync (its merge is logged under coding)
+      pendingResync.value = { ref: 'develop', into: 'develop', via: 'local', merged: [], at: '2026-10-01T00:00:00Z' };
+      const other = makeTask({ id: '002-other', specId: '002-other', status: 'human_review', metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      await manager.startTask(other.id, { project, task: other, mode: 'start' });
+      expect((await nextRun(2)).config.startNotes).toEqual([{ phase: 'coding', line }]);
+      pendingResync.value = undefined;
+
+      // A continued start goes on with validation
+      const third = makeTask({ id: '003-third', specId: '003-third', metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      await manager.startTask(third.id, { project, task: third, mode: 'start' });
+      expect((await nextRun(3)).config.startNotes).toEqual([{ phase: 'validation', line }]);
+    } finally {
+      pendingResync.value = undefined;
+      connectorMocks.leftOut.clear();
+      vi.mocked(loadClaudeRunInfo).mockReturnValue(null);
     }
   });
 

@@ -652,18 +652,21 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
           keystroke return
         end tell
       `;
-    } else if (terminalId === 'kitty') {
-      // Kitty - use command line
-      spawn('kitty', ['--', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'alacritty') {
-      // Alacritty - use command line
-      spawn('open', ['-a', 'Alacritty', '--args', '-e', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'wezterm') {
-      // WezTerm - use command line
-      spawn('wezterm', ['start', '--', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
+    } else if (terminalId === 'kitty' || terminalId === 'alacritty' || terminalId === 'wezterm') {
+      // Started from the command line: a missing one (ENOENT, `open -a` of an app that isn't
+      // there) or one that fails at once falls back to Terminal.app
+      const byId: Record<string, LinuxTerminal> = {
+        kitty: { cmd: 'kitty', args: ['--', 'bash', '-c', command] },
+        alacritty: { cmd: 'open', args: ['-a', 'Alacritty', '--args', '-e', 'bash', '-c', command] },
+        wezterm: { cmd: 'wezterm', args: ['start', '--', 'bash', '-c', command] },
+      };
+      try {
+        await spawnLinuxTerminal(byId[terminalId]);
+        return;
+      } catch (error) {
+        console.warn(`[Claude Code] ${terminalId} did not open, using Terminal.app:`, error);
+        script = terminalAppScript(escapedCommand);
+      }
     } else if (terminalId === 'ghostty') {
       // Ghostty
       script = `
@@ -704,18 +707,14 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
       // Default: Terminal.app (handles 'terminal', 'system', or any unknown value)
       // IMPORTANT: do script FIRST, then activate - this prevents opening a blank default window
       // when Terminal.app isn't already running
-      script = `
-        tell application "Terminal"
-          do script "${escapedCommand}"
-          activate
-        end tell
-      `;
+      script = terminalAppScript(escapedCommand);
     }
 
     console.warn('[Claude Code] Running AppleScript...');
     // Async (never block the main process): Terminal may take a while to launch, and macOS may ask
-    // the user to let Workbench control it; the timeout leaves room to answer that prompt
-    await execFileAsync('osascript', ['-e', script], { timeout: 60_000 });
+    // the user to let Workbench control it; the timeout is above AppleScript's own (~120 s), so
+    // osascript is never stopped while that prompt waits
+    await execFileAsync('osascript', ['-e', script], { timeout: OSASCRIPT_TIMEOUT_MS });
 
   } else if (isWindows()) {
     // Windows: Use appropriate terminal
@@ -933,8 +932,6 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
       kitty: { cmd: 'kitty', args: ['--', 'bash', '-c', bashCommand] },
       alacritty: { cmd: 'alacritty', args: ['-e', 'bash', '-c', bashCommand] },
       wezterm: { cmd: 'wezterm', args: ['start', '--', 'bash', '-c', bashCommand] },
-      hyper: { cmd: 'hyper', args: [] },
-      tabby: { cmd: 'tabby', args: [] },
       xterm: { cmd: 'xterm', args: ['-e', 'bash', '-c', bashCommand] },
       urxvt: { cmd: 'urxvt', args: ['-e', 'bash', '-c', bashCommand] },
       st: { cmd: 'st', args: ['-e', 'bash', '-c', bashCommand] },
@@ -942,6 +939,8 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     };
     // The preferred terminal first, then the common ones (x-terminal-emulator is Debian's and
     // Ubuntu's default terminal, which takes `-e command args`)
+    // Hyper and Tabby can't be given a command to run, so they aren't used here (opening one with
+    // nothing running in it isn't running the command)
     const candidates: LinuxTerminal[] = [
       ...(byId[terminalId] ? [byId[terminalId]] : []),
       byId.gnometerminal,
@@ -978,6 +977,22 @@ interface LinuxTerminal {
   args: string[];
 }
 
+/** How long osascript may run: longer than AppleScript's own ~120 s wait for the Automation prompt */
+const OSASCRIPT_TIMEOUT_MS = 180_000;
+
+/**
+ * Terminal.app running a command (an AppleScript-escaped one). `do script` comes first, then
+ * activate: that keeps a Terminal that isn't running from opening a blank default window too
+ */
+function terminalAppScript(escapedCommand: string): string {
+  return `
+        tell application "Terminal"
+          do script "${escapedCommand}"
+          activate
+        end tell
+      `;
+}
+
 /**
  * Start a Linux terminal emulator. A missing one fails with ENOENT only after spawn returns, and
  * one that can't open a window (gnome-terminal without its server) exits with an error at once, so
@@ -1001,7 +1016,11 @@ function spawnLinuxTerminal(terminal: LinuxTerminal, env?: NodeJS.ProcessEnv, wa
       else resolve();
     };
     const onError = (error: Error) => done(error);
-    const onExit = (code: number | null) => done(code ? new Error(`${terminal.cmd} exited with code ${code}`) : undefined);
+    // A terminal stopped by a signal before the wait ends didn't open either
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => done(
+      signal ? new Error(`${terminal.cmd} was stopped by ${signal}`)
+        : code ? new Error(`${terminal.cmd} exited with code ${code}`) : undefined
+    );
     const timer = setTimeout(() => done(), waitMs);
     child.once('error', onError);
     child.once('exit', onExit);
