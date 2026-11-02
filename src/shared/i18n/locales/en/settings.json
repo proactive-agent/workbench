@@ -628,7 +628,7 @@
       "validation": "Validation",
       "validationDescription": "Run the project's checks and a fresh review of the changes before handing a task to you",
       "taskMessaging": "Task messaging",
-      "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
+      "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or its changes conflict with theirs",
       "sessionMessages": "Messages from your Claude sessions",
       "sessionMessagesDescription": "Agent windows, the chat and your terminal can message running tasks, which skip permission checks, so any local Claude session could steer them",
       "fallbackModel": "Fallback model",

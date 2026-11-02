@@ -8,6 +8,7 @@ import type { TaskChangelogEntry } from '../../task-changelog';
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 import { configureTaskMessaging, resetTaskMessagingForTests, takeInbox } from '../broker';
 import { TaskNotices } from '../notices';
+import type { FindConflicts } from '../conflict-check';
 
 let root: string;
 let project: Project;
@@ -52,10 +53,48 @@ describe('TaskNotices', () => {
     expect(await texts('004-d')).toEqual([]);
   });
 
-  it('tells both tasks when they change the same files, once per pair and file, in one batch', async () => {
+  it('test-merges tasks that share a file and tells both about a conflict with its lines, once while it lasts', async () => {
+    const findConflicts = vi.fn<FindConflicts>(async () => [{ file: 'src/shared.ts', lines: 'lines 4-6', otherLines: 'line 5' }]);
+    notices = new TaskNotices({ batchMs: 60_000, editBatchMs: 60_000, findConflicts });
     changelog([{ at: '2026-10-01T00:00:00Z', task: '002-b', event: 'state', status: 'in_progress', files: ['src/shared.ts', 'src/b.ts'] }]);
     notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts', 'src/a.ts'] });
     notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
+    await notices.flush();
+    notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
+    await notices.flush();
+
+    expect(findConflicts).toHaveBeenCalledTimes(2);
+    expect(findConflicts).toHaveBeenCalledWith(project, '001-a', '002-b');
+    const mine = await texts('001-a');
+    expect(mine).toEqual([expect.stringMatching(/^Your changes conflict with Task 002-b .* in `src\/shared\.ts` \(lines 4-6\): you both change the same lines\. Agree with it via message_task/)]);
+    const theirs = await texts('002-b');
+    expect(theirs).toEqual([expect.stringMatching(/^Your changes conflict with Task 001-a .* in `src\/shared\.ts` \(line 5\)/)]);
+
+    // Resolved, then conflicting again: announced again (the inbox keeps the first one)
+    findConflicts.mockResolvedValueOnce([]);
+    notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
+    await notices.flush();
+    notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
+    await notices.flush();
+    expect(await texts('001-a')).toHaveLength(2);
+  });
+
+  it('says nothing when the shared files merge cleanly, and never checks tasks that share none', async () => {
+    const findConflicts = vi.fn<FindConflicts>(async () => []);
+    notices = new TaskNotices({ batchMs: 60_000, editBatchMs: 60_000, findConflicts });
+    changelog([{ at: '2026-10-01T00:00:00Z', task: '002-b', event: 'state', status: 'in_progress', files: ['src/shared.ts'] }]);
+    notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
+    notices.onFilesEdited({ project, task: tasks[2], files: ['src/c.ts'] });
+    await notices.flush();
+    expect(findConflicts).toHaveBeenCalledTimes(1);
+    expect(await texts('001-a')).toEqual([]);
+    expect(await texts('002-b')).toEqual([]);
+  });
+
+  it("falls back to the shared files when the test merge can't run, once per pair and file", async () => {
+    notices = new TaskNotices({ batchMs: 60_000, editBatchMs: 60_000, findConflicts: async () => null });
+    changelog([{ at: '2026-10-01T00:00:00Z', task: '002-b', event: 'state', status: 'in_progress', files: ['src/shared.ts', 'src/b.ts'] }]);
+    notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts', 'src/a.ts'] });
     await notices.flush();
     notices.onFilesEdited({ project, task: tasks[0], files: ['src/shared.ts'] });
     await notices.flush();
@@ -64,6 +103,7 @@ describe('TaskNotices', () => {
     expect(mine).toHaveLength(1);
     expect(mine[0]).toContain('Task 002-b');
     expect(mine[0]).toContain('`src/shared.ts`');
+    expect(mine[0]).toContain('merge cleanly');
     expect(mine[0]).not.toContain('src/a.ts');
     const theirs = await texts('002-b');
     expect(theirs).toHaveLength(1);

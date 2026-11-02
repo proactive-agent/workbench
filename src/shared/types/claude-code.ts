@@ -50,8 +50,8 @@ export interface ClaudeCodeTaskSettings {
   fallbackModel?: string;
   /**
    * Parallel tasks message each other (Workbench's `message_task` and `list_parallel_tasks`
-   * tools) and get Workbench's notices about each other (started, overlapping files, finished,
-   * merged)
+   * tools) and get Workbench's notices about each other (started, conflicting changes,
+   * finished, merged)
    */
   taskMessaging: boolean;
   /**

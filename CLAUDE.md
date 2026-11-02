@@ -242,9 +242,11 @@ and to agree via `message_task` when both need the same lines.
 
 With Task messaging on (Settings > Agents, `claudeCodeTasks.taskMessaging`, on by default), task runs get Workbench's
 `message_task` and `list_parallel_tasks` tools (`src/main/task-messaging/`, served by the task tools server with a
-token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks change the
-same files). The broker (`broker.ts`) writes a message to a live run's stdin or keeps it in the target's
-`task_inbox.json` for its next phase. With Messages from your Claude sessions on
+token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks' changes
+conflict). After a task edits a file another task changes, `conflict-check.ts` test-merges both tasks' work
+(uncommitted edits snapshotted with a temp index, `git merge-tree --write-tree`) and names the conflicting files and
+lines; when that can't run, sharing the file is announced instead. The broker (`broker.ts`) writes a message to a live
+run's stdin or keeps it in the target's `task_inbox.json` for its next phase. With Messages from your Claude sessions on
 (`claudeCodeTasks.sessionMessages`, on by default), task runs also accept Claude Code's built-in SendMessage from the
 user's other sessions (`--settings {"crossSessionInbound":"accept"}`): agent windows are told the task session names
 (`task-messaging/window-hint.ts`), and the Claude chat gets `message_task` (through the broker) plus ListAgents /

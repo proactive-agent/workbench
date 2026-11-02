@@ -7,7 +7,12 @@
  * changelog (which files each task changes):
  *
  * - a task started                      -> the other active tasks
- * - two tasks change the same files     -> both (once per pair and file)
+ * - two tasks' changes conflict          -> both, naming the files and lines (once per pair and
+ *                                          file while it lasts). Checked after a task edits a file
+ *                                          another task changes, with a test merge of both tasks'
+ *                                          work (`conflict-check.ts`); changes to different parts
+ *                                          of a file merge cleanly and get no notice. When the
+ *                                          test merge can't run, sharing a file is announced
  * - a task finished (Human Review)      -> active tasks that change the same files, with its
  *                                          summary and its "Decisions/API changes" line
  * - a task was merged                   -> every other unfinished task; the ones based on the branch
@@ -24,6 +29,7 @@ import { taskSessionName } from '../../shared/utils/task-messaging';
 import { taskHooks, type TaskHookEvents } from '../task-hooks';
 import { foldTaskChangelog, getTaskChangelogPath, readTaskChangelog, type TaskChangelogTask } from '../task-changelog';
 import { deliverToTask, getTaskMessagingEnv, taskSpecDir } from './broker';
+import { findConflicts, type FindConflicts, type TaskConflict } from './conflict-check';
 import { MergeSync, hasTaskMerge, recordTaskMerge, takeTaskMerge, type MergeSyncOptions, type TaskMergeInfo } from './merge-sync';
 import { isStoppedByUser } from '../task-resync/user-stop';
 
@@ -66,6 +72,8 @@ export interface TaskNoticesOptions {
   batchMs?: number;
   /** How long a task's edits are collected before overlaps are checked */
   editBatchMs?: number;
+  /** Test merge of two tasks' work (`conflict-check.ts`; tests pass their own) */
+  findConflicts?: FindConflicts;
   /** Whether a task that entered Done was merged into its base branch */
   isMerged?: (project: Project, task: Task, branch: string | undefined, base: string) => Promise<boolean>;
   /** Whether notices are on now (Settings > Agents) */
@@ -89,7 +97,22 @@ function listFiles(files: string[]): string {
   return `${shown.map((file) => `\`${file}\``).join(', ')}${more}`;
 }
 
+/** Conflicted files with the lines on one side: "`a.ts` (lines 4-6), `b.ts`" */
+function listConflicts(conflicts: TaskConflict[], side: 'lines' | 'otherLines'): string {
+  const shown = conflicts.slice(0, MAX_FILES_LISTED);
+  const more = conflicts.length > shown.length ? ` and ${conflicts.length - shown.length} more` : '';
+  return `${shown.map((c) => `\`${c.file}\`${c[side] ? ` (${c[side]})` : ''}`).join(', ')}${more}`;
+}
+
 const key = (projectId: string, specId: string) => `${projectId}\u0000${specId}`;
+
+/** A pair of tasks whose work is test-merged: `editor` just edited files `other` changes too */
+interface PairCheck {
+  project: Project;
+  editorId: string;
+  otherId: string;
+  shared: Set<string>;
+}
 
 /** Batched, deduplicated notices for the tasks of all projects */
 export class TaskNotices {
@@ -99,8 +122,12 @@ export class TaskNotices {
   /** Files each task edited while the app ran (the changelog may not have them yet) */
   private readonly edited = new Map<string, Set<string>>();
   private readonly pendingEdits = new Map<string, { project: Project; files: Map<string, Set<string>>; timer: ReturnType<typeof setTimeout> }>();
-  /** `<project>\0<a>\0<b>\0<file>` (a < b): overlaps already announced */
+  /** `<project>\0<a>\0<b>\0<file>` (a < b): file overlaps announced when a test merge couldn't run */
   private readonly announcedOverlaps = new Set<string>();
+  /** `<project>\0<a>\0<b>` (a < b) -> files announced as conflicting, while they still conflict */
+  private readonly announcedConflicts = new Map<string, Set<string>>();
+  /** Per project: pairs waiting for a test merge (one entry per pair), run one at a time */
+  private readonly pairChecks = new Map<string, { pending: Map<string, PairCheck>; running: Promise<void> | null }>();
   private readonly batches = new Map<string, { projectId: string; specId: string; lines: string[]; timer: ReturnType<typeof setTimeout> }>();
   private readonly unsubscribe: Array<() => void> = [];
   private readonly mergeSync: MergeSync;
@@ -134,11 +161,13 @@ export class TaskNotices {
     for (const batch of this.batches.values()) clearTimeout(batch.timer);
     this.pendingEdits.clear();
     this.batches.clear();
+    for (const queue of this.pairChecks.values()) queue.pending.clear();
   }
 
   /** Send every collected notice now and wait for it (tests, shutdown) */
   async flush(): Promise<void> {
     await Promise.all([...this.pendingEdits.keys()].map((projectId) => this.checkOverlaps(projectId)));
+    await Promise.all([...this.pairChecks.values()].map((queue) => queue.running));
     await this.mergeSync.flush();
     await Promise.all([...this.batches.keys()].map((target) => this.sendBatch(target)));
   }
@@ -223,6 +252,7 @@ export class TaskNotices {
   // Overlaps
   // ---------------------------------------------------------------------------
 
+  /** The edits collected for a project: queue a test merge for each pair of tasks that share a file */
   private async checkOverlaps(projectId: string): Promise<void> {
     const pending = this.pendingEdits.get(projectId);
     if (!pending) return;
@@ -235,23 +265,86 @@ export class TaskNotices {
     const fold = await this.fold(project);
 
     for (const [editorId, editedFiles] of pending.files) {
-      const editor = tasks.find((t) => t.specId === editorId);
-      if (!editor) continue;
+      if (!tasks.some((t) => t.specId === editorId)) continue;
       for (const other of tasks) {
         if (other.specId === editorId || !UNMERGED_STATUSES.has(other.status)) continue;
         const theirs = this.filesFrom(fold.get(other.specId), projectId, other.specId);
-        const pair = [editorId, other.specId].sort().join('\u0000');
-        const shared = [...editedFiles].filter((file) => theirs.has(file) && !this.announcedOverlaps.has(`${projectId}\u0000${pair}\u0000${file}`)).sort();
-        if (shared.length === 0) continue;
-        for (const file of shared) this.announcedOverlaps.add(`${projectId}\u0000${pair}\u0000${file}`);
-        if (RECIPIENT_STATUSES.has(editor.status)) {
-          this.queueNotice(projectId, editorId,
-            `${describe(projectId, other)} also changes files you are editing: ${listFiles(shared)}. Check list_parallel_tasks, and use message_task if your changes interact.`);
-        }
-        if (RECIPIENT_STATUSES.has(other.status)) {
-          this.queueNotice(projectId, other.specId, `${describe(projectId, editor)} is editing files you also change: ${listFiles(shared)}.`);
-        }
+        const shared = [...editedFiles].filter((file) => theirs.has(file));
+        if (shared.length > 0) this.queuePairCheck({ project, editorId, otherId: other.specId, shared: new Set(shared) });
       }
+    }
+  }
+
+  /** One check per pair waits at a time (a newer edit joins it); a project's checks run one by one */
+  private queuePairCheck(check: PairCheck): void {
+    const projectId = check.project.id;
+    let queue = this.pairChecks.get(projectId);
+    if (!queue) {
+      queue = { pending: new Map(), running: null };
+      this.pairChecks.set(projectId, queue);
+    }
+    const pair = [check.editorId, check.otherId].sort().join('\u0000');
+    const waiting = queue.pending.get(pair);
+    if (waiting) for (const file of waiting.shared) check.shared.add(file);
+    queue.pending.set(pair, check);
+    if (!queue.running) {
+      const current = queue;
+      current.running = (async () => {
+        try {
+          for (let next = current.pending.entries().next(); !next.done; next = current.pending.entries().next()) {
+            const [waitingPair, waitingCheck] = next.value;
+            current.pending.delete(waitingPair);
+            await this.checkPair(waitingCheck);
+          }
+        } finally {
+          current.running = null;
+        }
+      })();
+    }
+  }
+
+  /** Test-merge a pair's work and tell both tasks about new conflicts */
+  private async checkPair({ project, editorId, otherId, shared }: PairCheck): Promise<void> {
+    const projectId = project.id;
+    let conflicts: TaskConflict[] | null;
+    try {
+      conflicts = await (this.options.findConflicts ?? findConflicts)(project, editorId, otherId);
+    } catch {
+      conflicts = null;
+    }
+    const tasks = getTaskMessagingEnv()?.getTasks(projectId) ?? [];
+    const editor = tasks.find((t) => t.specId === editorId && !t.metadata?.archivedAt);
+    const other = tasks.find((t) => t.specId === otherId && !t.metadata?.archivedAt);
+    if (!editor || !other || !UNMERGED_STATUSES.has(other.status) || !this.enabled()) return;
+    const pair = `${projectId}\u0000${[editorId, otherId].sort().join('\u0000')}`;
+
+    if (conflicts === null) {
+      // No test merge: tell them they share files, once per pair and file
+      const fresh = [...shared].filter((file) => !this.announcedOverlaps.has(`${pair}\u0000${file}`)).sort();
+      if (fresh.length === 0) return;
+      for (const file of fresh) this.announcedOverlaps.add(`${pair}\u0000${file}`);
+      const advice = 'Changes to different parts of a file merge cleanly; if you both need to change the same lines, agree on who changes what via message_task.';
+      if (RECIPIENT_STATUSES.has(editor.status)) {
+        this.queueNotice(projectId, editorId, `${describe(projectId, other)} also changes ${listFiles(fresh)}, which you are editing. ${advice}`);
+      }
+      if (RECIPIENT_STATUSES.has(other.status)) {
+        this.queueNotice(projectId, otherId, `${describe(projectId, editor)} is editing ${listFiles(fresh)}, which you also change. ${advice}`);
+      }
+      return;
+    }
+
+    // Files that no longer conflict are forgotten, so a new conflict in them is announced again
+    const announced = this.announcedConflicts.get(pair) ?? new Set<string>();
+    const fresh = conflicts.filter((c) => !announced.has(c.file));
+    if (conflicts.length > 0) this.announcedConflicts.set(pair, new Set(conflicts.map((c) => c.file)));
+    else this.announcedConflicts.delete(pair);
+    if (fresh.length === 0) return;
+    const advice = 'you both change the same lines. Agree with it via message_task on who changes what.';
+    if (RECIPIENT_STATUSES.has(editor.status)) {
+      this.queueNotice(projectId, editorId, `Your changes conflict with ${describe(projectId, other)} in ${listConflicts(fresh, 'lines')}: ${advice}`);
+    }
+    if (RECIPIENT_STATUSES.has(other.status)) {
+      this.queueNotice(projectId, otherId, `Your changes conflict with ${describe(projectId, editor)} in ${listConflicts(fresh, 'otherLines')}: ${advice}`);
     }
   }
 
