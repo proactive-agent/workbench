@@ -4,23 +4,35 @@
  *
  * A run never drives the user's real profile folder: Chrome 136+ refuses remote debugging on its
  * default user data folder, and a browser that is open holds a lock on it. Each run gets a copy in
- * `<project>/.workbench/browser-profiles/<profile>/<slot>` (a slot per task run or chat turn), so
- * parallel runs never share a folder. Caches, locks, the session to restore and Firefox's Sync
- * account are left out; files a running browser keeps locked (Windows) are skipped, so closing
- * the browser first copies every sign-in. The copies hold cookies, so the folders are private
- * (0700) where the filesystem keeps modes. Copies no live run uses are removed: at startup (all of
- * them: nothing runs yet), on quit (those of runs still going, such as chat turns), at once when
- * they are another profile's (an earlier choice), and after a day otherwise.
+ * the app's own data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (a slot per
+ * task run or chat turn), so parallel runs never share a folder. Copies stay out of the project:
+ * they hold cookies and sign-ins, and the project is what Claude Code sessions (the read-only
+ * Claude chat too) can read. In WSL the browsers are Linux ones, so the copies live in the
+ * distribution's home (`~/.cache/workbench/browser-profiles`), where the browser reads them
+ * natively. Caches, locks, the session to restore and Firefox's Sync account are left out; files
+ * a running browser keeps locked (Windows) are skipped, so closing the browser first copies every
+ * sign-in. The folders are private (0700) where the filesystem keeps modes.
+ *
+ * Each copy names the Workbench process that made it (OWNER_FILE: pid, plus the process's start
+ * on Linux), since two Workbench processes can share the data folder (`npm run dev` next to the
+ * installed app). Copies no live run uses are removed: at startup (all of them, except copies
+ * another running Workbench owns), on quit (those of runs still going, such as chat turns), at
+ * once when they are another profile's (an earlier choice), and after a day otherwise; a copy
+ * whose owner is another live Workbench process is never swept.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
- * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies. With
- * the project on a Windows drive in WSL the copy goes through /mnt and is slower.
+ * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
  */
 
 import path from 'path';
-import { chmod, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from 'fs/promises';
+import { createHash } from 'crypto';
+import { hostname } from 'os';
+import { app } from 'electron';
+import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'fs/promises';
 import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
-import { toHostPath } from '../platform/shell-runtime';
+import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
+import { isLinux, isWindows } from '../platform';
+import { windowsPathKey } from '../platform/wsl-paths';
 import { appLog } from '../app-logger';
 
 /** Folders and files (relative to the profile, with `/`) a copy leaves out */
@@ -55,23 +67,127 @@ const QUIT_REMOVE_LIMIT_MS = 3000;
 const STALE_COPY_AGE_MS = 24 * 60 * 60 * 1000;
 /** How often a project's old copies are looked for */
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+/** The file in each copy naming the Workbench process that made it (browsers ignore it) */
+const OWNER_FILE = '.workbench-copy-owner.json';
+/** A copy without an owner file this recent may be one another process is setting up: kept */
+const UNOWNED_GRACE_MS = 10 * 60 * 1000;
+/**
+ * Where an owner can't be told apart from a process that later took its id (off Linux, or another
+ * host sharing the folder), its claim on a copy lasts this long; no run takes a week
+ */
+const UNVERIFIED_OWNER_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** Copies made or being made for runs of this app session (host paths), never swept */
 const liveCopies = new Set<string>();
 const lastSweep = new Map<string, number>();
+
+/** Who made a copy: the process id, the host, and on Linux the boot and the process's start (clock ticks since boot) */
+interface CopyOwner {
+  pid: number;
+  host: string;
+  boot?: string;
+  start?: string;
+}
+
+/** The boot id and a process's start time from /proc (Linux; both empty elsewhere or when unreadable) */
+async function linuxProcessIdentity(pid: number): Promise<Pick<CopyOwner, 'boot' | 'start'>> {
+  if (!isLinux()) return {};
+  const [boot, start] = await Promise.all([
+    readFile('/proc/sys/kernel/random/boot_id', 'utf-8').then((text) => text.trim() || undefined, () => undefined),
+    // Fields after `(comm)`, which may hold spaces and parentheses: state is field 3, starttime 22
+    readFile(`/proc/${pid}/stat`, 'utf-8').then((text) => text.slice(text.lastIndexOf(')') + 2).split(' ')[19] || undefined, () => undefined),
+  ]);
+  return { boot, start };
+}
+
+let thisProcess: Promise<CopyOwner> | undefined;
+function thisOwner(): Promise<CopyOwner> {
+  thisProcess ??= linuxProcessIdentity(process.pid).then((identity) => ({ pid: process.pid, host: hostname(), ...identity }));
+  return thisProcess;
+}
+
+/**
+ * Whether another Workbench process that still runs owns this copy, so a sweep must leave it. A
+ * copy without an owner file (an earlier version's, or one being set up) counts as owned while it
+ * is recent. This process's own copies don't count: liveCopies says which of them are in use
+ */
+async function ownedByAnotherProcess(dir: string): Promise<boolean> {
+  let owner: CopyOwner;
+  let claimedMs: number;
+  try {
+    const file = path.join(dir, OWNER_FILE);
+    const [text, info] = await Promise.all([readFile(file, 'utf-8'), stat(file)]);
+    owner = JSON.parse(text) as CopyOwner;
+    claimedMs = info.mtimeMs;
+    if (!Number.isInteger(owner.pid) || owner.pid <= 0 || typeof owner.host !== 'string') throw new Error('bad owner');
+  } catch {
+    try {
+      return Date.now() - (await stat(dir)).mtimeMs < UNOWNED_GRACE_MS;
+    } catch {
+      return false;
+    }
+  }
+  const self = await thisOwner();
+  if (owner.pid === self.pid && owner.host === self.host && owner.boot === self.boot && owner.start === self.start) return false;
+  const recentClaim = Date.now() - claimedMs < UNVERIFIED_OWNER_AGE_MS;
+  // Another host's process (a shared home folder) can't be checked from here
+  if (owner.host !== self.host) return recentClaim;
+  try {
+    process.kill(owner.pid, 0);
+  } catch (error) {
+    // EPERM: it runs, as another user
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return false;
+  }
+  if (owner.boot !== undefined && owner.start !== undefined && isLinux()) {
+    // The same boot and start time: the owner itself, not a process that took its id
+    const now = await linuxProcessIdentity(owner.pid);
+    return now.boot === owner.boot && now.start === owner.start;
+  }
+  return recentClaim;
+}
+
+/** Mark a copy as this process's */
+async function writeOwner(dir: string): Promise<void> {
+  await writeFile(path.join(dir, OWNER_FILE), JSON.stringify(await thisOwner()), { mode: 0o600 });
+}
 
 /** A folder name for a profile id (`chrome:Profile 1` -> `chrome_Profile_1`) */
 function slug(id: string): string {
   return id.replace(/[^A-Za-z0-9_-]+/g, '_');
 }
 
-function copiesRoot(projectPath: string): string {
+/** The app's own folder for copies outside WSL */
+function nativeCopiesBase(): string {
+  return path.join(app.getPath('userData'), 'browser-profiles');
+}
+
+/** Where every project's copies live (host path): the distribution's home in WSL, where its browsers run */
+function copiesBase(): string {
+  const wsl = getWslInfo();
+  if (wsl?.home) return toHostPath(path.posix.join(wsl.home, '.cache', 'workbench', 'browser-profiles'));
+  return nativeCopiesBase();
+}
+
+/** A project's folder among the copies: its name plus a hash of its path */
+function projectFolder(projectPath: string): string {
+  const key = isWindows() ? windowsPathKey(projectPath) : path.resolve(projectPath);
+  const hash = createHash('sha256').update(key).digest('hex').slice(0, 16);
+  return `${slug(path.basename(projectPath)).slice(0, 40) || 'project'}-${hash}`;
+}
+
+/** Where a project's copies live (host path) */
+export function browserProfileCopiesRoot(projectPath: string): string {
+  return path.join(copiesBase(), projectFolder(projectPath));
+}
+
+/** Where earlier versions kept a project's copies, inside the project */
+function legacyCopiesRoot(projectPath: string): string {
   return path.join(projectPath, '.workbench', 'browser-profiles');
 }
 
 /** Where a slot's copy of a profile lives (host path) */
 export function browserProfileCopyDir(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): string {
-  return path.join(copiesRoot(projectPath), slug(choice.id), slug(slot));
+  return path.join(browserProfileCopiesRoot(projectPath), slug(choice.id), slug(slot));
 }
 
 /** Make a folder private; best effort where the filesystem can't hold modes */
@@ -146,14 +262,17 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
   let skipped: number;
   try {
     await rm(target, { recursive: true, force: true });
+    // The slot first (with its parents), so a sweep never finds its parents empty; then the owner
+    await mkdir(target, { recursive: true, mode: PRIVATE_MODE });
+    await writeOwner(target);
     // Private all the way down, also for folders made before copies were private
-    const root = copiesRoot(projectPath);
-    await mkdir(path.dirname(target), { recursive: true, mode: PRIVATE_MODE });
-    await makePrivate(root);
+    const projectRoot = browserProfileCopiesRoot(projectPath);
+    await makePrivate(path.dirname(projectRoot));
+    await makePrivate(projectRoot);
     await makePrivate(path.dirname(target));
+    await makePrivate(target);
     if (choice.engine === 'chromium') {
       const profileDirectory = choice.profileDirectory ?? 'Default';
-      await mkdir(target, { mode: PRIVATE_MODE });
       skipped = await copyTree(source, path.join(target, profileDirectory));
       await disableSessionRestore(path.join(target, profileDirectory, 'Preferences'));
       try {
@@ -177,9 +296,15 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
   return target;
 }
 
+/** Whether a sweep may remove this copy: no run of this process uses it and no other running Workbench owns it */
+async function removable(dir: string): Promise<boolean> {
+  return !liveCopies.has(dir) && !(await ownedByAnotherProcess(dir));
+}
+
 /**
- * Remove a profile's copies whose slot starts with `prefix`, except `keep` and live runs' copies
- * (copies left by earlier runs of a task that never cleaned up, such as after a crash). Best effort
+ * Remove a profile's copies whose slot starts with `prefix`, except `keep`, live runs' copies and
+ * other running Workbench processes' (copies left by earlier runs of a task that never cleaned up,
+ * such as after a crash). Best effort
  */
 export async function removeStaleBrowserProfileCopies(
   projectPath: string,
@@ -198,8 +323,11 @@ export async function removeStaleBrowserProfileCopies(
   }
   await Promise.all(
     names
-      .filter((name) => name !== keepName && name.startsWith(slugPrefix) && !liveCopies.has(path.join(parent, name)))
-      .map((name) => removeBrowserProfileCopy(path.join(parent, name)))
+      .filter((name) => name !== keepName && name.startsWith(slugPrefix))
+      .map(async (name) => {
+        const dir = path.join(parent, name);
+        if ((await removable(dir)) && !liveCopies.has(dir)) await removeBrowserProfileCopy(dir);
+      })
   );
 }
 
@@ -217,18 +345,12 @@ export interface BrowserProfileSweepOptions {
 }
 
 /**
- * Remove a project's copies that no live run uses: older than a day, or as `options` says (left by
- * a crash, a deleted task or an earlier browser choice). At most once an hour per project and
- * current profile unless `force`. Best effort
+ * Remove the copies under `root` (`<root>/<profile>/<slot>`) that no live run uses and no other
+ * running Workbench owns: older than a day, or as `options` says
  */
-export async function removeOldBrowserProfileCopies(projectPath: string, options: BrowserProfileSweepOptions = {}): Promise<void> {
+async function sweepCopies(root: string, options: BrowserProfileSweepOptions): Promise<void> {
   const now = Date.now();
   const { current } = options;
-  // A changed choice is looked at again at once
-  const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
-  if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
-  lastSweep.set(sweepKey, now);
-  const root = copiesRoot(projectPath);
   let profiles: string[];
   try {
     profiles = await readdir(root);
@@ -254,6 +376,7 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
           continue;
         }
       }
+      if (!(await removable(dir))) continue;
       // A run may have started in this slot while it was being checked
       if (!liveCopies.has(dir)) await removeBrowserProfileCopy(dir);
     }
@@ -261,15 +384,70 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
 }
 
 /**
- * At startup: remove every copy in the given projects (nothing runs yet, so they are all left by a
- * crash, a quit during a run or a cleanup that didn't finish). Not awaited by startup; one project
- * at a time. Best effort
+ * Remove a project's copies that no live run uses (nor another running Workbench): older than a
+ * day, or as `options` says (left by a crash, a deleted task or an earlier browser choice). At most
+ * once an hour per project and current profile unless `force`. Best effort
+ */
+export async function removeOldBrowserProfileCopies(projectPath: string, options: BrowserProfileSweepOptions = {}): Promise<void> {
+  const now = Date.now();
+  const { current } = options;
+  // A changed choice is looked at again at once
+  const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
+  if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
+  lastSweep.set(sweepKey, now);
+  await sweepCopies(browserProfileCopiesRoot(projectPath), options);
+}
+
+/** Remove `dir` and the folders under it that are empty (best effort; leaves anything with files) */
+async function removeEmptyFolders(dir: string, depth: number): Promise<void> {
+  if (depth > 0) {
+    let names: string[];
+    try {
+      names = await readdir(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) await removeEmptyFolders(path.join(dir, name), depth - 1);
+  }
+  await rmdir(dir).catch(() => undefined);
+}
+
+/**
+ * At startup: remove every copy no other running Workbench owns (nothing of this process runs
+ * yet, so they are left by a crash, a quit during a run, a cleanup that didn't finish or a project
+ * since removed), and the copies earlier versions kept inside the given projects
+ * (`.workbench/browser-profiles`). Not awaited by startup; one folder at a time. Best effort
  */
 export async function removeLeftoverBrowserProfileCopies(projectPaths: string[]): Promise<void> {
-  for (const projectPath of new Set(projectPaths)) {
-    await removeOldBrowserProfileCopies(projectPath, { force: true, all: true }).catch((error: unknown) => {
-      appLog.warn(`[BrowserProfiles] Could not clean up copies in ${projectPath}:`, error);
+  await whenShellRuntimeReady();
+  const bases = new Set<string>();
+  try {
+    // Both the current place and, in WSL, the native one (a session from before a runtime switch)
+    bases.add(copiesBase());
+    bases.add(nativeCopiesBase());
+  } catch (error) {
+    appLog.warn('[BrowserProfiles] Could not find the folder of profile copies:', error);
+  }
+  const roots: string[] = [];
+  for (const base of bases) {
+    try {
+      roots.push(...(await readdir(base)).map((name) => path.join(base, name)));
+    } catch {
+      // No copies there yet
+    }
+  }
+  for (const root of roots) {
+    await sweepCopies(root, { all: true }).catch((error: unknown) => {
+      appLog.warn(`[BrowserProfiles] Could not clean up copies in ${root}:`, error);
     });
+  }
+  for (const projectPath of new Set(projectPaths)) {
+    const legacy = legacyCopiesRoot(projectPath);
+    await sweepCopies(legacy, { all: true })
+      .then(() => removeEmptyFolders(legacy, 1))
+      .catch((error: unknown) => {
+        appLog.warn(`[BrowserProfiles] Could not clean up copies in ${legacy}:`, error);
+      });
   }
 }
 

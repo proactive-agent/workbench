@@ -259,8 +259,10 @@ session, on top of the user's own Claude Code MCP configuration. Helpers live in
 
 Puppeteer's row picks a browser profile (`McpConnectorSettings.puppeteerBrowser`): `src/main/browser-profiles/` finds
 Chrome, Edge, Brave, Chromium and Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a
-copy of the chosen profile in `.workbench/browser-profiles/<profile>/<slot>` (Chrome 136+ refuses remote debugging on
-its default data dir), passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
+copy of the chosen profile in the app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
+`~/.cache/workbench/browser-profiles` in the distro; never inside the project, where Claude sessions could read its
+cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
+(`.workbench-copy-owner.json`), so sweeps never remove another running Workbench's copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. Why that
 server and not chrome-devtools-mcp is noted at the top of `mcp-config.ts`. The picker also lists browsers Puppeteer
 downloads itself (`managed.ts`: Firefox from `~/.cache/puppeteer`) as disabled items with a download button that
 opens a terminal running `npx puppeteer browsers install` (`MCP_INSTALL_BROWSER`; the main process picks the

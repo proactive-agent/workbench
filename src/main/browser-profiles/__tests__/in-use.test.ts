@@ -1,12 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { lutimes, mkdtemp, readFile, rm, symlink } from 'fs/promises';
+import { existsSync } from 'fs';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { hostname, tmpdir } from 'os';
 import path from 'path';
 import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
 
-const mocks = vi.hoisted(() => ({ windows: false, linux: false }));
+const mocks = vi.hoisted(() => ({ windows: false, linux: false, mac: false }));
 
-vi.mock('../../platform', () => ({ isWindows: () => mocks.windows, isLinux: () => mocks.linux }));
+vi.mock('../../platform', () => ({ isWindows: () => mocks.windows, isLinux: () => mocks.linux, isMacOS: () => mocks.mac }));
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
   return { ...actual, open: vi.fn(actual.open) };
@@ -25,6 +28,7 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     dir = await mkdtemp(path.join(tmpdir(), 'browser-lock-'));
     mocks.windows = false;
     mocks.linux = false;
+    mocks.mac = false;
   });
   afterEach(async () => {
     await rm(dir, { recursive: true, force: true });
@@ -71,18 +75,27 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(firefox(`/opt/browser/${name}`))).toBe(true);
   });
 
-  it.skipIf(process.platform !== 'linux')('on Linux, reads a lock older than the process now holding its id as closed', async () => {
+  it.skipIf(process.platform !== 'linux')('on Linux, reads a lock written before the process started as open (clock steps move lock times)', async () => {
     mocks.linux = true;
     const name = (await readFile(`/proc/${process.pid}/comm`, 'utf-8')).trim();
     const link = path.join(dir, 'SingletonLock');
     await symlink(`${hostname()}-${process.pid}`, link);
     const choice = { ...chrome(), executablePath: `/opt/browser/${name}` };
-    // Written after this process started: the browser that wrote it is this process
     expect(await isBrowserProfileInUse(choice)).toBe(true);
-    // Written before it started (a crash, then the id was reused): the browser is gone
+    // As after the clock stepped back: the lock looks older than the browser holding it
     const before = new Date(Date.now() - process.uptime() * 1000 - 60 * 60 * 1000);
     await lutimes(link, before, before);
-    expect(await isBrowserProfileInUse(choice)).toBe(false);
+    expect(await isBrowserProfileInUse(choice)).toBe(true);
+  });
+
+  it.skipIf(!existsSync('/bin/ps') || isRoot)('on macOS, names the process with ps and counts it only when it is a browser', async () => {
+    mocks.mac = true;
+    await symlink(`127.0.1.1:+${process.pid}`, path.join(dir, 'lock'));
+    // This test's process is node, not Firefox: a pid reused since the browser crashed
+    expect(await isBrowserProfileInUse(firefox())).toBe(false);
+    const { stdout } = await promisify(execFile)('/bin/ps', ['-p', String(process.pid), '-o', 'comm=']);
+    const name = path.basename(stdout.trim()).slice(0, 15);
+    expect(await isBrowserProfileInUse(firefox(`/opt/browser/${name}`))).toBe(true);
   });
 
   it("reads Chromium's SingletonLock in its user data folder, from this host only", async () => {
@@ -106,6 +119,8 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     const wsl = { ...firefox(), profilePath: '\\\\wsl.localhost\\Ubuntu\\home\\me\\.mozilla\\firefox\\x' };
     expect(await isBrowserProfileInUse(wsl)).toBe(false);
     expect(await isBrowserProfileInUse({ ...wsl, profilePath: '\\\\wsl$\\Ubuntu\\home\\me\\x' })).toBe(false);
+    // In WSL mode its browsers are stored with their Linux paths
+    expect(await isBrowserProfileInUse({ ...wsl, profilePath: '/home/me/.mozilla/firefox/x' })).toBe(false);
     expect(openMock).not.toHaveBeenCalled();
     await isBrowserProfileInUse({ ...firefox(), profilePath: '\\\\server\\home\\me\\Firefox\\x' });
     expect(openMock).toHaveBeenCalledTimes(1);

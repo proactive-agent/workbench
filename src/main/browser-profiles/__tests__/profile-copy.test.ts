@@ -1,6 +1,7 @@
 import os from 'os';
 import path from 'path';
 import { existsSync } from 'fs';
+import { hostname } from 'os';
 import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'fs/promises';
 import * as fsPromises from 'fs/promises';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -11,9 +12,16 @@ vi.mock('fs/promises', async (importOriginal) => {
   return { ...actual, copyFile: vi.fn(actual.copyFile), chmod: vi.fn(actual.chmod) };
 });
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
-vi.mock('../../platform/shell-runtime', () => ({ toHostPath: (p: string) => p }));
+const mocks = vi.hoisted(() => ({ userData: '' }));
+vi.mock('electron', () => ({ app: { getPath: () => mocks.userData } }));
+vi.mock('../../platform/shell-runtime', () => ({
+  toHostPath: (p: string) => p,
+  getWslInfo: () => null,
+  whenShellRuntimeReady: async () => ({}),
+}));
 
 import {
+  browserProfileCopiesRoot,
   browserProfileCopyDir,
   prepareBrowserProfileCopy,
   removeBrowserProfileCopy,
@@ -32,9 +40,20 @@ async function put(file: string, content = 'x'): Promise<void> {
   await writeFile(file, content);
 }
 
+/** A process id nothing runs as */
+const DEAD_PID = 2 ** 22 + 12345;
+const OWNER_FILE = '.workbench-copy-owner.json';
+
+/** A copy owned by a Workbench process that is gone (a crash) */
+async function leftover(dir: string, file: string): Promise<void> {
+  await put(path.join(dir, file));
+  await put(path.join(dir, OWNER_FILE), JSON.stringify({ pid: DEAD_PID, host: hostname() }));
+}
+
 describe('browser profile copies', () => {
   beforeEach(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'profile-copy-'));
+    mocks.userData = path.join(root, 'userData');
   });
 
   afterEach(async () => {
@@ -66,7 +85,13 @@ describe('browser profile copies', () => {
 
     const copy = await prepareBrowserProfileCopy(project, choice, 'task-001-x');
 
-    expect(copy).toBe(path.join(project, '.workbench', 'browser-profiles', 'chrome_Profile_1', 'task-001-x'));
+    // In the app's data folder, never in the project (Claude sessions read the project)
+    expect(path.dirname(path.dirname(path.dirname(copy!)))).toBe(path.join(mocks.userData, 'browser-profiles'));
+    expect(copy!.startsWith(project)).toBe(false);
+    expect(copy).toBe(path.join(browserProfileCopiesRoot(project), 'chrome_Profile_1', 'task-001-x'));
+    expect(path.basename(browserProfileCopiesRoot(project))).toMatch(/^project-[0-9a-f]{16}$/);
+    expect(browserProfileCopiesRoot(path.join(root, 'other', 'project'))).not.toBe(browserProfileCopiesRoot(project));
+    expect(JSON.parse(await readFile(path.join(copy!, OWNER_FILE), 'utf-8'))).toMatchObject({ pid: process.pid, host: hostname() });
     expect(copy).toBe(browserProfileCopyDir(project, choice, 'task-001-x'));
     const copied = (...parts: string[]) => path.join(copy!, ...parts);
     expect(await readFile(copied('Local State'), 'utf-8')).toBe('{"os_crypt":{}}');
@@ -120,7 +145,7 @@ describe('browser profile copies', () => {
     const project = path.join(root, 'project');
     // Left by a crash: no live run uses it
     const old = browserProfileCopyDir(project, choice, 'task-001-a-aaaa');
-    await put(path.join(old, 'Default', 'Cookies'));
+    await leftover(old, 'Default/Cookies');
     // A newer launch of the task, still copying or running
     const live = await prepareBrowserProfileCopy(project, choice, 'task-001-a-dddd');
     const other = await prepareBrowserProfileCopy(project, choice, 'task-002-b-bbbb');
@@ -148,8 +173,8 @@ describe('browser profile copies', () => {
       executablePath: '/opt/google/chrome/chrome', userDataDir: userData, profileDirectory: 'Default', profilePath: profile,
     };
     const project = path.join(root, 'project');
-    // Made by an earlier version with the default mode
-    await mkdir(path.join(project, '.workbench', 'browser-profiles'), { recursive: true, mode: 0o755 });
+    // Made before copies were private
+    await mkdir(browserProfileCopiesRoot(project), { recursive: true, mode: 0o755 });
 
     const copy = (await prepareBrowserProfileCopy(project, choice, 'chat-1'))!;
 
@@ -160,7 +185,8 @@ describe('browser profile copies', () => {
     const prefs = JSON.parse(await readFile(path.join(copy, 'Default', 'Preferences'), 'utf-8'));
     expect(prefs).toEqual({ session: { restore_on_startup: 5, startup_urls: [] }, other: 1 });
     if (isPosix) {
-      for (const dir of [path.join(project, '.workbench', 'browser-profiles'), path.dirname(copy), copy, path.join(copy, 'Default')]) {
+      const projectRoot = browserProfileCopiesRoot(project);
+      for (const dir of [path.dirname(projectRoot), projectRoot, path.dirname(copy), copy, path.join(copy, 'Default')]) {
         expect((await stat(dir)).mode & 0o777).toBe(0o700);
       }
     }
@@ -206,12 +232,12 @@ describe('browser profile copies', () => {
 
   it("removes a project's copies older than a day that no live run uses, for any profile", async () => {
     const project = path.join(root, 'project');
-    const copies = path.join(project, '.workbench', 'browser-profiles');
+    const copies = browserProfileCopiesRoot(project);
     const dayAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     const oldOther = path.join(copies, 'firefox_y', 'chat');
     const recent = path.join(copies, 'firefox_y', 'task-003-c-1234');
-    await put(path.join(oldOther, 'cookies.sqlite'));
-    await put(path.join(recent, 'cookies.sqlite'));
+    await leftover(oldOther, 'cookies.sqlite');
+    await leftover(recent, 'cookies.sqlite');
     await utimes(oldOther, dayAgo, dayAgo);
 
     await removeOldBrowserProfileCopies(project, { force: true });
@@ -228,14 +254,14 @@ describe('browser profile copies', () => {
       executablePath: '/opt/google/chrome/chrome', userDataDir: path.join(root, 'chrome'), profileDirectory: 'Default', profilePath: profile,
     };
     const project = path.join(root, 'project');
-    const copies = path.join(project, '.workbench', 'browser-profiles');
+    const copies = browserProfileCopiesRoot(project);
     const dayAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
     const otherProfile = path.join(copies, 'firefox_y', 'task-003-c-1234');
     const oldSame = path.join(copies, 'chrome_Default', 'chat-old');
     const recentSame = path.join(copies, 'chrome_Default', 'chat-recent');
-    await put(path.join(otherProfile, 'cookies.sqlite'));
-    await put(path.join(oldSame, 'Default', 'Cookies'));
-    await put(path.join(recentSame, 'Default', 'Cookies'));
+    await leftover(otherProfile, 'cookies.sqlite');
+    await leftover(oldSame, 'Default/Cookies');
+    await leftover(recentSame, 'Default/Cookies');
     await utimes(oldSame, dayAgo, dayAgo);
     const live = (await prepareBrowserProfileCopy(project, choice, 'task-004-d-5678'))!;
     await utimes(live, dayAgo, dayAgo);
@@ -251,8 +277,8 @@ describe('browser profile copies', () => {
 
   it("removes a project's copies when runs use Puppeteer's own browser", async () => {
     const project = path.join(root, 'project');
-    const recent = path.join(project, '.workbench', 'browser-profiles', 'chrome_Default', 'chat-1');
-    await put(path.join(recent, 'Default', 'Cookies'));
+    const recent = path.join(browserProfileCopiesRoot(project), 'chrome_Default', 'chat-1');
+    await leftover(recent, 'Default/Cookies');
     const managed: PuppeteerBrowserChoice = {
       id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
       executablePath: '/c/firefox', userDataDir: '', profilePath: '',
@@ -261,16 +287,68 @@ describe('browser profile copies', () => {
     await vi.waitFor(() => expect(existsSync(recent)).toBe(false));
   });
 
-  it('removes every leftover copy at startup, of every project', async () => {
-    const a = path.join(root, 'a', '.workbench', 'browser-profiles', 'chrome_Default', 'chat-1');
-    const b = path.join(root, 'b', '.workbench', 'browser-profiles', 'firefox_x', 'task-001-x-1');
-    await put(path.join(a, 'Default', 'Cookies'));
-    await put(path.join(b, 'cookies.sqlite'));
+  it('removes every leftover copy at startup, of every project, and the copies earlier versions kept in projects', async () => {
+    const a = path.join(browserProfileCopiesRoot(path.join(root, 'a')), 'chrome_Default', 'chat-1');
+    const b = path.join(browserProfileCopiesRoot(path.join(root, 'b')), 'firefox_x', 'task-001-x-1');
+    // A project since removed from the app
+    const gone = path.join(browserProfileCopiesRoot(path.join(root, 'gone')), 'firefox_x', 'chat-2');
+    await leftover(a, 'Default/Cookies');
+    await leftover(b, 'cookies.sqlite');
+    await leftover(gone, 'cookies.sqlite');
+    // Kept inside the project by an earlier version (no owner file), from a while ago
+    const legacyRoot = path.join(root, 'a', '.workbench', 'browser-profiles');
+    const legacy = path.join(legacyRoot, 'chrome_Default', 'chat-1');
+    await put(path.join(legacy, 'Default', 'Cookies'));
+    const hourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    await utimes(legacy, hourAgo, hourAgo);
 
     await removeLeftoverBrowserProfileCopies([path.join(root, 'a'), path.join(root, 'b'), path.join(root, 'none')]);
 
     expect(existsSync(a)).toBe(false);
     expect(existsSync(b)).toBe(false);
+    expect(existsSync(gone)).toBe(false);
+    expect(existsSync(legacyRoot)).toBe(false);
+    expect(existsSync(path.join(root, 'a', '.workbench'))).toBe(true);
+  });
+
+  it("never sweeps a copy another running Workbench process owns, at startup or for another choice", async () => {
+    const project = path.join(root, 'project');
+    const copies = browserProfileCopiesRoot(project);
+    // Owned by a process that runs (this test's parent), as by `npm run dev` next to the installed app
+    const others = path.join(copies, 'firefox_y', 'task-003-c-1234');
+    await put(path.join(others, 'cookies.sqlite'));
+    await put(path.join(others, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname() }));
+    // Being set up by another process: no owner file yet
+    const settingUp = path.join(copies, 'firefox_y', 'chat-9');
+    await put(path.join(settingUp, 'cookies.sqlite'));
+    // Kept in the project by an earlier version that may still run (no owner file, recent)
+    const legacyRoot = path.join(project, '.workbench', 'browser-profiles');
+    const legacyFresh = path.join(legacyRoot, 'chrome_Default', 'chat-1');
+    await put(path.join(legacyFresh, 'Default', 'Cookies'));
+
+    await removeLeftoverBrowserProfileCopies([project]);
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+
+    expect(existsSync(others)).toBe(true);
+    expect(existsSync(settingUp)).toBe(true);
+    expect(existsSync(legacyFresh)).toBe(true);
+
+    // Once its owner is gone, it goes
+    await put(path.join(others, OWNER_FILE), JSON.stringify({ pid: DEAD_PID, host: hostname() }));
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    expect(existsSync(others)).toBe(false);
+  });
+
+  it.skipIf(process.platform !== 'linux')('on Linux, tells an owner from a process that took its id after a reboot', async () => {
+    const project = path.join(root, 'project');
+    const copy = path.join(browserProfileCopiesRoot(project), 'firefox_y', 'chat-1');
+    await put(path.join(copy, 'cookies.sqlite'));
+    // The parent process's id, but another boot: a process that took the id of a Workbench gone since
+    await put(path.join(copy, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname(), boot: 'another-boot', start: '1' }));
+
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+
+    expect(existsSync(copy)).toBe(false);
   });
 
   it('removes the copies of runs still going on quit', async () => {
