@@ -15,6 +15,32 @@ export type BrowserOs = 'windows' | 'macos' | 'linux';
 /** Snap Firefox's launcher (runs it in the snap's sandbox) and its own binary (runs outside it) */
 export const SNAP_FIREFOX_LAUNCHER = '/snap/bin/firefox';
 export const SNAP_FIREFOX_BINARY = '/snap/firefox/current/usr/lib/firefox/firefox';
+/** Snap Chromium's launcher: runs Chromium confined by the snap's AppArmor profile */
+export const SNAP_CHROMIUM_LAUNCHER = '/snap/bin/chromium';
+
+/**
+ * Snap launchers runs replace with the snap's own binary, which runs outside the sandbox
+ * (mcp-config.ts; detect.ts checks the binary runs on this system)
+ */
+export const SNAP_UNCONFINED_BINARIES: Readonly<Record<string, string>> = {
+  [SNAP_FIREFOX_LAUNCHER]: SNAP_FIREFOX_BINARY,
+};
+
+/**
+ * Snaps whose browser runs confined: the snap's `home` interface lets it write only non-hidden
+ * folders of the home (`owner @{HOME}/[^s.]**`) and the snap's own `~/snap/<name>`, so a run's
+ * profile copy goes to `~/snap/<name>/common` (profile-copy.ts). Snap Chromium's inner binary
+ * isn't run directly like Firefox's: it needs the libraries of the GNOME content snap, mounted
+ * only inside the snap's namespace
+ */
+export const CONFINED_SNAPS = ['chromium'] as const;
+
+/** The snap a browser runs confined in, from its executable (`/snap/bin/<name>`), or undefined */
+export function confinedSnapName(executablePath: string): string | undefined {
+  if (executablePath in SNAP_UNCONFINED_BINARIES) return undefined;
+  const name = /^\/snap\/bin\/([a-z0-9][a-z0-9-]*)$/.exec(executablePath)?.[1];
+  return name;
+}
 
 export interface BrowserLocation {
   browser: BrowserKind;
@@ -134,7 +160,7 @@ function linuxLocations({ home, env }: BrowserLocationContext): BrowserLocation[
     {
       browser: 'chromium', engine: 'chromium', variant: 'snap',
       dataDirs: [p.join(home, 'snap', 'chromium', 'common', 'chromium')],
-      executables: ['/snap/bin/chromium'],
+      executables: [SNAP_CHROMIUM_LAUNCHER],
     },
     {
       browser: 'firefox', engine: 'firefox',

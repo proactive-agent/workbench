@@ -7,8 +7,11 @@
  * counts, never Puppeteer's own browsers (they run on copies). On Linux and macOS the lock is a
  * link naming the browser's process (Firefox's `lock` -> `127.0.1.1:+<pid>`, Chromium's
  * `SingletonLock` -> `<host>-<pid>`), checked to be alive since a crash leaves it behind: a
- * Chromium lock from another host, a process of another user, or a process that isn't a browser
- * (by its name: /proc on Linux, `ps` on macOS) reads as closed. On Windows the browser keeps the lock file open
+ * process of another user, or a process that isn't the lock's browser (by its name: /proc on
+ * Linux, `ps` on macOS; a Firefox lock needs a Firefox process, a Chromium lock a Chromium one)
+ * reads as closed. A Chromium lock naming another host still counts when its pid is a live
+ * Chromium browser here, as Chromium's own check does (macOS renames the host on a network
+ * change); otherwise it reads as closed (a shared home folder). On Windows the browser keeps the lock file open
  * (`parent.lock`, `lockfile`), so it can't be opened. A Chromium browser that keeps running
  * without windows (Edge's Startup boost, Chrome's "Continue running background apps") holds it
  * too, and its profile's files with it, so it counts as open: the tip says to quit it from the
@@ -25,8 +28,16 @@ import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles
 import { isLinux, isMacOS, isWindows } from '../platform';
 import { isWslUncPath } from '../platform/wsl-paths';
 
-/** Process names (Linux `comm`, at most 15 characters) of the browsers that write these locks */
-const BROWSER_PROCESS = /chrom|msedge|brave|vivaldi|opera|yandex|firefox|gecko|librewolf|waterfox|floorp/i;
+/**
+ * Main process names (Linux `comm` or the macOS executable's name, at most 15 characters) of the
+ * browsers that write each engine's lock. Whole names, so helpers such as `chrome_crashpad`
+ * (Chromium's and Electron's crash handler) and Firefox's content processes never count
+ */
+const BROWSER_PROCESS: Record<'firefox' | 'chromium', RegExp> = {
+  firefox: /^(?:firefox|firefox-bin|firefox-esr|firefox\.real|librewolf|waterfox|floorp|zen)$/i,
+  chromium:
+    /^(?:chrome|google chrome|chromium|chromium-browse|chromium-browser|msedge|microsoft edge|brave|brave browser|vivaldi|vivaldi-bin|opera|yandex_browser|yandex)$/i,
+};
 
 const execFileAsync = promisify(execFile);
 /** How long `ps` may take on macOS */
@@ -70,7 +81,12 @@ async function processName(pid: number): Promise<string | null> {
  * reused by another browser after a crash reads as open instead, which only makes the connector
  * wait (the browser fixes its stale lock when it next starts)
  */
-async function browserRunning(pid: number, executablePath: string): Promise<boolean> {
+async function browserRunning(
+  pid: number,
+  executablePath: string,
+  engine: 'firefox' | 'chromium',
+  options: { needName?: boolean } = {}
+): Promise<boolean> {
   let ours: boolean;
   try {
     process.kill(pid, 0);
@@ -81,9 +97,10 @@ async function browserRunning(pid: number, executablePath: string): Promise<bool
     ours = false;
   }
   const name = await processName(pid);
-  if (name === null) return ours;
+  if (name === null) return ours && !options.needName;
+  // The chosen executable's own name first (a browser not in the list), then the engine's browsers
   const executable = path.basename(executablePath).slice(0, 15);
-  return BROWSER_PROCESS.test(name) || (executable !== '' && name === executable);
+  return (executable !== '' && name === executable) || BROWSER_PROCESS[engine].test(name);
 }
 
 /** A Windows lock file the browser holds open */
@@ -136,11 +153,15 @@ export async function isBrowserProfileInUse(choice: PuppeteerBrowserChoice): Pro
     const link = path.join(dir, 'lock');
     const target = await readLock(link);
     const pid = target === null ? undefined : parseFirefoxLock(target);
-    return pid !== undefined && browserRunning(pid, choice.executablePath);
+    return pid !== undefined && browserRunning(pid, choice.executablePath, 'firefox');
   }
   const link = path.join(dir, 'SingletonLock');
   const target = await readLock(link);
   const lock = target === null ? undefined : parseChromiumLock(target);
-  // Another host's lock (a shared home folder, or the host was renamed): its process isn't here to check
-  return lock !== undefined && lock.host === hostname() && browserRunning(lock.pid, choice.executablePath);
+  if (lock === undefined) return false;
+  // Another host's lock: the host was renamed (macOS on a network change) while the browser runs
+  // here, or a shared home folder. Like Chromium's own check, a live Chromium browser with its pid
+  // counts; its name must be readable then, since a pid alone may be anything here
+  const otherHost = lock.host !== hostname();
+  return browserRunning(lock.pid, choice.executablePath, 'chromium', { needName: otherHost });
 }

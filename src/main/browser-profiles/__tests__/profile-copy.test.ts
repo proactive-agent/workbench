@@ -12,13 +12,46 @@ vi.mock('fs/promises', async (importOriginal) => {
   return { ...actual, copyFile: vi.fn(actual.copyFile), chmod: vi.fn(actual.chmod) };
 });
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
-const mocks = vi.hoisted(() => ({ userData: '' }));
+const mocks = vi.hoisted(() => ({
+  userData: '',
+  windows: false,
+  wslRoot: '',
+  wslDistros: [] as string[],
+  wslRunning: '',
+}));
 vi.mock('electron', () => ({ app: { getPath: () => mocks.userData } }));
 vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => p,
   getWslInfo: () => null,
   whenShellRuntimeReady: async () => ({}),
 }));
+vi.mock('../../platform', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../platform')>();
+  return { ...actual, isWindows: () => mocks.windows || actual.isWindows() };
+});
+// A distribution's files under the test folder instead of \\wsl.localhost
+vi.mock('../../platform/wsl-paths', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../platform/wsl-paths')>();
+  return { ...actual, wslToWindows: (p: string, options: { distro: string }) => path.join(mocks.wslRoot, options.distro, p) };
+});
+vi.mock('../../platform/wsl-detect', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../platform/wsl-detect')>();
+  return {
+    ...actual,
+    checkWslAvailable: async () => ({ available: mocks.wslDistros.length > 0, distros: mocks.wslDistros, checkedAt: 0 }),
+  };
+});
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  return {
+    ...actual,
+    // `wsl.exe -l --running -q`
+    execFile: vi.fn((_file: string, _args: string[], _options: unknown, callback: (error: Error | null, stdout: Buffer) => void) => {
+      callback(null, Buffer.from(mocks.wslRunning));
+    }),
+  };
+});
+vi.mock('../../platform/runtime-exec', () => ({ runTool: vi.fn(async () => ({ stdout: '', stderr: '' })) }));
 
 import {
   browserProfileCopiesRoot,
@@ -51,12 +84,21 @@ async function leftover(dir: string, file: string): Promise<void> {
 }
 
 describe('browser profile copies', () => {
+  const realHome = process.env.HOME;
   beforeEach(async () => {
     root = await mkdtemp(path.join(os.tmpdir(), 'profile-copy-'));
     mocks.userData = path.join(root, 'userData');
+    mocks.windows = false;
+    mocks.wslRoot = path.join(root, 'wsl');
+    mocks.wslDistros = [];
+    mocks.wslRunning = '';
+    // Snap copies go to the home's ~/snap: the test's own home instead of the user's
+    process.env.HOME = path.join(root, 'home');
   });
 
   afterEach(async () => {
+    process.env.HOME = realHome;
+    vi.useRealTimers();
     await rm(root, { recursive: true, force: true });
   });
 
@@ -385,6 +427,99 @@ describe('browser profile copies', () => {
       const actual = await vi.importActual<typeof import('fs/promises')>('fs/promises');
       vi.mocked(fsPromises.chmod).mockImplementation(actual.chmod);
     }
+  });
+
+  it.skipIf(process.platform !== 'linux')('puts confined snap Chromium copies in the snap\'s own folder, private, and sweeps them', async () => {
+    const userData = path.join(root, 'home', 'snap', 'chromium', 'common', 'chromium');
+    const profile = path.join(userData, 'Default');
+    await put(path.join(userData, 'Local State'), '{}');
+    await put(path.join(profile, 'Cookies'), 'cookies');
+    const choice: PuppeteerBrowserChoice = {
+      id: 'chromium-snap:Default', browser: 'chromium', engine: 'chromium', profileName: 'Me',
+      executablePath: '/snap/bin/chromium', userDataDir: userData, profileDirectory: 'Default', profilePath: profile,
+    };
+    const project = path.join(root, 'project');
+    const snapBase = path.join(root, 'home', 'snap', 'chromium', 'common', 'workbench-profiles');
+
+    const copy = (await prepareBrowserProfileCopy(project, choice, 'chat-1'))!;
+
+    // Not under a hidden folder, which the snap's home interface denies
+    expect(copy.startsWith(snapBase + path.sep)).toBe(true);
+    expect(copy).toBe(path.join(browserProfileCopiesRoot(project, choice), 'chromium-snap_Default', 'chat-1'));
+    expect(await readFile(path.join(copy, 'Default', 'Cookies'), 'utf-8')).toBe('cookies');
+    const projectRoot = browserProfileCopiesRoot(project, choice);
+    for (const dir of [snapBase, projectRoot, path.dirname(copy), copy]) {
+      expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    }
+    // Snap Firefox runs its own binary outside the sandbox: its copies stay in the app's folder
+    const firefox = { ...choice, id: 'firefox-snap:x', engine: 'firefox' as const, executablePath: '/snap/bin/firefox' };
+    expect(browserProfileCopiesRoot(project, firefox)).toBe(browserProfileCopiesRoot(project));
+
+    // Another choice sweeps the snap's copies too
+    await removeBrowserProfileCopy(copy);
+    await leftover(copy, 'Default/Cookies');
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    expect(existsSync(copy)).toBe(false);
+
+    // And so does startup
+    await leftover(copy, 'Default/Cookies');
+    await removeLeftoverBrowserProfileCopies([]);
+    expect(existsSync(copy)).toBe(false);
+  });
+
+  it("on Windows, sweeps the copies a WSL session left in a running distribution's home", async () => {
+    mocks.windows = true;
+    mocks.wslDistros = ['Ubuntu', 'Debian'];
+    mocks.wslRunning = 'Ubuntu\r\n';
+    const inDistro = (distro: string, ...parts: string[]) => path.join(mocks.wslRoot, distro, ...parts);
+    const crashed = inDistro('Ubuntu', 'home', 'me', '.cache', 'workbench', 'browser-profiles', 'project-0123456789abcdef', 'chrome_Default', 'chat-1');
+    await leftover(crashed, 'Default/Cookies');
+    const snapCrashed = inDistro('Ubuntu', 'home', 'me', 'snap', 'chromium', 'common', 'workbench-profiles', 'project-0123456789abcdef', 'chromium-snap_Default', 'chat-2');
+    await leftover(snapCrashed, 'Default/Cookies');
+    // Owned by a Workbench that still runs (in WSL mode, it is a Windows process too)
+    const owned = inDistro('Ubuntu', 'home', 'me', '.cache', 'workbench', 'browser-profiles', 'project-0123456789abcdef', 'chrome_Default', 'chat-3');
+    await put(path.join(owned, 'Default', 'Cookies'));
+    await put(path.join(owned, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname() }));
+    // A stopped distribution isn't started to look
+    const stopped = inDistro('Debian', 'home', 'me', '.cache', 'workbench', 'browser-profiles', 'project-0123456789abcdef', 'chrome_Default', 'chat-1');
+    await leftover(stopped, 'Default/Cookies');
+
+    await removeLeftoverBrowserProfileCopies([]);
+
+    expect(existsSync(crashed)).toBe(false);
+    expect(existsSync(snapCrashed)).toBe(false);
+    expect(existsSync(owned)).toBe(true);
+    expect(existsSync(stopped)).toBe(true);
+  });
+
+  it("refreshes its owner files while copies are in use; an owner that stopped refreshing is gone", async () => {
+    const profile = path.join(root, 'firefox', 'x');
+    await put(path.join(profile, 'cookies.sqlite'));
+    const choice: PuppeteerBrowserChoice = {
+      id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
+      executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
+    };
+    const project = path.join(root, 'project');
+    // Earlier tests' copies end, and with them the heartbeat on real timers
+    await removeLiveBrowserProfileCopies();
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    const copy = (await prepareBrowserProfileCopy(project, choice, 'chat-1'))!;
+    const owner = path.join(copy, OWNER_FILE);
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    await utimes(owner, twoHoursAgo, twoHoursAgo);
+    vi.advanceTimersByTime(10 * 60 * 1000);
+    await vi.waitFor(async () => expect(Date.now() - (await stat(owner)).mtimeMs).toBeLessThan(60_000));
+    await removeLiveBrowserProfileCopies();
+
+    // A live process whose identity can't be checked (no boot and start, as off Linux): its claim lasts while refreshed
+    const other = path.join(browserProfileCopiesRoot(project), 'firefox_y', 'chat-2');
+    await put(path.join(other, 'cookies.sqlite'));
+    await put(path.join(other, OWNER_FILE), JSON.stringify({ pid: process.ppid, host: hostname() }));
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    expect(existsSync(other)).toBe(true);
+    await utimes(path.join(other, OWNER_FILE), twoHoursAgo, twoHoursAgo);
+    await removeOldBrowserProfileCopies(project, { force: true, current: null });
+    expect(existsSync(other)).toBe(false);
   });
 
   it("makes no copy for Puppeteer's own download", async () => {

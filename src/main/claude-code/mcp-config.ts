@@ -27,7 +27,7 @@ import { appLog } from '../app-logger';
 import { getWslInfo, toRuntimePath } from '../platform/shell-runtime';
 import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
-import { SNAP_FIREFOX_BINARY, SNAP_FIREFOX_LAUNCHER } from '../browser-profiles/locations';
+import { SNAP_UNCONFINED_BINARIES } from '../browser-profiles/locations';
 
 export type McpServerEntry =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
@@ -59,11 +59,10 @@ export interface McpRunOptions {
  * Snap launchers Puppeteer can't drive: `/snap/bin/firefox` starts Firefox in the snap's sandbox,
  * which can't open Puppeteer's profile in /tmp, so the launch times out. The snap's own binary
  * runs outside the sandbox and works (detect.ts also maps Ubuntu's `/usr/bin/firefox` script, which
- * starts the snap, to the launcher, and checks that the binary runs on this system)
+ * starts the snap, to the launcher, and checks that the binary runs on this system). Snap Chromium
+ * keeps its launcher; its profile copy lives where the snap may write (profile-copy.ts)
  */
-const SNAP_BINARIES: Record<string, string> = {
-  [SNAP_FIREFOX_LAUNCHER]: SNAP_FIREFOX_BINARY,
-};
+const SNAP_BINARIES = SNAP_UNCONFINED_BINARIES;
 
 /**
  * Firefox prefs for every launch: a profile copy keeps its Firefox Account sign-in, and Sync would

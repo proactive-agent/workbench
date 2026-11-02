@@ -9,30 +9,40 @@
  * they hold cookies and sign-ins, and the project is what Claude Code sessions (the read-only
  * Claude chat too) can read. In WSL the browsers are Linux ones, so the copies live in the
  * distribution's home (`~/.cache/workbench/browser-profiles`), where the browser reads them
- * natively. Caches, locks, the session to restore and Firefox's Sync account are left out; files
- * a running browser keeps locked (Windows) are skipped, so closing the browser first copies every
- * sign-in. The folders are private (0700) where the filesystem keeps modes.
+ * natively. A browser that runs confined in its snap (snap Chromium, locations.ts) may write only
+ * its own `~/snap/<name>`, so its copies live in `~/snap/<name>/common/workbench-profiles`. Caches,
+ * locks, the session to restore and Firefox's Sync account are left out; files a running browser
+ * keeps locked (Windows) are skipped, so closing the browser first copies every sign-in. The folders
+ * are private (0700) where the filesystem keeps modes; in WSL they are made private from inside
+ * the distribution, since modes set over `\\wsl.localhost` don't apply.
  *
  * Each copy names the Workbench process that made it (OWNER_FILE: pid, plus the process's start
  * on Linux), since two Workbench processes can share the data folder (`npm run dev` next to the
- * installed app). Copies no live run uses are removed: at startup (all of them, except copies
- * another running Workbench owns), on quit (those of runs still going, such as chat turns), at
- * once when they are another profile's (an earlier choice), and after a day otherwise; a copy
- * whose owner is another live Workbench process is never swept.
+ * installed app). The owner refreshes the file's time while the copy is in use, so where a
+ * process can't be told from one that later took its id (off Linux), a claim not refreshed for an
+ * hour has ended. Copies no live run uses are removed: at startup (all of them, in every place
+ * above, and on Windows also in a running WSL distribution's home after a switch back from WSL,
+ * except copies another running Workbench owns), on quit (those of runs still going, such as
+ * chat turns), at once when they are another profile's (an earlier choice), and after a day
+ * otherwise; a copy whose owner is another live Workbench process is never swept.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
  */
 
 import path from 'path';
+import { execFile } from 'child_process';
 import { createHash } from 'crypto';
-import { hostname } from 'os';
+import { homedir, hostname } from 'os';
 import { app } from 'electron';
-import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'fs/promises';
+import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, utimes, writeFile } from 'fs/promises';
 import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { isLinux, isWindows } from '../platform';
-import { windowsPathKey } from '../platform/wsl-paths';
+import { isWslUncPath, windowsPathKey, wslToWindows } from '../platform/wsl-paths';
+import { checkWslAvailable, decodeWslOutput, getWslExePath, parseDistroList } from '../platform/wsl-detect';
+import { runTool } from '../platform/runtime-exec';
+import { CONFINED_SNAPS, confinedSnapName } from './locations';
 import { appLog } from '../app-logger';
 
 /** Folders and files (relative to the profile, with `/`) a copy leaves out */
@@ -71,15 +81,38 @@ const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const OWNER_FILE = '.workbench-copy-owner.json';
 /** A copy without an owner file this recent may be one another process is setting up: kept */
 const UNOWNED_GRACE_MS = 10 * 60 * 1000;
+/** How often the owner refreshes its owner files' time while their copies are in use */
+const OWNER_HEARTBEAT_MS = 10 * 60 * 1000;
 /**
  * Where an owner can't be told apart from a process that later took its id (off Linux, or another
- * host sharing the folder), its claim on a copy lasts this long; no run takes a week
+ * host sharing the folder), its claim on a copy ends when not refreshed for this long
  */
-const UNVERIFIED_OWNER_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+const UNVERIFIED_OWNER_AGE_MS = 60 * 60 * 1000;
+/** How long listing WSL's running distributions may take (it doesn't start one) */
+const WSL_LIST_TIMEOUT_MS = 10_000;
+/** How long making a WSL copy private from inside the distribution may take */
+const WSL_CHMOD_TIMEOUT_MS = 15_000;
 
 /** Copies made or being made for runs of this app session (host paths), never swept */
 const liveCopies = new Set<string>();
 const lastSweep = new Map<string, number>();
+let heartbeat: ReturnType<typeof setInterval> | undefined;
+
+/** Refresh the owner files of this process's copies while any is in use (see UNVERIFIED_OWNER_AGE_MS) */
+function startOwnerHeartbeat(): void {
+  if (heartbeat) return;
+  heartbeat = setInterval(() => {
+    const now = new Date();
+    for (const dir of liveCopies) void utimes(path.join(dir, OWNER_FILE), now, now).catch(() => undefined);
+  }, OWNER_HEARTBEAT_MS);
+  heartbeat.unref?.();
+}
+
+function stopOwnerHeartbeatWhenIdle(): void {
+  if (liveCopies.size > 0 || !heartbeat) return;
+  clearInterval(heartbeat);
+  heartbeat = undefined;
+}
 
 /** Who made a copy: the process id, the host, and on Linux the boot and the process's start (clock ticks since boot) */
 interface CopyOwner {
@@ -161,11 +194,80 @@ function nativeCopiesBase(): string {
   return path.join(app.getPath('userData'), 'browser-profiles');
 }
 
+/** Copies in a Linux home (paths as the runtime sees them) */
+const LINUX_COPIES = ['.cache', 'workbench', 'browser-profiles'];
+/** A confined snap's copies in a Linux home: its own writable folder */
+const snapCopies = (name: string) => ['snap', name, 'common', 'workbench-profiles'];
+
+/** The home where the runtime's browsers run (runtime path): the distribution's in WSL, else this user's on Linux */
+function runtimeLinuxHome(): string | undefined {
+  const wsl = getWslInfo();
+  if (wsl?.home) return wsl.home;
+  return isLinux() ? homedir() : undefined;
+}
+
 /** Where every project's copies live (host path): the distribution's home in WSL, where its browsers run */
 function copiesBase(): string {
   const wsl = getWslInfo();
-  if (wsl?.home) return toHostPath(path.posix.join(wsl.home, '.cache', 'workbench', 'browser-profiles'));
+  if (wsl?.home) return toHostPath(path.posix.join(wsl.home, ...LINUX_COPIES));
   return nativeCopiesBase();
+}
+
+/** Where a browser's copies live (host path): a confined snap's own folder, or copiesBase() */
+function copiesBaseFor(choice: PuppeteerBrowserChoice | undefined): string {
+  const snap = choice ? confinedSnapName(choice.executablePath) : undefined;
+  const home = snap ? runtimeLinuxHome() : undefined;
+  if (snap && home) return toHostPath(path.posix.join(home, ...snapCopies(snap)));
+  return copiesBase();
+}
+
+/** Every place this runtime keeps copies (host paths): copiesBase() and the confined snaps' folders */
+function runtimeCopiesBases(): string[] {
+  const home = runtimeLinuxHome();
+  const snaps = home ? CONFINED_SNAPS.map((name) => toHostPath(path.posix.join(home, ...snapCopies(name)))) : [];
+  return [copiesBase(), ...snaps];
+}
+
+/** `wsl.exe` with these arguments (it doesn't start a distribution to list them): its output, or null */
+function runWslExe(args: string[]): Promise<string | null> {
+  return new Promise((resolve) => {
+    execFile(
+      getWslExePath(),
+      args,
+      { encoding: 'buffer', timeout: WSL_LIST_TIMEOUT_MS, windowsHide: true, env: { ...process.env, WSL_UTF8: '1' } },
+      (error, stdout) => resolve(error ? null : decodeWslOutput(stdout))
+    );
+  });
+}
+
+/**
+ * Native Windows: where WSL sessions kept copies (`~/.cache/workbench/browser-profiles` and the
+ * confined snaps' folders in each home of each running distribution, as host paths), so copies
+ * left before switching Shell back to PowerShell are swept too. A stopped distribution is left
+ * alone: reaching its files would start it
+ */
+async function wslLeftoverBases(): Promise<string[]> {
+  if (!isWindows() || getWslInfo()) return [];
+  const availability = await checkWslAvailable();
+  if (!availability.available) return [];
+  const listed = await runWslExe(['-l', '--running', '-q']);
+  if (listed === null) return [];
+  const bases: string[] = [];
+  for (const distro of parseDistroList(listed).filter((name) => availability.distros.includes(name))) {
+    const toHost = (linuxPath: string) => wslToWindows(linuxPath, { distro });
+    let users: string[];
+    try {
+      users = await readdir(toHost('/home'));
+    } catch {
+      users = [];
+    }
+    const homes = [...users.map((user) => path.posix.join('/home', user)), '/root'];
+    for (const home of homes) {
+      bases.push(toHost(path.posix.join(home, ...LINUX_COPIES)));
+      for (const snap of CONFINED_SNAPS) bases.push(toHost(path.posix.join(home, ...snapCopies(snap))));
+    }
+  }
+  return bases;
 }
 
 /** A project's folder among the copies: its name plus a hash of its path */
@@ -175,9 +277,9 @@ function projectFolder(projectPath: string): string {
   return `${slug(path.basename(projectPath)).slice(0, 40) || 'project'}-${hash}`;
 }
 
-/** Where a project's copies live (host path) */
-export function browserProfileCopiesRoot(projectPath: string): string {
-  return path.join(copiesBase(), projectFolder(projectPath));
+/** Where a project's copies of this browser's profiles live (host path; any browser outside a snap without one) */
+export function browserProfileCopiesRoot(projectPath: string, choice?: PuppeteerBrowserChoice): string {
+  return path.join(copiesBaseFor(choice), projectFolder(projectPath));
 }
 
 /** Where earlier versions kept a project's copies, inside the project */
@@ -187,7 +289,7 @@ function legacyCopiesRoot(projectPath: string): string {
 
 /** Where a slot's copy of a profile lives (host path) */
 export function browserProfileCopyDir(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): string {
-  return path.join(browserProfileCopiesRoot(projectPath), slug(choice.id), slug(slot));
+  return path.join(browserProfileCopiesRoot(projectPath, choice), slug(choice.id), slug(slot));
 }
 
 /** Make a folder private; best effort where the filesystem can't hold modes */
@@ -197,6 +299,23 @@ async function makePrivate(dir: string): Promise<void> {
   } catch (error) {
     if (!MODELESS_ERRORS.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
   }
+}
+
+/**
+ * Make folders private. In WSL (`\\wsl.localhost` paths) chmod from Windows has no effect, so
+ * chmod runs inside the distribution; best effort there (a copy still works without it)
+ */
+async function makeFoldersPrivate(dirs: string[]): Promise<void> {
+  if (getWslInfo() && dirs.every(isWslUncPath)) {
+    try {
+      // Tool name aside, this runs /bin/chmod in the distribution (runTool translates the paths)
+      await runTool('node', ['700', ...dirs], { command: '/bin/chmod', timeout: WSL_CHMOD_TIMEOUT_MS });
+    } catch (error) {
+      appLog.warn('[BrowserProfiles] Could not make the profile copy private in WSL:', error);
+    }
+    return;
+  }
+  for (const dir of dirs) await makePrivate(dir);
 }
 
 /** Copy a folder, leaving out SKIPPED_* and files that can't be read; returns how many were skipped */
@@ -258,6 +377,7 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
   }
   const target = browserProfileCopyDir(projectPath, choice, slot);
   liveCopies.add(target);
+  startOwnerHeartbeat();
   void removeOldBrowserProfileCopies(projectPath, { current: choice });
   let skipped: number;
   try {
@@ -266,11 +386,8 @@ export async function prepareBrowserProfileCopy(projectPath: string, choice: Pup
     await mkdir(target, { recursive: true, mode: PRIVATE_MODE });
     await writeOwner(target);
     // Private all the way down, also for folders made before copies were private
-    const projectRoot = browserProfileCopiesRoot(projectPath);
-    await makePrivate(path.dirname(projectRoot));
-    await makePrivate(projectRoot);
-    await makePrivate(path.dirname(target));
-    await makePrivate(target);
+    const projectRoot = browserProfileCopiesRoot(projectPath, choice);
+    await makeFoldersPrivate([path.dirname(projectRoot), projectRoot, path.dirname(target), target]);
     if (choice.engine === 'chromium') {
       const profileDirectory = choice.profileDirectory ?? 'Default';
       skipped = await copyTree(source, path.join(target, profileDirectory));
@@ -395,7 +512,10 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
   const sweepKey = `${projectPath}\0${current === undefined ? '' : current === null ? '-' : slug(current.id)}`;
   if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
   lastSweep.set(sweepKey, now);
-  await sweepCopies(browserProfileCopiesRoot(projectPath), options);
+  // Every place copies may be: a confined snap's folder too, after a choice of another browser
+  for (const base of new Set(runtimeCopiesBases())) {
+    await sweepCopies(path.join(base, projectFolder(projectPath)), options);
+  }
 }
 
 /** Remove `dir` and the folders under it that are empty (best effort; leaves anything with files) */
@@ -422,9 +542,11 @@ export async function removeLeftoverBrowserProfileCopies(projectPaths: string[])
   await whenShellRuntimeReady();
   const bases = new Set<string>();
   try {
-    // Both the current place and, in WSL, the native one (a session from before a runtime switch)
-    bases.add(copiesBase());
+    // The current places and, in WSL, the native one (a session from before a runtime switch)
+    for (const base of runtimeCopiesBases()) bases.add(base);
     bases.add(nativeCopiesBase());
+    // Natively on Windows, a running distribution's (a WSL session from before the switch)
+    for (const base of await wslLeftoverBases()) bases.add(base);
   } catch (error) {
     appLog.warn('[BrowserProfiles] Could not find the folder of profile copies:', error);
   }
@@ -475,5 +597,6 @@ export async function removeBrowserProfileCopy(dir: string): Promise<void> {
     appLog.warn(`[BrowserProfiles] Could not remove ${dir}:`, error);
   } finally {
     liveCopies.delete(dir);
+    stopOwnerHeartbeatWhenIdle();
   }
 }

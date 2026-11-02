@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { browserLocations } from '../locations';
+import { browserLocations, confinedSnapName } from '../locations';
 
 const find = (locations: ReturnType<typeof browserLocations>, browser: string, variant?: string) =>
   locations.find((l) => l.browser === browser && l.variant === variant);
@@ -83,5 +83,12 @@ describe('browserLocations', () => {
     // Relative: invalid, ignored
     const relative = browserLocations('linux', { home: '/home/me', env: { XDG_CONFIG_HOME: 'config' } });
     expect(find(relative, 'chrome')?.dataDirs).toEqual(['/home/me/.config/google-chrome']);
+  });
+
+  it('tells which snap launchers run their browser confined', () => {
+    expect(confinedSnapName('/snap/bin/chromium')).toBe('chromium');
+    // Runs map it to the snap's own binary, outside the sandbox
+    expect(confinedSnapName('/snap/bin/firefox')).toBeUndefined();
+    expect(confinedSnapName('/usr/lib/chromium/chromium')).toBeUndefined();
   });
 });

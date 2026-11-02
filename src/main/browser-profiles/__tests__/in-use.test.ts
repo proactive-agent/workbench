@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { lutimes, mkdtemp, readFile, rm, symlink } from 'fs/promises';
 import { existsSync } from 'fs';
-import { execFile } from 'child_process';
+import { execFile, spawn, type ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { hostname, tmpdir } from 'os';
 import path from 'path';
@@ -98,13 +98,70 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(firefox(`/opt/browser/${name}`))).toBe(true);
   });
 
-  it("reads Chromium's SingletonLock in its user data folder, from this host only", async () => {
+  it("reads Chromium's SingletonLock in its user data folder; another host's only for a browser here", async () => {
     expect(await isBrowserProfileInUse(chrome())).toBe(false);
     await symlink(`other-host-${process.pid}`, path.join(dir, 'SingletonLock'));
     expect(await isBrowserProfileInUse(chrome())).toBe(false);
     await rm(path.join(dir, 'SingletonLock'));
     await symlink(`${hostname()}-${process.pid}`, path.join(dir, 'SingletonLock'));
     expect(await isBrowserProfileInUse(chrome())).toBe(true);
+  });
+
+  describe.skipIf(process.platform !== 'linux' || !existsSync('/bin/sleep'))('on Linux, with processes named like browsers', () => {
+    const children: ChildProcess[] = [];
+    /** A process whose name (comm) is `name`: sleep started through a link with that name */
+    async function processNamed(name: string): Promise<number> {
+      const link = path.join(dir, name);
+      await symlink('/bin/sleep', link);
+      const child = spawn(link, ['30'], { stdio: 'ignore' });
+      children.push(child);
+      // Until exec has replaced the forked node's name
+      for (let i = 0; i < 100; i++) {
+        const comm = await readFile(`/proc/${child.pid}/comm`, 'utf-8').catch(() => '');
+        if (comm.trim() === name.slice(0, 15)) break;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return child.pid!;
+    }
+    afterEach(() => {
+      for (const child of children.splice(0)) child.kill();
+    });
+
+    it("counts only the lock's own engine: a Firefox lock taken over by a Chrome process reads as closed", async () => {
+      mocks.linux = true;
+      const chromePid = await processNamed('chrome');
+      await symlink(`127.0.1.1:+${chromePid}`, path.join(dir, 'lock'));
+      expect(await isBrowserProfileInUse(firefox('/usr/lib/firefox-esr/firefox-esr'))).toBe(false);
+      await symlink(`${hostname()}-${chromePid}`, path.join(dir, 'SingletonLock'));
+      expect(await isBrowserProfileInUse(chrome())).toBe(true);
+      await rm(path.join(dir, 'lock'));
+      const firefoxPid = await processNamed('firefox');
+      await symlink(`127.0.1.1:+${firefoxPid}`, path.join(dir, 'lock'));
+      expect(await isBrowserProfileInUse(firefox('/usr/lib/firefox-esr/firefox-esr'))).toBe(true);
+    });
+
+    it("never counts Chromium's crash handler", async () => {
+      mocks.linux = true;
+      const crashpad = await processNamed('chrome_crashpad_handler');
+      await symlink(`127.0.1.1:+${crashpad}`, path.join(dir, 'lock'));
+      expect(await isBrowserProfileInUse(firefox())).toBe(false);
+      await symlink(`${hostname()}-${crashpad}`, path.join(dir, 'SingletonLock'));
+      expect(await isBrowserProfileInUse(chrome())).toBe(false);
+    });
+
+    it('reads a lock naming another host as open while its pid is a Chromium browser here (the host was renamed)', async () => {
+      mocks.linux = true;
+      const chromePid = await processNamed('chrome');
+      await symlink(`old-dhcp-name.local-${chromePid}`, path.join(dir, 'SingletonLock'));
+      expect(await isBrowserProfileInUse(chrome())).toBe(true);
+      await rm(path.join(dir, 'SingletonLock'));
+      // Another host's lock whose pid is something else here, or nothing: closed
+      await symlink(`old-dhcp-name.local-${process.pid}`, path.join(dir, 'SingletonLock'));
+      expect(await isBrowserProfileInUse(chrome())).toBe(false);
+      await rm(path.join(dir, 'SingletonLock'));
+      await symlink(`old-dhcp-name.local-${DEAD_PID}`, path.join(dir, 'SingletonLock'));
+      expect(await isBrowserProfileInUse(chrome())).toBe(false);
+    });
   });
 
   it("never reads Puppeteer's own browsers as open", async () => {
