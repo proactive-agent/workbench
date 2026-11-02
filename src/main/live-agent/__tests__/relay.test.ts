@@ -643,6 +643,19 @@ describe('relay and headless sessions', { timeout: 20_000 }, () => {
     expect(announced()).not.toContain(CHAT_SESSION);
   });
 
+  it('shows a task\'s headless run in its worktree (a window following or resuming the task)', () => {
+    const worktree = path.join(workspace, '.workbench', 'worktrees', 'tasks', '001-task');
+    fs.mkdirSync(worktree, { recursive: true });
+    const worktreeProjectDir = path.join(path.dirname(projectDir), worktree.replace(/[^a-zA-Z0-9]/g, '-'));
+    fs.mkdirSync(worktreeProjectDir, { recursive: true });
+    const taskRun = JSON.stringify({ type: 'user', uuid: 'u1', entrypoint: 'sdk-cli', cwd: worktree, message: { role: 'user', content: 'Hello' } }) + '\n';
+    fs.writeFileSync(path.join(worktreeProjectDir, `${CHAT_SESSION}.jsonl`), taskRun);
+
+    relay.subscribe('window-a', worktree, flowDir);
+
+    expect(announced()).toContain(CHAT_SESSION);
+  });
+
   it('shows a session whose transcript records no entrypoint (older Claude Code)', () => {
     fs.writeFileSync(path.join(projectDir, `${WINDOW_SESSION}.jsonl`), prompt());
 
