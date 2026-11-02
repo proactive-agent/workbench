@@ -566,8 +566,11 @@ export class AgentManager extends EventEmitter {
         appLog.warn(`[AgentManager] Could not copy the browser profile for ${taskId}:`, error);
       }
     }
-    // Parallel tasks message each other through Workbench (Settings > Agents)
-    if (taskSettings.taskMessaging) config.messaging = createRunMessaging(project.id, task.specId);
+    // Parallel tasks message each other through Workbench (Settings > Agents). The link is made
+    // whatever the switch says now: the run reads Task messaging again at each step
+    // (`readCurrentSettings`), so switching it on reaches a running task at its next step. The link
+    // opens nothing until a step uses it
+    config.messaging = createRunMessaging(project.id, task.specId);
 
     if (await isGraphifyEnabled(project.path)) {
       try {
@@ -653,12 +656,11 @@ export class AgentManager extends EventEmitter {
 
   /**
    * A connector the task chose was left out of this run (its browser is open, its server can't
-   * start): said in the task's log, live and in task_logs.json. Written before the run's own log
-   * writer loads the file, so the run keeps the entry. The log step is the one the run starts
-   * with: a change request and a resync begin with coding (the resync's merge is logged there), a
-   * new run with planning (triage), and a continued one with the step it stopped in
+   * start): shown in the task's live log now, and returned as a start note that the run writes to
+   * task_logs.json with its own log writer (`TaskRunConfig.startNotes`). The note's log step is the
+   * one the run starts with: a change request and a resync begin with coding (the resync's merge is
+   * logged there), a new run with planning (triage), and a continued one with the step it stopped in
    */
-  /** Shows a left-out connector now; the run writes the returned note to the task log with its own writer */
   private noteLeftOutConnector(
     taskId: string, options: StartTaskOptions, specDir: string, line: string, start: 'start' | 'revise' | 'resync'
   ): { phase: TaskLogPhase; line: string } {

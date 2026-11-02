@@ -157,16 +157,19 @@ export interface TaskRunConfig {
   /** Claude profile to use (undefined = best available) */
   profileId?: string;
   /**
-   * Task messaging (Settings > Agents): the session keeps stdin open for messages, gets
-   * Workbench's `message_task` / `list_parallel_tasks` tools. Native messages from other sessions
-   * keep Claude Code's default handling (held for sessions that skip permission checks). Undefined = off.
+   * The run's link to the broker, used by the steps that run while Task messaging (Settings >
+   * Agents) is on: the session keeps stdin open for messages, gets Workbench's `message_task` /
+   * `list_parallel_tasks` tools. Native messages from other sessions keep Claude Code's default
+   * handling (held for sessions that skip permission checks). Undefined = no messaging.
    */
   messaging?: TaskRunMessaging;
   /**
    * The task settings as they are now (Settings > Agents), read when each step launches so that
    * turning Task messaging or Messages from your Claude sessions off reaches the steps a running
-   * task has left. Unset = `settings`, as captured at launch. Turning Task messaging on applies
-   * from the task's next start (the run has no `messaging` link otherwise).
+   * task has left, and turning Task messaging on reaches its next step (with a `messaging` link).
+   * A step that accepts messages from the user's sessions also checks them every
+   * SESSION_MESSAGES_POLL_MS while it runs, and is restarted without them once either is off.
+   * Unset = `settings`, as captured at launch.
    */
   readCurrentSettings?: () => Promise<ClaudeCodeTaskSettings>;
   /**
@@ -487,7 +490,18 @@ interface PhaseResult {
   authFailed?: boolean;
   stopped: boolean;
   error?: string;
+  /**
+   * The process was stopped because the user switched messages from their sessions (or Task
+   * messaging) off while the step accepted them: the step goes on in a new process without them
+   */
+  restart?: boolean;
 }
+
+/** How often a step that accepts messages from the user's sessions checks that the switch is still on */
+export const SESSION_MESSAGES_POLL_MS = 2000;
+
+/** The turn that carries on a step whose process was restarted to stop accepting the user's sessions' messages */
+export const RESTART_FOR_SETTINGS_PROMPT = `${PHASE_PROMPT_OPENINGS.restarted} because the user switched off Task messaging or messages from their other Claude Code sessions, so cross-session messages are no longer accepted. Carry on with this step from where you left off: check \`git status\` and what you already did, finish what the step asked for, and end with the answer the step asks for.`;
 
 export class ClaudeTaskRun {
   private readonly runFile: string;
@@ -519,6 +533,11 @@ export class ClaudeTaskRun {
   private messaging: TaskRunMessaging | undefined;
   /** Whether the current step may accept messages from the user's other sessions (the user's switch) */
   private sessionMessagesOn = false;
+  /**
+   * A change request's own triage (its model, effort and checks). The task's triage (`info.triage`)
+   * keeps the whole task's scope, which decides whether its validation reviews with a workflow
+   */
+  private followUpTriage: TaskTriage | undefined;
 
   constructor(private readonly config: TaskRunConfig, private readonly callbacks: TaskRunCallbacks = {}) {
     this.runFile = path.join(config.specDir, CLAUDE_RUN_FILE);
@@ -810,10 +829,15 @@ export class ClaudeTaskRun {
     }
     triage = applyPlanningPolicy(triage, settings);
     if (revision) {
-      // A change request is applied directly in the session (no separate plan) and keeps the title
+      // A change request is applied directly in the session (no separate plan) and keeps the title.
+      // It sizes only the follow-up, so the task's own triage stays (the validation after it still
+      // reviews the whole task: see `workflowScope()`)
       triage = { ...triage, needsPlan: false, title: this.info.triage?.title || this.config.title };
+      this.followUpTriage = triage;
+      this.info.triage ??= triage;
+    } else {
+      this.info.triage = triage;
     }
-    this.info.triage = triage;
     this.endPhase(phase, triageCost !== undefined ? { costUsd: triageCost } : {});
     this.updateTotalCost();
     this.log.add('planning', 'info',
@@ -822,6 +846,46 @@ export class ClaudeTaskRun {
     this.emitLog(`Triage: ${triage.model} / ${triage.effort} / ${triage.needsPlan ? 'plan first' : 'no plan'}. ${triage.reasoning}`);
     this.saveInfo();
     return null;
+  }
+
+  /**
+   * Check every SESSION_MESSAGES_POLL_MS that Task messaging and Messages from your Claude sessions
+   * are still on, for a process launched accepting messages from the user's sessions. Once both
+   * of two checks in a row find either one off (one read can catch the settings file mid-write),
+   * `onOff` is called and the checks end. Returns the function that ends them.
+   */
+  private watchSessionMessagesSwitch(onOff: () => void): () => void {
+    const read = this.config.readCurrentSettings;
+    if (!read) return () => undefined;
+    let ended = false;
+    let checking = false;
+    let offOnce = false;
+    const timer = setInterval(() => {
+      if (checking || ended) return;
+      checking = true;
+      void read()
+        .then((current) => current.taskMessaging && current.sessionMessages, () => false)
+        .then((on) => {
+          checking = false;
+          if (ended) return;
+          if (on) {
+            offOnce = false;
+            return;
+          }
+          if (!offOnce) {
+            offOnce = true;
+            return;
+          }
+          ended = true;
+          clearInterval(timer);
+          onOff();
+        });
+    }, SESSION_MESSAGES_POLL_MS);
+    timer.unref?.();
+    return () => {
+      ended = true;
+      clearInterval(timer);
+    };
   }
 
   /**
@@ -846,7 +910,7 @@ export class ClaudeTaskRun {
     name: Exclude<ClaudeRunPhaseName, 'triage'>,
     resync?: { request: ResyncRequest; fix?: ResyncCheck },
   ): Promise<TaskRunOutcome | null> {
-    const triage = this.info.triage ?? fixedTriage(this.config.settings, this.config.title, 'fallback', 'No triage recorded');
+    const triage = this.followUpTriage ?? this.info.triage ?? fixedTriage(this.config.settings, this.config.title, 'fallback', 'No triage recorded');
     const model = name === 'plan' ? (triage.model === 'fable' ? 'fable' : 'opus') : triage.model;
     const effort: ClaudeEffort = name === 'plan' && (triage.effort === 'low' || triage.effort === 'medium') ? 'high' : triage.effort;
     const logPhase: TaskLogPhase = name === 'plan' ? 'planning' : name === 'validate' ? 'validation' : 'coding';
@@ -916,17 +980,45 @@ export class ClaudeTaskRun {
     if (!this.info.sessionId) this.info.sessionId = sessionId;
     this.saveInfo();
 
-    const outcome = await this.runClaude({
+    const jsonSchema = name === 'plan' ? PLAN_SCHEMA : name === 'validate' ? VALIDATION_SCHEMA : name === 'resync' && resync?.fix ? RESYNC_FIX_SCHEMA : undefined;
+    let outcome = await this.runClaude({
       name,
       model,
       effort,
       sessionId,
       resume: !!resumeSessionId,
       input: this.buildInput(name, continuing, !!resumeSessionId, inbox, resync ? { ...resync, continues: resyncContinues } : undefined, unfinishedWorkflows),
-      jsonSchema: name === 'plan' ? PLAN_SCHEMA : name === 'validate' ? VALIDATION_SCHEMA : name === 'resync' && resync?.fix ? RESYNC_FIX_SCHEMA : undefined,
+      jsonSchema,
       logPhase,
       inboxIds: inbox.map((m) => m.id),
     });
+    // Messages from the user's sessions were switched off while the step accepted them: the same
+    // step goes on in the same session, in a process that no longer accepts them
+    while (outcome.restart && !this.stopped) {
+      const note = 'Messages from your Claude sessions (or Task messaging) were switched off: restarting this step without them';
+      this.log.add(logPhase, 'info', note);
+      this.emitLog(note);
+      await this.readMessagingSwitches();
+      const waiting = this.messaging ? await this.messaging.takeInbox() : [];
+      const restartHead = name === 'validate' ? await readHead(this.config.worktreePath) : undefined;
+      const relaunch = interruptedWorkflowHint(interruptedWorkflows(
+        this.info, resyncContinues ? ['resync', 'implement'] : name, sessionId, this.config.settings, restartHead));
+      const blocks: ClaudeUserContentBlock[] = [{ type: 'text', text: `${RESTART_FOR_SETTINGS_PROMPT}${relaunch}` }];
+      const messages = formatInboxSection(waiting);
+      if (messages) blocks.push({ type: 'text', text: wrapWorkbenchMessages(messages) });
+      outcome = await this.runClaude({
+        name,
+        model,
+        effort,
+        sessionId,
+        resume: true,
+        input: blocks,
+        jsonSchema,
+        logPhase,
+        inboxIds: waiting.map((m) => m.id),
+      });
+    }
+    if (outcome.restart) outcome = { stopped: true };
 
     if (outcome.stopped) {
       this.endPhase(phase, { isError: true, error: 'Stopped' });
@@ -1021,9 +1113,9 @@ export class ClaudeTaskRun {
     resync?: { request: ResyncRequest; fix?: ResyncCheck; continues: boolean },
     unfinishedWorkflows: ClaudeRunWorkflow[] = [],
   ): ClaudeUserContentBlock[] {
-    const triage = this.info.triage;
+    const triage = this.followUpTriage ?? this.info.triage;
     // Large tasks review with a workflow, and may implement with one (Settings > Agents > Limits)
-    const workflows = usesWorkflows(this.config.settings, triage);
+    const workflows = usesWorkflows(this.config.settings, this.info.triage, this.followUpTriage);
     const implementHint = workflows ? `\n\n${workflowImplementHint()}` : '';
     const relaunch = interruptedWorkflowHint(unfinishedWorkflows);
 
@@ -1224,7 +1316,7 @@ no notes came with the request, so review the change against the task with fresh
       '--effort', params.effort,
       '--permission-prompts', 'none',
       '--append-system-prompt', buildSystemPrompt(this.config, specDirRelative, parallelTasksPrompt, messagingPrompt,
-        params.name !== 'plan' && usesWorkflows(settings, this.info.triage)),
+        params.name !== 'plan' && usesWorkflows(settings, this.info.triage, this.followUpTriage)),
       // Addressable by other sessions (native SendMessage) and by Workbench (task-messaging.ts)
       '--name', sessionName,
     ];
@@ -1319,7 +1411,17 @@ no notes came with the request, so review the change against the task with fresh
     this.current = handle;
     // Messages for the task go to this process while it runs
     const detach = messaging?.attach((text, id) => handle.send(text, id), inboxIds);
+    // The user may switch messages from their sessions (or Task messaging) off while this step runs,
+    // which can take an hour: the process stops accepting them then, not at the next step
+    let restart = false;
+    const unwatch = sessionMessages
+      ? this.watchSessionMessagesSwitch(() => {
+        restart = true;
+        handle.stop();
+      })
+      : undefined;
     const outcome = await handle.done;
+    unwatch?.();
     this.current = null;
     this.endWorkflows();
     detach?.(outcome.unread.map((input) => input.id));
@@ -1328,6 +1430,7 @@ no notes came with the request, so review the change against the task with fresh
     if (!promptRead && result && inboxIds.length > 0) messaging?.markRead(inboxIds);
 
     if (this.stopped || outcome.aborted) return { stopped: true };
+    if (restart) return { stopped: false, restart: true };
 
     if (result) {
       const limit = detectClaudeLimitMessage(result.result) ?? detectClaudeLimitMessage(result.errors?.join(' '));

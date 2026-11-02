@@ -70,11 +70,14 @@ async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   return { mcpServers: buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers, browserProfileDir };
 }
 
-/** Settings > Agents lets the user's sessions message running tasks (Task messaging and its sub-switch) */
-async function sessionMessagesEnabled(): Promise<boolean> {
+/**
+ * Settings > Agents: Task messaging (the chat's message_task delivers), and whether the user's
+ * sessions may message running tasks (Task messaging and its sub-switch)
+ */
+async function messagingSwitches(): Promise<{ taskMessaging: boolean; sessionMessages: boolean }> {
   const stored = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.claudeCodeTasks;
   const settings = resolveClaudeCodeTaskSettings(stored);
-  return settings.taskMessaging && settings.sessionMessages;
+  return { taskMessaging: settings.taskMessaging, sessionMessages: settings.taskMessaging && settings.sessionMessages };
 }
 
 /**
@@ -191,8 +194,9 @@ export class InsightsExecutor extends EventEmitter {
             gitlab: modelConfig?.gitlabTools === true && (await getToolInfoAsync('glab')).found,
           },
           mcpServers: mcp.mcpServers,
-          // With the task tools: ListAgents and SendMessage for other running sessions
-          sessionMessages: await sessionMessagesEnabled(),
+          // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
+          // for other running sessions
+          ...(await messagingSwitches()),
         },
         (event) => {
           switch (event.type) {

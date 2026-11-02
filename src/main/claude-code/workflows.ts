@@ -43,9 +43,14 @@ export function workflowSettings(settings: ClaudeCodeTaskSettings): { workflowSi
   return size === 'off' || size === 'default' ? undefined : { workflowSizeGuideline: size };
 }
 
-/** Whether the task's turns ask for workflows: they are on, and triage sized the task as large */
-export function usesWorkflows(settings: ClaudeCodeTaskSettings, triage: TaskTriage | undefined): boolean {
-  return settings.workflowSize !== 'off' && triage?.scope === 'large';
+/**
+ * Whether the task's turns ask for workflows: they are on, and triage sized the task as large. A
+ * change request's own triage (`followUp`) sizes only the follow-up, while its validation reviews
+ * the whole task: the larger of the two scopes counts, so a one-line request on a large task keeps
+ * the workflow review and a large request on a small task gets it
+ */
+export function usesWorkflows(settings: ClaudeCodeTaskSettings, triage: TaskTriage | undefined, followUp?: TaskTriage): boolean {
+  return settings.workflowSize !== 'off' && (triage?.scope === 'large' || followUp?.scope === 'large');
 }
 
 /** Validation's review step for a large task: a multi-angle review whose findings are each checked */
@@ -73,8 +78,9 @@ const CODE_STEPS: readonly ClaudeRunPhaseName[] = ['implement', 'revise', 'resyn
  * for a validation, `head` (the branch's commit now) also drops runs launched on another commit.
  * The runs started during those attempts (an attempt that was cut off again before relaunching a
  * run still passes it on) that belong to the session continuing the step (a run can only be
- * resumed in the session that launched it) are returned. Nothing when workflows are off: the
- * Workflow tool is gone.
+ * resumed in the session that launched it) are returned. An implement step continuing the work a
+ * resync carried on with (and was cut off in) also gets the runs that resync attempt launched.
+ * Nothing when workflows are off: the Workflow tool is gone.
  */
 export function interruptedWorkflows(
   info: ClaudeRunInfo,
@@ -85,10 +91,22 @@ export function interruptedWorkflows(
 ): ClaudeRunWorkflow[] {
   if (!sessionId || settings.workflowSize === 'off') return [];
   const wanted = new Set<ClaudeRunPhaseName>(typeof phases === 'string' ? [phases] : phases);
+  // An implementation a resync carried on with (and that was cut off) is continued by the next
+  // implement step, after the merge was checked: the runs that resync launched for the work count,
+  // from that attempt on (the attempt's merge makes runs launched before it stale)
+  let carriedOn = false;
   let since: string | undefined;
   let changedAt: string | undefined;
   for (let index = info.phases.length - 1; index >= 0; index--) {
     const attempt = info.phases[index];
+    if (wanted.has('implement') && !wanted.has('resync') && attempt.name === 'resync' && attempt.resync?.continued) {
+      if (attempt.endedAt && !attempt.isError) break;
+      if (!changedAt) {
+        since = attempt.startedAt;
+        carriedOn = true;
+      }
+      break;
+    }
     if (!wanted.has(attempt.name)) {
       const finished = !!attempt.endedAt && !attempt.isError;
       if (CODE_STEPS.includes(attempt.name) && (finished || (attempt.name === 'resync' && attempt.endedAt))) {
@@ -103,7 +121,7 @@ export function interruptedWorkflows(
   if (!since) return [];
   const from = since;
   return (info.workflows ?? []).filter((run) =>
-    wanted.has(run.phase) && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from
+    (wanted.has(run.phase) || (carriedOn && run.phase === 'resync')) && run.sessionId === sessionId && run.status !== 'completed' && run.startedAt >= from
     && (run.phase !== 'validate' || !head || !run.head || run.head === head));
 }
 

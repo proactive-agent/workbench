@@ -90,6 +90,8 @@ export interface InsightsRunConfig {
    * the chat also gets Claude Code's ListAgents and SendMessage for other running sessions
    */
   sessionMessages?: boolean;
+  /** Task messaging is on (Settings > Agents): the prompt tells the chat about message_task */
+  taskMessaging?: boolean;
 }
 
 /**
@@ -512,6 +514,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       mcpServers: Object.keys(chatServers),
       memory: config.memory,
       sessionMessaging,
+      taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');

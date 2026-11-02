@@ -255,13 +255,24 @@ describe('runInsights', () => {
   it('lets Claude message other running sessions with the task tools when sessions may message tasks', async () => {
     setRun(conversation);
     const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
-    await (await run({ taskTools, sessionMessages: true })).promise;
+    await (await run({ taskTools, sessionMessages: true, taskMessaging: true })).promise;
     const { args, systemPrompt } = record();
 
     expect(args[args.indexOf('--tools') + 1].split(',')).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
     expect(args.slice(args.indexOf('--allowedTools') + 1)).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
     expect(systemPrompt).toContain('use SendMessage with a name from ListAgents');
     expect(systemPrompt).toContain('use message_task');
+  });
+
+  it('offers message_task only while Task messaging is on', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    setRun(conversation);
+    await (await run({ taskTools, taskMessaging: false })).promise;
+    expect(record().systemPrompt).not.toContain('use message_task');
+    expect(record().systemPrompt).toContain('Task messaging is off');
+    setRun(conversation);
+    await (await run({ taskTools, taskMessaging: true })).promise;
+    expect(record().systemPrompt).toContain('use message_task: a running task reads it at its next step');
   });
 
   it('keeps ListAgents and SendMessage out without the task tools or with session messages off', async () => {

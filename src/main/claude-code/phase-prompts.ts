@@ -26,6 +26,8 @@ export const PHASE_PROMPT_OPENINGS = {
   resync: 'Your base branch moved on:',
   /** `resync`, second pass after Workbench checked the merge */
   resyncCheck: 'Workbench checked your merge and found problems:',
+  /** Any step, carried on in a new process after messages from the user's sessions were switched off */
+  restarted: 'This step\'s Claude Code process was restarted',
 } as const;
 
 /** Every opening, for matching a transcript turn against all of them */

@@ -18,7 +18,13 @@ vi.mock('../env', () => ({
  * Scripted Claude Code runs: one entry per spawned process. A `{ type: '__read', id, text }` entry
  * stands for a read receipt (`onInputRead`); `unread` lists stdin messages it never read.
  */
-type Script = { messages: ClaudeStreamMessage[]; unread?: Array<{ id: string; text: string }>; origins?: Array<'task' | 'message'> };
+type Script = {
+  messages: ClaudeStreamMessage[];
+  unread?: Array<{ id: string; text: string }>;
+  origins?: Array<'task' | 'message'>;
+  /** The process keeps running until it is stopped (then it ends with no result) */
+  hold?: boolean;
+};
 const scripts: Script[] = [];
 const spawned: ClaudeProcessOptions[] = [];
 /** MCP config files as they were when each process started (they are removed after the phase) */
@@ -41,11 +47,19 @@ vi.mock('../process', () => ({
       if (message.type === 'result') results.push(message);
       options.onMessage?.(message);
     }
+    const ended = { exitCode: 0, signal: null, result: results.at(-1), results, resultOrigins: script.origins, unread: script.unread ?? [], stderr: '', aborted: false, timedOut: false };
+    if (script.hold) {
+      let end!: () => void;
+      const done = new Promise((resolve) => {
+        end = () => resolve({ ...ended, exitCode: null, signal: 'SIGTERM' });
+      });
+      return { child: {}, stop: vi.fn(() => end()), send: vi.fn(() => false), done };
+    }
     return {
       child: {},
       stop: vi.fn(),
       send: vi.fn(() => false),
-      done: Promise.resolve({ exitCode: 0, signal: null, result: results.at(-1), results, resultOrigins: script.origins, unread: script.unread ?? [], stderr: '', aborted: false, timedOut: false }),
+      done: Promise.resolve(ended),
     };
   }),
 }));
@@ -65,7 +79,7 @@ vi.mock('../triage', async (importOriginal) => {
   return { ...actual, triageTask: (...args: unknown[]) => triageMock(...args) };
 });
 
-import { ClaudeTaskRun, loadClaudeRunInfo, pickPhaseResult, wrapWorkbenchMessages } from '../task-runner';
+import { ClaudeTaskRun, RESTART_FOR_SETTINGS_PROMPT, SESSION_MESSAGES_POLL_MS, loadClaudeRunInfo, pickPhaseResult, wrapWorkbenchMessages } from '../task-runner';
 import type { TaskMessage, TaskRunMessaging } from '../../task-messaging/types';
 import { SELF_IMPROVE_NUDGE } from '../../self-improve/nudge';
 
@@ -275,6 +289,44 @@ describe('ClaudeTaskRun', () => {
     expect(triageMock).toHaveBeenCalledTimes(2);
     expect(triageMock.mock.calls[1][0].description).toContain('Rename it');
     expect(loadClaudeRunInfo(specDir)!.phases.slice(-3).map((p) => p.name)).toEqual(['triage', 'revise', 'validate']);
+  });
+
+  it("keeps the task's scope for validating after a change request, and the request's model for applying it", async () => {
+    const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, workflowSize: 'large' as const };
+    const validated = (id: string) => result(id, { structured_output: { status: 'passed', summary: 'ok', checks: [], findings: [] } });
+    triageMock.mockResolvedValueOnce({ triage: triage({ scope: 'large', model: 'opus', effort: 'high' }) });
+    scripts.push({ messages: [result('s70')] }, { messages: [validated('s70')] });
+    await makeRun({ settings }).run();
+
+    // A one-line request on a large task: applied with the request's model, still reviewed by a workflow
+    triageMock.mockResolvedValueOnce({ triage: triage({ scope: 'trivial', model: 'haiku', effort: 'low' }) });
+    scripts.push({ messages: [result('s70')] }, { messages: [validated('s70')] });
+    await makeRun({ settings, mode: 'revise', feedback: 'Fix the typo' }).run();
+    expect(argValue(spawned[2].args, '--model')).toBe('haiku');
+    expect((spawned[3].input as Array<{ text?: string }>)[0].text).toContain('use a workflow for it');
+    // The task's own triage is kept
+    expect(loadClaudeRunInfo(specDir)!.triage).toMatchObject({ scope: 'large', model: 'opus' });
+  });
+
+  it('reviews a large change request on a small task with a workflow, without changing the task\'s scope', async () => {
+    const settings = { ...DEFAULT_CLAUDE_CODE_TASK_SETTINGS, workflowSize: 'large' as const };
+    const validated = (id: string) => result(id, { structured_output: { status: 'passed', summary: 'ok', checks: [], findings: [] } });
+    triageMock.mockResolvedValueOnce({ triage: triage({ scope: 'small' }) });
+    scripts.push({ messages: [result('s71')] }, { messages: [validated('s71')] });
+    await makeRun({ settings }).run();
+    expect((spawned[1].input as Array<{ text?: string }>)[0].text).toContain('Use the /code-review skill');
+
+    triageMock.mockResolvedValueOnce({ triage: triage({ scope: 'large' }) });
+    scripts.push({ messages: [result('s71')] }, { messages: [validated('s71')] });
+    await makeRun({ settings, mode: 'revise', feedback: 'Rewrite the module' }).run();
+    expect((spawned[3].input as Array<{ text?: string }>)[0].text).toContain('use a workflow for it');
+    expect(loadClaudeRunInfo(specDir)!.triage?.scope).toBe('small');
+
+    // A later start (nothing left to do but validate again) reviews by the task's own scope
+    triageMock.mockResolvedValueOnce({ triage: triage({ scope: 'trivial' }) });
+    scripts.push({ messages: [result('s71')] }, { messages: [validated('s71')] });
+    await makeRun({ settings, mode: 'revise', feedback: 'One more tweak' }).run();
+    expect((spawned[5].input as Array<{ text?: string }>)[0].text).toContain('Use the /code-review skill');
   });
 
   it('points the revision at the images when the reviewer asked for the changes in screenshots alone', async () => {
@@ -938,6 +990,111 @@ describe('ClaudeTaskRun', () => {
       expect(outcome.status).toBe('completed');
       // The notice's turn still costs
       expect(loadClaudeRunInfo(specDir)?.phases.find((p) => p.name === 'implement')?.costUsd).toBeCloseTo(0.15, 5);
+    });
+
+    it('restarts a step that accepts messages from the user\'s sessions once they are switched off', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        triageMock.mockResolvedValue({ triage: triage() });
+        const waiting: TaskMessage = { id: 'wbm-20', at: '', status: 'queued', from: { kind: 'workbench' }, text: 'Task 004 started.' };
+        let inbox: TaskMessage[] = [];
+        const { value, calls } = messaging();
+        value.takeInbox = async () => {
+          const taken = inbox;
+          inbox = [];
+          return taken;
+        };
+        scripts.push({ messages: [], hold: true }, { messages: [result('s50', { result: 'Implemented' })] });
+        let current = { ...settings };
+        const run = runWithConfig({ settings, projectId: 'p1', messaging: value, readCurrentSettings: async () => current }).run();
+        await vi.waitFor(() => expect(spawned).toHaveLength(1));
+        expect(JSON.parse(argValue(spawned[0].args, '--settings')!)).toMatchObject({ crossSessionInbound: 'accept' });
+
+        // Still on: the step keeps running
+        await vi.advanceTimersByTimeAsync(SESSION_MESSAGES_POLL_MS * 3);
+        expect(spawned).toHaveLength(1);
+
+        // Switched off (one read could catch the file mid-write, so it takes two)
+        current = { ...settings, sessionMessages: false };
+        inbox = [waiting];
+        await vi.advanceTimersByTimeAsync(SESSION_MESSAGES_POLL_MS);
+        expect(spawned).toHaveLength(1);
+        await vi.advanceTimersByTimeAsync(SESSION_MESSAGES_POLL_MS);
+        const outcome = await run;
+
+        expect(outcome.status).toBe('completed');
+        expect(spawned).toHaveLength(2);
+        // The same step in the same session, without accepting messages, still with Task messaging
+        const again = spawned[1];
+        expect(argValue(again.args, '--resume')).toBe(argValue(spawned[0].args, '--session-id'));
+        expect(again.args.join(' ')).not.toContain('crossSessionInbound');
+        expect(again.args).toContain('--dangerously-skip-permissions');
+        expect(again.keepStdinOpen).toBe(true);
+        const blocks = again.input as Array<{ text?: string }>;
+        expect(blocks[0].text).toBe(RESTART_FOR_SETTINGS_PROMPT);
+        expect(blocks.at(-1)?.text).toContain('Task 004 started.');
+        expect(calls.attach).toHaveBeenCalledTimes(2);
+        const info = loadClaudeRunInfo(specDir)!;
+        expect(info.phases.filter((p) => p.name === 'implement')).toHaveLength(1);
+        expect(info.summary).toBe('Implemented');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('restarts the step when Task messaging is switched off, and not when nothing was accepted', async () => {
+      vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+      try {
+        triageMock.mockResolvedValue({ triage: triage() });
+        const { value } = messaging();
+        scripts.push({ messages: [], hold: true }, { messages: [result('s51')] });
+        let current = { ...settings };
+        const run = runWithConfig({ settings, projectId: 'p1', messaging: value, readCurrentSettings: async () => current }).run();
+        await vi.waitFor(() => expect(spawned).toHaveLength(1));
+        current = { ...settings, taskMessaging: false };
+        await vi.advanceTimersByTimeAsync(SESSION_MESSAGES_POLL_MS * 2);
+        expect((await run).status).toBe('completed');
+        expect(spawned[1].keepStdinOpen).toBe(false);
+        expect(spawned[1].args.join(' ')).not.toContain('crossSessionInbound');
+
+        // A step launched without accepting is never watched
+        spawned.length = 0;
+        const read = vi.fn(async () => ({ ...settings, sessionMessages: false }));
+        scripts.push({ messages: [], hold: true });
+        const second = new ClaudeTaskRun({
+          taskId: 't2', specId: '002-task', specDir: mkdtempSync(path.join(tmpdir(), 'spec-')), worktreePath: worktree,
+          branch: 'b', baseBranch: 'main', title: 'Task', description: 'x', attachments: [], connectorIds: [],
+          settings: { ...settings, sessionMessages: false }, mode: 'start', projectId: 'p1', messaging: value, readCurrentSettings: read,
+        });
+        const running = second.run();
+        await vi.waitFor(() => expect(spawned).toHaveLength(1));
+        const reads = read.mock.calls.length;
+        await vi.advanceTimersByTimeAsync(SESSION_MESSAGES_POLL_MS * 5);
+        expect(read.mock.calls.length).toBe(reads);
+        second.stop();
+        expect((await running).status).toBe('stopped');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('messages a task at its next step once Task messaging is switched on while it runs', async () => {
+      triageMock.mockResolvedValue({ triage: triage() });
+      scripts.push({ messages: [result('s52')] }, { messages: [result('s52', { structured_output: { status: 'passed', summary: 'ok', checks: [] } })] });
+      const inbox: TaskMessage[] = [{ id: 'wbm-30', at: '', status: 'queued', from: { kind: 'user' }, text: 'Use the new API' }];
+      const { value, calls } = messaging(inbox);
+      let reads = 0;
+      // Launched with Task messaging off; switched on before validation
+      await runWithConfig({
+        settings: { ...settings, validation: true, taskMessaging: false },
+        projectId: 'p1',
+        messaging: value,
+        readCurrentSettings: async () => ({ ...settings, validation: true, taskMessaging: reads++ > 0 }),
+      }).run();
+      expect(spawned[0].keepStdinOpen).toBe(false);
+      expect(spawned[1].keepStdinOpen).toBe(true);
+      expect((spawned[1].input as Array<{ text?: string }>).at(-1)?.text).toContain('Use the new API');
+      expect(calls.attach).toHaveBeenCalledTimes(1);
     });
 
     it('runs as before without messaging', async () => {

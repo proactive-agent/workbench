@@ -37,6 +37,13 @@ describe('workflow settings', () => {
     expect(usesWorkflows(settings, undefined)).toBe(false);
     expect(usesWorkflows({ ...settings, workflowSize: 'off' }, triage('large'))).toBe(false);
   });
+
+  it("reviews a change request by the larger of the task's and the request's scope", () => {
+    expect(usesWorkflows(settings, triage('large'), triage('trivial'))).toBe(true);
+    expect(usesWorkflows(settings, triage('small'), triage('large'))).toBe(true);
+    expect(usesWorkflows(settings, triage('small'), triage('medium'))).toBe(false);
+    expect(usesWorkflows({ ...settings, workflowSize: 'off' }, triage('small'), triage('large'))).toBe(false);
+  });
 });
 
 describe('parseWorkflowLaunch', () => {
@@ -66,6 +73,36 @@ describe('interruptedWorkflows', () => {
     updatedAt: '',
   }) as ClaudeRunInfo;
   const interrupted = { endedAt: '2026-11-01T11:00:00.000Z', isError: true };
+
+  it('offers an implement step the runs a resync launched while it carried on with the work', () => {
+    const at = (minute: number) => `2026-11-01T10:${String(minute).padStart(2, '0')}:00.000Z`;
+    const base = (phases: ClaudeRunInfo['phases']): ClaudeRunInfo => ({
+      phases: [
+        { name: 'triage', startedAt: at(0), endedAt: at(1) },
+        { name: 'implement', startedAt: at(2), endedAt: at(10), isError: true },
+        ...phases,
+      ],
+      subagents: [],
+      workflows: [
+        run({ runId: 'wf_before', phase: 'implement', startedAt: at(5) }),
+        run({ runId: 'wf_resync', phase: 'resync', startedAt: at(25) }),
+      ],
+      totalCostUsd: 0,
+      updatedAt: '',
+    });
+    const carried = { name: 'resync' as const, startedAt: at(20), endedAt: at(30), isError: true, resync: { ref: 'main', into: 'main', continued: true } };
+    // Cut off in the resync; the next start checks the merge, then continues implementing
+    expect(interruptedWorkflows(base([carried]), 'implement', 's1', settings).map((r) => r.runId)).toEqual(['wf_resync']);
+    // Cut off again in that implement step: still offered
+    const again = base([carried, { name: 'implement', startedAt: at(35), endedAt: at(40), isError: true }]);
+    expect(interruptedWorkflows(again, 'implement', 's1', settings).map((r) => r.runId)).toEqual(['wf_resync']);
+    // A merge fix after it changed the code: stale
+    const fixed = base([carried, { name: 'resync', startedAt: at(32), endedAt: at(34), resync: { ref: 'main', into: 'main', continued: false } }]);
+    expect(interruptedWorkflows(fixed, 'implement', 's1', settings)).toEqual([]);
+    // A resync that only merged ends the walk as before
+    const merged = base([{ ...carried, resync: { ref: 'main', into: 'main', continued: false } }]);
+    expect(interruptedWorkflows(merged, 'implement', 's1', settings)).toEqual([]);
+  });
 
   it("finds the unfinished runs of the step being continued in the session's own runs", () => {
     const runs = [run({}), run({ runId: 'wf_bbbbbb', status: 'failed' }), run({ runId: 'wf_cccccc', status: 'completed' })];

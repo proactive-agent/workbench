@@ -93,6 +93,8 @@ export interface InsightsPromptOptions {
   memory?: boolean;
   /** ListAgents and SendMessage, to reach other running Claude Code sessions (with the task tools) */
   sessionMessaging?: boolean;
+  /** Task messaging is on: message_task delivers (with the task tools) */
+  taskMessaging?: boolean;
 }
 
 /** The suggestion line's format, as Claude must write it */
@@ -155,7 +157,7 @@ You can manage the project's tasks with the Workbench task tools (mcp__workbench
 - Act on what the user asks for, and tell them what you did (with the task ids). Look tasks up with list_tasks or get_task instead of guessing ids or states.
 - Delete tasks, retry them (it discards their changes) or merge pull requests only when the user asked for exactly that. When moving a task with a worktree to Done, ask whether to keep or delete the worktree.
 - When a tool fails, explain why instead of trying something else the user didn't ask for.
-- To tell a task something it should take into account while it works, use message_task: a running task reads it at its next step, any other task when it next runs.${options.sessionMessaging ? ' To reach another running Claude Code session, such as one of the user\'s agent windows, use SendMessage with a name from ListAgents (tasks are the wb-… sessions, but use message_task for them). Messages are plain text, and replies can\'t reach this chat.' : ''}
+${options.taskMessaging ? '- To tell a task something it should take into account while it works, use message_task: a running task reads it at its next step, any other task when it next runs.' : '- Task messaging is off in Settings > Agents, so message_task can\'t reach tasks: to change what a task does, use update_task or request_changes.'}${options.sessionMessaging ? ' To reach another running Claude Code session, such as one of the user\'s agent windows, use SendMessage with a name from ListAgents (tasks are the wb-… sessions, but use message_task for them). Messages are plain text, and replies can\'t reach this chat.' : ''}
 - When you notice something worth doing that the user did not ask for (a bug you came across, a feature, a docs update, a refactor), don't create it. Suggest it instead so the user decides.
 
 ${SUGGESTING_TASKS}`;
