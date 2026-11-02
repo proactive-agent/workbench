@@ -234,8 +234,9 @@ enters (state machine transitions and manual moves) and on the files its Claude 
 MultiEdit, NotebookEdit tool calls). `src/main/task-changelog-writer.ts` turns them into the project's
 `.workbench/changelog.jsonl` (one JSON entry per line; state entries carry every file the task's branch changes).
 At every phase, `buildParallelTasksPrompt()` (`src/main/task-changelog.ts`) adds a "Parallel tasks" section to the
-task's system prompt: the other tasks with unmerged changes and the files they touch, so Claude Code can stay clear of
-them and avoid merge conflicts.
+task's system prompt: the other tasks with unmerged changes and the files they touch. Tasks edit whatever files they
+need (git merges changes to different parts of a file by itself); the prompt asks them to skip churn in shared files
+and to agree via `message_task` when both need the same lines.
 
 ### Task messaging and resync
 

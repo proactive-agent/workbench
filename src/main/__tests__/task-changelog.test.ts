@@ -89,10 +89,18 @@ describe('buildParallelTasksPrompt', () => {
 
     const prompt = await buildParallelTasksPrompt(changelog, '001-self', specsDir, changelog, { projectId: 'p1', tools: true });
     expect(prompt).toContain(`- \`002-coding\`, session \`${taskSessionName('p1', '002-coding')}\`, In Progress`);
-    expect(prompt).toContain('`list_parallel_tasks` (the changelog is the fallback)');
+    expect(prompt).toContain('`list_parallel_tasks` for the live picture');
+    expect(prompt).toContain('agree with that task via `message_task` on who changes what');
+    expect(prompt).toContain('sends a `[Workbench]` notice naming the file and lines when your changes actually conflict');
     const plain = await buildParallelTasksPrompt(changelog, '001-self', specsDir);
     expect(plain).not.toContain('session `');
     expect(plain).not.toContain('list_parallel_tasks');
+    expect(plain).not.toContain('message_task');
+    // Shared files are fine: only edits to the same lines conflict
+    for (const text of [prompt, plain]) {
+      expect(text).toContain('Edit whatever files your task needs, including files other tasks change');
+      expect(text).not.toContain('leave those files alone');
+    }
   });
 
   it('says so when no other task has unmerged changes, also without a changelog yet', async () => {
