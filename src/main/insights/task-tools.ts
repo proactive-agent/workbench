@@ -20,7 +20,7 @@
 
 import { IPC_CHANNELS } from '../../shared/constants';
 import { canMoveTask, getAllowedTaskMoves, getTaskColumn, resolveMaxParallelTasks } from '../../shared/constants/task';
-import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
+import { customMcpServerIds, getDefaultMcpConnectorIds, normalizeMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import type {
   IPCResult,
   Project,
@@ -253,7 +253,7 @@ export const TASK_TOOLS: TaskTool[] = [
       const settings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
       const metadata: TaskMetadata = {
         sourceType: 'manual',
-        mcpConnectors: Array.isArray(args.connectors) ? (args.connectors as string[]) : getDefaultMcpConnectorIds(settings.mcpConnectors),
+        mcpConnectors: Array.isArray(args.connectors) ? normalizeMcpConnectorIds(args.connectors as string[], customMcpServerIds(settings.mcpConnectors)) : getDefaultMcpConnectorIds(settings.mcpConnectors),
       };
       const baseBranch = text(args.baseBranch) ?? project(context).settings?.mainBranch;
       if (baseBranch) metadata.baseBranch = baseBranch;
@@ -285,7 +285,10 @@ export const TASK_TOOLS: TaskTool[] = [
       const metadata: Partial<TaskMetadata> = {};
       if (text(args.baseBranch)) metadata.baseBranch = text(args.baseBranch);
       if (typeof args.useWorktree === 'boolean') metadata.useWorktree = args.useWorktree;
-      if (Array.isArray(args.connectors)) metadata.mcpConnectors = args.connectors as string[];
+      if (Array.isArray(args.connectors)) {
+        const settings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+        metadata.mcpConnectors = normalizeMcpConnectorIds(args.connectors as string[], customMcpServerIds(settings.mcpConnectors));
+      }
       const updated = await ipc<Task>(IPC_CHANNELS.TASK_UPDATE, task.id, {
         ...(text(args.title) ? { title: text(args.title) } : {}),
         ...(text(args.description) ? { description: text(args.description) } : {}),

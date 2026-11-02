@@ -3,14 +3,14 @@
  * tool rows. Kept out of ConnectorRow.tsx so that file only exports components (Fast Refresh)
  */
 
-import { Context7Icon, ElectronIcon, McpIcon, PuppeteerIcon } from '../icons/app-icons';
+import { Context7Icon, ElectronIcon, McpIcon, PlaywrightIcon } from '../icons/app-icons';
 import type { CustomMcpServer } from '../../../shared/types';
 
 /** Built-in connectors that can be switched on or off: icon and translation keys (settings ns) */
-export const BUILTIN_CONNECTOR_META: { id: 'context7' | 'electron' | 'puppeteer'; icon: React.ElementType; /** Off unless switched on (browser automation) */ defaultOff?: boolean }[] = [
+export const BUILTIN_CONNECTOR_META: { id: 'context7' | 'electron' | 'playwright'; icon: React.ElementType; /** Off unless switched on (browser automation) */ defaultOff?: boolean }[] = [
   { id: 'context7', icon: Context7Icon },
   { id: 'electron', icon: ElectronIcon, defaultOff: true },
-  { id: 'puppeteer', icon: PuppeteerIcon, defaultOff: true },
+  { id: 'playwright', icon: PlaywrightIcon, defaultOff: true },
 ];
 
 /** Icon for a custom server: the MCP mark */
@@ -30,9 +30,9 @@ export function commandMissingText(t: (key: string, options?: Record<string, unk
 }
 
 /**
- * Whether Puppeteer's own Chrome failed because it isn't downloaded: only that failure comes with
- * the install command (src/main/mcp-availability.ts); other launch failures show their message
+ * Whether Playwright's own Chromium failed because it isn't downloaded: only that failure comes
+ * with the install command (src/main/mcp-availability.ts); other launch failures show their message
  */
-export function isChromeNotDownloaded(fixCommand: string | undefined): boolean {
-  return /\bbrowsers install chrome(@|$)/.test(fixCommand ?? '');
+export function isChromiumNotDownloaded(fixCommand: string | undefined): boolean {
+  return /\binstall-browser chromium$/.test(fixCommand ?? '');
 }

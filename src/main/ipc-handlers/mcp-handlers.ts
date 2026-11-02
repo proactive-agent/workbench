@@ -9,19 +9,16 @@ import { IPC_CHANNELS } from '../../shared/constants/ipc';
 import type { CustomMcpServer, McpHealthCheckResult, McpHealthStatus, McpTestConnectionResult } from '../../shared/types/project';
 import { spawn, type ChildProcess } from 'child_process';
 import path from 'path';
-import os from 'os';
-import { readdir } from 'fs/promises';
 import { appLog } from '../app-logger';
-import { isMacOS, isWindows } from '../platform';
-import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
+import { isWindows } from '../platform';
+import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
 import { findWslCommand, isCommandAvailable, resolveCommand } from '../mcp-commands';
 import { escapeShellArg } from '../../shared/utils/shell-escape';
 import { getToolEnvAsync } from '../cli-utils';
-import { getMcpAvailability, getMcpFixCommand, onMcpAvailabilityChange, recheckMcpConnector } from '../mcp-availability';
-import { detectBrowserProfiles, waitForManagedFirefox } from '../browser-profiles/detect';
-import { FIREFOX_INSTALL_COMMAND, puppeteerCacheDir, type ManagedScanContext } from '../browser-profiles/managed';
-import { pathApi } from '../browser-profiles/locations';
+import { getMcpAvailability, onMcpAvailabilityChange, recheckMcpConnector } from '../mcp-availability';
+import { detectBrowserProfiles, waitForManagedBrowser } from '../browser-profiles/detect';
+import { playwrightInstallCommand } from '../browser-profiles/managed';
 import { openTerminalWithCommand } from './claude-code-handlers';
 import type { DownloadableBrowser } from '../../shared/types/browser-profiles';
 import { readSettingsFileAsync } from '../settings-utils';
@@ -595,67 +592,13 @@ export async function terminalNpxCommand(command: string): Promise<TerminalNpxLa
   return { command: `env PATH=${escapeShellArg(path.dirname(npx))}:"$PATH" ${escapeShellArg(npx)} ${args}` };
 }
 
-/** How often, and for how long, Puppeteer's cache is looked at after a Chrome download started */
-const CHROME_WATCH_INTERVAL_MS = 3000;
-const CHROME_WATCH_LIMIT_MS = 15 * 60 * 1000;
 /**
  * How long a download counts as running when nothing says it finished (the terminal may have been
  * closed): a second one is refused until then. The picker's button waits as long
  */
 const BROWSER_INSTALL_GUARD_MS = 5 * 60 * 1000;
 
-/** Puppeteer's cache where tools run, and how this process reads it */
-async function puppeteerCacheContext(): Promise<ManagedScanContext> {
-  await whenShellRuntimeReady();
-  const wsl = getWslInfo();
-  return wsl
-    ? { os: 'linux', home: wsl.home, env: {}, toHost: toHostPath }
-    : { os: isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux', home: os.homedir(), env: process.env, toHost: (p: string) => p };
-}
-
-/**
- * Finished Chrome builds in Puppeteer's cache (`linux-131.0.6778.204`). @puppeteer/browsers
- * downloads `<buildId>-<file>` next to the build's folder and deletes it only once unpacked, so a
- * build with its archive still there isn't finished. `version` keeps only that build
- */
-export function finishedChromeBuilds(entries: string[], version?: string): string[] {
-  return entries.filter((entry) => {
-    const dash = entry.indexOf('-');
-    // Archives start with the build id (a digit); build folders with the platform
-    if (dash <= 0 || /^\d/.test(entry)) return false;
-    const build = entry.slice(dash + 1);
-    if (version && build !== version) return false;
-    return !entries.some((other) => other !== entry && other.startsWith(`${build}-`));
-  });
-}
-
-async function chromeCacheEntries(context: ManagedScanContext): Promise<string[]> {
-  try {
-    return await readdir(context.toHost(pathApi(context.os).join(puppeteerCacheDir(context), 'chrome')));
-  } catch {
-    return [];
-  }
-}
-
-/**
- * After a download button opened a terminal installing Puppeteer's Chrome: wait (up to
- * CHROME_WATCH_LIMIT_MS) for a finished build the cache didn't have before (the one the command
- * names, when it names one). Resolves whether one showed up
- */
-async function waitForPuppeteerChrome(command: string): Promise<boolean> {
-  const version = /install chrome@([\w.]+)/.exec(command)?.[1];
-  const context = await puppeteerCacheContext();
-  const before = new Set(finishedChromeBuilds(await chromeCacheEntries(context), version));
-  // The build the command names is already there (finished before the watch started)
-  if (version && before.size > 0) return true;
-  const deadline = Date.now() + CHROME_WATCH_LIMIT_MS;
-  while (Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, CHROME_WATCH_INTERVAL_MS));
-    const finished = finishedChromeBuilds(await chromeCacheEntries(context), version);
-    if (finished.some((build) => !before.has(build))) return true;
-  }
-  return false;
-}
+const DOWNLOADABLE_BROWSERS: readonly DownloadableBrowser[] = ['chromium', 'firefox', 'webkit'];
 
 /**
  * Downloads started from the browser picker and not known to be over, by browser. Each has a
@@ -698,7 +641,7 @@ export function registerMcpHandlers(): void {
     }
   });
 
-  // Browser profiles the Puppeteer connector can use (found when the app started)
+  // Browser profiles the Playwright connector can use (found when the app started)
   ipcMain.handle(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, async () => {
     try {
       return { success: true, data: await detectBrowserProfiles() };
@@ -707,16 +650,14 @@ export function registerMcpHandlers(): void {
     }
   });
 
-  // The download buttons of the browser picker: a terminal installs the browser. The command is
-  // chosen here (never sent by the window). Chrome's is the one Puppeteer's own error named
-  // (the build its server needs); once Firefox shows up, every window gets the new list, and once
-  // Chrome's build is in Puppeteer's cache, Puppeteer is checked again. A second download of a
-  // browser being downloaded opens no terminal (two installs into one cache would race)
+  // The download buttons of the browser picker: a terminal runs the pinned Playwright server's
+  // install-browser for the build it needs. The command is chosen here (never sent by the window).
+  // Once the build is in Playwright's cache, every window gets the new list and Playwright is
+  // checked again. A second download of a browser being downloaded opens no terminal (two installs
+  // into one cache would race)
   ipcMain.handle(IPC_CHANNELS.MCP_INSTALL_BROWSER, async (_event, browser: DownloadableBrowser) => {
-    if (browser !== 'chrome' && browser !== 'firefox') return { success: false, error: 'Unknown browser' };
-    const command = browser === 'firefox'
-      ? FIREFOX_INSTALL_COMMAND
-      : getMcpFixCommand('puppeteer') ?? 'npx puppeteer browsers install chrome';
+    if (!DOWNLOADABLE_BROWSERS.includes(browser)) return { success: false, error: 'Unknown browser' };
+    const command = playwrightInstallCommand(browser);
     if (installsRunning.has(browser)) return { success: true, data: { command, alreadyRunning: true } };
     // Taken before anything is awaited, so a quick second click finds it
     const token = startInstall(browser);
@@ -728,25 +669,18 @@ export function registerMcpHandlers(): void {
       appLog.error('Browser download error:', error);
       return { success: false, error: error instanceof Error ? error.message : 'Could not open the terminal' };
     }
-    if (browser === 'firefox') {
-      void waitForManagedFirefox().then((profiles) => {
-        endInstall(browser, token);
-        if (!profiles) return;
-        for (const window of getAllWindows()) {
-          if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, profiles);
-        }
-      });
-    } else {
-      void waitForPuppeteerChrome(command).then(async (found) => {
-        endInstall(browser, token);
-        if (!found) return;
-        const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
-        recheckMcpConnector('puppeteer', settings?.mcpConnectors);
-      }).catch((error: unknown) => {
-        endInstall(browser, token);
-        appLog.warn('Watching the Chrome download failed:', error);
-      });
-    }
+    void waitForManagedBrowser(browser).then(async (profiles) => {
+      endInstall(browser, token);
+      if (!profiles) return;
+      for (const window of getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, profiles);
+      }
+      const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+      recheckMcpConnector('playwright', settings?.mcpConnectors);
+    }).catch((error: unknown) => {
+      endInstall(browser, token);
+      appLog.warn(`Watching the ${browser} download failed:`, error);
+    });
     return { success: true, data: { command } };
   });
 

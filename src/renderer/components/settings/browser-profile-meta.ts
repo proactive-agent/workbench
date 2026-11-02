@@ -1,19 +1,19 @@
 /**
- * Browser profile picker helpers (Puppeteer connector, Settings > Connectors). Kept out of
- * PuppeteerBrowserSelect.tsx so that file only exports components (Fast Refresh)
+ * Browser profile picker helpers (Playwright connector, Settings > Connectors). Kept out of
+ * PlaywrightBrowserSelect.tsx so that file only exports components (Fast Refresh)
  */
 
 import { Globe } from 'lucide-react';
-import { ChromiumIcon, FirefoxIcon, PuppeteerIcon } from '../icons/app-icons';
+import { ChromiumIcon, FirefoxIcon, PlaywrightIcon } from '../icons/app-icons';
 import type {
   BrowserProfile,
   BrowserProfileDisabledReason,
-  PuppeteerBrowserChoice,
+  PlaywrightBrowserChoice,
 } from '../../../shared/types/browser-profiles';
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
-/** The select's value for Puppeteer's own Chrome */
+/** The select's value for Playwright's own Chromium */
 export const DEFAULT_BROWSER_VALUE = 'default';
 
 /** The select's value for a stored choice that isn't detected any more (its id may be another install's) */
@@ -33,9 +33,9 @@ export function disabledReasonText(t: Translate, reason: BrowserProfileDisabledR
   return reason ? t(REASON_KEYS[reason]) : undefined;
 }
 
-/** A picker item's icon: Puppeteer's for its own browsers, otherwise the browser engine's */
+/** A picker item's icon: Playwright's for its own browsers, otherwise the browser engine's */
 export function browserProfileIcon(profile: Pick<BrowserProfile, 'engine' | 'managed'>): React.ElementType {
-  if (profile.managed) return PuppeteerIcon;
+  if (profile.managed) return PlaywrightIcon;
   if (profile.engine === 'firefox') return FirefoxIcon;
   if (profile.engine === 'chromium') return ChromiumIcon;
   return Globe;
@@ -46,14 +46,15 @@ export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 
   const name = t(`settings:mcp.browserProfile.browsers.${profile.browser}`);
   // `Firefox (Snap)` where the same browser is installed in more than one way
   const browser = profile.variant ? `${name} (${t(`settings:mcp.browserProfile.variants.${profile.variant}`)})` : name;
-  // Puppeteer's own download has no profile to name
+  // Playwright's own download has no profile to name
   if (profile.managed) return t('settings:mcp.browserProfile.managed', { browser: name });
   return profile.browser === 'safari' ? browser : `${browser} · ${profile.profileName}`;
 }
 
 /** What gets stored when a profile is picked (undefined for profiles that can't be used) */
-export function toBrowserChoice(profile: BrowserProfile): PuppeteerBrowserChoice | undefined {
-  if (!profile.usable || !profile.executablePath || profile.engine === 'webkit') return undefined;
+export function toBrowserChoice(profile: BrowserProfile): PlaywrightBrowserChoice | undefined {
+  // WebKit only as Playwright's own build (Safari can't be driven)
+  if (!profile.usable || !profile.executablePath || (profile.engine === 'webkit' && !profile.managed)) return undefined;
   return {
     id: profile.id,
     browser: profile.browser,
@@ -77,10 +78,10 @@ function folderKey(dir: string): string {
 /**
  * Whether a detected profile is the stored choice's install, not only its id: native Windows and
  * WSL detection (or another install) give the same ids (`chrome:Default`) to profiles of other
- * browsers, signed in to other accounts. Puppeteer's own downloads have no profile, so any of
+ * browsers, signed in to other accounts. Playwright's own downloads have no profile, so any of
  * them will do
  */
-function sameInstall(value: PuppeteerBrowserChoice, profile: BrowserProfile): boolean {
+function sameInstall(value: PlaywrightBrowserChoice, profile: BrowserProfile): boolean {
   if (profile.id !== value.id || profile.engine !== value.engine) return false;
   if (value.managed || profile.managed) return !!value.managed === !!profile.managed;
   return folderKey(profile.userDataDir) === folderKey(value.userDataDir);
@@ -88,7 +89,7 @@ function sameInstall(value: PuppeteerBrowserChoice, profile: BrowserProfile): bo
 
 /** The detected profile the stored choice was made from (undefined when it isn't detected any more) */
 export function storedChoiceProfile(
-  value: PuppeteerBrowserChoice | undefined,
+  value: PlaywrightBrowserChoice | undefined,
   profiles: BrowserProfile[] | undefined
 ): BrowserProfile | undefined {
   return value ? profiles?.find((p) => sameInstall(value, p)) : undefined;
@@ -96,13 +97,13 @@ export function storedChoiceProfile(
 
 /**
  * The stored choice made again from its detected profile, when the paths runs use changed (a new
- * download of Puppeteer's browser, a moved executable); undefined when it is up to date, gone or
+ * download of Playwright's browser, a moved executable); undefined when it is up to date, gone or
  * unusable. A profile with the same id from another install (a shell runtime switch) is never taken
  */
 export function refreshedBrowserChoice(
-  value: PuppeteerBrowserChoice | undefined,
+  value: PlaywrightBrowserChoice | undefined,
   profiles: BrowserProfile[] | undefined
-): PuppeteerBrowserChoice | undefined {
+): PlaywrightBrowserChoice | undefined {
   const profile = storedChoiceProfile(value, profiles);
   const choice = profile ? toBrowserChoice(profile) : undefined;
   if (!value || !choice) return undefined;

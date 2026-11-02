@@ -1,10 +1,10 @@
 /**
- * Whether the browser chosen for the Puppeteer connector is open with its profile. Runs copy the
+ * Whether the browser chosen for the Playwright connector is open with its profile. Runs copy the
  * profile, which an open browser keeps locked and half written, so the connector waits until it
  * is closed (mcp-availability.ts).
  *
  * Read from the lock the browser holds, not from the process list: only the chosen profile
- * counts, never Puppeteer's own browsers (they run on copies). On Linux and macOS the lock is a
+ * counts, never Playwright's own browsers (they run on new profiles). On Linux and macOS the lock is a
  * link naming the browser's process (Firefox's `lock` -> `127.0.1.1:+<pid>`, Chromium's
  * `SingletonLock` -> `<host>-<pid>`), checked to be alive since a crash leaves it behind: a
  * process of another user, or a process that isn't the lock's browser (by its name: /proc on
@@ -24,7 +24,7 @@ import { open, readFile, readlink } from 'fs/promises';
 import { hostname } from 'os';
 import path from 'path';
 import { promisify } from 'util';
-import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { isLinux, isMacOS, isWindows } from '../platform';
 import { isWslUncPath } from '../platform/wsl-paths';
 
@@ -137,8 +137,8 @@ async function readLock(link: string): Promise<string | null> {
   }
 }
 
-export async function isBrowserProfileInUse(choice: PuppeteerBrowserChoice): Promise<boolean> {
-  // Puppeteer's own browsers start on a new profile each time
+export async function isBrowserProfileInUse(choice: PlaywrightBrowserChoice): Promise<boolean> {
+  // Playwright's own browsers start on a new profile each time
   if (choice.managed) return false;
   const firefox = choice.engine === 'firefox';
   // Firefox locks the profile; Chromium the user data folder, shared by its profiles

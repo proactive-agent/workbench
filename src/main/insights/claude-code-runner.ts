@@ -15,7 +15,7 @@
  * (`resolveClaudeEnv`).
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { resolveClaudeEnv } from '../claude-code/env';
@@ -36,10 +36,12 @@ import semver from 'semver';
 import { extractTaskSuggestions, stripTaskSuggestions } from '../../shared/utils/task-suggestions';
 import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
-import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig } from '../claude-code/mcp-config';
+import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
+import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
 // The bridge's source, bundled as text and written next to the turn's other temp files
 import TASK_TOOLS_BRIDGE_SOURCE from './task-tools-bridge.cjs?raw';
+import PLAYWRIGHT_GUARD_SOURCE from './playwright-guard.cjs?raw';
 import { buildMessageContent } from './message-content';
 import {
   INSIGHTS_GITHUB_COMMANDS,
@@ -211,6 +213,11 @@ export interface InsightsMcpArgs {
   taskTools: boolean;
   /** Names of the chat's other MCP servers in the file */
   servers: string[];
+  /**
+   * Folders the turn may read besides the project (where tools run): its Playwright folder, which
+   * tool results link to (snapshots, screenshots)
+   */
+  readDirs?: string[];
 }
 
 /**
@@ -274,6 +281,9 @@ export function buildInsightsArgs(
     '--effort', effort,
     '--tools', tools.join(','),
     '--allowedTools', ...allowed,
+    // Also left out by the Playwright guard: Node.js code in the server, which could write anywhere
+    ...(mcp?.servers.includes('playwright') ? ['--disallowedTools', 'mcp__playwright__browser_run_code_unsafe'] : []),
+    ...(mcp?.readDirs ?? []).flatMap((dir) => ['--add-dir', dir]),
     '--permission-mode', 'dontAsk',
     '--strict-mcp-config',
     ...(mcp ? ['--mcp-config', mcp.configFile] : []),
@@ -428,6 +438,31 @@ export function resetTaskToolsBridgeForTests(): void {
   taskToolsBridgeFailed = false;
 }
 
+/**
+ * The chat's Playwright server through the guard (playwright-guard.cjs, written to `tempDir`):
+ * it runs in `<tempDir>/playwright`, which becomes its workspace root, so the files a tool call
+ * names land there and never in the project, and its Node.js code tool is left out. Its own files
+ * go there too, linked with absolute paths the chat can read (`dir`, given with --add-dir).
+ * Natively Workbench's executable runs the guard as Node; in WSL the distribution's node does
+ * (the server runs there)
+ */
+export async function guardChatPlaywright(
+  servers: Record<string, McpServerEntry>,
+  tempDir: string,
+): Promise<{ servers: Record<string, McpServerEntry>; dir?: string }> {
+  const entry = servers.playwright;
+  if (entry?.type !== 'stdio' || !entry.args?.includes(PLAYWRIGHT_MCP_PACKAGE)) return { servers };
+  const dir = join(tempDir, 'playwright');
+  await mkdir(dir, { recursive: true });
+  const script = join(tempDir, 'playwright-guard.cjs');
+  await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
+  const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
+  const guarded: McpServerEntry = getWslInfo()
+    ? { type: 'stdio', command: 'node', args: [toRuntimePath(script), toRuntimePath(dir), ...server], ...(entry.env ? { env: entry.env } : {}) }
+    : { type: 'stdio', command: process.execPath, args: [script, dir, ...server], env: { ...entry.env, ELECTRON_RUN_AS_NODE: '1' } };
+  return { servers: { ...servers, playwright: guarded }, dir };
+}
+
 /** The task tools entry of the turn's MCP config (the bridge script is written to `tempDir`) */
 export async function taskToolsEntry(
   taskTools: TaskToolsMcpServer,
@@ -491,14 +526,21 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     const taskTools = offeredTaskTools && taskToolsRoute !== 'off'
       ? await taskToolsEntry(offeredTaskTools, taskToolsRoute, tempDir)
       : undefined;
-    const chatServers = Object.fromEntries(
+    // Playwright works in the turn's own folder (its files, and the only folder it may write)
+    const playwright = await guardChatPlaywright(Object.fromEntries(
       Object.entries(config.mcpServers ?? {}).filter(([name]) => name !== TASK_TOOLS_SERVER_NAME)
-    );
+    ), tempDir);
+    const chatServers = playwright.servers;
     if (taskTools || Object.keys(chatServers).length > 0) {
       const configFile = join(tempDir, 'mcp-config.json');
       const mcpServers = { ...chatServers, ...(taskTools ? { [TASK_TOOLS_SERVER_NAME]: taskTools } : {}) };
       await writeFile(configFile, JSON.stringify({ mcpServers }), 'utf-8');
-      mcp = { configFile, taskTools: !!taskTools, servers: Object.keys(chatServers) };
+      mcp = {
+        configFile,
+        taskTools: !!taskTools,
+        servers: Object.keys(chatServers),
+        ...(playwright.dir ? { readDirs: [toRuntimePath(playwright.dir)] } : {}),
+      };
       if (taskTools) env.MCP_TOOL_TIMEOUT = String(TASK_TOOL_TIMEOUT_MS);
       // Time for a connector's first start, when npx downloads it (unless the user set their own)
       if (mcp.servers.length > 0 && !env.MCP_TIMEOUT) env.MCP_TIMEOUT = String(MCP_STARTUP_TIMEOUT_MS);

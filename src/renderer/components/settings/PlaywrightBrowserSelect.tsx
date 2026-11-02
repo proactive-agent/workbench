@@ -1,12 +1,13 @@
 /**
- * The Puppeteer connector's browser profile (Settings > Connectors): Puppeteer's own Chrome or a
- * local profile, in the common dropdown select. The list is the one found when the app started.
- * Profiles that can't be used stay listed, disabled, with the reason as text. Browsers Puppeteer can
- * download (Firefox, and its Chrome when the build its server needs is missing) have a download
- * button next to them that opens a terminal running the install; the button sits beside the item,
- * not in it, because a disabled item ignores clicks. The list updates when the download finishes.
- * While a browser downloads, its button is disabled (the main process also refuses a second
- * install), until the new list arrives, Chrome is no longer missing, or DOWNLOAD_WAIT_MS passes.
+ * The Playwright connector's browser profile (Settings > Connectors): Playwright's own Chromium or
+ * a local profile, in the common dropdown select. The list is the one found when the app started.
+ * Profiles that can't be used stay listed, disabled, with the reason as text. Browsers Playwright
+ * can download (Firefox and WebKit, and its Chromium when the build its server needs is missing)
+ * have a download button next to them that opens a terminal running the install; the button sits
+ * beside the item, not in it, because a disabled item ignores clicks. The list updates when the
+ * download finishes. While a browser downloads, its button is disabled (the main process also
+ * refuses a second install), until the new list arrives, Chromium is no longer missing, or
+ * DOWNLOAD_WAIT_MS passes.
  */
 
 import { Download } from 'lucide-react';
@@ -24,14 +25,14 @@ import {
   storedChoiceProfile,
   toBrowserChoice,
 } from './browser-profile-meta';
-import { PuppeteerIcon } from '../icons/app-icons';
-import type { BrowserProfile, DownloadableBrowser, PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
+import { PlaywrightIcon } from '../icons/app-icons';
+import type { BrowserProfile, DownloadableBrowser, PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 
-interface PuppeteerBrowserSelectProps {
-  value: PuppeteerBrowserChoice | undefined;
-  onChange: (choice: PuppeteerBrowserChoice | undefined) => void;
-  /** Puppeteer's own Chrome can't start because its build isn't downloaded: the default item offers the download */
-  chromeMissing?: boolean;
+interface PlaywrightBrowserSelectProps {
+  value: PlaywrightBrowserChoice | undefined;
+  onChange: (choice: PlaywrightBrowserChoice | undefined) => void;
+  /** Playwright's own Chromium can't start because its build isn't downloaded: the default item offers the download */
+  chromiumMissing?: boolean;
   disabled?: boolean;
 }
 
@@ -79,7 +80,7 @@ function DownloadButton({ browser, onDownload, downloading = false, besideCheck 
   );
 }
 
-export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false, disabled = false }: PuppeteerBrowserSelectProps) {
+export function PlaywrightBrowserSelect({ value, onChange, chromiumMissing = false, disabled = false }: PlaywrightBrowserSelectProps) {
   const { t } = useTranslation(['settings']);
   const [profiles, setProfiles] = useState<BrowserProfile[] | undefined>(undefined);
 
@@ -109,7 +110,9 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
     // A download started from here finished: the main process found the new browser
     const stopListening = window.electronAPI.onBrowserProfilesChanged((next) => {
       setProfiles(next);
-      endDownloadRef.current('firefox');
+      for (const profile of next) {
+        if (profile.managed && profile.usable && (profile.browser === 'firefox' || profile.browser === 'webkit')) endDownloadRef.current(profile.browser);
+      }
     });
     const timers = downloadTimers.current;
     return () => {
@@ -119,10 +122,10 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
     };
   }, []);
 
-  // Puppeteer's Chrome is no longer missing: its download is over
+  // Playwright's Chromium is no longer missing: its download is over
   useEffect(() => {
-    if (!chromeMissing) endDownloadRef.current('chrome');
-  }, [chromeMissing]);
+    if (!chromiumMissing) endDownloadRef.current('chromium');
+  }, [chromiumMissing]);
 
   // The stored choice is a copy of the profile's paths: take the detected ones when they changed
   // (once per stored value and list: the parent's onChange changes every render)
@@ -145,7 +148,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
       endDownload(browser);
       setDownloadNote({ text: error ?? t('settings:mcp.browserProfile.downloadFailed'), error: true });
     };
-    void window.electronAPI.installPuppeteerBrowser(browser)
+    void window.electronAPI.installPlaywrightBrowser(browser)
       .then((result) => {
         if (!result.success) {
           failed(result.error);
@@ -159,7 +162,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
       .catch(() => failed());
   };
 
-  // Puppeteer's own downloads first, then the browsers found on this computer
+  // Playwright's own downloads first, then the browsers found on this computer
   const list = [...(profiles ?? [])].sort((a, b) => Number(!!b.managed) - Number(!!a.managed));
   // A stored profile that isn't detected any more stays shown (and selected) until changed. A
   // detected profile with its id but from another install (after a shell runtime switch) isn't it
@@ -188,7 +191,7 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
   };
 
   // The chosen browser's icon in the closed picker too
-  const SelectedIcon = value ? browserProfileIcon(value) : PuppeteerIcon;
+  const SelectedIcon = value ? browserProfileIcon(value) : PlaywrightIcon;
 
   return (
     <Select value={selected} onValueChange={handleChange} disabled={disabled}>
@@ -205,12 +208,12 @@ export function PuppeteerBrowserSelect({ value, onChange, chromeMissing = false,
           <p className={cn('px-3 py-2 text-xs', downloadNote.error ? 'text-destructive' : 'text-muted-foreground')}>{downloadNote.text}</p>
         )}
         <div className="relative">
-          <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromeMissing ? 'pr-16' : undefined}>
-            <PuppeteerIcon className={ITEM_ICON} />
+          <SelectItem value={DEFAULT_BROWSER_VALUE} className={chromiumMissing ? 'pr-16' : undefined}>
+            <PlaywrightIcon className={ITEM_ICON} />
             {t('settings:mcp.browserProfile.default')}
-            {chromeMissing && <span className="ml-2 text-(--nav-label-color)">{t('settings:mcp.browserProfile.reasons.notDownloaded')}</span>}
+            {chromiumMissing && <span className="ml-2 text-(--nav-label-color)">{t('settings:mcp.browserProfile.reasons.notDownloaded')}</span>}
           </SelectItem>
-          {chromeMissing && <DownloadButton browser="chrome" onDownload={download} downloading={downloading.has('chrome')} besideCheck />}
+          {chromiumMissing && <DownloadButton browser="chromium" onDownload={download} downloading={downloading.has('chromium')} besideCheck />}
         </div>
         {missing && (
           <SelectItem value={MISSING_BROWSER_VALUE}>

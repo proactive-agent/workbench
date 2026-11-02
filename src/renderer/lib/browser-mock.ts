@@ -243,7 +243,7 @@ const browserMockAPI: ElectronAPI = {
   }),
   onMcpAvailabilityChanged: () => () => {},
   detectBrowserProfiles: async () => ({ success: true, data: [] }),
-  installPuppeteerBrowser: async () => ({ success: false, error: 'Not available in browser mode' }),
+  installPlaywrightBrowser: async () => ({ success: false, error: 'Not available in browser mode' }),
   onBrowserProfilesChanged: () => () => {}
 };
 

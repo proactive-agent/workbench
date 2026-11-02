@@ -19,13 +19,13 @@ export interface McpAPI {
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, McpAvailability>>>;
   /** Called when a connector's availability changes */
   onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => () => void;
-  /** Local browser profiles for the Puppeteer connector (found when the app started) */
+  /** Local browser profiles for the Playwright connector (found when the app started) */
   detectBrowserProfiles: () => Promise<IPCResult<BrowserProfile[]>>;
   /**
-   * Open a terminal that downloads a browser for Puppeteer. `alreadyRunning`: a download of it
+   * Open a terminal that downloads a browser for Playwright. `alreadyRunning`: a download of it
    * started earlier still counts as running, so no terminal was opened
    */
-  installPuppeteerBrowser: (browser: DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
+  installPlaywrightBrowser: (browser: DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
   /** Called with the new list when a started download finished */
   onBrowserProfilesChanged: (callback: (profiles: BrowserProfile[]) => void) => () => void;
 }
@@ -44,7 +44,7 @@ export function createMcpAPI(): McpAPI {
     detectBrowserProfiles: () =>
       ipcRenderer.invoke(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES),
 
-    installPuppeteerBrowser: (browser: DownloadableBrowser) =>
+    installPlaywrightBrowser: (browser: DownloadableBrowser) =>
       ipcRenderer.invoke(IPC_CHANNELS.MCP_INSTALL_BROWSER, browser),
 
     onBrowserProfilesChanged: (callback: (profiles: BrowserProfile[]) => void) => {

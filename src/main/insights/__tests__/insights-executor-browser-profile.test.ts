@@ -16,7 +16,7 @@ vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn(), err
 vi.mock('../../settings-utils', () => ({
   readSettingsFileAsync: async () => ({
     mcpConnectors: {
-      puppeteerBrowser: {
+      playwrightBrowser: {
         id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Me',
         executablePath: '/opt/google/chrome/chrome', userDataDir: '/c', profileDirectory: 'Default', profilePath: '/c/Default',
       },
@@ -50,8 +50,8 @@ describe('chat browser profile copies', () => {
     runInsights.mockResolvedValue(result);
     const executor = new InsightsExecutor();
 
-    await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['puppeteer'] } as never);
-    await executor.execute('p1', '/project', 'two', [], { mcpConnectors: ['puppeteer'] } as never);
+    await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['playwright'] } as never);
+    await executor.execute('p1', '/project', 'two', [], { mcpConnectors: ['playwright'] } as never);
 
     expect(prepareBrowserProfileCopy).toHaveBeenCalledTimes(2);
     // The profiles still chosen go with each copy, so its sweep keeps them
@@ -60,8 +60,9 @@ describe('chat browser profile copies', () => {
     expect(first).toMatch(/^chat-/);
     expect(second).not.toBe(first);
     expect(removeBrowserProfileCopy.mock.calls.map((call) => call[0])).toEqual([`/copies/${first}`, `/copies/${second}`]);
-    const env = runInsights.mock.calls[0][0].mcpServers.puppeteer.env.PUPPETEER_LAUNCH_OPTIONS as string;
-    expect(env).toContain(`/copies/${first}`);
+    // The server reads the run's Playwright config from the copy
+    const args = runInsights.mock.calls[0][0].mcpServers.playwright.args as string[];
+    expect(args.slice(-2)).toEqual(['--config', `/copies/${first}/.workbench-playwright.json`]);
   });
 
   it("returns the reply without waiting for the copy's removal", async () => {
@@ -70,7 +71,7 @@ describe('chat browser profile copies', () => {
     removeBrowserProfileCopy.mockReturnValue(new Promise(() => undefined));
     const executor = new InsightsExecutor();
 
-    const reply = await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['puppeteer'] } as never);
+    const reply = await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['playwright'] } as never);
 
     expect(reply.fullResponse).toBe('ok');
     expect(removeBrowserProfileCopy).toHaveBeenCalledTimes(1);
@@ -81,19 +82,19 @@ describe('chat browser profile copies', () => {
     const executor = new InsightsExecutor();
     executor.on('error', () => {});
 
-    await expect(executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['puppeteer'] } as never)).rejects.toThrow('boom');
+    await expect(executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['playwright'] } as never)).rejects.toThrow('boom');
 
     expect(removeBrowserProfileCopy).toHaveBeenCalledTimes(1);
   });
 
-  it('runs Puppeteer with a new profile when the copy fails', async () => {
+  it('runs Playwright with a profile in memory when the copy fails', async () => {
     runInsights.mockResolvedValue(result);
     prepareBrowserProfileCopy.mockRejectedValue(Object.assign(new Error('full'), { code: 'ENOSPC' }));
     const executor = new InsightsExecutor();
 
-    await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['puppeteer'] } as never);
+    await executor.execute('p1', '/project', 'one', [], { mcpConnectors: ['playwright'] } as never);
 
-    expect(runInsights.mock.calls[0][0].mcpServers.puppeteer).toBeDefined();
+    expect(runInsights.mock.calls[0][0].mcpServers.playwright.args).toContain('--isolated');
     expect(removeBrowserProfileCopy).not.toHaveBeenCalled();
   });
 });

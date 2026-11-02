@@ -21,10 +21,11 @@ vi.mock('../../platform/shell-runtime', () => ({
 }));
 
 import { STALE_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserProfiles } from '../detect';
+import { findManagedBrowser, playwrightCacheDir } from '../managed';
 
 let root: string;
 
-/** The browsers' own profiles (Puppeteer's downloads are tested apart) */
+/** The browsers' own profiles (Playwright's downloads are tested apart) */
 async function scanUserProfiles(context: Parameters<typeof scanBrowserProfiles>[0]) {
   return (await scanBrowserProfiles(context)).filter((profile) => !profile.managed);
 }
@@ -217,49 +218,61 @@ describe('browser profile detection', () => {
     expect(await isStaleProfile(fixturePath('/p/missing'))).toBe(false);
   });
 
-  it("lists Puppeteer's Firefox as downloadable until it is in the cache, then as usable", async () => {
+  it("lists Playwright's Firefox and WebKit as downloadable until their builds are in the cache, then as usable", async () => {
     const context = { os: 'linux' as const, home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false };
     const managed = async () => (await scanBrowserProfiles(context)).filter((p) => p.managed);
 
     expect(await managed()).toEqual([
-      expect.objectContaining({ id: 'puppeteer:firefox', usable: false, disabledReason: 'not-downloaded', downloadable: 'firefox' }),
+      expect.objectContaining({ id: 'playwright:firefox', engine: 'firefox', usable: false, disabledReason: 'not-downloaded', downloadable: 'firefox' }),
+      expect.objectContaining({ id: 'playwright:webkit', engine: 'webkit', usable: false, disabledReason: 'not-downloaded', downloadable: 'webkit' }),
     ]);
 
-    await put('/home/me/.cache/puppeteer/firefox/linux-132.0.2/firefox/firefox');
-    await put('/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox');
-    const [firefox] = await managed();
-    expect(firefox).toMatchObject({ usable: true, executablePath: '/home/me/.cache/puppeteer/firefox/linux-133.0/firefox/firefox' });
+    // Another version's build doesn't count: the pinned server needs its own
+    await put('/home/me/.cache/ms-playwright/firefox-1495/INSTALLATION_COMPLETE');
+    await put('/home/me/.cache/ms-playwright/firefox-1495/firefox/firefox');
+    await put('/home/me/.cache/ms-playwright/firefox-1553/INSTALLATION_COMPLETE');
+    await put('/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox');
+    const [firefox, webkit] = await managed();
+    expect(firefox).toMatchObject({ usable: true, executablePath: '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox' });
     expect(firefox.downloadable).toBeUndefined();
+    expect(webkit.usable).toBe(false);
   });
 
-  it("skips a Puppeteer download that is still being unpacked (its archive is still there)", async () => {
+  it('skips a Playwright build that is still being unpacked (no INSTALLATION_COMPLETE yet)', async () => {
     const context = { os: 'linux' as const, home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false };
-    const managed = async () => (await scanBrowserProfiles(context)).find((p) => p.managed);
-    await put('/home/me/.cache/puppeteer/firefox/linux-stable_132.0/firefox/firefox');
-    await put('/home/me/.cache/puppeteer/firefox/linux-stable_133.0/firefox/firefox');
-    await put('/home/me/.cache/puppeteer/firefox/stable_133.0-firefox-133.0.tar.xz');
-
-    expect((await managed())?.executablePath).toBe('/home/me/.cache/puppeteer/firefox/linux-stable_132.0/firefox/firefox');
-    await rm(fixturePath('/home/me/.cache/puppeteer/firefox/stable_133.0-firefox-133.0.tar.xz'));
-    expect((await managed())?.executablePath).toBe('/home/me/.cache/puppeteer/firefox/linux-stable_133.0/firefox/firefox');
+    await put('/home/me/.cache/ms-playwright/webkit-2368/pw_run.sh');
+    expect(await findManagedBrowser('webkit', context)).toBeUndefined();
+    await put('/home/me/.cache/ms-playwright/webkit-2368/INSTALLATION_COMPLETE');
+    expect(await findManagedBrowser('webkit', context)).toBe('/home/me/.cache/ms-playwright/webkit-2368/pw_run.sh');
   });
 
-  it('finds the download in the cache folder each OS uses', async () => {
-    await put('/Users/me/.cache/puppeteer/firefox/mac-132.0/Firefox.app/Contents/MacOS/firefox');
-    const mac = await scanBrowserProfiles({ os: 'macos', home: '/Users/me', env: {}, toHost: fixturePath, lookUpCommands: false });
-    expect(mac.find((p) => p.managed)?.executablePath).toBe('/Users/me/.cache/puppeteer/firefox/mac-132.0/Firefox.app/Contents/MacOS/firefox');
+  it("finds the builds in the cache folder each OS uses", async () => {
+    await put('/Users/me/Library/Caches/ms-playwright/chromium-1247/INSTALLATION_COMPLETE');
+    await put('/Users/me/Library/Caches/ms-playwright/chromium-1247/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+    // macOS 14 gets an older WebKit build
+    await put('/Users/me/Library/Caches/ms-playwright/webkit_mac14_arm64_special-2251/INSTALLATION_COMPLETE');
+    await put('/Users/me/Library/Caches/ms-playwright/webkit_mac14_arm64_special-2251/pw_run.sh');
+    const mac = { os: 'macos' as const, home: '/Users/me', env: {}, toHost: fixturePath };
+    expect(await findManagedBrowser('chromium', mac))
+      .toBe('/Users/me/Library/Caches/ms-playwright/chromium-1247/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing');
+    expect(await findManagedBrowser('webkit', mac)).toBe('/Users/me/Library/Caches/ms-playwright/webkit_mac14_arm64_special-2251/pw_run.sh');
 
-    await put('D:\\cache\\firefox\\win64-132.0\\core\\firefox.exe');
-    const windows = await scanBrowserProfiles({
-      os: 'windows', home: 'C:\\Users\\me', env: { PUPPETEER_CACHE_DIR: 'D:\\cache' }, toHost: fixturePath, lookUpCommands: false,
-    });
-    expect(windows.find((p) => p.managed)?.executablePath).toBe('D:\\cache\\firefox\\win64-132.0\\core\\firefox.exe');
+    await put('C:\\Users\\me\\AppData\\Local\\ms-playwright\\firefox-1553\\INSTALLATION_COMPLETE');
+    await put('C:\\Users\\me\\AppData\\Local\\ms-playwright\\firefox-1553\\firefox\\firefox.exe');
+    const windows = await scanBrowserProfiles({ os: 'windows', home: 'C:\\Users\\me', env: {}, toHost: fixturePath, lookUpCommands: false });
+    expect(windows.find((p) => p.id === 'playwright:firefox')?.executablePath).toBe('C:\\Users\\me\\AppData\\Local\\ms-playwright\\firefox-1553\\firefox\\firefox.exe');
+
+    // PLAYWRIGHT_BROWSERS_PATH, then XDG_CACHE_HOME on Linux
+    const linux = { os: 'linux' as const, home: '/home/me', toHost: fixturePath };
+    expect(playwrightCacheDir({ ...linux, env: { PLAYWRIGHT_BROWSERS_PATH: '/opt/pw' } })).toBe('/opt/pw');
+    expect(playwrightCacheDir({ ...linux, env: { XDG_CACHE_HOME: '/xdg' } })).toBe('/xdg/ms-playwright');
+    expect(playwrightCacheDir({ ...linux, env: { PLAYWRIGHT_BROWSERS_PATH: '0' } })).toBe('/home/me/.cache/ms-playwright');
   });
 
-  it("doesn't list Puppeteer's downloads for Windows browsers while tools run in WSL", async () => {
+  it("doesn't list Playwright's downloads for Windows browsers while tools run in WSL", async () => {
     mocks.wslHome = '/home/wsl';
     const profiles = await detectBrowserProfiles({ refresh: true });
-    expect(profiles.filter((p) => p.managed).map((p) => p.id)).toEqual(['puppeteer:firefox']);
+    expect(profiles.filter((p) => p.managed).map((p) => p.id)).toEqual(['playwright:firefox', 'playwright:webkit']);
   });
 
   it("reads the WSL distribution's browsers through host paths, with Linux paths", async () => {

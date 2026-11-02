@@ -527,10 +527,10 @@ export interface ElectronAPI {
   testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, import('./project').McpAvailability>>>;
   onMcpAvailabilityChanged: (callback: (id: string, availability: import('./project').McpAvailability) => void) => () => void;
-  /** Local browser profiles for the Puppeteer connector (found when the app started) */
+  /** Local browser profiles for the Playwright connector (found when the app started) */
   detectBrowserProfiles: () => Promise<IPCResult<import('./browser-profiles').BrowserProfile[]>>;
-  /** Open a terminal that downloads a browser for Puppeteer */
-  installPuppeteerBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
+  /** Open a terminal that downloads a browser for Playwright */
+  installPlaywrightBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
   /** Called with the new list when a started download finished */
   onBrowserProfilesChanged: (callback: (profiles: import('./browser-profiles').BrowserProfile[]) => void) => () => void;
 

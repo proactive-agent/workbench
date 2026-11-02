@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { EventEmitter } from 'events';
+import { existsSync } from 'fs';
 
 /** Installed commands and where they are */
 const installed = new Map<string, string>();
-const servers: Record<string, (proc: FakeProcess) => void> = {};
+const servers: Record<string, (proc: FakeProcess, args: string[]) => void> = {};
 
 class FakeProcess extends EventEmitter {
   stdout = new EventEmitter();
@@ -25,7 +26,7 @@ vi.mock('../mcp-commands', () => ({
   resolveCommand: mocks.resolveCommand,
   resetCommandLookups: mocks.resetCommandLookups,
 }));
-vi.mock('../platform/shell-runtime', () => ({ getWslInfo: () => null, whenShellRuntimeReady: async () => undefined }));
+vi.mock('../platform/shell-runtime', () => ({ getWslInfo: () => null, whenShellRuntimeReady: async () => undefined, toRuntimePath: (p: string) => p }));
 vi.mock('../platform/runtime-exec', () => ({
   spawnTool: mocks.spawnTool,
   killRuntimeProcessTree: mocks.killRuntimeProcessTree,
@@ -43,6 +44,17 @@ let resetMcpAvailability: typeof import('../mcp-availability').resetMcpAvailabil
 let stopMcpProbes: typeof import('../mcp-availability').stopMcpProbes;
 let UNAVAILABLE_RECHECK_MS: number;
 let describeLeftOutConnector: typeof import('../mcp-availability').describeLeftOutConnector;
+
+/** A probe's own folder for Playwright's files */
+const PROBE_DIR = expect.stringMatching(/workbench-mcp-probe-/);
+
+/** The pinned Playwright server, as npx is given it */
+const PACKAGE = '@playwright/mcp@0.0.83';
+const PW = `-y ${PACKAGE}`;
+
+/** Playwright's tool error when its Chromium isn't downloaded */
+const NOT_INSTALLED = '### Error\nError: Browser "chrome-for-testing" is not installed; expected executable at ' +
+  '/home/me/.cache/ms-playwright/chromium-1247/chrome-linux64/chrome. Run `npx @playwright/mcp install-browser chrome-for-testing` to install';
 
 const answer = (proc: FakeProcess) => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":1,"result":{}}\n'));
 const crash = (proc: FakeProcess) => {
@@ -63,7 +75,8 @@ describe('MCP availability', () => {
     mocks.resolveCommand.mockImplementation(async (command: string) => installed.get(command) ?? null);
     mocks.spawnTool.mockImplementation((_tool: string, args: string[]) => {
       const proc = new FakeProcess();
-      setTimeout(() => servers[args.join(' ')]?.(proc), 0);
+      // A server by its whole command line, else by its package (`-y <package>`)
+      setTimeout(() => (servers[args.join(' ')] ?? servers[args.slice(0, 2).join(' ')])?.(proc, args), 0);
       return proc;
     });
     vi.resetModules();
@@ -76,30 +89,30 @@ describe('MCP availability', () => {
   it('is preparing until the server answers, then ready or unavailable', async () => {
     installed.set('npx', '/usr/bin/npx');
     servers['-y @upstash/context7-mcp@latest'] = answer;
-    servers['-y @modelcontextprotocol/server-puppeteer'] = crash;
+    servers[PW] = crash;
     const changes: Record<string, string> = {};
     const stop = onMcpAvailabilityChange((id, availability) => {
       changes[id] = availability.state;
     });
 
-    expect(getMcpAvailability(['context7', 'puppeteer'], undefined)).toEqual({
+    expect(getMcpAvailability(['context7', 'playwright'], undefined)).toEqual({
       context7: { state: 'preparing' },
-      puppeteer: { state: 'preparing' },
+      playwright: { state: 'preparing' },
     });
     // A run still includes servers being prepared
-    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7', 'puppeteer']);
+    expect(await usableMcpConnectorIds(['context7', 'playwright'], undefined)).toEqual(['context7', 'playwright']);
 
-    await vi.waitFor(() => expect(changes).toEqual({ context7: 'ready', puppeteer: 'unavailable' }));
-    expect(getMcpAvailability(['puppeteer'], undefined).puppeteer).toEqual({ state: 'unavailable', message: 'npm error 404 Not Found' });
+    await vi.waitFor(() => expect(changes).toEqual({ context7: 'ready', playwright: 'unavailable' }));
+    expect(getMcpAvailability(['playwright'], undefined).playwright).toEqual({ state: 'unavailable', message: 'npm error 404 Not Found' });
     // ...and leaves out the ones that can't start
-    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
+    expect(await usableMcpConnectorIds(['context7', 'playwright'], undefined)).toEqual(['context7']);
     stop();
   });
 
-  it("checks Puppeteer's browser and says how to install it", async () => {
+  it("checks Playwright's browser and says how to install it", async () => {
     installed.set('npx', '/usr/bin/npx');
     const calls: unknown[] = [];
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         const message = JSON.parse(line);
         calls.push(message);
@@ -107,30 +120,34 @@ describe('MCP availability', () => {
           proc.stdout.emit('data', Buffer.from(JSON.stringify({
             jsonrpc: '2.0',
             id: 2,
-            error: { code: -32603, message: 'Could not find Chrome (ver. 131.0.6778.204). This can occur if either\n 1. you did not install it' },
+            result: { isError: true, content: [{ type: 'text', text: NOT_INSTALLED }] },
           }) + '\n'));
         }
       });
       answer(proc);
     };
     const settings = { customServers: [] };
-    getMcpAvailability(['puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('unavailable'));
-    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('unavailable'));
+    expect(getMcpAvailability(['playwright'], settings).playwright).toEqual({
       state: 'unavailable',
-      message: 'Could not find Chrome (ver. 131.0.6778.204)',
-      fixCommand: 'npx puppeteer browsers install chrome@131.0.6778.204',
+      message: 'Browser "chrome-for-testing" is not installed; expected executable at /home/me/.cache/ms-playwright/chromium-1247/chrome-linux64/chrome',
+      // The install the pinned server needs, not the one its message names
+      fixCommand: `npx -y ${PACKAGE} install-browser chromium`,
     });
-    // It opened a blank page in a hidden browser
+    // It opened a blank page in a headless Chromium of Playwright's, with a profile in memory
     expect(calls).toContainEqual(expect.objectContaining({
       method: 'tools/call',
-      params: { name: 'puppeteer_navigate', arguments: { url: 'about:blank', launchOptions: { headless: true } } },
+      params: { name: 'browser_navigate', arguments: { url: 'about:blank' } },
     }));
+    expect(mocks.spawnTool.mock.calls[0][1]).toEqual(['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless', '--output-dir', PROBE_DIR]);
+    // Its folder for Playwright's files is gone with it
+    expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false);
   });
 
   it('checks the chosen browser, offers no install command, and checks again for another choice', async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') {
           proc.stdout.emit('data', Buffer.from(JSON.stringify({
@@ -147,18 +164,19 @@ describe('MCP availability', () => {
       executablePath: '/opt/gone/chrome', userDataDir: '/home/me/.config/google-chrome', profileDirectory: 'Default',
       profilePath: '/home/me/.config/google-chrome/Default',
     };
-    const settings = { puppeteerBrowser: choice };
-    getMcpAvailability(['puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('unavailable'));
-    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({
+    const settings = { playwrightBrowser: choice };
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('unavailable'));
+    expect(getMcpAvailability(['playwright'], settings).playwright).toEqual({
       state: 'unavailable',
       message: 'Browser was not found at the configured executablePath (/opt/gone/chrome)',
     });
     // The chosen executable reaches the server, never a profile folder
-    const env = mocks.spawnTool.mock.calls[0][2].env as Record<string, string>;
-    expect(JSON.parse(env.PUPPETEER_LAUNCH_OPTIONS)).toEqual({ defaultViewport: null, executablePath: '/opt/gone/chrome' });
+    expect(mocks.spawnTool.mock.calls[0][1]).toEqual(
+      ['-y', PACKAGE, '--browser', 'chrome', '--executable-path', '/opt/gone/chrome', '--isolated', '--headless', '--output-dir', PROBE_DIR]
+    );
 
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') {
           proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{"content":[]}}\n'));
@@ -166,9 +184,9 @@ describe('MCP availability', () => {
       });
       answer(proc);
     };
-    const other = { puppeteerBrowser: { ...choice, id: 'chrome:Profile 1', executablePath: '/opt/google/chrome/chrome' } };
-    expect(getMcpAvailability(['puppeteer'], other).puppeteer).toEqual({ state: 'preparing' });
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], other).puppeteer.state).toBe('ready'));
+    const other = { playwrightBrowser: { ...choice, id: 'chrome:Profile 1', executablePath: '/opt/google/chrome/chrome' } };
+    expect(getMcpAvailability(['playwright'], other).playwright).toEqual({ state: 'preparing' });
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], other).playwright.state).toBe('ready'));
   });
 
   it('names the missing command', async () => {
@@ -209,8 +227,8 @@ describe('MCP availability', () => {
   it('stops probes still running (on app quit)', async () => {
     installed.set('npx', '/usr/bin/npx');
     // A server that never answers
-    servers['-y @modelcontextprotocol/server-puppeteer'] = () => undefined;
-    getMcpAvailability(['puppeteer'], undefined);
+    servers[PW] = () => undefined;
+    getMcpAvailability(['playwright'], undefined);
     await vi.waitFor(() => expect(mocks.spawnTool).toHaveBeenCalledTimes(1));
     const proc = mocks.spawnTool.mock.results[0].value as FakeProcess;
     stopMcpProbes();
@@ -223,30 +241,30 @@ describe('MCP availability', () => {
   it('checks an unavailable server again after a while, keeping ready ones', async () => {
     installed.set('npx', '/usr/bin/npx');
     servers['-y @upstash/context7-mcp@latest'] = answer;
-    servers['-y @modelcontextprotocol/server-puppeteer'] = crash;
+    servers[PW] = crash;
     let now = 1_000_000;
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    getMcpAvailability(['context7', 'puppeteer'], undefined);
-    await vi.waitFor(async () => expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']));
+    getMcpAvailability(['context7', 'playwright'], undefined);
+    await vi.waitFor(async () => expect(await usableMcpConnectorIds(['context7', 'playwright'], undefined)).toEqual(['context7']));
     expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
 
     // The user fixed it (the browser opens now): nothing is checked again right away
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
       });
       answer(proc);
     };
-    getMcpAvailability(['context7', 'puppeteer'], undefined);
+    getMcpAvailability(['context7', 'playwright'], undefined);
     expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
 
     now += UNAVAILABLE_RECHECK_MS;
     // It still reads unavailable (and stays out of runs) while it is checked again...
-    expect(getMcpAvailability(['context7', 'puppeteer'], undefined).puppeteer.state).toBe('unavailable');
-    expect(await usableMcpConnectorIds(['context7', 'puppeteer'], undefined)).toEqual(['context7']);
+    expect(getMcpAvailability(['context7', 'playwright'], undefined).playwright.state).toBe('unavailable');
+    expect(await usableMcpConnectorIds(['context7', 'playwright'], undefined)).toEqual(['context7']);
     // ...with the command looked up again
     await vi.waitFor(() => expect(mocks.resolveCommand).toHaveBeenLastCalledWith('npx', { refresh: true }));
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('ready'));
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], undefined).playwright.state).toBe('ready'));
     // Only the unavailable server was started again
     expect(mocks.spawnTool).toHaveBeenCalledTimes(3);
   });
@@ -266,46 +284,46 @@ describe('MCP availability', () => {
 
   it("ignores a probe's result that a reset made stale", async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = () => undefined;
-    getMcpAvailability(['puppeteer'], undefined);
+    servers[PW] = () => undefined;
+    getMcpAvailability(['playwright'], undefined);
     await vi.waitFor(() => expect(mocks.spawnTool).toHaveBeenCalledTimes(1));
     const first = mocks.spawnTool.mock.results[0].value as FakeProcess;
 
-    servers['-y @modelcontextprotocol/server-puppeteer'] = answer;
+    servers[PW] = answer;
     resetMcpAvailability();
     expect(mocks.killRuntimeProcessTree).toHaveBeenCalledWith(first);
-    getMcpAvailability(['puppeteer'], undefined);
+    getMcpAvailability(['playwright'], undefined);
     // The stopped probe exits without an answer, which must not count
     first.emit('close', null);
     await vi.waitFor(() => expect(mocks.spawnTool).toHaveBeenCalledTimes(2));
     const second = mocks.spawnTool.mock.results[1].value as FakeProcess;
-    // Puppeteer also needs its tool call answered
+    // Playwright also needs its tool call answered
     second.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('ready'));
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], undefined).playwright.state).toBe('ready'));
   });
-  it("leaves Puppeteer out while its chosen browser is open, and back in once it's closed", async () => {
+  it("leaves Playwright out while its chosen browser is open, and back in once it's closed", async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
       });
       answer(proc);
     };
     const settings = {
-      puppeteerBrowser: {
+      playwrightBrowser: {
         id: 'firefox:x.default', browser: 'firefox' as const, engine: 'firefox' as const, profileName: 'default',
         executablePath: '/usr/lib/firefox/firefox', userDataDir: '/home/me/.mozilla/firefox', profilePath: '/home/me/.mozilla/firefox/x.default',
       },
     };
-    getMcpAvailability(['puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('ready'));
 
     mocks.browserOpen = true;
-    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual([]);
-    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({ state: 'unavailable', browserOpen: true });
+    expect(await usableMcpConnectorIds(['playwright'], settings)).toEqual([]);
+    expect(getMcpAvailability(['playwright'], settings).playwright).toEqual({ state: 'unavailable', browserOpen: true });
 
     mocks.browserOpen = false;
-    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual(['puppeteer']);
+    expect(await usableMcpConnectorIds(['playwright'], settings)).toEqual(['playwright']);
     stopMcpProbes();
   });
 
@@ -314,10 +332,10 @@ describe('MCP availability', () => {
     executablePath: '/usr/lib/firefox/firefox', userDataDir: '/home/me/.mozilla/firefox', profilePath: '/home/me/.mozilla/firefox/x.default',
   };
 
-  it("keeps Puppeteer unavailable when its probe ends while the chosen browser is open", async () => {
+  it("keeps Playwright unavailable when its probe ends while the chosen browser is open", async () => {
     installed.set('npx', '/usr/bin/npx');
     let finishProbe: (() => void) | undefined;
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') {
           finishProbe = () => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
@@ -326,11 +344,11 @@ describe('MCP availability', () => {
       answer(proc);
     };
     mocks.browserOpen = true;
-    const settings = { puppeteerBrowser: firefoxProfile };
+    const settings = { playwrightBrowser: firefoxProfile };
     const changes: unknown[] = [];
     const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
 
-    getMcpAvailability(['puppeteer'], settings);
+    getMcpAvailability(['playwright'], settings);
     await vi.waitFor(() => expect(changes).toContainEqual({ state: 'unavailable', browserOpen: true }));
     await vi.waitFor(() => expect(finishProbe).toBeDefined());
     const before = changes.length;
@@ -338,7 +356,7 @@ describe('MCP availability', () => {
     await vi.waitFor(() => expect(changes.length).toBeGreaterThan(before));
     // The server is fine, but the open browser still keeps it out
     expect(changes.at(-1)).toEqual({ state: 'unavailable', browserOpen: true });
-    expect(getMcpAvailability(['puppeteer'], settings).puppeteer).toEqual({ state: 'unavailable', browserOpen: true });
+    expect(getMcpAvailability(['playwright'], settings).playwright).toEqual({ state: 'unavailable', browserOpen: true });
     stop();
     stopMcpProbes();
   });
@@ -347,28 +365,28 @@ describe('MCP availability', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       installed.set('npx', '/usr/bin/npx');
-      servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+      servers[PW] = (proc) => {
         proc.stdin.write.mockImplementation((line: string) => {
           if (JSON.parse(line).method === 'tools/call') proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n'));
         });
         answer(proc);
       };
       mocks.browserOpen = true;
-      const profile = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
-      getMcpAvailability(['puppeteer'], profile);
-      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+      const profile = { playwrightEnabled: true, playwrightBrowser: firefoxProfile };
+      getMcpAvailability(['playwright'], profile);
+      await vi.waitFor(() => expect(getMcpAvailability(['playwright'], profile).playwright).toEqual({ state: 'unavailable', browserOpen: true }));
 
-      // Puppeteer's own Firefox is chosen, then the profile's browser closes
+      // Playwright's own Firefox is chosen, then the profile's browser closes
       const managed = {
-        puppeteerEnabled: true,
-        puppeteerBrowser: {
-          ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/home/me/.cache/puppeteer/firefox/firefox',
+        playwrightEnabled: true,
+        playwrightBrowser: {
+          ...firefoxProfile, id: 'playwright:firefox', managed: true, executablePath: '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox',
         },
       };
       const changes: unknown[] = [];
       const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
-      getMcpAvailability(['puppeteer'], managed);
-      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], managed).puppeteer.state).toBe('ready'));
+      getMcpAvailability(['playwright'], managed);
+      await vi.waitFor(() => expect(getMcpAvailability(['playwright'], managed).playwright.state).toBe('ready'));
       mocks.browserOpen = false;
       const looks = mocks.inUse.mock.calls.length;
       await vi.advanceTimersByTimeAsync(10_000);
@@ -376,16 +394,16 @@ describe('MCP availability', () => {
       // The old profile isn't looked at again, and nothing goes back to its entry
       expect(mocks.inUse.mock.calls.length).toBe(looks);
       expect(changes.at(-1)).toEqual({ state: 'ready' });
-      const lastSpawn = mocks.spawnTool.mock.calls.at(-1)?.[2].env as Record<string, string>;
-      expect(JSON.parse(lastSpawn.PUPPETEER_LAUNCH_OPTIONS).executablePath).toBe('/home/me/.cache/puppeteer/firefox/firefox');
+      // Playwright's own Firefox build, found by Playwright itself
+      expect(mocks.spawnTool.mock.calls.at(-1)?.[1]).toEqual(['-y', PACKAGE, '--browser', 'firefox', '--isolated', '--headless', '--output-dir', PROBE_DIR]);
       stop();
       stopMcpProbes();
     } finally {
       vi.useRealTimers();
     }
   });
-  /** A Puppeteer server whose browser call fails with `error`, or succeeds without one */
-  const puppeteerServer = (error?: string) => (proc: FakeProcess) => {
+  /** A Playwright server whose browser call fails with `error`, or succeeds without one */
+  const playwrightServer = (error?: string) => (proc: FakeProcess) => {
     proc.stdin.write.mockImplementation((line: string) => {
       if (JSON.parse(line).method !== 'tools/call') return;
       proc.stdout.emit('data', Buffer.from(JSON.stringify(error
@@ -395,29 +413,31 @@ describe('MCP availability', () => {
     answer(proc);
   };
 
-  it("offers a download only when Puppeteer's browser isn't downloaded", async () => {
+  it("offers a download only when Playwright's browser isn't downloaded", async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer(
+    servers[PW] = playwrightServer(
       'Failed to launch the browser process! [0101/000000.000:FATAL:zygote_host_impl_linux.cc(127)] No usable sandbox!'
     );
-    getMcpAvailability(['puppeteer'], undefined);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('unavailable'));
-    const launchFailure = getMcpAvailability(['puppeteer'], undefined).puppeteer;
+    getMcpAvailability(['playwright'], undefined);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], undefined).playwright.state).toBe('unavailable'));
+    const launchFailure = getMcpAvailability(['playwright'], undefined).playwright;
     expect(launchFailure.fixCommand).toBeUndefined();
     expect(launchFailure.message).toContain('Failed to launch the browser process');
 
     resetMcpAvailability();
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer('Could not find Firefox (rev. 133.0). This can occur if');
-    getMcpAvailability(['puppeteer'], undefined);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.state).toBe('unavailable'));
-    expect(getMcpAvailability(['puppeteer'], undefined).puppeteer.fixCommand).toBe('npx puppeteer browsers install firefox');
+    // Playwright's own Firefox, chosen and not downloaded
+    servers[PW] = playwrightServer('Browser "firefox" is not installed; expected executable at /f. Run `npx @playwright/mcp install-browser firefox` to install');
+    const managed = { playwrightBrowser: { ...firefoxProfile, id: 'playwright:firefox', managed: true, executablePath: '/f' } };
+    getMcpAvailability(['playwright'], managed);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], managed).playwright.state).toBe('unavailable'));
+    expect(getMcpAvailability(['playwright'], managed).playwright.fixCommand).toBe(`npx -y ${PACKAGE} install-browser firefox`);
   });
 
   it('keeps the latest choice when the browser is switched back while its first check runs', async () => {
     installed.set('npx', '/usr/bin/npx');
     // Each probe waits until the test answers it
     const pending: Array<() => void> = [];
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         if (JSON.parse(line).method === 'tools/call') {
           pending.push(() => proc.stdout.emit('data', Buffer.from('{"jsonrpc":"2.0","id":2,"result":{}}\n')));
@@ -425,28 +445,28 @@ describe('MCP availability', () => {
       });
       answer(proc);
     };
-    const a = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/a/firefox' } };
-    const b = { puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:chrome', managed: true, executablePath: '/b/chrome' } };
+    const a = { playwrightBrowser: { ...firefoxProfile, id: 'playwright:firefox', managed: true, executablePath: '/a/firefox' } };
+    const b = { playwrightBrowser: { ...firefoxProfile, id: 'playwright:webkit', browser: 'webkit' as const, engine: 'webkit' as const, managed: true, executablePath: '/b/webkit' } };
     const changes: string[] = [];
     const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability.state));
 
-    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    expect(getMcpAvailability(['playwright'], a).playwright.state).toBe('preparing');
     await vi.waitFor(() => expect(pending).toHaveLength(1));
-    expect(getMcpAvailability(['puppeteer'], b).puppeteer.state).toBe('preparing');
+    expect(getMcpAvailability(['playwright'], b).playwright.state).toBe('preparing');
     await vi.waitFor(() => expect(pending).toHaveLength(2));
     // Back to A, whose first check is still running: no second check of A
-    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    expect(getMcpAvailability(['playwright'], a).playwright.state).toBe('preparing');
     expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
 
     // B finishes first: it no longer counts
     pending[1]();
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('preparing');
+    expect(getMcpAvailability(['playwright'], a).playwright.state).toBe('preparing');
     expect(changes.at(-1)).toBe('preparing');
     // A's result is the one kept and sent
     pending[0]();
     await vi.waitFor(() => expect(changes.at(-1)).toBe('ready'));
-    expect(getMcpAvailability(['puppeteer'], a).puppeteer.state).toBe('ready');
+    expect(getMcpAvailability(['playwright'], a).playwright.state).toBe('ready');
     stop();
     stopMcpProbes();
   });
@@ -455,23 +475,23 @@ describe('MCP availability', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       installed.set('npx', '/usr/bin/npx');
-      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      servers[PW] = playwrightServer();
       mocks.browserOpen = true;
-      const profile = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
-      const managed = { puppeteerEnabled: true, puppeteerBrowser: { ...firefoxProfile, id: 'puppeteer:firefox', managed: true, executablePath: '/m/firefox' } };
-      getMcpAvailability(['puppeteer'], profile);
-      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], profile).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+      const profile = { playwrightEnabled: true, playwrightBrowser: firefoxProfile };
+      const managed = { playwrightEnabled: true, playwrightBrowser: { ...firefoxProfile, id: 'playwright:firefox', managed: true, executablePath: '/m/firefox' } };
+      getMcpAvailability(['playwright'], profile);
+      await vi.waitFor(() => expect(getMcpAvailability(['playwright'], profile).playwright).toEqual({ state: 'unavailable', browserOpen: true }));
 
       // Another choice stops the poll; choosing the profile again right away (its open state is
       // still fresh) starts it again
-      getMcpAvailability(['puppeteer'], managed);
-      getMcpAvailability(['puppeteer'], profile);
+      getMcpAvailability(['playwright'], managed);
+      getMcpAvailability(['playwright'], profile);
       const changes: unknown[] = [];
       const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
       mocks.browserOpen = false;
       await vi.advanceTimersByTimeAsync(5_000);
       await vi.waitFor(() => expect(changes).toContainEqual(expect.objectContaining({ state: expect.not.stringMatching('unavailable') })));
-      expect(getMcpAvailability(['puppeteer'], profile).puppeteer.browserOpen).toBeUndefined();
+      expect(getMcpAvailability(['playwright'], profile).playwright.browserOpen).toBeUndefined();
       stop();
       stopMcpProbes();
     } finally {
@@ -481,36 +501,38 @@ describe('MCP availability', () => {
 
   it('tells a run, the log and every window when it leaves a connector out', async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
-    const settings = { puppeteerBrowser: firefoxProfile };
-    getMcpAvailability(['puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+    servers[PW] = playwrightServer();
+    const settings = { playwrightBrowser: firefoxProfile };
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('ready'));
 
     mocks.browserOpen = true;
     const changes: unknown[] = [];
     const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability]));
     const leftOut: unknown[] = [];
-    expect(await usableMcpConnectorIds(['puppeteer'], settings, (id, availability) => leftOut.push([id, availability]))).toEqual([]);
-    expect(leftOut).toEqual([['puppeteer', { state: 'unavailable', browserOpen: true }]]);
-    expect(changes).toContainEqual(['puppeteer', { state: 'unavailable', browserOpen: true }]);
+    expect(await usableMcpConnectorIds(['playwright'], settings, (id, availability) => leftOut.push([id, availability]))).toEqual([]);
+    expect(leftOut).toEqual([['playwright', { state: 'unavailable', browserOpen: true }]]);
+    expect(changes).toContainEqual(['playwright', { state: 'unavailable', browserOpen: true }]);
     const { appLog } = await import('../app-logger');
-    expect(appLog.info).toHaveBeenCalledWith(expect.stringContaining('Puppeteer connector left out of this run: Firefox (profile default) is open'));
+    expect(appLog.info).toHaveBeenCalledWith(expect.stringContaining('Playwright connector left out of this run: Firefox (profile default) is open'));
     stop();
     stopMcpProbes();
   });
 
-  it('leaves Puppeteer out when its browser is open even if a reset forgot the answer', async () => {
+  it('leaves Playwright out when its browser is open even if a reset forgot the answer', async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
-    const settings = { puppeteerBrowser: firefoxProfile };
+    servers[PW] = playwrightServer();
+    const settings = { playwrightBrowser: firefoxProfile };
     let answerLook: ((open: boolean) => void) | undefined;
     mocks.inUse.mockImplementation(() => new Promise<boolean>((resolve) => { answerLook = resolve; }));
-    const usable = usableMcpConnectorIds(['puppeteer'], settings);
+    const usable = usableMcpConnectorIds(['playwright'], settings);
     await vi.waitFor(() => expect(answerLook).toBeDefined());
     // Tool paths changed while the lock was looked at
     resetMcpAvailability();
     answerLook?.(true);
     expect(await usable).toEqual([]);
+    // The check it started spawns its server after the folder for Playwright's files is made
+    await vi.waitFor(() => expect(mocks.spawnTool).toHaveBeenCalled());
     stopMcpProbes();
   });
 
@@ -569,21 +591,21 @@ describe('MCP availability', () => {
 
   it("keeps each browser's open state: a late look at the old choice doesn't change the new one's", async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    servers[PW] = playwrightServer();
     const looks = new Map<string, (open: boolean) => void>();
     mocks.inUse.mockImplementation((browser: { id: string }) => new Promise<boolean>((resolve) => looks.set(browser.id, resolve)));
-    const a = { puppeteerBrowser: firefoxProfile };
-    const b = { puppeteerBrowser: chromeProfile };
+    const a = { playwrightBrowser: firefoxProfile };
+    const b = { playwrightBrowser: chromeProfile };
 
-    getMcpAvailability(['puppeteer'], a);
-    getMcpAvailability(['puppeteer'], b);
+    getMcpAvailability(['playwright'], a);
+    getMcpAvailability(['playwright'], b);
     await vi.waitFor(() => expect([...looks.keys()]).toEqual([firefoxProfile.id, chromeProfile.id]));
     looks.get(chromeProfile.id)?.(false);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], b).puppeteer.state).toBe('ready'));
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], b).playwright.state).toBe('ready'));
     // A (no longer chosen) turns out open: B stays usable
     looks.get(firefoxProfile.id)?.(true);
     await new Promise((resolve) => setTimeout(resolve, 10));
-    expect(getMcpAvailability(['puppeteer'], b).puppeteer).toEqual({ state: 'ready' });
+    expect(getMcpAvailability(['playwright'], b).playwright).toEqual({ state: 'ready' });
     stopMcpProbes();
   });
 
@@ -591,17 +613,17 @@ describe('MCP availability', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       installed.set('npx', '/usr/bin/npx');
-      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      servers[PW] = playwrightServer();
       const open = new Set<string>([chromeProfile.id]);
       mocks.inUse.mockImplementation(async (browser: { id: string }) => open.has(browser.id));
-      const older = { puppeteerEnabled: true, puppeteerBrowser: firefoxProfile };
-      const latest = { puppeteerEnabled: true, puppeteerBrowser: chromeProfile };
+      const older = { playwrightEnabled: true, playwrightBrowser: firefoxProfile };
+      const latest = { playwrightEnabled: true, playwrightBrowser: chromeProfile };
       // The user chose B (open): it is looked at every few seconds
-      getMcpAvailability(['puppeteer'], latest);
-      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], latest).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+      getMcpAvailability(['playwright'], latest);
+      await vi.waitFor(() => expect(getMcpAvailability(['playwright'], latest).playwright).toEqual({ state: 'unavailable', browserOpen: true }));
 
       // A run started with A looks at A only
-      expect(await usableMcpConnectorIds(['puppeteer'], older)).toEqual(['puppeteer']);
+      expect(await usableMcpConnectorIds(['playwright'], older)).toEqual(['playwright']);
       const changes: unknown[] = [];
       const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
       // B's poll goes on: closing B enables the connector
@@ -618,43 +640,75 @@ describe('MCP availability', () => {
 
   it("looks at a task's own browser for its run, leaving the windows' result alone", async () => {
     installed.set('npx', '/usr/bin/npx');
-    servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+    servers[PW] = playwrightServer();
     const open = new Set<string>();
     mocks.inUse.mockImplementation(async (browser: { id: string }) => open.has(browser.id));
-    const settings = { puppeteerEnabled: true, puppeteerBrowser: chromeProfile };
-    getMcpAvailability(['puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready'));
+    const settings = { playwrightEnabled: true, playwrightBrowser: chromeProfile };
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('ready'));
 
-    // The task's browser is open: its run leaves Puppeteer out, the windows still read it ready
+    // The task's browser is open: its run leaves Playwright out, the windows still read it ready
     open.add(firefoxProfile.id);
     const changes: unknown[] = [];
     const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
-    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, firefoxProfile)).toEqual([]);
+    expect(await usableMcpConnectorIds(['playwright'], settings, undefined, firefoxProfile)).toEqual([]);
     expect(changes).not.toContainEqual({ state: 'unavailable', browserOpen: true });
-    expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('ready');
+    expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('ready');
 
-    // The Settings browser is open, the task's isn't (or the task uses Puppeteer's own Chrome)
+    // The Settings browser is open, the task's isn't (or the task uses Playwright's own Chromium)
     open.clear();
     open.add(chromeProfile.id);
-    expect(await usableMcpConnectorIds(['puppeteer'], settings)).toEqual([]);
-    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, firefoxProfile)).toEqual(['puppeteer']);
-    expect(await usableMcpConnectorIds(['puppeteer'], settings, undefined, null)).toEqual(['puppeteer']);
+    expect(await usableMcpConnectorIds(['playwright'], settings)).toEqual([]);
+    expect(await usableMcpConnectorIds(['playwright'], settings, undefined, firefoxProfile)).toEqual(['playwright']);
+    expect(await usableMcpConnectorIds(['playwright'], settings, undefined, null)).toEqual(['playwright']);
     stop();
     stopMcpProbes();
   });
 
-  it('keeps looking at an open browser while Puppeteer is off, so closing it enables the switch', async () => {
+  it("checks a task's own browser with its own probe, not the Settings browser's", async () => {
+    installed.set('npx', '/usr/bin/npx');
+    // Playwright's own Chromium and Firefox aren't downloaded; the installed Chrome works
+    servers[PW] = (proc, args) => playwrightServer(args.includes('--executable-path') ? undefined : 'Browser "firefox" is not installed')(proc);
+    const managedFirefox = { ...firefoxProfile, id: 'playwright:firefox', managed: true, executablePath: '/f' };
+    const changes: unknown[] = [];
+    const stop = onMcpAvailabilityChange((_id, availability) => changes.push(availability));
+
+    // Settings: Playwright's Chromium, unavailable. The task picked Chrome: its run isn't dropped for it
+    const settings = { playwrightEnabled: true };
+    getMcpAvailability(['playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('unavailable'));
+    expect(await usableMcpConnectorIds(['playwright'], settings, undefined, chromeProfile)).toEqual(['playwright']);
+
+    // Settings: Chrome, ready. The task picked Playwright's Firefox, not downloaded: its run leaves it out
+    const chrome = { playwrightEnabled: true, playwrightBrowser: chromeProfile };
+    getMcpAvailability(['playwright'], chrome);
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], chrome).playwright.state).toBe('ready'));
+    expect(await usableMcpConnectorIds(['playwright'], chrome, undefined, managedFirefox)).toEqual(['playwright']);
+    await vi.waitFor(async () => expect(await usableMcpConnectorIds(['playwright'], chrome, undefined, managedFirefox)).toEqual([]));
+    // The windows' result stays the Settings browser's
+    expect(getMcpAvailability(['playwright'], chrome).playwright.state).toBe('ready');
+    expect(changes.filter((change) => (change as { state: string }).state === 'preparing')).toHaveLength(2);
+    stop();
+    stopMcpProbes();
+  });
+
+  it('keeps looking at an open browser while Playwright is off, so closing it enables the switch', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       installed.set('npx', '/usr/bin/npx');
-      servers['-y @modelcontextprotocol/server-puppeteer'] = puppeteerServer();
+      servers[PW] = playwrightServer();
       mocks.browserOpen = true;
       // Off by default: its switch is disabled while the browser is open, so it can't be switched on first
-      const off = { puppeteerBrowser: firefoxProfile };
+      const off = { playwrightBrowser: firefoxProfile };
       const changes: Array<[string, string]> = [];
       const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability.state]));
-      getMcpAvailability(['puppeteer'], off);
-      await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], off).puppeteer).toEqual({ state: 'unavailable', browserOpen: true }));
+      getMcpAvailability(['playwright'], off);
+      await vi.waitFor(() => expect(getMcpAvailability(['playwright'], off).playwright).toEqual({ state: 'unavailable', browserOpen: true }));
+      // The server's probe has ended (its folder for Playwright's files, made and removed on disk, is gone)
+      await vi.waitFor(() => {
+        expect(mocks.spawnTool).toHaveBeenCalled();
+        expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false);
+      });
       const looks = mocks.inUse.mock.calls.length;
       await vi.advanceTimersByTimeAsync(10_000);
       expect(mocks.inUse.mock.calls.length).toBeGreaterThan(looks + 1);
@@ -663,7 +717,7 @@ describe('MCP availability', () => {
       changes.length = 0;
       mocks.browserOpen = false;
       await vi.advanceTimersByTimeAsync(4_000);
-      expect(changes).toContainEqual(['puppeteer', 'ready']);
+      expect(changes).toContainEqual(['playwright', 'ready']);
       // And the looks stop once it is closed
       const closedLooks = mocks.inUse.mock.calls.length;
       await vi.advanceTimersByTimeAsync(20_000);
@@ -675,10 +729,10 @@ describe('MCP availability', () => {
     }
   });
 
-  it("never lets a server that was only started vouch for Puppeteer's browser", async () => {
+  it("never lets a server that was only started vouch for Playwright's browser", async () => {
     installed.set('npx', '/usr/bin/npx');
     const calls: string[] = [];
-    servers['-y @modelcontextprotocol/server-puppeteer'] = (proc) => {
+    servers[PW] = (proc) => {
       proc.stdin.write.mockImplementation((line: string) => {
         const { method } = JSON.parse(line);
         calls.push(method);
@@ -688,16 +742,16 @@ describe('MCP availability', () => {
       });
       answer(proc);
     };
-    // A custom server with the built-in Puppeteer's command: it is ready once it starts
+    // A custom server with the built-in Playwright's command line: it is ready once it starts
     const settings = {
       customServers: [
-        { id: 'my-puppeteer', name: 'My Puppeteer', type: 'command' as const, command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'], verified: true },
+        { id: 'my-playwright', name: 'My Playwright', type: 'command' as const, command: 'npx', args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless'], verified: true },
       ],
     };
-    getMcpAvailability(['my-puppeteer', 'puppeteer'], settings);
-    await vi.waitFor(() => expect(getMcpAvailability(['my-puppeteer'], settings)['my-puppeteer'].state).toBe('ready'));
+    getMcpAvailability(['my-playwright', 'playwright'], settings);
+    await vi.waitFor(() => expect(getMcpAvailability(['my-playwright'], settings)['my-playwright'].state).toBe('ready'));
     // The built-in one gets its own probe, which asks for a browser
-    await vi.waitFor(() => expect(getMcpAvailability(['puppeteer'], settings).puppeteer.state).toBe('unavailable'));
+    await vi.waitFor(() => expect(getMcpAvailability(['playwright'], settings).playwright.state).toBe('unavailable'));
     expect(mocks.spawnTool).toHaveBeenCalledTimes(2);
     expect(calls).toContain('tools/call');
     stopMcpProbes();

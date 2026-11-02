@@ -442,7 +442,7 @@ function TaskDetailModalContent({ open, task, onOpenChange }: { open: boolean; t
                         <h3 className="mb-1 text-sm text-foreground">{t('tasks:form.sections.connectors')}</h3>
                         <TaskConnectorRows
                           value={task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(connectorSettings)}
-                          puppeteerBrowser={task.metadata?.puppeteerBrowser}
+                          playwrightBrowser={task.metadata?.playwrightBrowser}
                           readOnly
                           idPrefix="detail-"
                         />

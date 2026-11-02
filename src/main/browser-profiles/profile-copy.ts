@@ -1,6 +1,6 @@
 /**
- * Copies of browser profiles for Puppeteer runs
- * =============================================
+ * Copies of browser profiles for Playwright runs
+ * ==============================================
  *
  * A run never drives the user's real profile folder: Chrome 136+ refuses remote debugging on its
  * default user data folder, and a browser that is open holds a lock on it. Each run gets a copy in
@@ -30,13 +30,17 @@
  * whenever a run or a look at the browser finds it closed (at most every SAVED_REFRESH_MS). A run
  * that starts while the browser is open copies the saved copy instead of the live profile, which
  * the open browser keeps locked and half written; only without a saved copy does an open browser
- * keep Puppeteer from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
- * chooses the profile: Settings > Connectors or a task's own pick (TaskMetadata.puppeteerBrowser,
+ * keep Playwright from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
+ * chooses the profile: Settings > Connectors or a task's own pick (TaskMetadata.playwrightBrowser,
  * listed by choices-in-use.ts); a project's run copies likewise go at once only when neither
  * Settings nor the project's tasks choose their profile.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
+ *
+ * Each run copy also holds the run's Playwright config (PLAYWRIGHT_CONFIG_FILE, mcp-config.ts:
+ * the browser, its executable and the copy as its profile), passed to the server with `--config`
+ * and removed with the copy.
  */
 
 import path from 'path';
@@ -45,7 +49,7 @@ import { createHash } from 'crypto';
 import { homedir, hostname } from 'os';
 import { app } from 'electron';
 import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, utimes, writeFile } from 'fs/promises';
-import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { isLinux, isWindows } from '../platform';
 import { isWslUncPath, windowsPathKey, wslToWindows } from '../platform/wsl-paths';
@@ -53,6 +57,7 @@ import { checkWslAvailable, decodeWslOutput, getWslExePath, parseDistroList } fr
 import { runTool } from '../platform/runtime-exec';
 import { CONFINED_SNAPS, confinedSnapName } from './locations';
 import { isBrowserProfileInUse } from './in-use';
+import { PLAYWRIGHT_CONFIG_FILE, playwrightProfileConfig } from '../claude-code/mcp-config';
 import { appLog } from '../app-logger';
 
 /** Folders and files (relative to the profile, with `/`) a copy leaves out */
@@ -234,7 +239,7 @@ function copiesBase(): string {
 }
 
 /** Where a browser's copies live (host path): a confined snap's own folder, or copiesBase() */
-function copiesBaseFor(choice: PuppeteerBrowserChoice | undefined): string {
+function copiesBaseFor(choice: PlaywrightBrowserChoice | undefined): string {
   const snap = choice ? confinedSnapName(choice.executablePath) : undefined;
   const home = snap ? runtimeLinuxHome() : undefined;
   if (snap && home) return toHostPath(path.posix.join(home, ...snapCopies(snap)));
@@ -298,7 +303,7 @@ function projectFolder(projectPath: string): string {
 }
 
 /** Where a project's copies of this browser's profiles live (host path; any browser outside a snap without one) */
-export function browserProfileCopiesRoot(projectPath: string, choice?: PuppeteerBrowserChoice): string {
+export function browserProfileCopiesRoot(projectPath: string, choice?: PlaywrightBrowserChoice): string {
   return path.join(copiesBaseFor(choice), projectFolder(projectPath));
 }
 
@@ -308,7 +313,7 @@ function legacyCopiesRoot(projectPath: string): string {
 }
 
 /** Where a slot's copy of a profile lives (host path) */
-export function browserProfileCopyDir(projectPath: string, choice: PuppeteerBrowserChoice, slot: string): string {
+export function browserProfileCopyDir(projectPath: string, choice: PlaywrightBrowserChoice, slot: string): string {
   return path.join(browserProfileCopiesRoot(projectPath, choice), slug(choice.id), slug(slot));
 }
 
@@ -375,7 +380,7 @@ async function disableSessionRestore(preferencesFile: string): Promise<void> {
 }
 
 /** Copy a profile into `target` in the layout runs use; returns how many files were skipped */
-async function copyProfileInto(choice: PuppeteerBrowserChoice, source: string, target: string): Promise<number> {
+async function copyProfileInto(choice: PlaywrightBrowserChoice, source: string, target: string): Promise<number> {
   if (choice.engine !== 'chromium') return copyTree(source, target);
   const profileDirectory = choice.profileDirectory ?? 'Default';
   let skipped = await copyTree(source, path.join(target, profileDirectory));
@@ -391,12 +396,12 @@ async function copyProfileInto(choice: PuppeteerBrowserChoice, source: string, t
 }
 
 /** Where a profile's saved copies live (host path): one folder per save, named by its time */
-function savedProfileDir(choice: PuppeteerBrowserChoice): string {
+function savedProfileDir(choice: PlaywrightBrowserChoice): string {
   return path.join(copiesBaseFor(choice), SAVED_FOLDER, slug(choice.id));
 }
 
 /** The newest complete saved copy of a profile, or null */
-async function newestSavedCopy(choice: PuppeteerBrowserChoice): Promise<{ dir: string; at: number } | null> {
+async function newestSavedCopy(choice: PlaywrightBrowserChoice): Promise<{ dir: string; at: number } | null> {
   const parent = savedProfileDir(choice);
   let names: string[];
   try {
@@ -422,7 +427,7 @@ async function newestSavedCopy(choice: PuppeteerBrowserChoice): Promise<{ dir: s
  * and half written) and no saved copy exists. A closed browser's profile is saved meanwhile, so
  * once it has been closed, runs work while it is open again
  */
-export async function browserProfileCopyBlocked(choice: PuppeteerBrowserChoice): Promise<boolean> {
+export async function browserProfileCopyBlocked(choice: PlaywrightBrowserChoice): Promise<boolean> {
   if (choice.managed) return false;
   if (!(await isBrowserProfileInUse(choice))) {
     void refreshSavedBrowserProfileCopy(choice);
@@ -436,7 +441,7 @@ export async function browserProfileCopyBlocked(choice: PuppeteerBrowserChoice):
  * profile). A save is dropped when files couldn't be read or the browser opened meanwhile; older
  * saves go once the new one is complete. Best effort, never thrown
  */
-export function refreshSavedBrowserProfileCopy(choice: PuppeteerBrowserChoice): Promise<void> {
+export function refreshSavedBrowserProfileCopy(choice: PlaywrightBrowserChoice): Promise<void> {
   if (choice.managed) return Promise.resolve();
   const running = savedRefreshes.get(choice.id);
   if (running) return running;
@@ -487,7 +492,7 @@ async function removeSavedCopies(parent: string, keep?: string): Promise<void> {
  * Remove saved copies of profiles not in `keep` (every one when it is empty): no one chooses them
  * any more. Saves being written now are left alone. Best effort
  */
-async function removeOtherSavedCopies(keep: PuppeteerBrowserChoice[]): Promise<void> {
+async function removeOtherSavedCopies(keep: PlaywrightBrowserChoice[]): Promise<void> {
   const kept = new Set(keep.map((choice) => slug(choice.id)));
   for (const base of new Set(runtimeCopiesBases())) {
     const savedRoot = path.join(base, SAVED_FOLDER);
@@ -508,25 +513,25 @@ async function removeOtherSavedCopies(keep: PuppeteerBrowserChoice[]): Promise<v
 /** The profiles still chosen, whose copies a sweep keeps (choices-in-use.ts) */
 export interface BrowserChoicesInUse {
   /** Chosen for runs in this project: Settings > Connectors and the project's tasks */
-  project: PuppeteerBrowserChoice[];
+  project: PlaywrightBrowserChoice[];
   /** Chosen anywhere: Settings and every project's tasks (saved copies are shared by projects) */
-  all: PuppeteerBrowserChoice[];
+  all: PlaywrightBrowserChoice[];
 }
 
 /**
  * Make a fresh copy of the chosen profile for a run and return its folder (host path), or null
- * when the profile is gone or the browser is Puppeteer's own download (the run then uses the
- * browser with a new profile). A copy that fails (a full disk) is removed before the error is
+ * when the profile is gone or the browser is Playwright's own download (the run then uses the
+ * browser with a new profile). The copy holds the run's Playwright config (PLAYWRIGHT_CONFIG_FILE). A copy that fails (a full disk) is removed before the error is
  * thrown. The copy counts as live until removeBrowserProfileCopy. Copies of profiles no one
  * chooses any more (not in `inUse`, nor this run's) are swept meanwhile
  */
 export async function prepareBrowserProfileCopy(
   projectPath: string,
-  choice: PuppeteerBrowserChoice,
+  choice: PlaywrightBrowserChoice,
   slot: string,
   inUse: BrowserChoicesInUse = { project: [], all: [] }
 ): Promise<string | null> {
-  // Puppeteer's own download has no profile: it starts the browser with a new one
+  // Playwright's own download has no profile: it starts the browser with a new one
   // Not awaited: the run doesn't need it. Without a profile to copy, no copy is kept for this run
   if (choice.managed) {
     void removeOldBrowserProfileCopies(projectPath, { keep: inUse.project, keepSaved: inUse.all });
@@ -536,7 +541,7 @@ export async function prepareBrowserProfileCopy(
   try {
     if (!(await stat(source)).isDirectory()) throw new Error('not a folder');
   } catch {
-    appLog.warn(`[BrowserProfiles] ${choice.id} not found at ${source}; Puppeteer uses the browser with a new profile`);
+    appLog.warn(`[BrowserProfiles] ${choice.id} not found at ${source}; Playwright uses the browser with a new profile`);
     void removeOldBrowserProfileCopies(projectPath, { keep: inUse.project, keepSaved: inUse.all });
     return null;
   }
@@ -570,6 +575,8 @@ export async function prepareBrowserProfileCopy(
       // Closed now: keep the saved copy fresh for runs that start while it is open
       void refreshSavedBrowserProfileCopy(choice);
     }
+    // The run's Playwright config: this copy as the browser's profile
+    await writeFile(path.join(target, PLAYWRIGHT_CONFIG_FILE), JSON.stringify(playwrightProfileConfig(choice, target), null, 2), { mode: 0o600 });
   } catch (error) {
     // A full disk (ENOSPC, EDQUOT) or another error: no partial copy is left behind
     await removeBrowserProfileCopy(target);
@@ -593,7 +600,7 @@ async function removable(dir: string): Promise<boolean> {
  */
 export async function removeStaleBrowserProfileCopies(
   projectPath: string,
-  choice: PuppeteerBrowserChoice,
+  choice: PlaywrightBrowserChoice,
   prefix: string,
   keep: string
 ): Promise<void> {
@@ -624,12 +631,12 @@ export interface BrowserProfileSweepOptions {
    * profiles' (no one chooses them any more) go at any age; empty: every copy goes. Unset: every
    * copy is kept for a day
    */
-  keep?: PuppeteerBrowserChoice[];
+  keep?: PlaywrightBrowserChoice[];
   /**
    * The profiles chosen anywhere, whose saved copies stay (others' go). Unset: `keep`, or with
    * neither set, saved copies are left alone
    */
-  keepSaved?: PuppeteerBrowserChoice[];
+  keepSaved?: PlaywrightBrowserChoice[];
   /** Every copy no live run uses goes, whatever its age (at startup, before anything runs) */
   all?: boolean;
 }
@@ -680,7 +687,7 @@ async function sweepCopies(root: string, options: BrowserProfileSweepOptions): P
 export async function removeOldBrowserProfileCopies(projectPath: string, options: BrowserProfileSweepOptions = {}): Promise<void> {
   const now = Date.now();
   const keepSaved = options.keepSaved ?? options.keep;
-  const profileKey = (list: PuppeteerBrowserChoice[] | undefined) =>
+  const profileKey = (list: PlaywrightBrowserChoice[] | undefined) =>
     list === undefined ? '' : `[${[...new Set(list.map((choice) => slug(choice.id)))].sort().join(',')}]`;
   // A changed choice is looked at again at once
   const sweepKey = `${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;

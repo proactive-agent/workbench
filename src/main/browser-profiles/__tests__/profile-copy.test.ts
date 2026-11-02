@@ -5,7 +5,7 @@ import { hostname } from 'os';
 import { mkdtemp, mkdir, readFile, rm, stat, utimes, writeFile } from 'fs/promises';
 import * as fsPromises from 'fs/promises';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 
 vi.mock('fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs/promises')>();
@@ -25,6 +25,7 @@ vi.mock('../in-use', () => ({ isBrowserProfileInUse: async () => mocks.inUse }))
 vi.mock('electron', () => ({ app: { getPath: () => mocks.userData } }));
 vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => p,
+  toRuntimePath: (p: string) => p,
   getWslInfo: () => null,
   whenShellRuntimeReady: async () => ({}),
 }));
@@ -119,7 +120,7 @@ describe('browser profile copies', () => {
     await put(path.join(profile, 'Service Worker', 'CacheStorage', 'blob'));
     await put(path.join(profile, 'Service Worker', 'Database', 'db'));
     await put(path.join(profile, 'lockfile'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chrome:Profile 1',
       browser: 'chrome',
       engine: 'chromium',
@@ -151,6 +152,14 @@ describe('browser profile copies', () => {
     expect(existsSync(copied('Profile 1', 'Service Worker', 'CacheStorage'))).toBe(false);
     expect(existsSync(copied('Profile 1', 'lockfile'))).toBe(false);
     expect(existsSync(copied('SingletonLock'))).toBe(false);
+    // The run's Playwright config: the browser's executable with this copy as its profile
+    expect(JSON.parse(await readFile(copied('.workbench-playwright.json'), 'utf-8'))).toMatchObject({
+      browser: {
+        browserName: 'chromium',
+        userDataDir: copy,
+        launchOptions: { executablePath: '/opt/google/chrome/chrome', args: ['--profile-directory=Profile 1'] },
+      },
+    });
 
     // A new run starts from a fresh copy
     await put(copied('Profile 1', 'stale'));
@@ -166,7 +175,7 @@ describe('browser profile copies', () => {
     await put(path.join(profile, 'cookies.sqlite'), 'jar');
     await put(path.join(profile, 'parent.lock'));
     await put(path.join(profile, 'cache2', 'entries', 'a'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x.default-release',
       browser: 'firefox',
       engine: 'firefox',
@@ -186,7 +195,7 @@ describe('browser profile copies', () => {
   it("removes a task's older copies, keeping the current run's and other tasks'", async () => {
     const profile = path.join(root, 'chrome', 'Default');
     await put(path.join(profile, 'Cookies'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Me',
       executablePath: '/opt/google/chrome/chrome', userDataDir: path.join(root, 'chrome'), profileDirectory: 'Default', profilePath: profile,
     };
@@ -216,7 +225,7 @@ describe('browser profile copies', () => {
     await put(path.join(profile, 'Last Tabs'));
     await put(path.join(profile, 'Storage', 'ext', 'abc', 'def', 'Code Cache', 'js'));
     await put(path.join(profile, 'Preferences'), JSON.stringify({ session: { restore_on_startup: 1, startup_urls: ['https://mail'] }, other: 1 }));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Me',
       executablePath: '/opt/google/chrome/chrome', userDataDir: userData, profileDirectory: 'Default', profilePath: profile,
     };
@@ -249,7 +258,7 @@ describe('browser profile copies', () => {
     await put(path.join(profile, 'weave', 'bookmarks.sqlite'));
     await put(path.join(profile, 'storage', 'default', 'https+++a.com', 'cache', 'caches.sqlite'));
     await put(path.join(profile, 'storage', 'default', 'https+++a.com', 'idb', 'db.sqlite'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
       executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
     };
@@ -266,7 +275,7 @@ describe('browser profile copies', () => {
   it('removes a partial copy when the disk is full', async () => {
     const profile = path.join(root, 'firefox', 'x');
     await put(path.join(profile, 'cookies.sqlite'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
       executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
     };
@@ -297,7 +306,7 @@ describe('browser profile copies', () => {
   it("removes an earlier choice's copies at once, keeping the current profile's recent ones and live runs'", async () => {
     const profile = path.join(root, 'chrome', 'Default');
     await put(path.join(profile, 'Cookies'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Me',
       executablePath: '/opt/google/chrome/chrome', userDataDir: path.join(root, 'chrome'), profileDirectory: 'Default', profilePath: profile,
     };
@@ -323,12 +332,12 @@ describe('browser profile copies', () => {
     await removeBrowserProfileCopy(live);
   });
 
-  it("removes a project's copies when runs use Puppeteer's own browser", async () => {
+  it("removes a project's copies when runs use Playwright's own browser", async () => {
     const project = path.join(root, 'project');
     const recent = path.join(browserProfileCopiesRoot(project), 'chrome_Default', 'chat-1');
     await leftover(recent, 'Default/Cookies');
-    const managed: PuppeteerBrowserChoice = {
-      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+    const managed: PlaywrightBrowserChoice = {
+      id: 'playwright:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
       executablePath: '/c/firefox', userDataDir: '', profilePath: '',
     };
     expect(await prepareBrowserProfileCopy(project, managed, 'chat-2')).toBeNull();
@@ -402,7 +411,7 @@ describe('browser profile copies', () => {
   it('removes the copies of runs still going on quit', async () => {
     const profile = path.join(root, 'firefox', 'x');
     await put(path.join(profile, 'cookies.sqlite'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
       executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
     };
@@ -417,7 +426,7 @@ describe('browser profile copies', () => {
   it("still copies where the filesystem can't hold modes (chmod fails)", async () => {
     const profile = path.join(root, 'firefox', 'x');
     await put(path.join(profile, 'cookies.sqlite'), 'jar');
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
       executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
     };
@@ -440,7 +449,7 @@ describe('browser profile copies', () => {
     const profile = path.join(userData, 'Default');
     await put(path.join(userData, 'Local State'), '{}');
     await put(path.join(profile, 'Cookies'), 'cookies');
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chromium-snap:Default', browser: 'chromium', engine: 'chromium', profileName: 'Me',
       executablePath: '/snap/bin/chromium', userDataDir: userData, profileDirectory: 'Default', profilePath: profile,
     };
@@ -501,7 +510,7 @@ describe('browser profile copies', () => {
   it("refreshes its owner files while copies are in use; an owner that stopped refreshing is gone", async () => {
     const profile = path.join(root, 'firefox', 'x');
     await put(path.join(profile, 'cookies.sqlite'));
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'x',
       executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: profile,
     };
@@ -528,9 +537,9 @@ describe('browser profile copies', () => {
     expect(existsSync(other)).toBe(false);
   });
 
-  it("makes no copy for Puppeteer's own download", async () => {
-    const choice: PuppeteerBrowserChoice = {
-      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+  it("makes no copy for Playwright's own download", async () => {
+    const choice: PlaywrightBrowserChoice = {
+      id: 'playwright:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
       executablePath: '/c/firefox', userDataDir: '', profilePath: '',
     };
     expect(await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat')).toBeNull();
@@ -538,7 +547,7 @@ describe('browser profile copies', () => {
   });
 
   it('gives no copy when the profile is gone', async () => {
-    const choice: PuppeteerBrowserChoice = {
+    const choice: PlaywrightBrowserChoice = {
       id: 'chrome:Default',
       browser: 'chrome',
       engine: 'chromium',
@@ -551,7 +560,7 @@ describe('browser profile copies', () => {
     expect(await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat')).toBeNull();
   });
   describe('saved copies', () => {
-    const firefox = (id = 'firefox:x.default'): PuppeteerBrowserChoice => ({
+    const firefox = (id = 'firefox:x.default'): PlaywrightBrowserChoice => ({
       id, browser: 'firefox', engine: 'firefox', profileName: 'default', executablePath: '/usr/lib/firefox/firefox',
       userDataDir: path.join(root, 'firefox'), profilePath: path.join(root, 'firefox', id.split(':')[1]),
     });
@@ -625,7 +634,7 @@ describe('browser profile copies', () => {
       expect(existsSync(path.join(savedRoot(), 'firefox_x_default'))).toBe(true);
       expect(existsSync(path.join(savedRoot(), 'firefox_y_default'))).toBe(true);
 
-      // Puppeteer's own browser for a run: profiles chosen elsewhere keep their copies
+      // Playwright's own browser for a run: profiles chosen elsewhere keep their copies
       await removeOldBrowserProfileCopies(project, { force: true, keep: [settingsChoice], keepSaved: [settingsChoice, taskChoice] });
       expect(existsSync(settingsCopy)).toBe(true);
       expect(existsSync(path.join(savedRoot(), 'firefox_y_default'))).toBe(true);

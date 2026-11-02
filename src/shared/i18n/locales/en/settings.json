@@ -411,30 +411,31 @@
     "addServer": "Add server",
     "browserProfile": {
       "label": "Browser profile",
-      "default": "Puppeteer's Chrome",
+      "default": "Playwright's Chromium",
       "notFound": "{{name}} (no longer found)",
-      "managed": "Puppeteer's {{browser}}",
+      "managed": "Playwright's {{browser}}",
       "download": "Download {{browser}}",
       "downloadDescription": "Opens a terminal that installs it",
       "downloadFailed": "Couldn't start the download",
       "downloading": "Downloading {{browser}} in a terminal",
       "alreadyDownloading": "Already downloading {{browser}} in a terminal",
       "browserOpen": "{{browser}} is open",
-      "closeBrowser": "Close {{browser}} once to use Puppeteer. Workbench then saves a copy of its profile, and runs use that copy while the browser is open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
+      "closeBrowser": "Close {{browser}} once to use Playwright. Workbench then saves a copy of its profile, and runs use that copy while the browser is open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
       "browsers": {
         "chrome": "Chrome",
         "edge": "Edge",
         "brave": "Brave",
         "chromium": "Chromium",
         "firefox": "Firefox",
-        "safari": "Safari"
+        "safari": "Safari",
+        "webkit": "WebKit"
       },
       "variants": {
         "snap": "Snap",
         "flatpak": "Flatpak"
       },
       "reasons": {
-        "unsupportedEngine": "Puppeteer doesn't support Safari",
+        "unsupportedEngine": "Playwright can't drive Safari; use Playwright's WebKit",
         "executableMissing": "Browser not installed",
         "windowsBrowserInWsl": "Windows browser; tools run in WSL",
         "sandboxedPackage": "Flatpak browsers can't be used",
@@ -451,9 +452,9 @@
         "name": "Electron",
         "description": "Desktop app automation via Chrome DevTools"
       },
-      "puppeteer": {
-        "name": "Puppeteer",
-        "description": "Web browser automation for testing"
+      "playwright": {
+        "name": "Playwright",
+        "description": "Web browser automation for testing: Chromium, Firefox and WebKit"
       }
     },
     "customServers": "Custom servers",

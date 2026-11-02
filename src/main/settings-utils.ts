@@ -5,13 +5,27 @@
  * the main process startup (index.ts) and the IPC handlers (settings-handlers.ts).
  *
  * NOTE: This module intentionally does NOT perform migrations or auto-detection.
- * Those are handled by the IPC handlers where they have full context.
+ * Those are handled by the IPC handlers where they have full context. The one exception is
+ * renaming old keys (migrateStoredSettings), so every reader sees the current names; the file
+ * keeps the old ones until the next save.
  */
 
 import { app } from 'electron';
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { promises as fsPromises } from 'fs';
 import path from 'path';
+import { migrateMcpConnectorSettings } from '../shared/utils/mcp-connectors';
+
+/**
+ * Settings read from the file with old keys renamed, in place: the browser connector's settings
+ * from before it moved from Puppeteer to Playwright (mcpConnectors.puppeteerEnabled /
+ * puppeteerBrowser)
+ */
+function migrateStoredSettings(settings: unknown): Record<string, unknown> | undefined {
+  if (!settings || typeof settings !== 'object') return undefined;
+  migrateMcpConnectorSettings(settings as Record<string, unknown>);
+  return settings as Record<string, unknown>;
+}
 
 /**
  * Get the path to the settings file
@@ -24,7 +38,7 @@ export function getSettingsPath(): string {
  * Read and parse settings from disk.
  * Returns the raw parsed settings object, or undefined if the file doesn't exist or fails to parse.
  *
- * This function does NOT merge with defaults or perform any migrations.
+ * This function does NOT merge with defaults or perform migrations (beyond renaming old keys).
  * Callers are responsible for merging with DEFAULT_APP_SETTINGS.
  */
 export function readSettingsFile(): Record<string, unknown> | undefined {
@@ -36,7 +50,7 @@ export function readSettingsFile(): Record<string, unknown> | undefined {
 
   try {
     const content = readFileSync(settingsPath, 'utf-8');
-    return JSON.parse(content);
+    return migrateStoredSettings(JSON.parse(content));
   } catch {
     // Return undefined on parse error - caller will use defaults
     return undefined;
@@ -67,7 +81,7 @@ export function writeSettingsFile(settings: Record<string, unknown>): void {
  * This is the non-blocking version of readSettingsFile, safe to use in Electron main process
  * without blocking the event loop.
  *
- * This function does NOT merge with defaults or perform any migrations.
+ * This function does NOT merge with defaults or perform migrations (beyond renaming old keys).
  * Callers are responsible for merging with DEFAULT_APP_SETTINGS.
  */
 export async function readSettingsFileAsync(): Promise<Record<string, unknown> | undefined> {
@@ -76,7 +90,7 @@ export async function readSettingsFileAsync(): Promise<Record<string, unknown> |
   try {
     // Read directly — no separate access() check to avoid TOCTOU race
     const content = await fsPromises.readFile(settingsPath, 'utf-8');
-    return JSON.parse(content);
+    return migrateStoredSettings(JSON.parse(content));
   } catch {
     // Return undefined if file doesn't exist or has parse errors — caller will use defaults
     return undefined;

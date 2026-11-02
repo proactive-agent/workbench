@@ -20,7 +20,7 @@ import { createTask, saveDraft, loadDraft, clearDraft, isDraftEmpty, type TaskCr
 import type { TaskMetadata, ImageAttachment } from '../../shared/types';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
-import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 
 interface TaskCreationWizardProps {
   projectId: string;
@@ -62,8 +62,8 @@ export function TaskCreationWizard({
   // MCP connectors start from the Connectors defaults; changes stay with this task
   const defaultConnectors = useMemo(() => getDefaultMcpConnectorIds(settings.mcpConnectors), [settings.mcpConnectors]);
   const [mcpConnectors, setMcpConnectors] = useState<string[]>(defaultConnectors);
-  // The Puppeteer connector's browser profile picked for the task; unset follows Settings > Connectors
-  const [puppeteerBrowser, setPuppeteerBrowser] = useState<PuppeteerBrowserChoice | null | undefined>(undefined);
+  // The Playwright connector's browser profile picked for the task; unset follows Settings > Connectors
+  const [playwrightBrowser, setPlaywrightBrowser] = useState<PlaywrightBrowserChoice | null | undefined>(undefined);
 
   // Draft state
   const [isDraftRestored, setIsDraftRestored] = useState(false);
@@ -76,7 +76,7 @@ export function TaskCreationWizard({
         setDescription(draft.description);
         setImages(draft.images);
         setMcpConnectors(draft.mcpConnectors ?? defaultConnectors);
-        setPuppeteerBrowser(draft.puppeteerBrowser);
+        setPlaywrightBrowser(draft.playwrightBrowser);
         setPushNewBranches(draft.pushNewBranches ?? projectPushNewBranches);
         setIsDraftRestored(true);
       } else {
@@ -85,7 +85,7 @@ export function TaskCreationWizard({
         setDescription('');
         setImages([]);
         setMcpConnectors(defaultConnectors);
-        setPuppeteerBrowser(undefined);
+        setPlaywrightBrowser(undefined);
         setBaseBranch(PROJECT_DEFAULT_BRANCH);
         setUseWorktree(true);
         setPushNewBranches(projectPushNewBranches);
@@ -103,10 +103,10 @@ export function TaskCreationWizard({
     description,
     images,
     mcpConnectors,
-    ...(puppeteerBrowser !== undefined ? { puppeteerBrowser } : {}),
+    ...(playwrightBrowser !== undefined ? { playwrightBrowser } : {}),
     pushNewBranches,
     savedAt: new Date()
-  }), [projectId, description, images, mcpConnectors, puppeteerBrowser, pushNewBranches]);
+  }), [projectId, description, images, mcpConnectors, playwrightBrowser, pushNewBranches]);
 
   const handleCreate = async () => {
     if (!description.trim()) {
@@ -136,7 +136,7 @@ export function TaskCreationWizard({
       if (!pushNewBranches) metadata.pushNewBranches = false;
       metadata.mcpConnectors = mcpConnectors;
       // Only once a browser was picked for the task: until then it follows Settings
-      if (puppeteerBrowser !== undefined) metadata.puppeteerBrowser = puppeteerBrowser;
+      if (playwrightBrowser !== undefined) metadata.playwrightBrowser = playwrightBrowser;
 
       // The title is generated from the description (and refined by triage when the task starts)
       const task = await createTask(projectId, '', description.trim(), metadata);
@@ -158,7 +158,7 @@ export function TaskCreationWizard({
     setDescription('');
     setImages([]);
     setMcpConnectors(defaultConnectors);
-    setPuppeteerBrowser(undefined);
+    setPlaywrightBrowser(undefined);
     setBaseBranch(PROJECT_DEFAULT_BRANCH);
     setUseWorktree(true);
     setPushNewBranches(projectPushNewBranches);
@@ -254,8 +254,8 @@ export function TaskCreationWizard({
         onImagesChange={setImages}
         mcpConnectors={mcpConnectors}
         onMcpConnectorsChange={setMcpConnectors}
-        puppeteerBrowser={puppeteerBrowser}
-        onPuppeteerBrowserChange={setPuppeteerBrowser}
+        playwrightBrowser={playwrightBrowser}
+        onPlaywrightBrowserChange={setPlaywrightBrowser}
         disabled={isCreating}
         error={error}
         onError={setError}

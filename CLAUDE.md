@@ -30,7 +30,7 @@ reviews, requests changes (same session continues) or merges.
   an open PR stays in Human Review (PR Created); Merge PR (`src/main/ai/runners/github/pr-merger.ts`) pulls the target
   branch into the task branch, lets the merge agent (`src/main/ai/runners/merge-agent.ts`, Claude Code) resolve
   conflicts, checks that no line the target added was lost, pushes and merges the PR, then moves the task to Done
-- **Connectors** — MCP servers added to a task's Claude Code session (`--mcp-config`: Context7, Electron, Puppeteer,
+- **Connectors** — MCP servers added to a task's Claude Code session (`--mcp-config`: Context7, Electron, Playwright,
   user-added servers) with app-wide defaults in Settings and per-task choices in the task dialog; a server stays
   disabled until it can start
 - **Graphify memory graph** — Optional [Graphify](https://github.com/Graphify-Labs/graphify) knowledge graph of a
@@ -256,36 +256,54 @@ Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync
 ### MCP Connectors
 
 Settings > Connectors (`settings.mcpConnectors`, `McpConnectorSettings`) holds the defaults: Context7, Electron and
-Puppeteer, plus custom servers, which must pass a connection test before they can be switched on. New tasks copy the
+Playwright, plus custom servers, which must pass a connection test before they can be switched on. New tasks copy the
 enabled ids into `TaskMetadata.mcpConnectors` and can change them in the task dialog. When a task runs,
 `buildMcpConfig()` (`src/main/claude-code/mcp-config.ts`) turns that task's ids into `--mcp-config` for its Claude Code
 session, on top of the user's own Claude Code MCP configuration. Helpers live in `src/shared/utils/mcp-connectors.ts`.
+Data saved before the browser connector moved from Puppeteer to Playwright (id `puppeteer`, `puppeteerEnabled`,
+`puppeteerBrowser`) is renamed where it is read (`migrate*` helpers there: the settings file in `settings-utils.ts`,
+task metadata in the project store, drafts, chats), so nothing else knows the old names.
 
-Puppeteer's row picks a browser profile (`McpConnectorSettings.puppeteerBrowser`): `src/main/browser-profiles/` finds
-Chrome, Edge, Brave, Chromium and Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a
-copy of the chosen profile in the app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
+Playwright is Microsoft's `@playwright/mcp`, pinned (`PLAYWRIGHT_MCP_PACKAGE` in `browser-profiles/managed.ts`, with the
+browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Its row picks a browser profile
+(`McpConnectorSettings.playwrightBrowser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
+Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a copy of the chosen profile in the
+app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
 `~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
 cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
 (`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
-copies. The copy is passed to `@modelcontextprotocol/server-puppeteer` through `PUPPETEER_LAUNCH_OPTIONS`. The task
-dialog's Puppeteer row picks a profile for that task (`TaskMetadata.puppeteerBrowser`, null for Puppeteer's own Chrome;
-unset follows Settings), which its runs use instead; sweeps keep the copies of every profile Settings or a task still
-chooses (`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
-`mcp-config.ts`. The picker also lists browsers Puppeteer
-downloads itself (`managed.ts`: Firefox from `~/.cache/puppeteer`) as disabled items with a download button that
-opens a terminal running `npx puppeteer browsers install` (`MCP_INSTALL_BROWSER`; the main process picks the
-command, then watches the cache and sends the new list).
+copies. Each copy also holds the run's Playwright config (`.workbench-playwright.json`, `playwrightProfileConfig()`),
+passed with `--config`: Chromium browsers run their executable on the copy with `--profile-directory`, the sandbox on
+and without Playwright's `--password-store=basic` / `--use-mock-keychain` (so copied sign-ins decrypt); the user's
+Firefox runs over WebDriver BiDi (channel `moz-firefox`, which Playwright calls experimental; Playwright's plain
+`firefox` is its own patched build) with Sync prefs off. Without a copy (Playwright's own browsers, the availability
+check, a failed copy) the server gets `--browser` / `--executable-path` and `--isolated` (a profile in memory;
+Playwright's own Chromium also `--sandbox`, which Playwright leaves off on Linux). Runs
+pass `--output-dir` to their temporary folder, since Playwright otherwise saves snapshots and screenshots in the
+session's working folder (`.playwright-mcp` in the worktree). The task dialog's Playwright row picks a profile for
+that task (`TaskMetadata.playwrightBrowser`, null for Playwright's own Chromium; unset follows Settings), which its runs
+use instead; sweeps keep the copies of every profile Settings or a task still chooses
+(`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
+`mcp-config.ts`. The default is Playwright's own Chromium (Chrome for Testing, `--browser chromium`, never the
+installed Chrome); the picker also lists Playwright's Firefox and WebKit (`managed.ts`, found in Playwright's cache
+`ms-playwright/<name>-<revision>` once `INSTALLATION_COMPLETE` is there) as disabled items with a download button
+that opens a terminal running `npx -y @playwright/mcp@<version> install-browser <name>` (`MCP_INSTALL_BROWSER`; the
+main process picks the command, then watches the cache, sends the new list and checks the connector again). Safari is
+listed but can't be used; WebKit is the closest engine.
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
-answers `initialize` (Puppeteer is also asked to navigate once, since it needs a browser; `mcp-commands.ts` finds the
+answers `initialize` (Playwright is also asked to open `about:blank` with `browser_navigate`, headless, since it needs
+a browser; a missing build of Playwright's own browser offers its install-browser command; `mcp-commands.ts` finds the
 command, and the built-in servers need npx from Node.js). Until a server is ready, its switch is off and disabled on
 the Connectors page, in the task dialog and in the chat's MCP menu, and runs leave out unavailable servers. An
 unavailable result is checked again when asked for after 30 seconds. Runs copy the chosen browser profile, and an
 open browser keeps it locked and half written (`browser-profiles/in-use.ts` reads its lock), so each profile also has
 one saved copy, made in the background whenever the browser is found closed: a run that starts while the browser is
-open copies the saved one instead. Only an open browser with no saved copy yet makes Puppeteer unavailable; the
-switch's tooltip asks to close it once, and closing it enables the connector within a few seconds.
+open copies the saved one instead. Only an open browser with no saved copy yet makes Playwright unavailable; the
+switch's tooltip asks to close it once, and closing it enables the connector within a few seconds. A task's own
+browser is probed for its runs apart from the windows' result (`checkRunServer`). Custom servers never take a
+built-in's id (moved to `<id>-custom` when the settings are read).
 
 ### Graphify Memory Graph
 
@@ -316,6 +334,9 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   graphify's searches (Use Graphify on) and read-only `gh` / `glab` commands (the GitHub / GitLab buttons,
   `INSIGHTS_GITHUB_COMMANDS` / `INSIGHTS_GITLAB_COMMANDS` in `insights/prompts.ts`), and Edit/Write only for
   `.workbench/compeng/**` (Self-improve on). `--permission-mode dontAsk` denies everything else without asking.
+  Playwright runs through `insights/playwright-guard.cjs`, in the turn's own folder without the client's roots, so
+  its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
+  leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,

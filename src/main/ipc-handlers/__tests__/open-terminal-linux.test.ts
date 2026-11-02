@@ -84,11 +84,11 @@ describe('openTerminalWithCommand on Linux', () => {
     // gnome-terminal is there but can't open a window; Debian's default terminal works
     mocks.installed.set('gnome-terminal', 1);
     mocks.installed.set('x-terminal-emulator', undefined);
-    await openTerminalWithCommand('npx puppeteer browsers install firefox', { PATH: '/opt/node/bin' });
+    await openTerminalWithCommand('npx -y @playwright/mcp@0.0.83 install-browser firefox', { PATH: '/opt/node/bin' });
     expect(mocks.spawn.mock.calls.map(([cmd]) => cmd)).toEqual(['gnome-terminal', 'x-terminal-emulator']);
     expect(mocks.spawn).toHaveBeenLastCalledWith(
       'x-terminal-emulator',
-      ['-e', 'bash', '-c', 'npx puppeteer browsers install firefox; exec bash'],
+      ['-e', 'bash', '-c', 'npx -y @playwright/mcp@0.0.83 install-browser firefox; exec bash'],
       expect.objectContaining({ env: { PATH: '/opt/node/bin' } })
     );
   });

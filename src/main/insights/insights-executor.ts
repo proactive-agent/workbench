@@ -52,15 +52,15 @@ export interface InsightsTurnOptions {
 
 /**
  * The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones.
- * With Puppeteer, each turn gets a fresh copy of the browser profile (sign-ins as they are now,
+ * With Playwright, each turn gets a fresh copy of the browser profile (sign-ins as they are now,
  * like task runs), which the caller removes when the turn ends
  */
 async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
   const chosen = await usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
-  const browser = connectorSettings?.puppeteerBrowser;
+  const browser = connectorSettings?.playwrightBrowser;
   let browserProfileDir: string | undefined;
-  if (browser && chosen.includes('puppeteer')) {
+  if (browser && chosen.includes('playwright')) {
     // A slot per turn: a replaced turn may still be removing its own copy
     const slot = `chat-${randomUUID().slice(0, 8)}`;
     // Copies of profiles tasks still choose are kept by its sweep

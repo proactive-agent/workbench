@@ -301,6 +301,24 @@ describe('runInsights', () => {
     expect(allowed).toContain(INSIGHTS_TASK_TOOLS_RULE);
   });
 
+  it("runs the chat's Playwright through the guard, in the turn's own folder, which the chat may read", async () => {
+    setRun(conversation);
+    const playwright = { type: 'stdio' as const, command: 'npx', args: ['-y', '@playwright/mcp@0.0.83', '--browser', 'chromium', '--isolated', '--sandbox'] };
+    await (await run({ mcpServers: { playwright } })).promise;
+    const { args, mcpConfig } = record();
+
+    const guarded = mcpConfig.mcpServers.playwright;
+    const [script, dir, ...server] = guarded.args as string[];
+    expect(guarded).toMatchObject({ type: 'stdio', command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } });
+    expect(script).toMatch(/playwright-guard\.cjs$/);
+    expect(dir).toMatch(/workbench-insights-[^/\\]+[/\\]playwright$/);
+    // The server's own files go to that folder too, linked with paths the chat can read
+    expect(server).toEqual([...['npx', ...playwright.args], '--output-dir', dir, '--file-paths', 'absolute']);
+    expect(args.slice(args.indexOf('--add-dir'), args.indexOf('--add-dir') + 2)).toEqual(['--add-dir', dir]);
+    expect((args as string[]).filter((arg) => arg === '--add-dir')).toHaveLength(1);
+    expect(args[args.indexOf('--disallowedTools') + 1]).toBe('mcp__playwright__browser_run_code_unsafe');
+  });
+
   it("gives the CLI the chat's MCP servers without the task tools", async () => {
     setRun(conversation);
     const context7 = { type: 'stdio' as const, command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] };
@@ -313,6 +331,9 @@ describe('runInsights', () => {
     expect(args).toContain('mcp__context7');
     expect(args).not.toContain(INSIGHTS_TASK_TOOLS_RULE);
     expect(mcpToolTimeout).toBeNull();
+    // No Playwright: nothing else to read, nothing to leave out
+    expect(args).not.toContain('--add-dir');
+    expect(args).not.toContain('--disallowedTools');
   });
 
   it("lets Claude use gh's and glab's read-only commands, and no other command, when their buttons are on", async () => {

@@ -32,19 +32,21 @@ describe('browserChoicesInUse', () => {
     await rm(root, { recursive: true, force: true });
   });
 
-  it("lists Settings' choice and the tasks' own picks, leaving out archived tasks and Puppeteer's Chrome", async () => {
+  it("lists Settings' choice and the tasks' own picks, leaving out archived tasks and Playwright's Chromium", async () => {
     const [a, b] = projects.list.map((project) => project.path);
-    await task(a, '001-own', { puppeteerBrowser: choice('chrome:A') });
-    await task(a, '002-archived', { puppeteerBrowser: choice('chrome:Old'), archivedAt: '2026-10-01T00:00:00Z' });
-    await task(a, '003-default-chrome', { puppeteerBrowser: null });
+    await task(a, '001-own', { playwrightBrowser: choice('chrome:A') });
+    await task(a, '002-archived', { playwrightBrowser: choice('chrome:Old'), archivedAt: '2026-10-01T00:00:00Z' });
+    await task(a, '003-default-chrome', { playwrightBrowser: null });
     await task(a, '004-follows-settings', {});
-    await task(b, '001-other', { puppeteerBrowser: choice('chrome:B') });
+    await task(b, '001-other', { playwrightBrowser: choice('chrome:B') });
+    // A pick saved before the connector moved to Playwright
+    await task(b, '002-older', { puppeteerBrowser: choice('chrome:Older') });
     await mkdir(path.join(a, '.workbench', 'tasks', '005-broken'), { recursive: true });
     await writeFile(path.join(a, '.workbench', 'tasks', '005-broken', 'task_metadata.json'), '{');
 
     const inUse = await browserChoicesInUse(a, choice('chrome:Settings') as never);
     expect(inUse.project.map((c) => c.id)).toEqual(['chrome:Settings', 'chrome:A']);
-    expect(inUse.all.map((c) => c.id).sort()).toEqual(['chrome:A', 'chrome:B', 'chrome:Settings']);
+    expect(inUse.all.map((c) => c.id).sort()).toEqual(['chrome:A', 'chrome:B', 'chrome:Older', 'chrome:Settings']);
   });
 
   it('chooses nothing for a project without tasks', async () => {

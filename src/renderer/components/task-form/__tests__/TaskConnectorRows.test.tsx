@@ -2,7 +2,7 @@
  * @vitest-environment jsdom
  */
 /**
- * A task's connectors: read-only in the task view, and the Puppeteer row's browser profile for the
+ * A task's connectors: read-only in the task view, and the Playwright row's browser profile for the
  * task (the one in Settings until another is picked)
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -35,36 +35,39 @@ describe('TaskConnectorRows', () => {
       onMcpAvailabilityChanged: vi.fn(() => () => undefined),
       detectBrowserProfiles: vi.fn(async () => ({ success: true, data: [chrome, firefox] })),
       onBrowserProfilesChanged: vi.fn(() => () => undefined),
-      installPuppeteerBrowser: vi.fn(async () => undefined),
+      installPlaywrightBrowser: vi.fn(async () => undefined),
     };
     const { settings } = useSettingsStore.getState();
     useSettingsStore.setState({
-      settings: { ...settings, mcpConnectors: { puppeteerEnabled: true, puppeteerBrowser: toBrowserChoice(chrome) } },
+      settings: { ...settings, mcpConnectors: { playwrightEnabled: true, playwrightBrowser: toBrowserChoice(chrome) } },
     });
   });
 
   it("shows the task's connectors and browser without letting them change", async () => {
     const { getByRole, getByText, queryByRole } = render(
-      <TaskConnectorRows value={['puppeteer']} puppeteerBrowser={toBrowserChoice(firefox)} readOnly />
+      <TaskConnectorRows value={['playwright']} playwrightBrowser={toBrowserChoice(firefox)} readOnly />
     );
-    const puppeteer = getByRole('switch', { name: 'Puppeteer' });
-    expect(puppeteer.getAttribute('aria-checked')).toBe('true');
-    expect(puppeteer.hasAttribute('disabled')).toBe(true);
+    const playwright = getByRole('switch', { name: 'Playwright' });
+    expect(playwright.getAttribute('aria-checked')).toBe('true');
+    expect(playwright.hasAttribute('disabled')).toBe(true);
     expect(getByRole('switch', { name: 'Context7' }).getAttribute('aria-checked')).toBe('false');
     // The task's own browser, as text: no picker
     expect(getByText('Firefox · Work')).toBeTruthy();
     expect(queryByRole('combobox')).toBeNull();
+    // Opening a task's view starts no server check
+    const api = (window as unknown as { electronAPI: { getMcpAvailability: ReturnType<typeof vi.fn> } }).electronAPI;
+    expect(api.getMcpAvailability).not.toHaveBeenCalled();
   });
 
   it('shows the Settings browser in the task view when the task picked none', () => {
-    const { getByText } = render(<TaskConnectorRows value={['puppeteer']} readOnly />);
+    const { getByText } = render(<TaskConnectorRows value={['playwright']} readOnly />);
     expect(getByText('Chrome · Home')).toBeTruthy();
   });
 
   it("starts from the Settings browser and stores only the task's own pick", async () => {
     const onPick = vi.fn();
     const { getByRole, findByRole } = render(
-      <TaskConnectorRows value={['puppeteer']} onChange={vi.fn()} onPuppeteerBrowserChange={onPick} />
+      <TaskConnectorRows value={['playwright']} onChange={vi.fn()} onPlaywrightBrowserChange={onPick} />
     );
     await waitFor(() => expect(window.electronAPI.detectBrowserProfiles).toHaveBeenCalled());
     expect(getByRole('combobox').textContent).toContain('Chrome · Home');
@@ -73,18 +76,18 @@ describe('TaskConnectorRows', () => {
     fireEvent.click(await findByRole('option', { name: /Chrome · Home/ }));
     expect(onPick).not.toHaveBeenCalled();
     fireEvent.keyDown(getByRole('combobox'), { key: 'Enter' });
-    fireEvent.click(await findByRole('option', { name: /Puppeteer's Chrome/ }));
+    fireEvent.click(await findByRole('option', { name: /Playwright's Chromium/ }));
     expect(onPick).toHaveBeenCalledWith(null);
   });
 
-  it('keeps the browser picker in the form while Puppeteer is off for the task', () => {
+  it('keeps the browser picker in the form while Playwright is off for the task', () => {
     const { getByRole } = render(
-      <TaskConnectorRows value={['context7']} onChange={vi.fn()} onPuppeteerBrowserChange={vi.fn()} />
+      <TaskConnectorRows value={['context7']} onChange={vi.fn()} onPlaywrightBrowserChange={vi.fn()} />
     );
     expect(getByRole('combobox')).toBeTruthy();
   });
 
-  it('names no browser in the task view while Puppeteer is off for the task', () => {
+  it('names no browser in the task view while Playwright is off for the task', () => {
     const { queryByTitle } = render(<TaskConnectorRows value={['context7']} readOnly />);
     expect(queryByTitle(/browser/i)).toBeNull();
   });

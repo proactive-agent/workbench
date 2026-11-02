@@ -639,7 +639,7 @@ app.whenReady().then(async () => {
   // Decide where tools run on Windows (native, or WSL with the windowsShell setting) before the
   // tool cache and Claude accounts are read; detection runs in the background, windows don't wait
   void initShellRuntime(readSettingsFile()?.windowsShell);
-  // Browser profiles for the Puppeteer connector, looked for once (after the shell runtime is known)
+  // Browser profiles for the Playwright connector, looked for once (after the shell runtime is known)
   void detectBrowserProfiles();
 
   // Linux shells take the dock/taskbar icon from a desktop entry matching the window class; give the

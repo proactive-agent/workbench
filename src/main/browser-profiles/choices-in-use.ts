@@ -1,6 +1,6 @@
 /**
- * The Puppeteer browser profiles still chosen, so sweeps of profile copies (profile-copy.ts) keep
- * theirs: the one in Settings > Connectors and every task's own pick (TaskMetadata.puppeteerBrowser)
+ * The Playwright browser profiles still chosen, so sweeps of profile copies (profile-copy.ts) keep
+ * theirs: the one in Settings > Connectors and every task's own pick (TaskMetadata.playwrightBrowser)
  * that isn't archived. Read from the tasks' task_metadata.json files without blocking (the
  * project store's task scan is synchronous)
  */
@@ -9,11 +9,12 @@ import path from 'path';
 import { readdir, readFile } from 'fs/promises';
 import { projectStore } from '../project-store';
 import { getSpecsDir } from '../../shared/constants';
-import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import type { BrowserChoicesInUse } from './profile-copy';
+import { migrateTaskConnectorFields } from '../../shared/utils/mcp-connectors';
 
 /** The profiles a project's tasks picked for themselves (archived tasks don't count) */
-async function projectTaskChoices(projectPath: string, autoBuildPath: string | undefined): Promise<PuppeteerBrowserChoice[]> {
+async function projectTaskChoices(projectPath: string, autoBuildPath: string | undefined): Promise<PlaywrightBrowserChoice[]> {
   const specsDir = path.join(projectPath, getSpecsDir(autoBuildPath));
   let names: string[];
   try {
@@ -24,16 +25,18 @@ async function projectTaskChoices(projectPath: string, autoBuildPath: string | u
   const choices = await Promise.all(names.map(async (name) => {
     try {
       const metadata = JSON.parse(await readFile(path.join(specsDir, name, 'task_metadata.json'), 'utf-8')) as {
-        puppeteerBrowser?: PuppeteerBrowserChoice | null;
+        playwrightBrowser?: PlaywrightBrowserChoice | null;
         archivedAt?: string;
       } | null;
-      const choice = metadata?.puppeteerBrowser;
+      // A pick stored before the connector moved to Playwright (puppeteerBrowser)
+      migrateTaskConnectorFields(metadata as Record<string, unknown> | null);
+      const choice = metadata?.playwrightBrowser;
       return choice && typeof choice.id === 'string' && !metadata?.archivedAt ? choice : null;
     } catch {
       return null;
     }
   }));
-  return choices.filter((choice): choice is PuppeteerBrowserChoice => choice !== null);
+  return choices.filter((choice): choice is PlaywrightBrowserChoice => choice !== null);
 }
 
 /**
@@ -42,7 +45,7 @@ async function projectTaskChoices(projectPath: string, autoBuildPath: string | u
  */
 export async function browserChoicesInUse(
   projectPath: string,
-  settingsChoice: PuppeteerBrowserChoice | undefined
+  settingsChoice: PlaywrightBrowserChoice | undefined
 ): Promise<BrowserChoicesInUse> {
   const projects = projectStore.getProjects();
   const settings = settingsChoice ? [settingsChoice] : [];

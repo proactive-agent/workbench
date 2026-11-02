@@ -39,15 +39,28 @@ describe('browser profile picker helpers', () => {
     expect(toBrowserChoice({ ...chrome, usable: false, disabledReason: 'executable-missing', executablePath: undefined })).toBeUndefined();
   });
 
-  it("labels Puppeteer's own download without a profile name and stores it as managed", () => {
+  it("labels Playwright's own download without a profile name and stores it as managed", () => {
     const firefox: BrowserProfile = {
-      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      id: 'playwright:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
       userDataDir: '', profilePath: '', executablePath: '/c/firefox', usable: true,
     };
     expect(browserProfileLabel(t, firefox)).toBe('managed');
-    expect(toBrowserChoice(firefox)).toMatchObject({ id: 'puppeteer:firefox', managed: true, executablePath: '/c/firefox' });
+    expect(toBrowserChoice(firefox)).toMatchObject({ id: 'playwright:firefox', managed: true, executablePath: '/c/firefox' });
     expect(toBrowserChoice({ ...firefox, usable: false, executablePath: undefined, disabledReason: 'not-downloaded', downloadable: 'firefox' })).toBeUndefined();
     expect(disabledReasonText(t, 'not-downloaded')).toBe('notDownloaded');
+  });
+
+  it("stores Playwright's own WebKit as a choice, never Safari", () => {
+    const webkit: BrowserProfile = {
+      id: 'playwright:webkit', browser: 'webkit', engine: 'webkit', managed: true, profileName: 'WebKit',
+      userDataDir: '', profilePath: '', executablePath: '/c/webkit/pw_run.sh', usable: true,
+    };
+    expect(toBrowserChoice(webkit)).toMatchObject({ id: 'playwright:webkit', engine: 'webkit', managed: true, executablePath: '/c/webkit/pw_run.sh' });
+    const safari: BrowserProfile = {
+      id: 'safari:default', browser: 'safari', engine: 'webkit', profileName: 'Safari',
+      userDataDir: '', profilePath: '', executablePath: '/Applications/Safari.app/Contents/MacOS/Safari', usable: true,
+    };
+    expect(toBrowserChoice(safari)).toBeUndefined();
   });
 
   it('gives each disabled reason as text', () => {
@@ -83,9 +96,9 @@ describe('browser profile picker helpers', () => {
     const respelled = { ...windows, userDataDir: 'c:/users/me/AppData/Local/Google/Chrome/User Data/', executablePath: 'D:\\chrome.exe' };
     expect(storedChoiceProfile(stored, [respelled])).toBe(respelled);
     expect(refreshedBrowserChoice(stored, [respelled])?.executablePath).toBe('D:\\chrome.exe');
-    // Puppeteer's own download: any build will do
+    // Playwright's own download: any build will do
     const managed: BrowserProfile = {
-      id: 'puppeteer:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
+      id: 'playwright:firefox', browser: 'firefox', engine: 'firefox', managed: true, profileName: 'Firefox',
       userDataDir: '', profilePath: '', executablePath: '/c/firefox', usable: true,
     };
     expect(refreshedBrowserChoice(toBrowserChoice(managed)!, [{ ...managed, executablePath: '/d/firefox' }])?.executablePath).toBe('/d/firefox');

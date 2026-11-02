@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { isChromeNotDownloaded } from '../connector-meta';
+import { isChromiumNotDownloaded } from '../connector-meta';
 
-describe('isChromeNotDownloaded', () => {
-  it("is true only for the command that downloads Puppeteer's Chrome", () => {
-    expect(isChromeNotDownloaded('npx puppeteer browsers install chrome@131.0.6778.204')).toBe(true);
-    expect(isChromeNotDownloaded('npx puppeteer browsers install chrome')).toBe(true);
-    expect(isChromeNotDownloaded('npx puppeteer browsers install firefox')).toBe(false);
-    expect(isChromeNotDownloaded(undefined)).toBe(false);
-    expect(isChromeNotDownloaded('')).toBe(false);
+describe('isChromiumNotDownloaded', () => {
+  it("is true only for the command that downloads Playwright's Chromium", () => {
+    expect(isChromiumNotDownloaded('npx -y @playwright/mcp@0.0.83 install-browser chromium')).toBe(true);
+    expect(isChromiumNotDownloaded('npx -y @playwright/mcp@0.0.83 install-browser firefox')).toBe(false);
+    expect(isChromiumNotDownloaded('npx -y @playwright/mcp@0.0.83 install-browser webkit')).toBe(false);
+    expect(isChromiumNotDownloaded(undefined)).toBe(false);
+    expect(isChromiumNotDownloaded('')).toBe(false);
   });
 });

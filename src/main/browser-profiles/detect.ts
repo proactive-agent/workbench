@@ -3,10 +3,10 @@
  * =========================
  *
  * Finds the installed Chromium-family browsers (Chrome, Edge, Brave, Chromium) and Firefox and
- * lists their profiles for the Puppeteer connector (Settings > Connectors). A profile is usable
- * when Puppeteer can drive its engine and the browser's executable exists where tools run.
+ * lists their profiles for the Playwright connector (Settings > Connectors). A profile is usable
+ * when Playwright can drive the browser and its executable exists where tools run.
  *
- * When tools run in WSL, Puppeteer starts inside the distribution: its browsers are read through
+ * When tools run in WSL, Playwright starts inside the distribution: its browsers are read through
  * `\\wsl.localhost` paths and stored with their Linux paths, and Windows browsers are listed but
  * can't be used. Only async file reads; command lookups go through mcp-commands (async, cached).
  * Runs once at startup; `refresh` looks again.
@@ -14,7 +14,7 @@
 
 import os from 'os';
 import { access, readFile, stat } from 'fs/promises';
-import type { BrowserProfile, BrowserProfileDisabledReason } from '../../shared/types/browser-profiles';
+import type { BrowserProfile, BrowserProfileDisabledReason, DownloadableBrowser } from '../../shared/types/browser-profiles';
 import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { resolveCommand } from '../mcp-commands';
@@ -29,7 +29,7 @@ import {
   type BrowserOs,
 } from './locations';
 import { parseChromiumLocalState, parseFirefoxProfilesIni } from './parsing';
-import { findManagedFirefox, scanManagedBrowsers } from './managed';
+import { findManagedBrowser, scanManagedBrowsers } from './managed';
 
 /** Profiles with no sign of use for this long are left out (leftovers of old or removed installs) */
 export const STALE_PROFILE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -43,7 +43,7 @@ const ACTIVITY_FILES = [
 const WATCH_INTERVAL_MS = 3000;
 const WATCH_LIMIT_MS = 15 * 60 * 1000;
 
-const BROWSER_ORDER = ['chrome', 'edge', 'brave', 'chromium', 'firefox', 'safari'];
+const BROWSER_ORDER = ['chrome', 'edge', 'brave', 'chromium', 'firefox', 'safari', 'webkit'];
 
 interface ScanContext {
   os: BrowserOs;
@@ -55,7 +55,7 @@ interface ScanContext {
   lookUpCommands: boolean;
   /** Look commands up again instead of taking the cached answer */
   refresh?: boolean;
-  /** Leave out the browsers Puppeteer downloads itself */
+  /** Leave out the browsers Playwright downloads itself */
   skipManaged?: boolean;
 }
 
@@ -255,7 +255,7 @@ export async function scanBrowserProfiles(context: ScanContext): Promise<Browser
     .map((profile, index) => ({ profile, index }))
     .sort((a, b) => BROWSER_ORDER.indexOf(a.profile.browser) - BROWSER_ORDER.indexOf(b.profile.browser) || a.index - b.index)
     .map(({ profile }) => profile);
-  // Puppeteer's own downloads come last
+  // Playwright's own downloads come last
   return context.skipManaged ? sorted : [...sorted, ...(await scanManagedBrowsers(context).catch(() => []))];
 }
 
@@ -271,7 +271,7 @@ async function detect(refresh: boolean): Promise<BrowserProfile[]> {
   const native: ScanContext = { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p) => p, lookUpCommands: !isWindows(), refresh };
   if (!wsl) return scanBrowserProfiles(native);
 
-  // Tools (and so Puppeteer) run in the distribution: its own browsers can be used, Windows ones can't
+  // Tools (and so Playwright) run in the distribution: its own browsers can be used, Windows ones can't
   const linux = await scanBrowserProfiles({ os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh });
   const windows = (await scanBrowserProfiles({ ...native, lookUpCommands: false, skipManaged: true })).map((profile) => ({
     ...profile,
@@ -295,32 +295,36 @@ export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Prom
   return detection;
 }
 
-let watching: Promise<BrowserProfile[] | null> | null = null;
-/** When the running watch gives up: each new download moves it to WATCH_LIMIT_MS from then */
-let watchDeadline = 0;
+/** Running watches by browser, with when each gives up (each new download moves it to WATCH_LIMIT_MS from then) */
+const watches = new Map<DownloadableBrowser, { deadline: number; promise: Promise<BrowserProfile[] | null> }>();
 
 /**
  * After a download button opened a terminal: wait (up to WATCH_LIMIT_MS after the latest call) for
- * Puppeteer's Firefox to show up in its cache folder, then detect again and return the new list
- * (null when it never did). One watch at a time; a later call shares it and extends its deadline
+ * the browser's build to show up in Playwright's cache folder, then detect again and return the new
+ * list (null when it never did). One watch per browser; a later call shares it and extends its deadline
  */
-export function waitForManagedFirefox(): Promise<BrowserProfile[] | null> {
-  watchDeadline = Math.max(watchDeadline, Date.now() + WATCH_LIMIT_MS);
-  if (watching) return watching;
-  watching = (async () => {
+export function waitForManagedBrowser(browser: DownloadableBrowser): Promise<BrowserProfile[] | null> {
+  const deadline = Date.now() + WATCH_LIMIT_MS;
+  const running = watches.get(browser);
+  if (running) {
+    running.deadline = Math.max(running.deadline, deadline);
+    return running.promise;
+  }
+  const watch: { deadline: number; promise: Promise<BrowserProfile[] | null> } = { deadline, promise: Promise.resolve(null) };
+  watch.promise = (async () => {
     await whenShellRuntimeReady();
     const wsl = getWslInfo();
     const context = wsl
       ? { os: 'linux' as const, home: wsl.home, env: {}, toHost: toHostPath }
       : { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p: string) => p };
-    while (Date.now() < watchDeadline) {
-      if (await findManagedFirefox(context)) return detectBrowserProfiles({ refresh: true });
+    while (Date.now() < watch.deadline) {
+      if (await findManagedBrowser(browser, context)) return detectBrowserProfiles({ refresh: true });
       await new Promise((resolve) => setTimeout(resolve, WATCH_INTERVAL_MS));
     }
     return null;
   })().finally(() => {
-    watching = null;
-    watchDeadline = 0;
+    watches.delete(browser);
   });
-  return watching;
+  watches.set(browser, watch);
+  return watch.promise;
 }

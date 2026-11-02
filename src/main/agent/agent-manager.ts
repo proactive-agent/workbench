@@ -19,7 +19,7 @@ import { describeLeftOutConnector, usableMcpConnectorIds } from '../mcp-availabi
 import type { TaskLogPhase } from '../../shared/types/task';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
 import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
-import { getDefaultMcpConnectorIds, getTaskPuppeteerBrowser } from '../../shared/utils/mcp-connectors';
+import { getDefaultMcpConnectorIds, getTaskPlaywrightBrowser } from '../../shared/utils/mcp-connectors';
 import { readSettingsFile, readSettingsFileAsync } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { isSelfImproveEnabled, SELF_IMPROVE_NUDGE } from '../self-improve';
@@ -513,12 +513,12 @@ export class AgentManager extends EventEmitter {
 
     // Connectors the run leaves out, for the start of its task log
     const startNotes: { phase: TaskLogPhase; line: string }[] = [];
-    // The Puppeteer connector's browser: the task's own choice, else the one in Settings > Connectors
-    const taskBrowser = task.metadata?.puppeteerBrowser;
-    const browser = getTaskPuppeteerBrowser(taskBrowser, settings.mcpConnectors);
+    // The Playwright connector's browser: the task's own choice, else the one in Settings > Connectors
+    const taskBrowser = task.metadata?.playwrightBrowser;
+    const browser = getTaskPlaywrightBrowser(taskBrowser, settings.mcpConnectors);
     const connectorSettings: McpConnectorSettings | undefined = taskBrowser === undefined
       ? settings.mcpConnectors
-      : { ...settings.mcpConnectors, puppeteerBrowser: browser };
+      : { ...settings.mcpConnectors, playwrightBrowser: browser };
     const config: TaskRunConfig = {
       taskId,
       projectId: project.id,
@@ -559,14 +559,14 @@ export class AgentManager extends EventEmitter {
     };
 
     if (isSelfImproveEnabled(project.settings)) config.selfImprovePrompt = SELF_IMPROVE_NUDGE;
-    // The Puppeteer connector's browser profile: a fresh copy per run (sign-ins as they are now),
+    // The Playwright connector's browser profile: a fresh copy per run (sign-ins as they are now),
     // in the run's own slot so no two runs share a profile folder
-    if (browser && config.connectorIds?.includes('puppeteer')) {
+    if (browser && config.connectorIds?.includes('playwright')) {
       try {
         // A slot per run: a stopped run of the task may still be cleaning up its own copy
         const slot = `task-${task.specId}-${randomUUID().slice(0, 8)}`;
         // Copies of profiles still chosen (Settings, other tasks) are kept by its sweep
-        const inUse = await browserChoicesInUse(project.path, settings.mcpConnectors?.puppeteerBrowser);
+        const inUse = await browserChoicesInUse(project.path, settings.mcpConnectors?.playwrightBrowser);
         config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot, inUse)) ?? undefined;
         // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it.
         // Live runs' copies are kept, such as a newer launch's after this one was stopped mid-copy

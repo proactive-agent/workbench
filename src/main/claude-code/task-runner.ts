@@ -28,7 +28,7 @@ import os from 'os';
 import path from 'path';
 import { resolveClaudeEnv } from './env';
 import { INITIAL_INPUT_ID, startClaudeProcess, type ClaudeProcessHandle, type TurnOrigin } from './process';
-import { buildMcpConfig, MCP_STARTUP_TIMEOUT_MS } from './mcp-config';
+import { buildMcpConfig, MCP_STARTUP_TIMEOUT_MS, withPlaywrightOutputDir } from './mcp-config';
 import { TASK_TOOLS_SERVER_NAME } from '../insights/task-tools-mcp';
 import { formatInboxSection, formatMessage } from '../task-messaging/broker';
 import { TASK_RUN_TOOL_NAMES } from '../task-messaging/tools';
@@ -137,7 +137,7 @@ export interface TaskRunConfig {
   /** Connector ids for the task (undefined = Connectors defaults) */
   connectorIds?: string[];
   connectorSettings?: McpConnectorSettings;
-  /** This run's copy of the Puppeteer connector's browser profile (browser-profiles/profile-copy.ts) */
+  /** This run's copy of the Playwright connector's browser profile (browser-profiles/profile-copy.ts) */
   browserProfileDir?: string;
   settings: ClaudeCodeTaskSettings;
   /** The project's budget per task (`--max-budget-usd`, Settings > Project); unset = no cap */
@@ -1243,8 +1243,11 @@ no notes came with the request, so review the change against the task with fresh
   }): Promise<PhaseResult> {
     if (this.stopped) return { stopped: true };
     const { messaging } = this;
-    // Support files of the phase (MCP config with the tools' token, the WSL bridge), removed after it
-    const tempDir = messaging ? await mkdtemp(path.join(os.tmpdir(), 'workbench-task-')) : undefined;
+    // Support files of the phase (MCP config with the tools' token, the WSL bridge, Playwright's
+    // screenshots), removed after it
+    const tempDir = messaging || this.config.connectorIds?.includes('playwright')
+      ? await mkdtemp(path.join(os.tmpdir(), 'workbench-task-'))
+      : undefined;
     try {
       return await this.runClaudeProcess(params, tempDir);
     } finally {
@@ -1360,7 +1363,9 @@ no notes came with the request, so review the change against the task with fresh
     if (params.jsonSchema) args.push('--json-schema', JSON.stringify(params.jsonSchema));
     if (this.config.maxBudgetUsd && this.config.maxBudgetUsd > 0) args.push('--max-budget-usd', String(this.config.maxBudgetUsd));
     if (settings.fallbackModel?.trim()) args.push('--fallback-model', settings.fallbackModel.trim());
-    const mcpConfig = buildMcpConfig(this.config.connectorIds, this.config.connectorSettings, { browserProfileDir: this.config.browserProfileDir });
+    const builtMcpConfig = buildMcpConfig(this.config.connectorIds, this.config.connectorSettings, { browserProfileDir: this.config.browserProfileDir });
+    // Playwright's files go to the phase's folder, not the worktree
+    const mcpConfig = { mcpServers: withPlaywrightOutputDir(builtMcpConfig.mcpServers, tempDir && path.join(tempDir, 'playwright')) };
     // Time for a connector's first start, when npx downloads it (unless the user set their own)
     if (Object.keys(mcpConfig.mcpServers).length > 0 && !env.MCP_TIMEOUT) env.MCP_TIMEOUT = String(MCP_STARTUP_TIMEOUT_MS);
     if (workbenchServer && tempDir) {

@@ -2,7 +2,7 @@ import { app } from 'electron';
 import { readFileSync, existsSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import type { Project, ProjectSettings, Task, TaskStatus, TaskMetadata, ImplementationPlan, ReviewReason, PlanSubtask, KanbanPreferences, ExecutionPhase } from '../shared/types';
+import type { Project, ProjectSettings, Task, TaskStatus, TaskMetadata, ImplementationPlan, ReviewReason, PlanSubtask, KanbanPreferences, ExecutionPhase, AppSettings } from '../shared/types';
 import { DEFAULT_PROJECT_SETTINGS, AUTO_BUILD_PATHS, getSpecsDir, JSON_ERROR_PREFIX, JSON_ERROR_TITLE_SUFFIX, TASK_STATUS_PRIORITY } from '../shared/constants';
 import { getAutoBuildPath, isInitialized } from './project-initializer';
 import { getTaskWorktreeDir } from './worktree-paths';
@@ -13,6 +13,8 @@ import { safeParseJson } from './utils/json-repair';
 import { parseRateLimitHold } from '../shared/utils/rate-limit-hold';
 import { loadClaudeRunInfo } from './claude-code/task-runner';
 import { appLog } from './app-logger';
+import { customMcpServerIds, migrateTaskConnectorFields } from '../shared/utils/mcp-connectors';
+import { readSettingsFile } from './settings-utils';
 
 /**
  * Project settings kept in the project's own `.workbench/settings.json` (next to its tasks)
@@ -472,6 +474,8 @@ export class ProjectStore {
   ): Task[] {
     const tasks: Task[] = [];
     let specDirs: Dirent[] = [];
+    // Connector ids custom servers have now are theirs (see migrateTaskConnectorFields)
+    const customServerIds = customMcpServerIds((readSettingsFile() as Partial<AppSettings> | undefined)?.mcpConnectors);
 
     try {
       specDirs = readdirSync(specsDir, { withFileTypes: true });
@@ -520,6 +524,8 @@ export class ProjectStore {
           try {
             const content = readFileSync(metadataPath, 'utf-8');
             metadata = JSON.parse(content);
+            // Connector fields stored before the browser connector moved to Playwright
+            migrateTaskConnectorFields(metadata as Record<string, unknown> | undefined, customServerIds);
           } catch {
             // Ignore parse errors
           }

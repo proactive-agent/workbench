@@ -1,17 +1,18 @@
 /**
- * Local browser profiles the Puppeteer connector can use (Settings > Connectors). Detected in the
+ * Local browser profiles the Playwright connector can use (Settings > Connectors). Detected in the
  * main process (src/main/browser-profiles/); the choice is stored whole in
- * McpConnectorSettings.puppeteerBrowser, so runs never need to detect again.
+ * McpConnectorSettings.playwrightBrowser, so runs never need to detect again.
  */
 
-export type BrowserKind = 'chrome' | 'edge' | 'brave' | 'chromium' | 'firefox' | 'safari';
+/** `webkit`: Playwright's own WebKit build (Safari itself can't be driven) */
+export type BrowserKind = 'chrome' | 'edge' | 'brave' | 'chromium' | 'firefox' | 'safari' | 'webkit';
 
-/** Puppeteer drives Chromium and Firefox; WebKit (Safari) isn't supported */
+/** Playwright drives Chromium, Firefox and its own WebKit build (not Safari) */
 export type BrowserEngine = 'chromium' | 'firefox' | 'webkit';
 
 /** Why a detected profile can't be used (translated in the renderer) */
 export type BrowserProfileDisabledReason =
-  /** Puppeteer can't drive the browser's engine (Safari) */
+  /** Playwright can't drive the browser (Safari) */
   | 'unsupported-engine'
   /** The browser's profiles are there but its executable isn't */
   | 'executable-missing'
@@ -19,13 +20,13 @@ export type BrowserProfileDisabledReason =
   | 'windows-browser-in-wsl'
   /** A Flatpak browser: its sandbox keeps it from being started with another profile folder */
   | 'sandboxed-package'
-  /** A browser Puppeteer downloads itself, not downloaded yet */
+  /** A browser Playwright downloads itself, not downloaded yet */
   | 'not-downloaded'
   /** Snap Firefox whose binary needs a newer glibc than the system has (it only runs in the snap) */
   | 'snap-needs-newer-glibc';
 
-/** Browsers Puppeteer can download itself (`npx puppeteer browsers install <name>`) */
-export type DownloadableBrowser = 'chrome' | 'firefox';
+/** Browsers Playwright downloads itself (`npx @playwright/mcp install-browser <name>`) */
+export type DownloadableBrowser = 'chromium' | 'firefox' | 'webkit';
 
 export interface BrowserProfile {
   /** `<browser>:<profile folder>`, e.g. `chrome:Profile 1` */
@@ -48,20 +49,21 @@ export interface BrowserProfile {
   executablePath?: string;
   usable: boolean;
   disabledReason?: BrowserProfileDisabledReason;
-  /** Puppeteer's own download of the browser (no user profile: it starts with a new one) */
+  /** Playwright's own download of the browser (no user profile: it starts with a new one) */
   managed?: boolean;
   /** Set while the browser can be downloaded: which one the download button installs */
   downloadable?: DownloadableBrowser;
 }
 
-/** The profile the Puppeteer connector uses (unset: Puppeteer's own Chrome) */
-export interface PuppeteerBrowserChoice {
+/** The profile the Playwright connector uses (unset: Playwright's own Chromium) */
+export interface PlaywrightBrowserChoice {
   id: string;
   browser: BrowserKind;
-  engine: 'chromium' | 'firefox';
+  /** `webkit` only for Playwright's own WebKit (managed) */
+  engine: BrowserEngine;
   profileName: string;
   variant?: string;
-  /** Puppeteer's own download of the browser: no profile copy, a new profile each launch */
+  /** Playwright's own download of the browser: no profile copy, a new profile each launch */
   managed?: boolean;
   email?: string;
   executablePath: string;

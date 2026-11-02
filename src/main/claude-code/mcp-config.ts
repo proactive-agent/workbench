@@ -9,25 +9,33 @@
  * When Claude Code runs in WSL it starts the servers inside the distribution: Windows paths in a
  * custom server's command and arguments are translated, and the built-in servers need npx there.
  *
- * Puppeteer: the MCP project's server (@modelcontextprotocol/server-puppeteer, archived but
- * working) stays. It reads PUPPETEER_LAUNCH_OPTIONS, so a browser profile chosen in Settings >
- * Connectors becomes its executable, its engine (Chromium or Firefox) and, for runs, a copy of the
- * profile (browser-profiles/profile-copy.ts: Chrome 136+ refuses remote debugging on its default
- * user data folder, and an open browser locks it). chrome-devtools-mcp was weighed and left for
- * later: it supports Chrome only (no Firefox), its --autoConnect needs Chrome 144+ with remote
- * debugging switched on by hand and drives the user's live browser from runs without permission
- * checks, and its tools differ from the ones the availability check calls.
+ * Playwright: Microsoft's own server (@playwright/mcp, pinned: PLAYWRIGHT_MCP_PACKAGE). Its tools
+ * act on the page's accessibility snapshot and wait for elements by themselves, and it drives
+ * Chromium, Firefox and WebKit. A browser profile chosen in Settings >
+ * Connectors becomes, for runs, a copy of the profile (browser-profiles/profile-copy.ts: Chrome
+ * 136+ refuses remote debugging on its default user data folder, and an open browser locks it)
+ * launched with the browser's own executable through a config file in the copy
+ * (playwrightProfileConfig). The user's Firefox is driven over WebDriver BiDi (Playwright's
+ * `moz-firefox` channel, which it still calls experimental): Playwright's `firefox` alone means
+ * its own patched build, which can't drive a stock Firefox. Without a profile (Playwright's own
+ * browsers, the availability check) the server gets command line options and a profile in
+ * memory (`--isolated`). Pages fill the window: headed, the server leaves the viewport to the
+ * window. chrome-devtools-mcp was weighed and left out: it supports Chrome only (no Firefox), its
+ * --autoConnect needs Chrome 144+ with remote debugging switched on by hand and drives the user's
+ * live browser from runs without permission checks.
  */
 
+import path from 'path';
 import type { CustomMcpServer } from '../../shared/types/project';
 import type { McpConnectorSettings } from '../../shared/types/settings';
-import type { PuppeteerBrowserChoice } from '../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { getDefaultMcpConnectorIds, getUsableCustomServers } from '../../shared/utils/mcp-connectors';
 import { appLog } from '../app-logger';
 import { getWslInfo, toRuntimePath } from '../platform/shell-runtime';
 import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
 import { SNAP_UNCONFINED_BINARIES } from '../browser-profiles/locations';
+import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 
 export type McpServerEntry =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
@@ -56,18 +64,18 @@ export interface McpRunOptions {
 }
 
 /**
- * Snap launchers Puppeteer can't drive: `/snap/bin/firefox` starts Firefox in the snap's sandbox,
- * which can't open Puppeteer's profile in /tmp, so the launch times out. The snap's own binary
- * runs outside the sandbox and works (detect.ts also maps Ubuntu's `/usr/bin/firefox` script, which
- * starts the snap, to the launcher, and checks that the binary runs on this system). Snap Chromium
- * keeps its launcher; its profile copy lives where the snap may write (profile-copy.ts)
+ * Snap launchers Playwright can't drive: `/snap/bin/firefox` starts Firefox in the snap's sandbox,
+ * which can't open a profile copy outside the snap's folders, so the launch times out. The snap's
+ * own binary runs outside the sandbox and works (detect.ts also maps Ubuntu's `/usr/bin/firefox`
+ * script, which starts the snap, to the launcher, and checks that the binary runs on this system).
+ * Snap Chromium keeps its launcher; its profile copy lives where the snap may write (profile-copy.ts)
  */
 const SNAP_BINARIES = SNAP_UNCONFINED_BINARIES;
 
 /**
- * Firefox prefs for every launch: a profile copy keeps its Firefox Account sign-in, and Sync would
- * then upload what the agent browses to the user's other devices. Sync starts only with both
- * set (services-sync/Weave.sys.mjs `enabled`)
+ * Firefox prefs for every launch with a profile copy: the copy keeps its Firefox Account sign-in,
+ * and Sync would then upload what the agent browses to the user's other devices. Sync starts only
+ * with both set (services-sync/Weave.sys.mjs `enabled`). Playwright writes them to the copy's user.js
  */
 export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
   'identity.fxaccounts.enabled': false,
@@ -75,41 +83,103 @@ export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
 };
 
 /**
- * Pages fill the browser window: without it Puppeteer emulates an 800x600 viewport, which Chrome
- * draws in a corner of its larger window
+ * Playwright's default Chromium switches that keep a copy from decrypting its sign-ins: a basic
+ * password store (Linux) and a mock keychain (macOS) instead of the ones the profile was saved with
  */
-const WINDOW_SIZED_VIEWPORT = { defaultViewport: null };
+const CHROMIUM_KEYCHAIN_ARGS = ['--password-store=basic', '--use-mock-keychain'];
 
-/**
- * Puppeteer's launch options for the chosen browser: its executable and engine, and with a
- * profile copy its folder. Chromium's default `--password-store=basic` / `--use-mock-keychain`
- * would keep it from decrypting the copied sign-ins, so they are left out
- */
-export function puppeteerLaunchOptions(choice: PuppeteerBrowserChoice, browserProfileDir?: string): Record<string, unknown> {
-  const executablePath = SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
-  const launch: Record<string, unknown> = { ...WINDOW_SIZED_VIEWPORT, executablePath };
-  if (choice.engine === 'firefox') {
-    launch.browser = 'firefox';
-    launch.extraPrefsFirefox = FIREFOX_NO_SYNC_PREFS;
-  }
-  if (browserProfileDir) {
-    launch.userDataDir = toRuntimePath(browserProfileDir);
-    if (choice.engine === 'chromium') {
-      launch.args = [`--profile-directory=${choice.profileDirectory ?? 'Default'}`];
-      launch.ignoreDefaultArgs = ['--password-store=basic', '--use-mock-keychain'];
-    }
-  }
-  return launch;
+/** The run's Playwright config inside its profile copy (written by profile-copy.ts) */
+export const PLAYWRIGHT_CONFIG_FILE = '.workbench-playwright.json';
+
+/** The server key of the Playwright connector in `--mcp-config` */
+const PLAYWRIGHT_SERVER_KEY = 'playwright';
+
+/** A chosen browser's executable where runs start it (snap launchers -> the snap's own binary) */
+function launchExecutable(choice: PlaywrightBrowserChoice): string {
+  return SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
 }
 
 /**
- * The MCP project's Puppeteer server: Puppeteer's own Chrome (downloaded the first time), or the
- * browser chosen in Settings > Connectors
+ * The Playwright config of a run with a copy of the chosen profile (`browserProfileDir`, a host
+ * path): the browser's executable with the copy as its profile. Chromium opens the profile's
+ * folder inside the copied user data folder, with the sandbox on (Playwright's default off is for
+ * its own build) and without Playwright's switches that keep it from decrypting the copied
+ * sign-ins. Firefox runs over WebDriver BiDi (the `moz-firefox` channel) with Sync kept off
  */
-function puppeteerServer(choice: PuppeteerBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
-  const entry: McpServerEntry = { type: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-puppeteer'] };
-  if (!choice) return { ...entry, env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify(WINDOW_SIZED_VIEWPORT) } };
-  return { ...entry, env: { PUPPETEER_LAUNCH_OPTIONS: JSON.stringify(puppeteerLaunchOptions(choice, options.browserProfileDir)) } };
+export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browserProfileDir: string): Record<string, unknown> {
+  const userDataDir = toRuntimePath(browserProfileDir);
+  const executablePath = launchExecutable(choice);
+  if (choice.engine === 'firefox') {
+    return {
+      browser: {
+        browserName: 'firefox',
+        userDataDir,
+        launchOptions: { channel: 'moz-firefox', executablePath, firefoxUserPrefs: FIREFOX_NO_SYNC_PREFS },
+      },
+    };
+  }
+  return {
+    browser: {
+      browserName: 'chromium',
+      userDataDir,
+      launchOptions: {
+        executablePath,
+        chromiumSandbox: true,
+        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`],
+        ignoreDefaultArgs: CHROMIUM_KEYCHAIN_ARGS,
+      },
+    },
+  };
+}
+
+/** Playwright's `--browser` for its own builds (`chromium` is Chrome for Testing, never the installed Chrome) */
+const MANAGED_BROWSER_OPTION: Record<PlaywrightBrowserChoice['engine'], string> = {
+  chromium: 'chromium',
+  firefox: 'firefox',
+  webkit: 'webkit',
+};
+
+/**
+ * The server's options for the chosen browser. With a run's profile copy: the config file in it.
+ * Otherwise a profile in memory (`--isolated`): Playwright's own build of the browser (its
+ * Chromium when nothing is chosen, with the sandbox on), or the chosen browser's executable (`chrome` / `moz-firefox`
+ * only pick the engine and keep Chromium's sandbox on; the executable is the chosen one)
+ */
+export function playwrightServerArgs(choice: PlaywrightBrowserChoice | undefined, browserProfileDir?: string): string[] {
+  if (choice && !choice.managed && browserProfileDir) {
+    return ['--config', toRuntimePath(joinHostPath(browserProfileDir, PLAYWRIGHT_CONFIG_FILE))];
+  }
+  if (!choice || choice.managed) {
+    const engine = choice?.engine ?? 'chromium';
+    // Playwright leaves its own Chromium's sandbox off on Linux (and so in WSL): pages would run unsandboxed
+    return ['--browser', MANAGED_BROWSER_OPTION[engine], '--isolated', ...(engine === 'chromium' ? ['--sandbox'] : [])];
+  }
+  const browser = choice.engine === 'firefox' ? 'moz-firefox' : 'chrome';
+  return ['--browser', browser, '--executable-path', launchExecutable(choice), '--isolated'];
+}
+
+/** A file inside a host folder (a Windows, UNC or POSIX path) */
+function joinHostPath(dir: string, name: string): string {
+  return /^[A-Za-z]:[\\/]|^\\\\/.test(dir) ? path.win32.join(dir, name) : path.posix.join(dir, name);
+}
+
+/**
+ * Microsoft's Playwright server: Playwright's own Chromium (downloaded with its install-browser
+ * command), or the browser chosen in Settings > Connectors or the task
+ */
+function playwrightServer(choice: PlaywrightBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
+  return { type: 'stdio', command: 'npx', args: ['-y', PLAYWRIGHT_MCP_PACKAGE, ...playwrightServerArgs(choice, options.browserProfileDir)] };
+}
+
+/**
+ * The servers with Playwright's files (screenshots and snapshots saved without a name) going to
+ * `dir`, a host folder the run removes when it ends: by default they would land in the session's
+ * working folder (`.playwright-mcp` in the task's worktree or the project)
+ */
+export function withPlaywrightOutputDir(servers: Record<string, McpServerEntry>, dir: string | undefined): Record<string, McpServerEntry> {
+  const entry = servers[PLAYWRIGHT_SERVER_KEY];
+  if (!dir || entry?.type !== 'stdio' || !entry.args?.includes(PLAYWRIGHT_MCP_PACKAGE)) return servers;
+  return { ...servers, [PLAYWRIGHT_SERVER_KEY]: { ...entry, args: [...entry.args, '--output-dir', toRuntimePath(dir)] } };
 }
 
 /** Built-in connectors (Settings > Connectors) */
@@ -119,8 +189,8 @@ function builtinServer(id: string, settings: McpConnectorSettings | undefined, o
       return { type: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] };
     case 'electron':
       return electronServer();
-    case 'puppeteer':
-      return puppeteerServer(settings?.puppeteerBrowser, options);
+    case PLAYWRIGHT_SERVER_KEY:
+      return playwrightServer(settings?.playwrightBrowser, options);
     default:
       return undefined;
   }
@@ -138,7 +208,7 @@ function customServerEntry(server: CustomMcpServer): McpServerEntry | null {
 
 /**
  * How long Claude Code waits for MCP servers to start (MCP_TIMEOUT). Its 30 second default is too
- * short for a server's first start, when npx downloads it (Puppeteer also downloads Chromium);
+ * short for a server's first start, when npx downloads it;
  * later starts come from npx's cache
  */
 export const MCP_STARTUP_TIMEOUT_MS = 3 * 60 * 1000;
@@ -156,7 +226,7 @@ function warnWhenNpxMissingInWsl(): void {
   if (!wsl || wsl.tools.npx.path || warnedNoNpx) return;
   warnedNoNpx = true;
   appLog.warn(
-    `[MCP] npx isn't installed in WSL (${wsl.distro}), so the built-in connectors (Context7, Electron, Puppeteer) ` +
+    `[MCP] npx isn't installed in WSL (${wsl.distro}), so the built-in connectors (Context7, Electron, Playwright) ` +
     "can't start in Claude Code runs there. Install Node.js inside WSL to use them"
   );
 }

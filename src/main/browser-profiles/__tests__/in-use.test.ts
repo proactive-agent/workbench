@@ -5,7 +5,7 @@ import { execFile, spawn, type ChildProcess } from 'child_process';
 import { promisify } from 'util';
 import { hostname, tmpdir } from 'os';
 import path from 'path';
-import type { PuppeteerBrowserChoice } from '../../../shared/types/browser-profiles';
+import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 
 const mocks = vi.hoisted(() => ({ windows: false, linux: false, mac: false }));
 
@@ -34,11 +34,11 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     await rm(dir, { recursive: true, force: true });
   });
 
-  const firefox = (executablePath = '/usr/lib/firefox/firefox'): PuppeteerBrowserChoice => ({
+  const firefox = (executablePath = '/usr/lib/firefox/firefox'): PlaywrightBrowserChoice => ({
     id: 'firefox:x', browser: 'firefox', engine: 'firefox', profileName: 'default',
     executablePath, userDataDir: path.dirname(dir), profilePath: dir,
   });
-  const chrome = (): PuppeteerBrowserChoice => ({
+  const chrome = (): PlaywrightBrowserChoice => ({
     id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Default', profileDirectory: 'Default',
     executablePath: '/opt/google/chrome/chrome', userDataDir: dir, profilePath: path.join(dir, 'Default'),
   });
@@ -164,7 +164,7 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     });
   });
 
-  it("never reads Puppeteer's own browsers as open", async () => {
+  it("never reads Playwright's own browsers as open", async () => {
     await symlink(`127.0.1.1:+${process.pid}`, path.join(dir, 'lock'));
     expect(await isBrowserProfileInUse({ ...firefox(), managed: true })).toBe(false);
   });

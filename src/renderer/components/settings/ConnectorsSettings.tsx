@@ -12,8 +12,9 @@ import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ConnectorRow, ConnectorSwitchTip } from './ConnectorRow';
-import { BUILTIN_CONNECTOR_META, customServerIcon, isChromeNotDownloaded } from './connector-meta';
-import { PuppeteerBrowserSelect } from './PuppeteerBrowserSelect';
+import { BUILTIN_CONNECTOR_META, customServerIcon, isChromiumNotDownloaded } from './connector-meta';
+import { PlaywrightBrowserSelect } from './PlaywrightBrowserSelect';
+import { BUILTIN_MCP_CONNECTOR_IDS } from '../../../shared/utils/mcp-connectors';
 import { useMcpUnavailableReason } from '../../hooks/useMcpAvailability';
 import { CustomMcpDialog } from '../CustomMcpDialog';
 import { readRefreshCache, writeRefreshCache } from '../../lib/refresh-cache';
@@ -34,7 +35,7 @@ function connectionSignature({ id, type, command, args, url }: CustomMcpServer):
 const BUILTIN_SETTING_KEY = {
   context7: 'context7Enabled',
   electron: 'electronEnabled',
-  puppeteer: 'puppeteerEnabled',
+  playwright: 'playwrightEnabled',
 } as const;
 
 export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSettingsProps) {
@@ -205,15 +206,15 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
                 disabled={!!unavailable}
               >
                 {/* Stays usable while the server is unavailable: another browser can be the fix */}
-                {id === 'puppeteer' && (
-                  <PuppeteerBrowserSelect
-                    value={connectors.puppeteerBrowser}
-                    // Puppeteer's own Chrome failed for a build that isn't downloaded (only that error comes with the
+                {id === 'playwright' && (
+                  <PlaywrightBrowserSelect
+                    value={connectors.playwrightBrowser}
+                    // Playwright's own Chromium failed for a build that isn't downloaded (only that error comes with the
                     // install command); other failures show their message in the description
-                    chromeMissing={!connectors.puppeteerBrowser && isChromeNotDownloaded(unavailable?.fixCommand)}
+                    chromiumMissing={!connectors.playwrightBrowser && isChromiumNotDownloaded(unavailable?.fixCommand)}
                     onChange={(choice) => updateConnectors((current) => {
-                      const { puppeteerBrowser: _previous, ...rest } = current;
-                      return choice ? { ...rest, puppeteerBrowser: choice } : rest;
+                      const { playwrightBrowser: _previous, ...rest } = current;
+                      return choice ? { ...rest, playwrightBrowser: choice } : rest;
                     })}
                   />
                 )}
@@ -336,7 +337,8 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
         open={showCustomMcpDialog}
         onOpenChange={setShowCustomMcpDialog}
         server={editingCustomServer}
-        existingIds={customServers.map(s => s.id)}
+        // A built-in connector's id always means the built-in: a server named after one gets another name
+        existingIds={[...BUILTIN_MCP_CONNECTOR_IDS, ...customServers.map(s => s.id)]}
         onSave={handleSaveCustomServer}
       />
     </>

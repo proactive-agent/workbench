@@ -19,7 +19,7 @@ const runs: MockRun[] = [];
 // left out as if their browser were open
 const connectorMocks = vi.hoisted(() => ({
   leftOut: new Set<string>(),
-  /** The run's own Puppeteer browser each call was given (a task's choice) */
+  /** The run's own Playwright browser each call was given (a task's choice) */
   runBrowsers: [] as unknown[],
 }));
 vi.mock('../mcp-availability', () => ({
@@ -75,7 +75,7 @@ vi.mock('../browser-profiles/choices-in-use', () => ({
   })),
 }));
 
-// Copies of the Puppeteer connector's browser profile: a folder per run, nothing on disk
+// Copies of the Playwright connector's browser profile: a folder per run, nothing on disk
 vi.mock('../browser-profiles/profile-copy', () => ({
   prepareBrowserProfileCopy: vi.fn(async (_projectPath: string, choice: { id: string }, slot: string) => `/copies/${choice.id}/${slot}`),
   removeBrowserProfileCopy: vi.fn(async () => undefined),
@@ -273,18 +273,18 @@ describe('AgentManager', () => {
   });
 
   it("says in the task's log when a chosen connector is left out of the run", async () => {
-    connectorMocks.leftOut.add('puppeteer');
+    connectorMocks.leftOut.add('playwright');
     try {
       const logs: string[] = [];
       manager.on('log', (_taskId: string, line: string) => logs.push(line));
-      const task = makeTask({ metadata: { mcpConnectors: ['context7', 'puppeteer'] } } as Partial<Task>);
+      const task = makeTask({ metadata: { mcpConnectors: ['context7', 'playwright'] } } as Partial<Task>);
       await manager.startTask(task.id, { project, task, mode: 'start' });
       const run = await nextRun(1);
 
       expect(run.config.connectorIds).toEqual(['context7']);
-      expect(logs).toContain('puppeteer connector left out of this run: the browser is open\n');
+      expect(logs).toContain('playwright connector left out of this run: the browser is open\n');
       // Handed to the run, whose own log writer saves it in task_logs.json
-      expect(run.config.startNotes).toEqual([{ phase: 'planning', line: 'puppeteer connector left out of this run: the browser is open' }]);
+      expect(run.config.startNotes).toEqual([{ phase: 'planning', line: 'playwright connector left out of this run: the browser is open' }]);
     } finally {
       connectorMocks.leftOut.clear();
     }
@@ -294,23 +294,23 @@ describe('AgentManager', () => {
     const { loadClaudeRunInfo } = await import('../claude-code/task-runner');
     // The last run stopped in validation
     vi.mocked(loadClaudeRunInfo).mockReturnValue({ phases: [{ name: 'validate' }] } as unknown as ReturnType<typeof loadClaudeRunInfo>);
-    connectorMocks.leftOut.add('puppeteer');
-    const line = 'puppeteer connector left out of this run: the browser is open';
+    connectorMocks.leftOut.add('playwright');
+    const line = 'playwright connector left out of this run: the browser is open';
     try {
-      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
       // A change request begins with coding
       await manager.startTask(task.id, { project, task, mode: 'revise', feedback: 'Fix it' });
       expect((await nextRun(1)).config.startNotes).toEqual([{ phase: 'coding', line }]);
 
       // So does a resync (its merge is logged under coding)
       pendingResync.value = { ref: 'develop', into: 'develop', via: 'local', merged: [], at: '2026-10-01T00:00:00Z' };
-      const other = makeTask({ id: '002-other', specId: '002-other', status: 'human_review', metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      const other = makeTask({ id: '002-other', specId: '002-other', status: 'human_review', metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
       await manager.startTask(other.id, { project, task: other, mode: 'start' });
       expect((await nextRun(2)).config.startNotes).toEqual([{ phase: 'coding', line }]);
       pendingResync.value = undefined;
 
       // A continued start goes on with validation
-      const third = makeTask({ id: '003-third', specId: '003-third', metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      const third = makeTask({ id: '003-third', specId: '003-third', metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
       await manager.startTask(third.id, { project, task: third, mode: 'start' });
       expect((await nextRun(3)).config.startNotes).toEqual([{ phase: 'validation', line }]);
     } finally {
@@ -320,7 +320,7 @@ describe('AgentManager', () => {
     }
   });
 
-  describe("the Puppeteer connector's browser profile", () => {
+  describe("the Playwright connector's browser profile", () => {
     const settingsBrowser = { id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Person 1', executablePath: '/chrome', userDataDir: '/c', profilePath: '/c/Default' };
     const taskBrowser = { id: 'firefox:work', browser: 'firefox', engine: 'firefox', profileName: 'work', executablePath: '/firefox', userDataDir: '/f', profilePath: '/f/work' };
 
@@ -328,7 +328,7 @@ describe('AgentManager', () => {
       const { readSettingsFile } = await import('../settings-utils');
       vi.mocked(readSettingsFile).mockReturnValue({
         claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' },
-        mcpConnectors: { puppeteerEnabled: true, puppeteerBrowser: settingsBrowser },
+        mcpConnectors: { playwrightEnabled: true, playwrightBrowser: settingsBrowser },
       });
       connectorMocks.runBrowsers.length = 0;
     });
@@ -340,20 +340,20 @@ describe('AgentManager', () => {
 
     it('follows Settings > Connectors when the task picked none', async () => {
       const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
-      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'] } } as Partial<Task>);
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
       await manager.startTask(task.id, { project, task, mode: 'start' });
       const run = await nextRun(1);
-      expect(run.config.connectorSettings?.puppeteerBrowser).toEqual(settingsBrowser);
+      expect(run.config.connectorSettings?.playwrightBrowser).toEqual(settingsBrowser);
       expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(settingsBrowser);
       expect(connectorMocks.runBrowsers).toEqual([undefined]);
     });
 
     it("uses the task's own browser for the profile copy and the server", async () => {
       const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
-      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'], puppeteerBrowser: taskBrowser } } as unknown as Partial<Task>);
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'], playwrightBrowser: taskBrowser } } as unknown as Partial<Task>);
       await manager.startTask(task.id, { project, task, mode: 'start' });
       const run = await nextRun(1);
-      expect(run.config.connectorSettings?.puppeteerBrowser).toEqual(taskBrowser);
+      expect(run.config.connectorSettings?.playwrightBrowser).toEqual(taskBrowser);
       expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(taskBrowser);
       expect(run.config.browserProfileDir).toMatch(/^\/copies\/firefox:work\//);
       // Its sweep keeps the Settings profile's copies
@@ -362,13 +362,13 @@ describe('AgentManager', () => {
       expect(connectorMocks.runBrowsers).toEqual([taskBrowser]);
     });
 
-    it("uses Puppeteer's own Chrome when the task picked it", async () => {
+    it("uses Playwright's own Chromium when the task picked it", async () => {
       const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
       vi.mocked(prepareBrowserProfileCopy).mockClear();
-      const task = makeTask({ metadata: { mcpConnectors: ['puppeteer'], puppeteerBrowser: null } } as unknown as Partial<Task>);
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'], playwrightBrowser: null } } as unknown as Partial<Task>);
       await manager.startTask(task.id, { project, task, mode: 'start' });
       const run = await nextRun(1);
-      expect(run.config.connectorSettings?.puppeteerBrowser).toBeUndefined();
+      expect(run.config.connectorSettings?.playwrightBrowser).toBeUndefined();
       expect(run.config.browserProfileDir).toBeUndefined();
       expect(prepareBrowserProfileCopy).not.toHaveBeenCalled();
       expect(connectorMocks.runBrowsers).toEqual([null]);

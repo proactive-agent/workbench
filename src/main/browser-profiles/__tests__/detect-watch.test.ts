@@ -1,13 +1,13 @@
 /**
- * waitForManagedFirefox: a later download shares the running watch and moves its deadline, so a
- * download that finishes after the first click's 15 minutes still updates the list
+ * waitForManagedBrowser: a later download of the same browser shares the running watch and moves
+ * its deadline, so a download that finishes after the first click's 15 minutes still updates the list
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ firefox: false }));
+const mocks = vi.hoisted(() => ({ downloaded: new Set<string>() }));
 
 vi.mock('../managed', () => ({
-  findManagedFirefox: vi.fn(async () => (mocks.firefox ? '/home/me/.cache/puppeteer/firefox' : null)),
+  findManagedBrowser: vi.fn(async (browser: string) => (mocks.downloaded.has(browser) ? `/home/me/.cache/ms-playwright/${browser}` : undefined)),
   scanManagedBrowsers: vi.fn(async () => []),
 }));
 vi.mock('../../mcp-commands', () => ({ resolveCommand: async () => null }));
@@ -26,30 +26,42 @@ vi.mock('os', async (importOriginal) => {
   return { ...actual, default: { ...actual, homedir }, homedir };
 });
 
-import { waitForManagedFirefox } from '../detect';
+import { waitForManagedBrowser } from '../detect';
 
 afterEach(() => {
   vi.useRealTimers();
-  mocks.firefox = false;
+  mocks.downloaded.clear();
 });
 
-describe('waitForManagedFirefox', () => {
+describe('waitForManagedBrowser', () => {
   it("extends the shared watch's deadline on each call", async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    const first = waitForManagedFirefox();
+    const first = waitForManagedBrowser('firefox');
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-    const second = waitForManagedFirefox();
+    const second = waitForManagedBrowser('firefox');
     expect(second).toBe(first);
     // Past the first call's deadline, before the second's
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
-    mocks.firefox = true;
+    mocks.downloaded.add('firefox');
     await vi.advanceTimersByTimeAsync(5_000);
     expect(await first).not.toBeNull();
   });
 
+  it('watches each browser on its own', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
+    const firefox = waitForManagedBrowser('firefox');
+    const webkit = waitForManagedBrowser('webkit');
+    expect(webkit).not.toBe(firefox);
+    mocks.downloaded.add('webkit');
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await webkit).not.toBeNull();
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 5_000);
+    expect(await firefox).toBeNull();
+  });
+
   it('gives up 15 minutes after the latest call', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] });
-    const watch = waitForManagedFirefox();
+    const watch = waitForManagedBrowser('firefox');
     await vi.advanceTimersByTimeAsync(15 * 60 * 1000 + 5_000);
     expect(await watch).toBeNull();
   });

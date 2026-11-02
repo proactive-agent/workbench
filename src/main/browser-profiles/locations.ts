@@ -116,7 +116,7 @@ function macLocations({ home }: BrowserLocationContext): BrowserLocation[] {
     { browser: 'brave', engine: 'chromium', dataDirs: [p.join(support, 'BraveSoftware', 'Brave-Browser')], executables: app('Brave Browser', 'Brave Browser') },
     { browser: 'chromium', engine: 'chromium', dataDirs: [p.join(support, 'Chromium')], executables: app('Chromium', 'Chromium') },
     { browser: 'firefox', engine: 'firefox', dataDirs: [p.join(support, 'Firefox')], executables: app('Firefox', 'firefox') },
-    // Listed so the user sees why it can't be picked; it has no profiles Puppeteer could read
+    // Listed so the user sees why it can't be picked; Playwright can't drive Safari (its own WebKit build is offered instead, managed.ts)
     {
       browser: 'safari', engine: 'webkit', dataDirs: [],
       executables: ['/Applications/Safari.app/Contents/MacOS/Safari'],
