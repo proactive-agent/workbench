@@ -159,8 +159,8 @@ describe('MCP availability', () => {
     }));
     expect(mocks.spawnTool.mock.calls[0][1]).toEqual(['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless', '--output-dir', PROBE_DIR]);
     // Its folder for Playwright's files goes once the server has stopped
-    await vi.waitFor(() => expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false), { timeout: 3000 });
-  });
+    await vi.waitFor(() => expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false), { timeout: 10_000 });
+  }, 20_000);
 
   it('checks the chosen browser, offers no install command, and checks again for another choice', async () => {
     installed.set('npx', '/usr/bin/npx');
@@ -721,11 +721,13 @@ describe('MCP availability', () => {
       const stop = onMcpAvailabilityChange((id, availability) => changes.push([id, availability.state]));
       getMcpAvailability(['playwright'], off);
       await vi.waitFor(() => expect(getMcpAvailability(['playwright'], off).playwright).toEqual({ state: 'unavailable', browserOpen: true }));
-      // The server's probe has ended (its folder for Playwright's files, made and removed on disk, is gone)
+      // The server's probe has ended (its folder for Playwright's files, made and removed on disk, is gone).
+      // The folder goes a second after the server exits; waitFor moves the fake clock 50ms a try, so
+      // that second takes about one of real time, and slow runners (Windows) need more than the default
       await vi.waitFor(() => {
         expect(mocks.spawnTool).toHaveBeenCalled();
         expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false);
-      });
+      }, { timeout: 10_000 });
       const looks = mocks.inUse.mock.calls.length;
       await vi.advanceTimersByTimeAsync(10_000);
       expect(mocks.inUse.mock.calls.length).toBeGreaterThan(looks + 1);
@@ -744,7 +746,7 @@ describe('MCP availability', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
+  }, 20_000);
 
   it("never lets a server that was only started vouch for Playwright's browser", async () => {
     installed.set('npx', '/usr/bin/npx');
