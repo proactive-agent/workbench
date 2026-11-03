@@ -90,6 +90,12 @@ describe('live sessions', () => {
     asked.length = 0;
     await readLiveSessions(dir, dead, connect);
     expect(asked.sort()).toEqual(['/tmp/pw-1/browser/closed.sock', '/tmp/pw-1/browser/live.sock']);
+
+    // Browsers known to be live (the bridge's) aren't asked
+    asked.length = 0;
+    const known = await readLiveSessions(dir, dead, connect, (guid) => guid === 'live');
+    expect(known.map((s) => s.guid)).toEqual(['live']);
+    expect(asked).toEqual([]);
   });
 
   it('has none without a registry folder', async () => {

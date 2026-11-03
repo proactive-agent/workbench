@@ -128,6 +128,11 @@ export class BrowserDrawerService {
   private readonly bridge: BrowserBridgeProcess;
   /** Windows whose drawer is open */
   private readonly subscribers = new Map<number, WebContents>();
+  /**
+   * The page each window last asked to view. A reopened drawer's page asks before the drawer has
+   * subscribed (child effects run first), so the request is kept and sent once it subscribes
+   */
+  private readonly views = new Map<number, { pageId: string | null; width: unknown; height: unknown }>();
   private lastBridgeSessions = '';
   readonly chatBrowsers: ChatBrowsers;
 
@@ -182,19 +187,30 @@ export class BrowserDrawerService {
     if (!this.subscribers.has(sender.id)) {
       const id = sender.id;
       this.subscribers.set(id, sender);
-      sender.once('destroyed', () => this.unsubscribe(id));
+      sender.once('destroyed', () => {
+        this.unsubscribe(id);
+        this.views.delete(id);
+      });
     }
     await this.bridge.start();
     this.syncBridgeSessions(true);
+    // The view asked for before subscribing (unless the drawer closed again meanwhile)
+    const pending = this.views.get(sender.id);
+    if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
+      this.view(sender, pending.pageId, pending.width, pending.height);
+    }
   }
 
   /** A window's drawer closed: its page is no longer streamed */
   unsubscribe(viewerId: number): void {
+    this.views.delete(viewerId);
     if (!this.subscribers.delete(viewerId)) return;
     this.bridge.send({ type: 'view', viewerId, pageId: null, width: 0, height: 0 });
   }
 
   view(sender: WebContents, pageId: string | null, width: unknown, height: unknown): void {
+    if (!this.available || this.stopped) return;
+    this.views.set(sender.id, { pageId, width, height });
     if (!this.subscribers.has(sender.id)) return;
     const known = pageId !== null && this.pages.some((page) => page.id === pageId);
     this.bridge.send({
@@ -298,7 +314,14 @@ export class BrowserDrawerService {
 
   private async readRegistry(): Promise<void> {
     try {
-      this.descriptors = await readLiveSessions(this.options.registryDir ?? defaultRegistryDir(registryOs()), this.dead);
+      // The bridge's browsers aren't asked: its link reports when one goes away
+      const connected = new Set(this.connectedSessions);
+      this.descriptors = await readLiveSessions(
+        this.options.registryDir ?? defaultRegistryDir(registryOs()),
+        this.dead,
+        undefined,
+        (guid) => connected.has(guid),
+      );
       this.chatBrowsers.syncLive(new Set(this.descriptors.map((descriptor) => descriptor.title)));
       const sessions = toDrawerSessions(
         this.descriptors,

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { bridgeSessions, isDrawerInput, toDrawerSessions, viewportDimension } from '../browser-drawer-service';
+import { EventEmitter } from 'events';
+import { BrowserDrawerService, bridgeSessions, isDrawerInput, toDrawerSessions, viewportDimension } from '../browser-drawer-service';
+import type { BrowserBridgeProcess } from '../bridge-process';
+import type { WebContents } from 'electron';
 import type { RegistryDescriptor } from '../registry';
 
 const descriptors: RegistryDescriptor[] = [
@@ -39,5 +42,41 @@ describe('browser drawer service', () => {
     expect(isDrawerInput({ kind: 'text', text: 'hello' })).toBe(true);
     expect(isDrawerInput({ kind: 'evaluate', script: 'x' })).toBe(false);
     expect(isDrawerInput(null)).toBe(false);
+  });
+});
+
+describe('browser drawer viewers', () => {
+  /** A bridge that records what it is sent */
+  function fakeBridge() {
+    const sent: unknown[] = [];
+    const bridge = Object.assign(new EventEmitter(), {
+      running: true,
+      start: async () => undefined,
+      stop: async () => undefined,
+      killNow: () => undefined,
+      send: (request: unknown) => { sent.push(request); },
+    });
+    return { bridge: bridge as unknown as BrowserBridgeProcess, emitter: bridge, sent };
+  }
+  const sender = (id: number) => ({ id, once: () => undefined, isDestroyed: () => false }) as unknown as WebContents;
+  const views = (sent: unknown[]) => sent.filter((r) => (r as { type: string }).type === 'view');
+
+  it("sends the page a reopened drawer asked for before it subscribed", async () => {
+    const { bridge, emitter, sent } = fakeBridge();
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge });
+    emitter.emit('message', { type: 'pages', pages: [{ id: 's#1', sessionId: 's', title: '', url: 'about:blank' }], connected: ['s'] });
+    const window = sender(7);
+
+    // The page view asks first (child effects run before the drawer's)
+    service.view(window, 's#1', 800, 600);
+    expect(views(sent)).toEqual([]);
+    await service.subscribe(window);
+    expect(views(sent)).toEqual([{ type: 'view', viewerId: 7, pageId: 's#1', width: 800, height: 600 }]);
+
+    // Closed: nothing is replayed when it opens again without asking
+    service.unsubscribe(7);
+    sent.length = 0;
+    await service.subscribe(window);
+    expect(views(sent)).toEqual([]);
   });
 });

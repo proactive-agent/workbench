@@ -316,7 +316,8 @@ resizable (up to half the window) and remembered. The drawer keeps a view per co
 each chat, and the other pages together; on the Claude page it shows only the chat's own browser (below).
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
-`registry.ts` reads every 2 seconds (live = its socket answers). A session belongs to the project whose folder holds its
+`registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link
+reports when they go). A session belongs to the project whose folder holds its
 workspace (task worktree or project, `project-match.ts`); a chat browser's holder works in its own temp folder,
 registered for its project while it runs (in WSL, a chat's server works in the turn's temp folder, registered while the
 turn runs). A session the drawer shows that starts opens the drawer on its page. Once a

@@ -158,6 +158,14 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
         role="img"
         aria-label={label}
         className="block outline-none"
+        // Captured: a button released outside the canvas still reaches the page (no stuck drag)
+        onPointerDown={(event) => {
+          try {
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+          } catch {
+            // A pointer that is no longer active can't be captured
+          }
+        }}
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
         onMouseMove={onMouseMove}

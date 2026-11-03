@@ -15,6 +15,8 @@ const sessions = new Map();
 const pages = new Map();
 const pageIds = new WeakMap();
 let nextPageId = 1;
+/** How long connecting to a browser may take */
+const CONNECT_TIMEOUT_MS = 15000;
 /** page id -> { viewers: Set<number>, size: {width,height} | null } */
 const casts = new Map();
 /** viewer id -> page id */
@@ -75,14 +77,23 @@ function wireContext(context, sessionId) {
 
 async function connect(session) {
   const key = `${session.endpoint}|${session.playwrightLib}`;
-  if (sessions.get(session.id)?.key === key) return;
+  const previous = sessions.get(session.id);
+  if (previous?.key === key) return;
+  // The browser moved (another endpoint or playwright-core): the old link and its pages go first
+  if (previous) {
+    dropSession(session.id);
+    await previous.browser.close().catch(() => undefined);
+  }
   const playwright = require(session.playwrightLib);
   const browserType = playwright[session.browserName] || playwright.chromium;
-  const browser = await browserType.connect(session.endpoint);
+  // Bounded: commands run one at a time, so a browser that never answers must not hold up the rest
+  const browser = await browserType.connect(session.endpoint, { timeout: CONNECT_TIMEOUT_MS });
   sessions.set(session.id, { browser, key });
   for (const context of browser.contexts()) wireContext(context, session.id);
   browser.on('context', (context) => wireContext(context, session.id));
-  browser.on('disconnected', () => dropSession(session.id));
+  browser.on('disconnected', () => {
+    if (sessions.get(session.id)?.browser === browser) dropSession(session.id);
+  });
   pushPages();
 }
 
@@ -124,8 +135,10 @@ async function startCast(pageId) {
   if (!entry || !cast) return;
   const size = entry.page.viewportSize() || { width: 1280, height: 720 };
   if (cast.size && cast.size.width === size.width && cast.size.height === size.height) return;
-  if (cast.size) await entry.page.screencast.stop().catch(() => undefined);
-  cast.size = size;
+  if (cast.size) {
+    await entry.page.screencast.stop().catch(() => undefined);
+    cast.size = null;
+  }
   await entry.page.screencast.start({
     size,
     quality: 80,
@@ -135,6 +148,8 @@ async function startCast(pageId) {
       send({ type: 'frame', pageId, viewers: [...current.viewers], data, width: viewportWidth, height: viewportHeight });
     },
   });
+  // Only a cast that started counts: one that failed (the page was navigating) is tried again
+  cast.size = size;
 }
 
 async function stopCast(pageId) {

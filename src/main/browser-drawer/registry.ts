@@ -103,7 +103,9 @@ export function canConnect(endpoint: string, timeoutMs = 1000): Promise<boolean>
       socket.destroy();
       resolve(result);
     };
-    const timer = setTimeout(() => done(false), timeoutMs);
+    // A socket that neither accepts nor refuses in time is a busy browser, not a closed one (a
+    // closed one refuses at once): counted as live, so one slow answer never hides it for good
+    const timer = setTimeout(() => done(true), timeoutMs);
     socket.once('connect', () => done(true));
     socket.once('error', () => done(false));
   });
@@ -120,6 +122,8 @@ export async function readLiveSessions(
   dir: string,
   dead: DeadCache = new Map(),
   connect: (endpoint: string) => Promise<boolean> = canConnect,
+  /** Browsers known to be live without asking (the bridge is connected to them and hears when they go) */
+  knownLive: (guid: string) => boolean = () => false,
 ): Promise<RegistryDescriptor[]> {
   let names: string[];
   try {
@@ -137,7 +141,7 @@ export async function readLiveSessions(
       if (!isFile || dead.get(name) === mtimeMs) return null;
       const descriptor = parseDescriptor(await readFile(file, 'utf-8'));
       if (!descriptor || descriptor.title.startsWith(INTERNAL_TITLE_PREFIX)) return null;
-      if (!descriptor.endpoint || !(await connect(descriptor.endpoint))) {
+      if (!descriptor.endpoint || (!knownLive(descriptor.guid) && !(await connect(descriptor.endpoint)))) {
         dead.set(name, mtimeMs);
         return null;
       }

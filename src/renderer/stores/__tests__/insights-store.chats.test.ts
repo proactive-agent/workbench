@@ -112,9 +112,9 @@ describe('chats replying at once', () => {
 
   it('applies chunks to a background reply and ends it on done', () => {
     const idle = { status: { phase: 'idle', message: '' }, streamingContent: '', streamingTasks: [], currentTool: null, toolsUsed: [] } as const;
-    const run = store.applyBackgroundChunk({ ...idle, streamingTasks: [], toolsUsed: [] }, { type: 'text', content: 'Hi' })!;
+    const run = store.applyRunChunk({ ...idle, streamingTasks: [], toolsUsed: [] }, { type: 'text', content: 'Hi' })!;
     expect(run).toMatchObject({ streamingContent: 'Hi', status: { phase: 'streaming' } });
-    expect(store.applyBackgroundChunk(run, { type: 'done' })).toBeNull();
+    expect(store.applyRunChunk(run, { type: 'done' })).toBeNull();
     expect(store.applyBackgroundStatus(run, { phase: 'complete' })).toBeNull();
   });
 });

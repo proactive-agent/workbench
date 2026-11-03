@@ -101,10 +101,11 @@ function isReplying(status: InsightsChatStatus): boolean {
 }
 
 /**
- * A chat's reply that isn't shown, after one of its stream chunks; null once it ended (the main
- * process saved it in its chat, which shows it when opened)
+ * A chat's reply after one of its stream chunks, for the shown chat (the store's own fields) and
+ * the others alike; null once it ended ('done': the main process saved it in its chat; the shown
+ * chat finalizes its message instead)
  */
-export function applyBackgroundChunk(run: ChatRun, chunk: InsightsStreamChunk): ChatRun | null {
+export function applyRunChunk(run: ChatRun, chunk: InsightsStreamChunk): ChatRun | null {
   switch (chunk.type) {
     case 'text':
       return chunk.content
@@ -660,10 +661,15 @@ export function setupInsightsListeners(): () => void {
    * Whether an event of this chat goes to the chat on screen; the others' replies go on in the
    * background. A new chat's first reply belongs to the shown draft until its conversation arrives
    */
+  // Chats whose replies went on in the background: their last events (a status after the 'done'
+  // chunk that ended the background run) never go to the shown draft
+  const repliedElsewhere = new Set<string>();
   const isShown = (sessionId: string | undefined) => {
     const shown = store().session?.id;
     if (!sessionId || sessionId === shown) return true;
-    return shown === DRAFT_SESSION_ID && !store().backgroundRuns[sessionId] && !store().sessions.some((s) => s.id === sessionId);
+    if (store().backgroundRuns[sessionId]) repliedElsewhere.add(sessionId);
+    if (repliedElsewhere.has(sessionId)) return false;
+    return shown === DRAFT_SESSION_ID && !store().sessions.some((s) => s.id === sessionId);
   };
 
   // Listen for streaming chunks
@@ -672,64 +678,30 @@ export function setupInsightsListeners(): () => void {
       if (!isCurrentProject(projectId)) return;
       // Another chat's reply goes on where it is (saved in its chat when it ends)
       if (!isShown(chunk.sessionId)) {
-        store().updateBackgroundRun(chunk.sessionId!, (run) => applyBackgroundChunk(run, chunk));
+        store().updateBackgroundRun(chunk.sessionId!, (run) => applyRunChunk(run, chunk));
         return;
       }
-      switch (chunk.type) {
-        case 'text':
-          if (chunk.content) {
-            store().appendStreamingContent(chunk.content);
-            store().setCurrentTool(null); // Clear tool when receiving text
-            store().setStatus({
-              phase: 'streaming',
-              message: 'Receiving response...'
-            });
-          }
-          break;
-        case 'tool_start':
-          if (chunk.tool) {
-            store().setCurrentTool({
-              name: chunk.tool.name,
-              input: chunk.tool.input
-            });
-            // Record this tool usage for history
-            store().addToolUsage({
-              name: chunk.tool.name,
-              input: chunk.tool.input
-            });
-            store().setStatus({
-              phase: 'streaming',
-              message: `Using ${chunk.tool.name}...`
-            });
-          }
-          break;
-        case 'tool_end':
-          store().setCurrentTool(null);
-          break;
-        case 'task_suggestion':
-          // Accumulate task suggestions — they'll be included when 'done' finalizes the message
-          store().setCurrentTool(null);
-          if (chunk.suggestedTasks) {
-            store().addStreamingTasks(chunk.suggestedTasks);
-          }
-          break;
-        case 'done':
-          // Finalize any remaining content
-          store().setCurrentTool(null);
-          store().finalizeStreamingMessage();
-          store().setStatus({
-            phase: 'complete',
-            message: ''
-          });
-          break;
-        case 'error':
-          store().setCurrentTool(null);
-          store().setStatus({
-            phase: 'error',
-            error: chunk.error
-          });
-          break;
+      if (chunk.type === 'done') {
+        // Finalize any remaining content
+        store().setCurrentTool(null);
+        store().finalizeStreamingMessage();
+        store().setStatus({
+          phase: 'complete',
+          message: ''
+        });
+        return;
       }
+      // The same steps as a chat replying in the background, on the store's own fields
+      const state = store();
+      const run: ChatRun = {
+        status: state.status,
+        streamingContent: state.streamingContent,
+        streamingTasks: state.streamingTasks,
+        currentTool: state.currentTool,
+        toolsUsed: state.toolsUsed,
+      };
+      const next = applyRunChunk(run, chunk);
+      if (next && next !== run) useInsightsStore.setState(next);
     }
   );
 

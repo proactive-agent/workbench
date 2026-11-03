@@ -45,6 +45,24 @@ describe('chat browsers', () => {
     expect(started).toHaveLength(1);
   });
 
+  it('opens no second browser for a chat until the one closed while starting has closed', async () => {
+    const { start, started } = fakeHolders();
+    const chats = new ChatBrowsers(start);
+    const opening = chats.ensure('p', '/proj', 'a', null);
+    const closed = chats.close('p', 'a');
+    const reopening = chats.ensure('p', '/proj', 'a', null);
+    // The first is still starting: nothing else starts under its title
+    expect(started).toHaveLength(1);
+    started[0].resolve();
+    await expect(opening).rejects.toThrow('The browser was closed');
+    await closed;
+    expect(started[0].closed).toBe(true);
+    await vi.waitFor(() => expect(started).toHaveLength(2));
+    started[1].resolve();
+    await reopening;
+    expect(chats.isOpen('p', 'a')).toBe(true);
+  });
+
   it('forgets a browser that failed to open, closed, or exited', async () => {
     const { start, started } = fakeHolders();
     const chats = new ChatBrowsers(start);

@@ -88,6 +88,8 @@ export class ChatBrowsers extends EventEmitter {
   private readonly entries = new Map<string, Entry>();
   /** Bind titles by chat, kept while the app runs: a turn attaches by its chat's title */
   private readonly titles = new Map<string, string>();
+  /** Chats whose browser was closed while it started, until that start has ended */
+  private readonly closing = new Map<string, Promise<void>>();
   private stopped = false;
 
   constructor(private readonly startHolder: StartChatBrowserHolder = startPlaywrightHolder) {
@@ -132,6 +134,9 @@ export class ChatBrowsers extends EventEmitter {
   ensure(projectId: string, projectPath: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
     if (this.stopped) return Promise.reject(new Error('Workbench is quitting'));
     const key = keyOf(projectId, chatId);
+    // A browser closed while it started is still going: a new one waits for it (one per title)
+    const closing = this.closing.get(key);
+    if (closing) return closing.then(() => this.ensure(projectId, projectPath, chatId, choice));
     const existing = this.entries.get(key);
     if (existing?.status === 'open') return Promise.resolve();
     if (existing?.starting) return existing.starting;
@@ -139,11 +144,11 @@ export class ChatBrowsers extends EventEmitter {
     const entry: Entry = { projectId, chatId, title: this.titleFor(projectId, chatId), status: 'starting', seenLive: false };
     this.entries.set(key, entry);
     entry.starting = this.startHolder({ projectPath, title: entry.title, choice }).then(
-      (holder) => {
+      async (holder) => {
         entry.starting = undefined;
         // Closed (or the chat deleted, or the app quitting) while it started
         if (this.entries.get(keyOf(entry.projectId, entry.chatId)) !== entry) {
-          void holder.close();
+          await holder.close().catch(() => undefined);
           throw new Error('The browser was closed');
         }
         entry.holder = holder;
@@ -163,9 +168,19 @@ export class ChatBrowsers extends EventEmitter {
 
   /** Close a chat's browser (nothing when it has none) */
   async close(projectId: string, chatId: string): Promise<void> {
-    const entry = this.entries.get(keyOf(projectId, chatId));
+    const key = keyOf(projectId, chatId);
+    const entry = this.entries.get(key);
     if (!entry) return;
     this.forget(entry);
+    if (entry.starting) {
+      // Still starting: it closes itself once started; until then the chat can't open another
+      const done = entry.starting.then(() => undefined, () => undefined).finally(() => {
+        if (this.closing.get(key) === done) this.closing.delete(key);
+      });
+      this.closing.set(key, done);
+      await done;
+      return;
+    }
     await entry.holder?.close();
   }
 
