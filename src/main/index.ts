@@ -48,6 +48,7 @@ import { readSettingsFile } from './settings-utils';
 import { liveAgentRelay } from './live-agent/live-agent-relay';
 import { stopMcpProbes } from './mcp-availability';
 import { browserDrawer } from './browser-drawer';
+import { watchBrowserDisplayScale } from './browser-drawer/display-scale';
 import { syncLiveAgentAtStartup } from './live-agent/live-agent-projects';
 import { appLog, setupErrorLogging } from './app-logger';
 import { preWarmToolCache, warmToolInfo } from './cli-tool-manager';
@@ -661,6 +662,8 @@ app.whenReady().then(async () => {
   void detectBrowserProfiles();
   // The browser drawer: Playwright's headless browsers (task runs, chats), watched for every window
   void browserDrawer.start();
+  // Its browsers render at the screens' pixel density, so the drawer shows them sharp
+  watchBrowserDisplayScale();
 
   // Linux shells take the dock/taskbar icon from a desktop entry matching the window class; give the
   // development build ("Workbench Dev") its own one, or it shows a generic icon

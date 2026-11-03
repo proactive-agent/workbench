@@ -92,6 +92,28 @@ const CHROMIUM_KEYCHAIN_ARGS = ['--password-store=basic', '--use-mock-keychain']
 /** The run's Playwright config inside its profile copy (written by profile-copy.ts) */
 export const PLAYWRIGHT_CONFIG_FILE = '.workbench-playwright.json';
 
+/**
+ * The browsers' pixel density: the screens' largest devicePixelRatio (display-scale.ts), so the
+ * drawer can show their pages as sharp as the rest of the window. 1 adds nothing. Chromium needs its
+ * own switch too: a context's deviceScaleFactor alone leaves its screencast frames at CSS size
+ */
+let playwrightScale: { scale: number; configFiles: Record<'chromium' | 'other', string> } | null = null;
+
+/** The screens' density (null or 1: none); `configFiles` hold playwrightScaleConfig for runs without a profile copy */
+export function setPlaywrightDisplayScale(value: typeof playwrightScale): void {
+  playwrightScale = value && value.scale > 1 ? value : null;
+}
+
+/** The Playwright config that renders pages at `scale` device pixels per CSS pixel */
+export function playwrightScaleConfig(engine: 'chromium' | 'other', scale: number): { browser: Record<string, unknown> } {
+  return {
+    browser: {
+      contextOptions: { deviceScaleFactor: scale },
+      ...(engine === 'chromium' ? { launchOptions: { args: [`--force-device-scale-factor=${scale}`] } } : {}),
+    },
+  };
+}
+
 /** The server key of the Playwright connector in `--mcp-config` */
 const PLAYWRIGHT_SERVER_KEY = 'playwright';
 
@@ -110,12 +132,15 @@ function launchExecutable(choice: PlaywrightBrowserChoice): string {
 export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browserProfileDir: string): Record<string, unknown> {
   const userDataDir = toRuntimePath(browserProfileDir);
   const executablePath = launchExecutable(choice);
+  const scale = playwrightScale?.scale;
+  const contextOptions = scale ? { contextOptions: { deviceScaleFactor: scale } } : {};
   if (choice.engine === 'firefox') {
     return {
       browser: {
         browserName: 'firefox',
         userDataDir,
         launchOptions: { channel: 'moz-firefox', executablePath, firefoxUserPrefs: FIREFOX_NO_SYNC_PREFS },
+        ...contextOptions,
       },
     };
   }
@@ -126,9 +151,10 @@ export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browser
       launchOptions: {
         executablePath,
         chromiumSandbox: true,
-        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`],
+        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`, ...(scale ? [`--force-device-scale-factor=${scale}`] : [])],
         ignoreDefaultArgs: CHROMIUM_KEYCHAIN_ARGS,
       },
+      ...contextOptions,
     },
   };
 }
@@ -161,13 +187,17 @@ function playwrightBrowserArgs(choice: PlaywrightBrowserChoice | undefined, brow
   if (choice && !choice.managed && browserProfileDir) {
     return ['--config', toRuntimePath(joinHostPath(browserProfileDir, PLAYWRIGHT_CONFIG_FILE))];
   }
+  const engine = choice?.engine ?? 'chromium';
+  // The screens' density (a config file the command line adds to)
+  const scaleConfig = playwrightScale
+    ? ['--config', toRuntimePath(playwrightScale.configFiles[engine === 'chromium' ? 'chromium' : 'other'])]
+    : [];
   if (!choice || choice.managed) {
-    const engine = choice?.engine ?? 'chromium';
     // Playwright leaves its own Chromium's sandbox off on Linux (and so in WSL): pages would run unsandboxed
-    return ['--browser', MANAGED_BROWSER_OPTION[engine], '--isolated', ...(engine === 'chromium' ? ['--sandbox'] : [])];
+    return [...scaleConfig, '--browser', MANAGED_BROWSER_OPTION[engine], '--isolated', ...(engine === 'chromium' ? ['--sandbox'] : [])];
   }
   const browser = choice.engine === 'firefox' ? 'moz-firefox' : 'chrome';
-  return ['--browser', browser, '--executable-path', launchExecutable(choice), '--isolated'];
+  return [...scaleConfig, '--browser', browser, '--executable-path', launchExecutable(choice), '--isolated'];
 }
 
 /** A file inside a host folder (a Windows, UNC or POSIX path) */

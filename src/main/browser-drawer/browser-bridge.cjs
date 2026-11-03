@@ -22,7 +22,11 @@ const pageIds = new WeakMap();
 let nextPageId = 1;
 /** How long connecting to a browser may take */
 const CONNECT_TIMEOUT_MS = 15000;
-/** page id -> { viewers: Set<number>, size: {width,height} | null } */
+/**
+ * page id -> { viewers: Map<viewer id, scale>, size: the frame size asked for | null }. Frames are
+ * asked at the viewport times the largest viewer's devicePixelRatio, so they are sharp on HiDPI
+ * screens (browsers render that many pixels only when launched for it: mcp-config.ts)
+ */
 const casts = new Map();
 /** viewer id -> page id */
 const viewers = new Map();
@@ -171,7 +175,9 @@ async function startCast(pageId) {
   const entry = pages.get(pageId);
   const cast = casts.get(pageId);
   if (!entry || !cast) return;
-  const size = entry.page.viewportSize() || { width: 1280, height: 720 };
+  const viewport = entry.page.viewportSize() || { width: 1280, height: 720 };
+  const scale = Math.max(1, ...cast.viewers.values());
+  const size = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
   if (cast.size && cast.size.width === size.width && cast.size.height === size.height) return;
   if (cast.size) {
     await entry.page.screencast.stop().catch(() => undefined);
@@ -179,11 +185,14 @@ async function startCast(pageId) {
   }
   await entry.page.screencast.start({
     size,
-    quality: 80,
+    // The best JPEG quality: lower ones blur small text (frames are local, so their size matters little)
+    quality: 100,
     onFrame: ({ data, viewportWidth, viewportHeight }) => {
       const current = casts.get(pageId);
       if (!current || current.viewers.size === 0 || outputBusy()) return;
-      send({ type: 'frame', pageId, viewers: [...current.viewers], data, width: viewportWidth, height: viewportHeight });
+      // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
+      const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
+      send({ type: 'frame', pageId, viewers: [...current.viewers.keys()], data, width: css.width, height: css.height });
     },
   });
   // Only a cast that started counts: one that failed (the page was navigating) is tried again
@@ -198,7 +207,7 @@ async function stopCast(pageId) {
   if (entry && cast.size) await entry.page.screencast.stop().catch(() => undefined);
 }
 
-async function view(viewerId, pageId, width, height) {
+async function view(viewerId, pageId, width, height, scale) {
   const previous = viewers.get(viewerId);
   if (previous && previous !== pageId) {
     casts.get(previous)?.viewers.delete(viewerId);
@@ -220,10 +229,10 @@ async function view(viewerId, pageId, width, height) {
   }
   let cast = casts.get(pageId);
   if (!cast) {
-    cast = { viewers: new Set(), size: null };
+    cast = { viewers: new Map(), size: null };
     casts.set(pageId, cast);
   }
-  cast.viewers.add(viewerId);
+  cast.viewers.set(viewerId, Number.isFinite(scale) && scale >= 1 ? Math.min(scale, 2) : 1);
   await startCast(pageId);
 }
 
@@ -314,7 +323,7 @@ function onMessage(message) {
       enqueue(() => setSessions(Array.isArray(message.sessions) ? message.sessions : []));
       break;
     case 'view':
-      enqueue(() => view(message.viewerId, message.pageId, Math.round(message.width), Math.round(message.height)));
+      enqueue(() => view(message.viewerId, message.pageId, Math.round(message.width), Math.round(message.height), Number(message.scale)));
       break;
     case 'input':
       enqueueInput(() => input(message.pageId, message.event));

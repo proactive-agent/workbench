@@ -35,7 +35,7 @@ export interface BridgeSession {
 
 export type BridgeRequest =
   | { type: 'sessions'; sessions: BridgeSession[] }
-  | { type: 'view'; viewerId: number; pageId: string | null; width: number; height: number }
+  | { type: 'view'; viewerId: number; pageId: string | null; width: number; height: number; scale?: number }
   | { type: 'input'; pageId: string; event: BrowserDrawerInput }
   | { type: 'navigate'; pageId: string; action: BrowserDrawerNavigation; url?: string }
   | { type: 'closePage'; pageId: string }

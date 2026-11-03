@@ -43,6 +43,8 @@ import { ChatBrowsers } from './chat-browsers';
 const POLL_INTERVAL_MS = 2000;
 /** The largest viewport the drawer may give a page */
 const MAX_VIEWPORT = 4096;
+/** Frames are asked at most at this many device pixels per CSS pixel (4x the pixels at 1, like a Retina screen) */
+const MAX_FRAME_SCALE = 2;
 
 function registryOs(): RegistryOs {
   return isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux';
@@ -87,6 +89,12 @@ export function bridgeSessions(descriptors: readonly RegistryDescriptor[], sessi
 export function viewportDimension(value: unknown): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0;
   return n > 0 ? Math.min(n, MAX_VIEWPORT) : 0;
+}
+
+/** Device pixels per CSS pixel the drawer's frames are asked at: the window's devicePixelRatio, 1 to 2 */
+export function frameScale(value: unknown): number {
+  const n = typeof value === 'number' && Number.isFinite(value) ? value : 1;
+  return Math.round(Math.min(Math.max(n, 1), MAX_FRAME_SCALE) * 100) / 100;
 }
 
 /** Whether a renderer's input event has the shape the bridge replays */
@@ -136,7 +144,7 @@ export class BrowserDrawerService {
    * The page each window last asked to view. A reopened drawer's page asks before the drawer has
    * subscribed (child effects run first), so the request is kept and sent once it subscribes
    */
-  private readonly views = new Map<number, { pageId: string | null; width: unknown; height: unknown }>();
+  private readonly views = new Map<number, { pageId: string | null; width: unknown; height: unknown; scale: unknown }>();
   private lastBridgeSessions = '';
   readonly chatBrowsers: ChatBrowsers;
 
@@ -205,7 +213,7 @@ export class BrowserDrawerService {
     // The view asked for before subscribing (unless the drawer closed again meanwhile)
     const pending = this.views.get(sender.id);
     if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
-      this.view(sender, pending.pageId, pending.width, pending.height);
+      this.view(sender, pending.pageId, pending.width, pending.height, pending.scale);
     }
   }
 
@@ -216,9 +224,9 @@ export class BrowserDrawerService {
     this.bridge.send({ type: 'view', viewerId, pageId: null, width: 0, height: 0 });
   }
 
-  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown): void {
+  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown, scale?: unknown): void {
     if (this.stopped) return;
-    this.views.set(sender.id, { pageId, width, height });
+    this.views.set(sender.id, { pageId, width, height, scale });
     if (!this.subscribers.has(sender.id)) return;
     const known = pageId !== null && this.pages.some((page) => page.id === pageId);
     this.bridge.send({
@@ -227,6 +235,7 @@ export class BrowserDrawerService {
       pageId: known ? pageId : null,
       width: viewportDimension(width),
       height: viewportDimension(height),
+      scale: frameScale(scale),
     });
   }
 

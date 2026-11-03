@@ -327,8 +327,12 @@ connects to the projects' browsers with each one's own playwright-core
 (`require(playwrightLib)` from the npx cache: nothing of Playwright ships with the app, the client always matches the
 server; disconnecting leaves the browser running) and reports their pages; the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
-(`page.screencast`) to that window only, drawn 1:1 on a canvas; the canvas's mouse, wheel, keys and pasted text are
-replayed with `page.mouse` / `page.keyboard`. The renderer gets bytes and text only (no remote content, no webview).
+(`page.screencast`, quality 100) to that window only, drawn on a canvas at its CSS size; the canvas's mouse, wheel, keys
+and pasted text are replayed with `page.mouse` / `page.keyboard`. Frames are asked at the window's devicePixelRatio,
+and on HiDPI screens the browsers render that many pixels: `browser-drawer/display-scale.ts` follows the screens'
+largest scale factor (up to 2) into the runs' Playwright config (`setPlaywrightDisplayScale`: `deviceScaleFactor`, plus
+`--force-device-scale-factor` for Chromium, whose screencast otherwise stays at CSS size), a small config file for runs
+without a profile copy; screenshots for agents stay in CSS pixels. The renderer gets bytes and text only (no remote content, no webview).
 The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
 browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
 runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'events';
-import { BrowserDrawerService, bridgeSessions, isDrawerInput, toDrawerSessions, viewportDimension } from '../browser-drawer-service';
+import { BrowserDrawerService, bridgeSessions, frameScale, isDrawerInput, toDrawerSessions, viewportDimension } from '../browser-drawer-service';
 import type { BrowserBridgeProcess } from '../bridge-process';
 import type { WebContents } from 'electron';
 import type { RegistryDescriptor } from '../registry';
@@ -39,6 +39,15 @@ describe('browser drawer service', () => {
       { id: 'task', endpoint: '/s/task.sock', browserName: 'chromium', playwrightLib: '/npx/a/playwright-core' },
       { id: 'chat', endpoint: '/s/chat.sock', browserName: 'firefox', playwrightLib: '/npx/a/playwright-core' },
     ]);
+  });
+
+  it('asks frames at the window\'s pixel density, 1 to 2', () => {
+    expect(frameScale(2)).toBe(2);
+    expect(frameScale(1.25)).toBe(1.25);
+    expect(frameScale(3)).toBe(2);
+    expect(frameScale(0.5)).toBe(1);
+    expect(frameScale('2')).toBe(1);
+    expect(frameScale(undefined)).toBe(1);
   });
 
   it('keeps viewport sizes within limits', () => {
@@ -83,10 +92,10 @@ describe('browser drawer viewers', () => {
     const window = sender(7);
 
     // The page view asks first (child effects run before the drawer's)
-    service.view(window, 's#1', 800, 600);
+    service.view(window, 's#1', 800, 600, 2);
     expect(views(sent)).toEqual([]);
     await service.subscribe(window);
-    expect(views(sent)).toEqual([{ type: 'view', viewerId: 7, pageId: 's#1', width: 800, height: 600 }]);
+    expect(views(sent)).toEqual([{ type: 'view', viewerId: 7, pageId: 's#1', width: 800, height: 600, scale: 2 }]);
 
     // Closed: nothing is replayed when it opens again without asking
     service.unsubscribe(7);

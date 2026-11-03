@@ -30,7 +30,8 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const report = () => {
       const { width, height } = container.getBoundingClientRect();
-      if (width > 0 && height > 0) window.electronAPI.viewBrowserPage(pageId, Math.floor(width), Math.floor(height));
+      // Frames at the screen's pixel density, so the page is as sharp as the rest of the window
+      if (width > 0 && height > 0) window.electronAPI.viewBrowserPage(pageId, Math.floor(width), Math.floor(height), window.devicePixelRatio || 1);
     };
     report();
     const observer = new ResizeObserver(() => {
@@ -38,8 +39,21 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       timer = setTimeout(report, RESIZE_DEBOUNCE_MS);
     });
     observer.observe(container);
+    // Moved to a screen of another density (or zoomed): frames follow
+    let density: MediaQueryList | undefined;
+    const onDensity = () => {
+      watchDensity();
+      report();
+    };
+    const watchDensity = () => {
+      density?.removeEventListener('change', onDensity);
+      density = window.matchMedia?.(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+      density?.addEventListener('change', onDensity);
+    };
+    watchDensity();
     return () => {
       observer.disconnect();
+      density?.removeEventListener('change', onDensity);
       clearTimeout(timer);
       window.electronAPI.viewBrowserPage(null, 0, 0);
     };

@@ -63,8 +63,8 @@ describe('BrowserDrawer', () => {
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((tab) => tab.textContent)).toEqual(['Docs', 'other.test/a']);
     expect(screen.getByLabelText('browserDrawer.address')).toHaveValue('https://docs.test/');
-    // The page's viewport is the page area, in whole pixels
-    expect(api.viewBrowserPage).toHaveBeenCalledWith('p1', 700, 500);
+    // The page's viewport is the page area, in whole pixels, its frames at the window's density
+    expect(api.viewBrowserPage).toHaveBeenCalledWith('p1', 700, 500, 1);
 
     fireEvent.click(screen.getByText('other.test/a'));
     expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p2');

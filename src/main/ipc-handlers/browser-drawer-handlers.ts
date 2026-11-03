@@ -33,8 +33,8 @@ export function registerBrowserDrawerHandlers(): void {
   });
 
   // Frequent calls (resizes, input): one-way messages
-  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_VIEW, (event, pageId: unknown, width: unknown, height: unknown) => {
-    browserDrawer.view(event.sender, typeof pageId === 'string' ? pageId : null, width, height);
+  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_VIEW, (event, pageId: unknown, width: unknown, height: unknown, scale: unknown) => {
+    browserDrawer.view(event.sender, typeof pageId === 'string' ? pageId : null, width, height, scale);
   });
 
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_INPUT, (_event, pageId: unknown, input: unknown) => {

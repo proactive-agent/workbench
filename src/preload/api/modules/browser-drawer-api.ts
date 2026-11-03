@@ -21,8 +21,11 @@ export interface BrowserDrawerAPI {
   subscribeBrowserDrawer: () => Promise<IPCResult>;
   /** The window's drawer closed */
   unsubscribeBrowserDrawer: () => Promise<IPCResult>;
-  /** Stream a page (null: none) to this window, its viewport sized to width x height CSS pixels */
-  viewBrowserPage: (pageId: string | null, width: number, height: number) => void;
+  /**
+   * Stream a page (null: none) to this window, its viewport sized to width x height CSS pixels,
+   * its frames at `scale` device pixels per CSS pixel (the window's devicePixelRatio)
+   */
+  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
   sendBrowserInput: (pageId: string, input: BrowserDrawerInput) => void;
   navigateBrowserPage: (pageId: string, action: BrowserDrawerNavigation, url?: string) => void;
   closeBrowserPage: (pageId: string) => void;
@@ -42,7 +45,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   getBrowserDrawerState: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_GET_STATE),
   subscribeBrowserDrawer: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_SUBSCRIBE),
   unsubscribeBrowserDrawer: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_UNSUBSCRIBE),
-  viewBrowserPage: (pageId, width, height) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_VIEW, pageId, width, height),
+  viewBrowserPage: (pageId, width, height, scale) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_VIEW, pageId, width, height, scale),
   sendBrowserInput: (pageId, input) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_INPUT, pageId, input),
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),

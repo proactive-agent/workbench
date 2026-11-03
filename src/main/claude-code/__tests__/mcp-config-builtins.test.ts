@@ -10,7 +10,7 @@ vi.mock('../../platform/shell-runtime', () => ({
 vi.mock('../../platform/runtime-exec', () => ({ toRuntimeArg: (arg: string) => arg }));
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
 
-import { buildMcpConfig, mcpServerEntry, playwrightProfileConfig, withPlaywrightOutputDir } from '../mcp-config';
+import { buildMcpConfig, mcpServerEntry, playwrightProfileConfig, playwrightScaleConfig, setPlaywrightDisplayScale, withPlaywrightOutputDir } from '../mcp-config';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 
 const chrome: PlaywrightBrowserChoice = {
@@ -56,6 +56,34 @@ describe('built-in MCP servers', () => {
   beforeEach(() => {
     platform.windows = false;
     platform.wsl = false;
+    setPlaywrightDisplayScale(null);
+  });
+
+  it("renders pages at the screens' pixel density on HiDPI screens", () => {
+    const configFiles = { chromium: '/data/playwright/display-scale-chromium.json', other: '/data/playwright/display-scale.json' };
+    setPlaywrightDisplayScale({ scale: 2, configFiles });
+    expect(mcpServerEntry('playwright', undefined)).toMatchObject({
+      args: ['-y', PACKAGE, '--config', configFiles.chromium, '--browser', 'chromium', '--isolated', '--sandbox', '--headless'],
+    });
+    expect(mcpServerEntry('playwright', { playwrightBrowser: snapFirefox })).toMatchObject({
+      args: ['-y', PACKAGE, '--config', configFiles.other, '--browser', 'moz-firefox', '--executable-path', '/snap/firefox/current/usr/lib/firefox/firefox', '--isolated', '--headless'],
+    });
+    // A profile copy's own config carries it
+    expect(playwrightProfileConfig(chrome, '/data/copy')).toMatchObject({
+      browser: {
+        launchOptions: { args: ['--profile-directory=Profile 1', '--force-device-scale-factor=2'] },
+        contextOptions: { deviceScaleFactor: 2 },
+      },
+    });
+    expect(playwrightProfileConfig(firefox, '/data/copy')).toMatchObject({ browser: { contextOptions: { deviceScaleFactor: 2 } } });
+    expect(playwrightScaleConfig('chromium', 1.5)).toEqual({
+      browser: { contextOptions: { deviceScaleFactor: 1.5 }, launchOptions: { args: ['--force-device-scale-factor=1.5'] } },
+    });
+    expect(playwrightScaleConfig('other', 2)).toEqual({ browser: { contextOptions: { deviceScaleFactor: 2 } } });
+
+    // A screen of density 1 adds nothing
+    setPlaywrightDisplayScale({ scale: 1, configFiles });
+    expect(mcpServerEntry('playwright', undefined)).toMatchObject({ args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless'] });
   });
 
   it('runs electron-mcp-server with node where its script has no shebang to rely on', () => {
