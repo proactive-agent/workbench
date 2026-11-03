@@ -7,7 +7,8 @@
  * worktree), so a session belongs to the project whose folder holds it (the innermost one, for
  * projects inside other projects). A Claude chat's server works in the turn's own temporary
  * folder (insights/playwright-guard.cjs), which the turn registers here for its project while it
- * runs.
+ * runs. In WSL mode the folders are the distribution's Linux paths, compared as the Windows paths
+ * the app stores (toHostPath: `/mnt/c/x` as `C:\x`, `/home/x` as `\\wsl.localhost\<distro>\home\x`).
  */
 
 import path from 'path';
@@ -36,7 +37,8 @@ export function getChatBrowserWorkspaces(): ReadonlyMap<string, string> {
 /** A folder for comparison: resolved, without a trailing separator, lower case where case doesn't count */
 function normalize(dir: string, caseInsensitive: boolean): string {
   const p = /^[A-Za-z]:[\\/]|^\\\\/.test(dir) ? path.win32 : path.posix;
-  const resolved = p.resolve(dir).replace(/[\\/]+$/, '');
+  // A WSL distribution's folders by either of Windows' names for them (\\wsl$ is the older)
+  const resolved = p.resolve(dir).replace(/[\\/]+$/, '').replace(/^\\\\wsl\$\\/i, '\\\\wsl.localhost\\');
   return caseInsensitive ? resolved.toLowerCase() : resolved;
 }
 

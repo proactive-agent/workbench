@@ -32,6 +32,11 @@ describe('session -> project', () => {
     expect(sessionProjectId('/tmp/workbench-insights-abc/playwright', projects, getChatBrowserWorkspaces())).toBeUndefined();
   });
 
+  it("matches a WSL distribution's folders by either of Windows' names for them", () => {
+    const wsl = [{ id: 'linux', path: '\\\\wsl$\\Ubuntu\\home\\me\\app' }];
+    expect(sessionProjectId('\\\\wsl.localhost\\Ubuntu\\home\\me\\app\\.workbench\\worktrees\\tasks\\001', wsl, new Map(), true)).toBe('linux');
+  });
+
   it('ignores case on Windows and macOS', () => {
     const windows = [{ id: 'win', path: 'C:\\Users\\Me\\App' }];
     expect(sessionProjectId('c:\\users\\me\\app\\.workbench\\worktrees\\tasks\\001', windows, new Map(), true)).toBe('win');

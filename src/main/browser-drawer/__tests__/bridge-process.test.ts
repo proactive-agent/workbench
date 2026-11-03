@@ -1,51 +1,44 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdtemp, rm } from 'fs/promises';
+import net from 'net';
 import os from 'os';
 import path from 'path';
-import { BrowserBridgeProcess, type BridgeMessage } from '../bridge-process';
-
-// A stand-in bridge: answers each request with what it got, frames as bytes
-const FAKE_BRIDGE = `
-process.on('message', (m) => {
-  if (m.type === 'sessions') process.send({ type: 'pages', pages: m.sessions.map((s) => ({ id: s.id + '#1', sessionId: s.id, title: '', url: 'about:blank' })) });
-  if (m.type === 'view') process.send({ type: 'frame', pageId: m.pageId, viewers: [m.viewerId], data: Buffer.from([1, 2, 3]), width: m.width, height: m.height });
-});
-process.on('disconnect', () => process.exit(0));
-`;
+import { BrowserBridgeProcess } from '../bridge-process';
 
 describe('browser bridge process', () => {
-  let dir: string;
-  let bridge: BrowserBridgeProcess;
+  let dir: string | undefined;
+  let bridge: BrowserBridgeProcess | undefined;
+  let server: net.Server | undefined;
 
   afterEach(async () => {
     await bridge?.stop();
+    await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
     if (dir) await rm(dir, { recursive: true, force: true });
+    bridge = undefined;
+    server = undefined;
+    dir = undefined;
   });
 
-  it('starts once, exchanges messages with bytes and stops', async () => {
+  it('runs the real bridge over stdio: says which endpoints answer, and stops', async () => {
     dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-test-'));
-    const script = path.join(dir, 'bridge.cjs');
-    await writeFile(script, FAKE_BRIDGE);
-    bridge = new BrowserBridgeProcess({ scriptPath: script, execPath: process.execPath });
+    const socket = process.platform === 'win32' ? `\\\\.\\pipe\\workbench-bridge-test-${process.pid}` : path.join(dir, 'live.sock');
+    server = net.createServer((connection) => connection.destroy());
+    await new Promise<void>((resolve) => server!.listen(socket, resolve));
+
+    // The bridge script Workbench ships, run by this Node
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
     await Promise.all([bridge.start(), bridge.start()]);
     expect(bridge.running).toBe(true);
 
-    const messages: BridgeMessage[] = [];
-    const received = (count: number) => new Promise<void>((resolve) => {
-      const check = () => (messages.length >= count ? resolve() : setTimeout(check, 10));
-      check();
-    });
-    bridge.on('message', (message: BridgeMessage) => messages.push(message));
-    bridge.send({ type: 'sessions', sessions: [{ id: 's', endpoint: '/x.sock', browserName: 'chromium', playwrightLib: '/pw' }] });
-    bridge.send({ type: 'view', viewerId: 7, pageId: 's#1', width: 800, height: 600 });
-    await received(2);
-    expect(messages[0]).toEqual({ type: 'pages', pages: [{ id: 's#1', sessionId: 's', title: '', url: 'about:blank' }] });
-    expect(messages[1]).toMatchObject({ type: 'frame', pageId: 's#1', viewers: [7], width: 800, height: 600 });
-    expect([...(messages[1] as { data: Uint8Array }).data]).toEqual([1, 2, 3]);
+    const dead = path.join(dir, 'closed.sock');
+    const live = await bridge.probe([socket, dead]);
+    expect(live).toEqual(new Set([socket]));
 
-    const exited = new Promise((resolve) => bridge.once('exit', resolve));
+    const exited = new Promise((resolve) => bridge!.once('exit', resolve));
     await bridge.stop();
     expect(bridge.running).toBe(false);
-    await Promise.race([exited, new Promise((r) => setTimeout(r, 500))]);
-  });
+    await Promise.race([exited, new Promise((r) => setTimeout(r, 2000))]);
+    // Stopped: nothing to ask
+    await expect(new BrowserBridgeProcess({ execPath: path.join(dir, 'no-such-node') }).probe([socket])).resolves.toBeNull();
+  }, 20_000);
 });

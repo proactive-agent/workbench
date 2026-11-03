@@ -23,6 +23,10 @@
  *
  * Chats are told apart by id within their project; the New chat page (no conversation yet) is
  * NEW_CHAT_BROWSER_ID, and its browser moves to the conversation its first message creates.
+ *
+ * In WSL mode the holder runs inside the distribution (spawnTool, like every MCP server there),
+ * its folder in the distribution's own temp folder (runtimeTempParent), so the browser's profile
+ * isn't on a Windows drive.
  */
 
 import { EventEmitter } from 'events';
@@ -40,10 +44,11 @@ import { readSettingsFileAsync } from '../settings-utils';
 import { resolveCommand } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
 import { isMacOS, isWindows } from '../platform';
-import { defaultRegistryDir, removeClosedSessions } from './registry';
+import { getWslInfo } from '../platform/shell-runtime';
+import { registryAccess, removeClosedSessions } from './registry';
 import { killRuntimeProcessTree, spawnTool } from '../platform/runtime-exec';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
-import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
+import { makeTempFolder, removeTempFolder, runtimeTempParent, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import {
   CHAT_BROWSER_RECORD,
   discardRestorable,
@@ -531,7 +536,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
   const removals: Array<() => Promise<void> | void> = [];
   try {
     // The holder's own folder: its workspace and output folder, registered for the project
-    const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser);
+    // Where the browser runs (in WSL inside the distribution: a profile on /mnt/c is slow for it)
+    const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser, await runtimeTempParent());
     removals.push(() => removeTempFolder(dir));
     for (const folder of new Set([dir, await realpath(dir).catch(() => dir)])) {
       cleanups.push(registerChatBrowserWorkspace(folder, projectPath));
@@ -577,7 +583,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       command,
       cwd: dir,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...(await getToolEnvAsync()), ...entry.env },
+      // In WSL the distribution's login environment applies (only changed variables are passed in)
+      env: { ...(getWslInfo() ? process.env : await getToolEnvAsync()), ...entry.env },
       windowsHide: true,
       // Its own process group, so the server npx starts (and its browser) can be stopped with it
       detached: !isWindows(),
@@ -599,7 +606,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     const done = exited.then(async () => {
       await cleanup();
       // Its closed browser's entry in Playwright's registry (kept there because it had a profile folder)
-      await removeClosedSessions(defaultRegistryDir(isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux'), title);
+      const registry = registryAccess(isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux');
+      await removeClosedSessions(registry.dir, title, registry.connect);
       for (const listener of listeners) listener();
     });
     return {

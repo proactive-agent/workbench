@@ -412,6 +412,10 @@ function handleInsightsEvent(
  */
 export type TaskToolsRoute = 'direct' | 'bridge' | 'off';
 
+/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL NAT) the relay to it */
+export const CHAT_BROWSER_URL_ENV = 'WORKBENCH_CHAT_BROWSER_URL';
+export const CHAT_BROWSER_RELAY_ENV = 'WORKBENCH_CHAT_BROWSER_RELAY';
+
 /** Set once the bridge failed to start, so later turns don't offer tools Claude can't reach */
 let taskToolsBridgeFailed = false;
 
@@ -460,9 +464,18 @@ export async function guardChatPlaywright(
   const script = join(tempDir, 'playwright-guard.cjs');
   await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
   const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
+  // The chat's browser is opened through Workbench's local tools server; inside WSL2 with NAT
+  // networking the guard reaches it through the task tools bridge, a Windows process it starts
+  // through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
+  let env = entry.env;
+  if (getWslInfo() && env?.[CHAT_BROWSER_URL_ENV] && getTaskToolsRoute() === 'bridge') {
+    const relayScript = join(tempDir, 'task-tools-bridge.cjs');
+    await writeFile(relayScript, TASK_TOOLS_BRIDGE_SOURCE, 'utf-8');
+    env = { ...env, [CHAT_BROWSER_RELAY_ENV]: JSON.stringify({ command: toRuntimePath(process.execPath), script: relayScript }) };
+  }
   const guarded: McpServerEntry = getWslInfo()
-    ? { type: 'stdio', command: 'node', args: [toRuntimePath(script), toRuntimePath(dir), ...server], ...(entry.env ? { env: entry.env } : {}) }
-    : { type: 'stdio', command: process.execPath, args: [script, dir, ...server], env: { ...entry.env, ELECTRON_RUN_AS_NODE: '1' } };
+    ? { type: 'stdio', command: 'node', args: [toRuntimePath(script), toRuntimePath(dir), ...server], ...(env ? { env } : {}) }
+    : { type: 'stdio', command: process.execPath, args: [script, dir, ...server], env: { ...env, ELECTRON_RUN_AS_NODE: '1' } };
   return { servers: { ...servers, playwright: guarded }, dir };
 }
 

@@ -15,12 +15,11 @@
  * tabs. Everything else goes, with its profile copy. Only the newest folder of a chat is kept.
  */
 
-import os from 'os';
 import path from 'path';
 import { readdir, readFile, rm, stat } from 'fs/promises';
 import { appLog } from '../app-logger';
 import { claimFolder, folderClaim, releaseFolder, UNVERIFIED_OWNER_AGE_MS, writeOwner } from '../folder-owner';
-import { TEMP_FOLDER_PREFIXES } from '../temp-folders';
+import { tempFolderParents, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import { isBrowserProfileCopyPath, keepBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
 import { InsightsPaths } from '../insights/paths';
 
@@ -129,20 +128,23 @@ async function removeLeftover(dir: string, record: ChatBrowserRecord | null): Pr
  * and profile copies) and remove the other leftovers. Run before profile copies are swept. Best effort
  */
 export async function scanChatBrowserLeftovers(options: ChatBrowserScanOptions): Promise<RestorableChatBrowser[]> {
-  const parent = options.parent ?? os.tmpdir();
+  const parents = options.parent ? [options.parent] : await tempFolderParents();
   const now = options.now ?? Date.now();
   const chatExists = options.chatExists ?? conversationExists;
-  let names: string[];
-  try {
-    names = (await readdir(parent)).filter((name) => name.startsWith(TEMP_FOLDER_PREFIXES.chatBrowser));
-  } catch {
-    return [];
+  // In each temp folder (WSL mode: also the distribution's, where chat browsers run)
+  const dirs: string[] = [];
+  for (const parent of parents) {
+    try {
+      const names = (await readdir(parent)).filter((name) => name.startsWith(TEMP_FOLDER_PREFIXES.chatBrowser));
+      dirs.push(...names.map((name) => path.join(parent, name)));
+    } catch {
+      // No such folder
+    }
   }
 
   // The left folders with their records, newest first
   const left: Array<{ dir: string; record: ChatBrowserRecord | null }> = [];
-  for (const name of names) {
-    const dir = path.join(parent, name);
+  for (const dir of dirs) {
     try {
       if (!(await stat(dir)).isDirectory()) continue;
       // Another running Workbench's (or this one's, opened meanwhile), or one being set up

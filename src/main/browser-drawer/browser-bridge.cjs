@@ -1,13 +1,18 @@
 // Workbench's browser bridge (the browser drawer's link to Playwright's headless browsers)
 //
-// Forked by the main process (bridge-process.ts) with Workbench's executable as Node, IPC with
-// advanced serialization. It connects to the bound browsers it is given (Playwright's registry
-// endpoint) with each browser's own playwright-core (`require(playwrightLib)`, the npx cache of
+// Started by the main process (bridge-process.ts): natively with Workbench's executable as Node,
+// in WSL mode with the distribution's node (the browsers, their registry and sockets are there).
+// Messages go over stdin/stdout as length-prefixed JSON headers with optional bytes (a frame's
+// JPEG), the codec of bridge-framing.ts; stdout carries nothing else (console output goes to
+// stderr), and the bridge exits when stdin ends (Workbench is gone). It connects to the bound
+// browsers it is given (Playwright's registry endpoint) with each browser's own playwright-core (`require(playwrightLib)`, the npx cache of
 // the MCP server that launched it), the way Playwright's own dashboard does; disconnecting leaves
 // the browser running. It reports their pages, streams the viewed pages as JPEG frames
 // (`page.screencast`), sizes a viewed page's viewport to the drawer, and replays the viewer's
-// mouse, wheel and keys on it. Plain Node, no packages of its own.
+// mouse, wheel and keys on it; it also says which registry endpoints answer (`probe`), for WSL
+// mode, where the main process can't reach the sockets. Plain Node, no packages of its own.
 'use strict';
+const net = require('net');
 
 /** session id -> { browser, key } */
 const sessions = new Map();
@@ -22,13 +27,46 @@ const casts = new Map();
 /** viewer id -> page id */
 const viewers = new Map();
 
+// stdout is the message channel: anything else printed goes to stderr
+const writeOut = process.stdout.write.bind(process.stdout);
+console.log = console.info = console.debug = (...args) => console.error(...args);
+process.stdout.write = (chunk, ...rest) => process.stderr.write(chunk, ...rest);
+
+/** One message as bytes (bridge-framing.ts's codec): a Uint8Array field travels as raw bytes */
+function encode(message) {
+  let bytes = null;
+  const header = {};
+  for (const [key, value] of Object.entries(message)) {
+    if (value instanceof Uint8Array && !bytes) {
+      bytes = value;
+      header.$bytes = key;
+    } else {
+      header[key] = value;
+    }
+  }
+  const json = Buffer.from(JSON.stringify(header), 'utf-8');
+  const prefix = Buffer.alloc(10);
+  prefix[0] = 0x57;
+  prefix[1] = 0x42;
+  prefix.writeUInt32BE(json.length, 2);
+  prefix.writeUInt32BE(bytes ? bytes.length : 0, 6);
+  return Buffer.concat(bytes ? [prefix, json, Buffer.from(bytes.buffer, bytes.byteOffset, bytes.length)] : [prefix, json]);
+}
+
+let outputClosed = false;
+process.stdout.on('error', () => {
+  outputClosed = true;
+});
 const send = (message) => {
+  if (outputClosed) return;
   try {
-    if (process.connected) process.send(message);
+    writeOut(encode(message));
   } catch {
-    // The main process is gone
+    // Workbench is gone
   }
 };
+/** Whether the channel is still writing earlier output (a frame is dropped then, not queued) */
+const outputBusy = () => process.stdout.writableNeedDrain;
 const log = (message) => send({ type: 'log', message: String(message && message.message ? message.message : message) });
 
 // Commands run one at a time (connects, screencasts, viewport changes); input has its own queue so
@@ -144,7 +182,7 @@ async function startCast(pageId) {
     quality: 80,
     onFrame: ({ data, viewportWidth, viewportHeight }) => {
       const current = casts.get(pageId);
-      if (!current || current.viewers.size === 0) return;
+      if (!current || current.viewers.size === 0 || outputBusy()) return;
       send({ type: 'frame', pageId, viewers: [...current.viewers], data, width: viewportWidth, height: viewportHeight });
     },
   });
@@ -236,7 +274,40 @@ async function navigate(pageId, action, url) {
   else if (action === 'goto' && url) await page.goto(url, options);
 }
 
-process.on('message', (message) => {
+/** Whether a bound browser's socket (or ws:// endpoint) answers; a slow answer counts as live (registry.ts canConnect) */
+function canConnect(endpoint) {
+  return new Promise((resolve) => {
+    let socket;
+    try {
+      if (/^wss?:\/\//.test(endpoint)) {
+        const url = new URL(endpoint);
+        socket = net.createConnection(Number(url.port) || (url.protocol === 'wss:' ? 443 : 80), url.hostname);
+      } else {
+        socket = net.createConnection(endpoint);
+      }
+    } catch {
+      resolve(false);
+      return;
+    }
+    const done = (result) => {
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(result);
+    };
+    const timer = setTimeout(() => done(true), 1000);
+    socket.once('connect', () => done(true));
+    socket.once('error', () => done(false));
+  });
+}
+
+/** Which of the endpoints answer (WSL mode: the main process can't reach the sockets) */
+async function probe(id, endpoints) {
+  const list = Array.isArray(endpoints) ? endpoints.filter((e) => typeof e === 'string') : [];
+  const answers = await Promise.all(list.map((endpoint) => canConnect(endpoint)));
+  send({ type: 'probed', id, live: list.filter((_, index) => answers[index]) });
+}
+
+function onMessage(message) {
   if (!message || typeof message !== 'object') return;
   switch (message.type) {
     case 'sessions':
@@ -258,12 +329,55 @@ process.on('message', (message) => {
     case 'newPage':
       enqueue(() => newPage(message.sessionId));
       break;
+    case 'probe':
+      // Not queued: answered while a slow connect runs
+      probe(message.id, message.endpoints).catch(log);
+      break;
+  }
+}
+
+// Messages from the main process (bridge-framing.ts's codec)
+let received = Buffer.alloc(0);
+process.stdin.on('data', (chunk) => {
+  received = received.length ? Buffer.concat([received, chunk]) : chunk;
+  for (;;) {
+    let start = 0;
+    while (start < received.length && !(received[start] === 0x57 && (start + 1 >= received.length || received[start + 1] === 0x42))) start++;
+    if (start > 0) received = received.subarray(start);
+    if (received.length < 10) return;
+    const headerLength = received.readUInt32BE(2);
+    const bytesLength = received.readUInt32BE(6);
+    if (headerLength > 64 * 1024 * 1024 || bytesLength > 64 * 1024 * 1024) {
+      received = received.subarray(1);
+      continue;
+    }
+    const total = 10 + headerLength + bytesLength;
+    if (received.length < total) return;
+    let header = null;
+    try {
+      header = JSON.parse(received.subarray(10, 10 + headerLength).toString('utf-8'));
+    } catch {
+      // Skipped
+    }
+    if (header && typeof header.$bytes === 'string') header[header.$bytes] = new Uint8Array(received.subarray(10 + headerLength, total));
+    if (header) delete header.$bytes;
+    received = received.subarray(total);
+    try {
+      onMessage(header);
+    } catch (error) {
+      log(error);
+    }
   }
 });
 
-// Gone with the main process: disconnect (the browsers keep running)
-process.on('disconnect', () => {
+// Gone with the main process (its end of stdin closed): disconnect (the browsers keep running)
+let exiting = false;
+function exitBridge() {
+  if (exiting) return;
+  exiting = true;
   Promise.all([...sessions.values()].map((entry) => entry.browser.close().catch(() => undefined)))
     .finally(() => process.exit(0));
   setTimeout(() => process.exit(0), 2000).unref();
-});
+}
+process.stdin.on('end', exitBridge);
+process.stdin.on('error', exitBridge);

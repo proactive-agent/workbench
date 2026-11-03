@@ -133,6 +133,6 @@
     "openFailedUnknown": "Unknown error",
     "noTabs": "No tabs are open",
     "noTabsDescription": "Open a new tab to keep using this browser",
-    "unavailableWsl": "The browser drawer isn't available while Workbench runs in WSL: the browsers run inside the distribution"
+    "unavailable": "The browser drawer isn't available here"
   }
 }

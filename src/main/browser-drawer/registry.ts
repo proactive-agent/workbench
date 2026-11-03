@@ -56,6 +56,31 @@ export function defaultRegistryDir(platform: RegistryOs): string {
   return registryDir(platform, process.env, os.homedir());
 }
 
+/** Whether a browser's endpoint answers; null when that couldn't be asked (the file is read again next time) */
+export type EndpointCheck = (endpoint: string) => Promise<boolean | null>;
+
+/**
+ * Where the registry is and how its browsers are asked whether they run: natively this
+ * machine's folder and its sockets; in WSL mode the distribution's folder (read through
+ * `\\wsl.localhost`) and the bridge, which runs there (set by the browser drawer service)
+ */
+export interface RegistryAccess {
+  dir: string;
+  connect: EndpointCheck;
+}
+
+let registryAccessOverride: RegistryAccess | null = null;
+
+/** Use another registry (WSL mode), or this machine's again (null) */
+export function setRegistryAccess(access: RegistryAccess | null): void {
+  registryAccessOverride = access;
+}
+
+/** The registry the browsers are in */
+export function registryAccess(platform: RegistryOs): RegistryAccess {
+  return registryAccessOverride ?? { dir: defaultRegistryDir(platform), connect: canConnect };
+}
+
 /** A descriptor file's content, or null when it isn't one */
 export function parseDescriptor(text: string): RegistryDescriptor | null {
   let raw: unknown;
@@ -121,7 +146,7 @@ type DeadCache = Map<string, number>;
 export async function readLiveSessions(
   dir: string,
   dead: DeadCache = new Map(),
-  connect: (endpoint: string) => Promise<boolean> = canConnect,
+  connect: EndpointCheck = canConnect,
   /** Browsers known to be live without asking (the bridge is connected to them and hears when they go) */
   knownLive: (guid: string) => boolean = () => false,
 ): Promise<RegistryDescriptor[]> {
@@ -141,7 +166,15 @@ export async function readLiveSessions(
       if (!isFile || dead.get(name) === mtimeMs) return null;
       const descriptor = parseDescriptor(await readFile(file, 'utf-8'));
       if (!descriptor || descriptor.title.startsWith(INTERNAL_TITLE_PREFIX)) return null;
-      if (!descriptor.endpoint || (!knownLive(descriptor.guid) && !(await connect(descriptor.endpoint)))) {
+      if (!descriptor.endpoint) {
+        dead.set(name, mtimeMs);
+        return null;
+      }
+      if (knownLive(descriptor.guid)) return descriptor;
+      const live = await connect(descriptor.endpoint);
+      // Not asked (the bridge didn't answer): left out now, asked again next time
+      if (live === null) return null;
+      if (!live) {
         dead.set(name, mtimeMs);
         return null;
       }
@@ -157,7 +190,7 @@ export async function readLiveSessions(
  * Remove the files of closed browsers bound under `title` (a browser with a profile folder keeps
  * its file after it closes, and each chat browser has a title of its own). Best effort
  */
-export async function removeClosedSessions(dir: string, title: string, connect: (endpoint: string) => Promise<boolean> = canConnect): Promise<void> {
+export async function removeClosedSessions(dir: string, title: string, connect: EndpointCheck = canConnect): Promise<void> {
   let names: string[];
   try {
     names = await readdir(dir);
@@ -169,7 +202,8 @@ export async function removeClosedSessions(dir: string, title: string, connect: 
     try {
       const descriptor = parseDescriptor(await readFile(file, 'utf-8'));
       if (!descriptor || descriptor.title !== title) return;
-      if (descriptor.endpoint && (await connect(descriptor.endpoint))) return;
+      // Kept while it answers, or when that couldn't be asked
+      if (descriptor.endpoint && (await connect(descriptor.endpoint)) !== false) return;
       await unlink(file);
     } catch {
       // Gone meanwhile

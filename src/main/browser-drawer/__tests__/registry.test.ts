@@ -110,6 +110,18 @@ describe('live sessions', () => {
     expect(asked).toEqual([]);
   });
 
+  it("leaves out, without forgetting, browsers whose liveness couldn't be asked (the bridge didn't answer)", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'pw-registry-'));
+    await writeFile(path.join(dir, 'live'), descriptor('live'));
+    const dead = new Map<string, number>();
+    expect(await readLiveSessions(dir, dead, async () => null)).toEqual([]);
+    expect(dead.size).toBe(0);
+    expect((await readLiveSessions(dir, dead, async () => true)).map((s) => s.guid)).toEqual(['live']);
+    // Nor removed as closed
+    await removeClosedSessions(dir, 'claude-code', async () => null);
+    expect(existsSync(path.join(dir, 'live'))).toBe(true);
+  });
+
   it('has none without a registry folder', async () => {
     expect(await readLiveSessions(path.join(os.tmpdir(), 'no-such-registry-folder'))).toEqual([]);
   });

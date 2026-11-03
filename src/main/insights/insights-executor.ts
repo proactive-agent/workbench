@@ -10,7 +10,7 @@ import type {
   ClaudeSessionRef
 } from '../../shared/types';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
-import { runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
 import { openMcpToolsSession, openTaskToolsSession, type TaskToolsSession } from './task-tools-server';
@@ -84,7 +84,7 @@ async function attachedPlaywright(
       command: 'npx',
       args: ['-y', PLAYWRIGHT_MCP_PACKAGE, '--endpoint', title],
       env: {
-        WORKBENCH_CHAT_BROWSER_URL: server.url,
+        [CHAT_BROWSER_URL_ENV]: server.url,
         WORKBENCH_CHAT_BROWSER_TOKEN: server.headers.Authorization.replace(/^Bearer /, ''),
       },
     },
@@ -94,10 +94,10 @@ async function attachedPlaywright(
 
 /**
  * The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones.
- * Natively, Playwright attaches to the chat's own browser (opened on its first tool call, kept
- * open between turns); the caller closes the returned token when the turn ends. In WSL (no
- * drawer), each turn gets a fresh copy of the browser profile (sign-ins as they are now, like task
- * runs), which the caller removes when the turn ends
+ * Playwright attaches to the chat's own browser (opened on its first tool call, kept open between
+ * turns); the caller closes the returned token when the turn ends. In WSL with interop off (the
+ * guard can't reach Workbench), each turn gets a fresh copy of the browser profile (sign-ins as
+ * they are now, like task runs), which the caller removes when the turn ends
  */
 async function chatMcpServers(
   ids: string[] | undefined,
@@ -107,7 +107,9 @@ async function chatMcpServers(
 ) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
   const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
-  const chatBrowser = target && !getWslInfo() ? target : undefined;
+  // In WSL the guard reaches Workbench directly or through the Windows relay; with interop off it
+  // can't, and each turn opens a browser of its own as before
+  const chatBrowser = target && (!getWslInfo() || getTaskToolsRoute() !== 'off') ? target : undefined;
   // An open chat browser is usable whatever the chosen browser's check says now
   const open = chatBrowser && browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId);
   const usable = await usableMcpConnectorIds(open ? wanted.filter((id) => id !== 'playwright') : wanted, connectorSettings, undefined, chatChoice);

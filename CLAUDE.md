@@ -319,17 +319,23 @@ JSON file per browser: title = the MCP client's name, workspace folder, socket, 
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link
 reports when they go). A session belongs to the project whose folder holds its
 workspace (task worktree or project, `project-match.ts`); a chat browser's holder works in its own temp folder,
-registered for its project while it runs (in WSL, a chat's server works in the turn's temp folder, registered while the
-turn runs). A session the drawer shows that starts opens the drawer on its page. Once a
-drawer opens, the browser bridge runs until quit (`browser-bridge.cjs`, forked by `bridge-process.ts` with Workbench's executable
-as Node, IPC with advanced serialization): it connects to the projects' browsers with each one's own playwright-core
+registered for its project while it runs (with WSL interop off, a chat's server works in the turn's temp folder,
+registered while the turn runs). A session the drawer shows that starts opens the drawer on its page. Once a drawer
+opens, the browser bridge runs until quit (`browser-bridge.cjs`, started by `bridge-process.ts` with Workbench's
+executable as Node; messages over its stdin/stdout as JSON headers with raw bytes for frames, `bridge-framing.ts`): it
+connects to the projects' browsers with each one's own playwright-core
 (`require(playwrightLib)` from the npx cache: nothing of Playwright ships with the app, the client always matches the
 server; disconnecting leaves the browser running) and reports their pages; the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
 (`page.screencast`) to that window only, drawn 1:1 on a canvas; the canvas's mouse, wheel, keys and pasted text are
 replayed with `page.mouse` / `page.keyboard`. The renderer gets bytes and text only (no remote content, no webview).
 The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
-drawer isn't available (the browsers, their registry and sockets are inside the distribution).
+browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
+runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through
+`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), the bridge also says which of its browsers answer
+(`probe`, `setRegistryAccess` in `registry.ts`), and workspace folders are matched to projects as Windows paths
+(`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
+(`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
 
 **Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
 by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in
@@ -338,7 +344,10 @@ Playwright MCP server Workbench starts itself (the holder: the turn's server and
 its profile copy, `--idle-timeout 0`, a profile in its folder instead of `--isolated`) initializes with the chat's bind
 title (`Workbench chat <uuid>`) and opens `about:blank`, so its browser is bound under that title; a turn's Playwright
 gets `--endpoint <title>` and attaches to it (`contexts()[0]`). The chat's guard asks Workbench to open the browser
-before each tool call (`open_chat_browser`, a token per turn on the task tools server) and refuses `browser_close`. The
+before each tool call (`open_chat_browser`, a token per turn on the task tools server) and refuses `browser_close`;
+inside WSL2 with NAT networking (no way to the app's 127.0.0.1) it sends that call through the task tools bridge
+(`task-tools-bridge.cjs`, a Windows process it starts once through interop: `WORKBENCH_CHAT_BROWSER_RELAY`), and with
+interop off chats fall back to a browser per turn. The
 drawer's empty state on the Claude page has the chat's browser profile picker (`InsightsModelConfig.playwrightBrowser`;
 unset = Settings > Connectors; the New chat page starts from Settings) and an Open browser button, which also switches
 Playwright on for the chat; the picker shows only while the chat has no browser (one profile per chat at a time). The
@@ -393,7 +402,7 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   Playwright runs through `insights/playwright-guard.cjs`, in the turn's own folder without the client's roots, so
   its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
   leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
-  Natively it attaches to the chat's own browser (see Chat browsers above); in WSL each turn launches its own.
+  It attaches to the chat's own browser (see Chat browsers above); in WSL with interop off each turn launches its own.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,

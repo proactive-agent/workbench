@@ -156,7 +156,7 @@ export function BrowserDrawer({ projectId, showHandle = true, chatId = null }: B
   const noTabs = sessions.length > 0 && sessions.every((session) => connected.has(session.id));
 
   let body: React.ReactNode;
-  if (!state.available) body = message(t('browserDrawer.unavailableWsl'));
+  if (!state.available) body = message(t('browserDrawer.unavailable'));
   else if (selected) body = <BrowserPageView pageId={selected.id} label={pageLabel(selected) || t('browserDrawer.untitled')} />;
   else if (noTabs) body = message(t('browserDrawer.noTabs'), t('browserDrawer.noTabsDescription'));
   else if (sessions.length > 0) body = loader(t('browserDrawer.loading'));

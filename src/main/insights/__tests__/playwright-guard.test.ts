@@ -7,7 +7,7 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -130,5 +130,68 @@ describe('Playwright guard', () => {
     expect(replies.get(3)).toMatchObject({ isError: true });
     expect(JSON.stringify(replies.get(4))).toContain('Chromium is not installed');
     expect(replies.get(4)).toMatchObject({ isError: true });
+  });
+
+  it('opens the chat browser through the relay (WSL NAT): started once, given the token, answers each call', async () => {
+    const log = join(root, 'relay-log.txt');
+    const relayScript = join(root, 'fake-relay.cjs');
+    writeFileSync(relayScript, `
+const fs = require('fs');
+fs.appendFileSync(${JSON.stringify(log)}, 'start ' + process.env.WORKBENCH_TASK_TOOLS_TOKEN + ' ' + process.env.WORKBENCH_TASK_TOOLS_URL + '\\n');
+let buffer = '';
+process.stdin.on('data', (data) => {
+  buffer += data;
+  let end;
+  while ((end = buffer.indexOf('\\n')) >= 0) {
+    const message = JSON.parse(buffer.slice(0, end));
+    buffer = buffer.slice(end + 1);
+    fs.appendFileSync(${JSON.stringify(log)}, 'call ' + message.params.name + '\\n');
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: 'open' }] } }) + '\\n');
+  }
+});
+process.stdin.on('end', () => process.exit(0));
+`);
+    const workspace = mkdtempSync(join(root, 'turn-'));
+    const proc = spawn(process.execPath, [GUARD, workspace, process.execPath, fakeServer], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: {
+        ...process.env,
+        WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:1/mcp',
+        WORKBENCH_CHAT_BROWSER_TOKEN: 'secret',
+        WORKBENCH_CHAT_BROWSER_RELAY: JSON.stringify({ command: process.execPath, script: relayScript }),
+      },
+    });
+    const replies = new Map<number, Record<string, unknown>>();
+    let buffer = '';
+    proc.stdout.on('data', (data: Buffer) => {
+      buffer += data.toString();
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const message = JSON.parse(buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+        replies.set(message.id, message.result);
+      }
+    });
+    const send = (message: Record<string, unknown>) => proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+    send({ id: 1, method: 'initialize', params: { capabilities: {} } });
+    send({ id: 2, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'about:blank' } } });
+    send({ id: 3, method: 'tools/call', params: { name: 'browser_snapshot', arguments: {} } });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no answers')), 10_000);
+      const poll = setInterval(() => {
+        if (replies.size < 3) return;
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve();
+      }, 20);
+    });
+    const exited = new Promise((resolve) => proc.once('exit', resolve));
+    proc.stdin.end();
+    await exited;
+
+    expect(replies.get(2)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+    expect(replies.get(3)).toEqual({ content: [{ type: 'text', text: 'called browser_snapshot' }] });
+    const lines = readFileSync(log, 'utf-8').trim().split('\n');
+    expect(lines).toEqual(['start secret http://127.0.0.1:1/mcp', 'call open_chat_browser', 'call open_chat_browser']);
   });
 });

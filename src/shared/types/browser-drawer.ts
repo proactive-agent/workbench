@@ -42,10 +42,8 @@ export interface BrowserDrawerPage {
 }
 
 export interface BrowserDrawerState {
-  /** Whether the drawer can show browsers (not when Workbench runs everything in WSL) */
+  /** Whether the drawer can show browsers (always in the app; not in the renderer's browser preview) */
   available: boolean;
-  /** Why it can't */
-  unavailableReason?: 'wsl';
   sessions: BrowserDrawerSession[];
   /** The sessions' pages, known while a drawer is open */
   pages: BrowserDrawerPage[];

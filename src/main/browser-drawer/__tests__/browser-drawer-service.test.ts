@@ -12,6 +12,21 @@ const descriptors: RegistryDescriptor[] = [
 ];
 
 describe('browser drawer service', () => {
+  it("matches WSL mode's Linux workspace folders to projects as Windows paths", () => {
+    const linux: RegistryDescriptor[] = [
+      { guid: 'task', title: 'claude-code', browserName: 'chromium', workspaceDir: '/mnt/c/work/app/.workbench/worktrees/tasks/001' },
+      { guid: 'chat', title: 'Workbench chat c1', browserName: 'chromium', workspaceDir: '/home/me/.cache/workbench/tmp/workbench-chat-browser-x' },
+    ];
+    const hostPath = (dir: string) => (dir.startsWith('/mnt/c/') ? `C:\\${dir.slice(7).replace(/\//g, '\\')}` : `\\\\wsl.localhost\\Ubuntu${dir.replace(/\//g, '\\')}`);
+    const chats = new Map([['\\\\wsl.localhost\\Ubuntu\\home\\me\\.cache\\workbench\\tmp\\workbench-chat-browser-x', 'C:\\work\\app']]);
+    const sessions = toDrawerSessions(linux, [{ id: 'app', path: 'C:\\work\\app' }], chats, true, () => ({ projectId: 'app', chatId: 'c1' }), hostPath);
+    expect(sessions.map((s) => [s.id, s.projectId, s.workspaceDir])).toEqual([
+      ['task', 'app', 'C:\\work\\app\\.workbench\\worktrees\\tasks\\001'],
+      ['chat', 'app', '\\\\wsl.localhost\\Ubuntu\\home\\me\\.cache\\workbench\\tmp\\workbench-chat-browser-x'],
+    ]);
+    expect(sessions[1].chatId).toBe('c1');
+  });
+
   it('gives each session its project', () => {
     const sessions = toDrawerSessions(descriptors, [{ id: 'app', path: '/work/app' }], new Map([['/tmp/workbench-insights-x/playwright', '/work/app']]), false);
     expect(sessions).toEqual([

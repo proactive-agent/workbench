@@ -13,8 +13,10 @@
  *   opens new tabs
  * - opens and closes the chats' own browsers (chat-browsers.ts), which it tells by their title
  *
- * In WSL mode the browsers run inside the distribution, where their registry and sockets are:
- * the drawer isn't offered there.
+ * In WSL mode the browsers run inside the distribution, where their registry and sockets are: the
+ * registry is read through `\\wsl.localhost`, the bridge runs there (with the distribution's
+ * node) and also says which registered browsers answer, and workspace folders are matched to
+ * projects as Windows paths (toHostPath).
  */
 
 import type { WebContents } from 'electron';
@@ -29,9 +31,10 @@ import type {
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { appLog } from '../app-logger';
 import { isMacOS, isWindows } from '../platform';
-import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
+import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
+import path from 'path';
 import { getAllWindows } from '../window-manager';
-import { defaultRegistryDir, readLiveSessions, type RegistryDescriptor, type RegistryOs } from './registry';
+import { readLiveSessions, registryAccess, setRegistryAccess, type RegistryDescriptor, type RegistryOs } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
 import { ChatBrowsers } from './chat-browsers';
@@ -52,16 +55,19 @@ export function toDrawerSessions(
   chats: ReadonlyMap<string, string>,
   caseInsensitive: boolean,
   chatOfTitle: (title: string) => { projectId: string; chatId: string } | undefined = () => undefined,
+  /** A workspace folder as the app stores paths (WSL mode: the distribution's Linux paths as Windows ones) */
+  hostPath: (dir: string) => string = (dir) => dir,
 ): BrowserDrawerSession[] {
   return descriptors.map((descriptor) => {
-    const projectId = sessionProjectId(descriptor.workspaceDir, projects, chats, caseInsensitive);
+    const workspaceDir = descriptor.workspaceDir ? hostPath(descriptor.workspaceDir) : undefined;
+    const projectId = sessionProjectId(workspaceDir, projects, chats, caseInsensitive);
     const chat = projectId ? chatOfTitle(descriptor.title) : undefined;
     return {
       id: descriptor.guid,
       title: descriptor.title,
       browserName: descriptor.browserName,
       managed: descriptor.managed,
-      ...(descriptor.workspaceDir ? { workspaceDir: descriptor.workspaceDir } : {}),
+      ...(workspaceDir ? { workspaceDir } : {}),
       ...(projectId ? { projectId } : {}),
       ...(chat && chat.projectId === projectId ? { chatId: chat.chatId } : {}),
     };
@@ -122,8 +128,6 @@ export class BrowserDrawerService {
   private readonly dead = new Map<string, number>();
   private timer: ReturnType<typeof setInterval> | null = null;
   private pollInFlight: Promise<void> | null = null;
-  private available = true;
-  private unavailableReason: BrowserDrawerState['unavailableReason'];
   private stopped = false;
   private readonly bridge: BrowserBridgeProcess;
   /** Windows whose drawer is open */
@@ -155,15 +159,20 @@ export class BrowserDrawerService {
     });
   }
 
-  /** Start watching the registry (not in WSL mode) */
+  /**
+   * Start watching the registry. In WSL mode the browsers run inside the distribution: its
+   * registry is read through `\\wsl.localhost`, and whether a browser runs is asked of the bridge,
+   * which runs there too (Windows can't reach the browsers' Unix sockets)
+   */
   async start(): Promise<void> {
     await whenShellRuntimeReady();
     if (this.stopped) return;
-    if (getWslInfo()) {
-      this.available = false;
-      this.unavailableReason = 'wsl';
-      this.broadcast();
-      return;
+    const wsl = getWslInfo();
+    if (wsl && !this.options.registryDir) {
+      setRegistryAccess({
+        dir: toHostPath(path.posix.join(wsl.home, '.cache', 'ms-playwright', 'b')),
+        connect: (endpoint) => this.bridge.probe([endpoint]).then((live) => (live ? live.has(endpoint) : null)),
+      });
     }
     void this.poll();
     this.timer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
@@ -172,8 +181,7 @@ export class BrowserDrawerService {
 
   getState(): BrowserDrawerState {
     return {
-      available: this.available,
-      ...(this.unavailableReason ? { unavailableReason: this.unavailableReason } : {}),
+      available: true,
       sessions: this.sessions,
       pages: this.pages,
       connectedSessions: this.connectedSessions,
@@ -183,7 +191,7 @@ export class BrowserDrawerService {
 
   /** A window's drawer opened: the bridge runs and tracks the projects' pages */
   async subscribe(sender: WebContents): Promise<void> {
-    if (!this.available || this.stopped) return;
+    if (this.stopped) return;
     if (!this.subscribers.has(sender.id)) {
       const id = sender.id;
       this.subscribers.set(id, sender);
@@ -209,7 +217,7 @@ export class BrowserDrawerService {
   }
 
   view(sender: WebContents, pageId: string | null, width: unknown, height: unknown): void {
-    if (!this.available || this.stopped) return;
+    if (this.stopped) return;
     this.views.set(sender.id, { pageId, width, height });
     if (!this.subscribers.has(sender.id)) return;
     const known = pageId !== null && this.pages.some((page) => page.id === pageId);
@@ -248,7 +256,6 @@ export class BrowserDrawerService {
 
   /** Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool call) */
   async openChatBrowser(projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
-    if (!this.available) throw new Error('The browser drawer is not available while Workbench runs in WSL');
     const project = this.options.getProjects().find((p) => p.id === projectId);
     if (!project) throw new Error('The project is not open');
     await this.chatBrowsers.ensure(projectId, project.path, chatId, choice);
@@ -329,12 +336,10 @@ export class BrowserDrawerService {
     try {
       // The bridge's browsers aren't asked: its link reports when one goes away
       const connected = new Set(this.connectedSessions);
-      this.descriptors = await readLiveSessions(
-        this.options.registryDir ?? defaultRegistryDir(registryOs()),
-        this.dead,
-        undefined,
-        (guid) => connected.has(guid),
-      );
+      const registry = this.options.registryDir
+        ? { dir: this.options.registryDir, connect: undefined }
+        : registryAccess(registryOs());
+      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (guid) => connected.has(guid));
       this.chatBrowsers.syncLive(new Set(this.descriptors.map((descriptor) => descriptor.title)));
       const sessions = toDrawerSessions(
         this.descriptors,
@@ -342,6 +347,8 @@ export class BrowserDrawerService {
         getChatBrowserWorkspaces(),
         isWindows() || isMacOS(),
         (title) => this.chatBrowsers.chatOfTitle(title),
+        // WSL mode: the distribution's folders, as the app stores them (Windows paths)
+        getWslInfo() ? toHostPath : undefined,
       );
       if (JSON.stringify(sessions) !== JSON.stringify(this.sessions)) {
         this.sessions = sessions;

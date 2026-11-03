@@ -16,14 +16,17 @@
  * older version, or being set up), stay. A chat browser's folder is looked at first by
  * chat-browser-restore.ts, which keeps it for its chat to open again.
  *
- * Natively only: in WSL mode these folders are still made on the Windows side (os.tmpdir()), so
- * they are covered too; nothing is made in the distribution's /tmp.
+ * In WSL mode they are made on the Windows side (os.tmpdir()), except a chat browser's, which is
+ * made where the browser runs: the distribution's `~/.cache/workbench/tmp` (runtimeTempParent,
+ * reached through `\\wsl.localhost`), since a browser profile on a Windows drive is slow and
+ * locks badly. The startup sweep looks in both.
  */
 
 import os from 'os';
 import path from 'path';
-import { mkdtemp, readdir, rm, stat, writeFile } from 'fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'fs/promises';
 import { appLog } from './app-logger';
+import { getWslInfo, toHostPath, whenShellRuntimeReady } from './platform/shell-runtime';
 import {
   claimFolder,
   folderClaim,
@@ -44,6 +47,25 @@ export const TEMP_FOLDER_PREFIXES = {
   mcpProbe: 'workbench-mcp-probe-',
 } as const;
 type TempFolderPrefix = (typeof TEMP_FOLDER_PREFIXES)[keyof typeof TEMP_FOLDER_PREFIXES];
+
+/**
+ * Where folders for what runs in the runtime go (a chat browser's): natively the system temp
+ * folder; in WSL mode the distribution's `~/.cache/workbench/tmp` (as a `\\wsl.localhost` path),
+ * kept across WSL restarts, which may empty its /tmp
+ */
+export async function runtimeTempParent(): Promise<string> {
+  await whenShellRuntimeReady();
+  const wsl = getWslInfo();
+  if (!wsl) return os.tmpdir();
+  const parent = toHostPath(path.posix.join(wsl.home, '.cache', 'workbench', 'tmp'));
+  await mkdir(parent, { recursive: true }).catch(() => undefined);
+  return parent;
+}
+
+/** The folders temp folders are made in: the system temp folder, and the runtime's (WSL mode) */
+export async function tempFolderParents(): Promise<string[]> {
+  return [...new Set([os.tmpdir(), await runtimeTempParent()])];
+}
 
 /** The file naming the Claude Code process that uses a folder */
 const RUN_FILE = '.workbench-run-process.json';
@@ -81,7 +103,7 @@ async function tempFolderRemovable(dir: string): Promise<boolean> {
 }
 
 interface TempFolderSweepOptions {
-  /** The temp folder (tests) */
+  /** The temp folder (tests; by default each of tempFolderParents) */
   parent?: string;
   /** Prefixes not looked at (the chat browsers' folders, which chat-browser-restore.ts handles) */
   skip?: readonly string[];
@@ -93,7 +115,15 @@ interface TempFolderSweepOptions {
  * folders removed
  */
 export async function removeLeftoverTempFolders(options: TempFolderSweepOptions = {}): Promise<string[]> {
-  const parent = options.parent ?? os.tmpdir();
+  const removed: string[] = [];
+  for (const parent of options.parent ? [options.parent] : await tempFolderParents()) {
+    removed.push(...(await removeLeftoversIn(parent, options)));
+  }
+  if (removed.length > 0) appLog.info(`[TempFolders] Removed ${removed.length} folder(s) left by an earlier run`);
+  return removed;
+}
+
+async function removeLeftoversIn(parent: string, options: TempFolderSweepOptions): Promise<string[]> {
   const prefixes = Object.values(TEMP_FOLDER_PREFIXES).filter((prefix) => !options.skip?.includes(prefix));
   let names: string[];
   try {
@@ -113,6 +143,5 @@ export async function removeLeftoverTempFolders(options: TempFolderSweepOptions 
       appLog.warn(`[TempFolders] Could not remove ${dir}:`, error);
     }
   }
-  if (removed.length > 0) appLog.info(`[TempFolders] Removed ${removed.length} folder(s) left by an earlier run`);
   return removed;
 }

@@ -105,6 +105,8 @@ import {
   INSIGHTS_MEMORY_RULE,
   INSIGHTS_GITLAB_RULES,
   resetTaskToolsBridgeForTests,
+  guardChatPlaywright,
+  CHAT_BROWSER_RELAY_ENV,
   supportsSystemPromptSnapshot,
   toClaudeModel,
   type InsightsStreamEvent,
@@ -618,6 +620,34 @@ describe('runInsights', () => {
       setRun(conversation);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig).toEqual({ mcpServers: { 'workbench': mcpServer } });
+    });
+
+    it("gives the chat browser's guard the Windows relay under NAT networking, and no relay with mirrored networking", async () => {
+      const playwright = {
+        type: 'stdio' as const,
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1'],
+        env: { WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp', WORKBENCH_CHAT_BROWSER_TOKEN: 'secret' },
+      };
+      const turnDir = mkdtempSync(join(tmpdir(), 'guard-relay-test-'));
+      try {
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const nat = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { command: string; env: Record<string, string> };
+        // Run by the distribution's node; the relay is Workbench's executable (its Linux path) with a Windows-side script
+        expect(nat.command).toBe('node');
+        const relay = JSON.parse(nat.env[CHAT_BROWSER_RELAY_ENV]);
+        expect(relay.command).toBe(`/runtime${process.execPath.replace(/\\/g, '/')}`);
+        expect(relay.script).toBe(join(turnDir, 'task-tools-bridge.cjs'));
+        expect(readFileSync(relay.script, 'utf-8')).toContain('WORKBENCH_TASK_TOOLS_TOKEN');
+        expect(nat.env.WORKBENCH_CHAT_BROWSER_TOKEN).toBe('secret');
+
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const mirrored = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
+        expect(mirrored.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(mirrored.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
+      } finally {
+        rmSync(turnDir, { recursive: true, force: true });
+      }
     });
 
     it("reports a missing Claude Code CLI when the distribution has none", async () => {
