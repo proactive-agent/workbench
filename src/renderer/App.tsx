@@ -749,7 +749,7 @@ export function App() {
           </main>
         </div>
 
-        {/* Browser drawer: Playwright's browsers of task runs and chats (the Claude chat opens it
+        {/* Browser drawer: Playwright's browsers of Claude chats (the Claude chat opens it
             from its own top bar, other pages from a handle on the window's edge) */}
         {selectedProject && (
           <BrowserDrawer

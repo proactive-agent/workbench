@@ -32,7 +32,8 @@ reviews, requests changes (same session continues) or merges.
   conflicts, checks that no line the target added was lost, pushes and merges the PR, then moves the task to Done
 - **Connectors** — MCP servers added to a task's Claude Code session (`--mcp-config`: Context7, Electron, Playwright,
   user-added servers) with app-wide defaults in Settings and per-task choices in the task dialog; a server stays
-  disabled until it can start. Playwright's browsers run headless and show in the browser drawer inside Workbench
+  disabled until it can start. Playwright's browsers run headless; Claude chats' browsers show in the browser drawer
+  inside Workbench, task runs' stay unseen
 - **Graphify memory graph** — Optional [Graphify](https://github.com/Graphify-Labs/graphify) knowledge graph of a
   project's code, built into `.workbench/knowledge` and offered to agents
 - **Self-improve** — Optional project memory: Claude Code's auto memory kept in `.workbench/compeng` and shared by
@@ -307,9 +308,9 @@ browser is probed for its runs apart from the windows' result (`checkRunServer`)
 built-in's id (moved to `<id>-custom` when the settings are read).
 
 Runs' browsers are headless (`--headless` on every Playwright server's command line, also over a profile copy's config),
-so no browser window opens: the user watches and drives them in the **browser drawer** at the main window's right edge
-(`src/main/browser-drawer/`, `components/browser-drawer/`, `browser-drawer-store.ts`), Workbench's own UI: a tab per
-page of the project's sessions (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
+so no browser window opens. Task runs' browsers stay that way, unseen; Claude chats' browsers are watched and driven in
+the **browser drawer** at the main window's right edge (`src/main/browser-drawer/`, `components/browser-drawer/`,
+`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
 reload, address), the live page below. Closed, the Claude chat opens it again from a button in its top-right corner and
 other pages from a handle on the window's right edge (both with a dot while the browsers shown are open); its width is
 resizable (up to half the window) and remembered. The drawer keeps a view per context (open or closed, the tab shown):
@@ -317,10 +318,10 @@ each chat, and the other pages together; on the Claude page it shows only the ch
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link
-reports when they go). A session belongs to the project whose folder holds its
-workspace (task worktree or project, `project-match.ts`); a chat browser's holder works in its own temp folder,
-registered for its project while it runs (with WSL interop off, a chat's server works in the turn's temp folder,
-registered while the turn runs). A session the drawer shows that starts opens the drawer on its page. Once a drawer
+reports when they go). Only chats' browsers belong to a project (`project-match.ts`): a chat browser's holder works in
+its own temp folder, registered for its project while it runs (with WSL interop off, a chat's server works in the turn's temp folder,
+registered while the turn runs). A task run's browser (its workspace is the task's worktree or the project) matches no
+project, so no window lists it and the bridge never connects to it. A session the drawer shows that starts opens the drawer on its page. Once a drawer
 opens, the browser bridge runs until quit (`browser-bridge.cjs`, started by `bridge-process.ts` with Workbench's
 executable as Node; messages over its stdin/stdout as JSON headers with raw bytes for frames, `bridge-framing.ts`): it
 connects to the projects' browsers with each one's own playwright-core

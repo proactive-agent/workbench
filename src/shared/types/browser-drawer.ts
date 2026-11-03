@@ -1,6 +1,6 @@
 /**
- * The browser drawer: the headless browsers task runs and Claude chats open with the Playwright
- * connector, shown and driven inside Workbench (src/main/browser-drawer/)
+ * The browser drawer: the headless browsers Claude chats open with the Playwright connector, shown
+ * and driven inside Workbench (src/main/browser-drawer/). Task runs' browsers stay headless and unseen
  */
 
 /** A live browser of a Playwright MCP server */
@@ -13,7 +13,7 @@ export interface BrowserDrawerSession {
   /** Playwright's own browser build, not one installed by the user (its tabs show Playwright's icon) */
   managed?: boolean;
   workspaceDir?: string;
-  /** The project whose task run or chat it belongs to */
+  /** The project whose chat it belongs to (none for task runs' and other tools' browsers) */
   projectId?: string;
   /** The chat whose browser it is (chat browsers, held by Workbench: chat-browsers.ts) */
   chatId?: string;

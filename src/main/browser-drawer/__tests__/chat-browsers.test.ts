@@ -190,6 +190,6 @@ describe('chat browsers', () => {
       false,
       (title) => (title === 'Workbench chat x' ? { projectId: 'p', chatId: 'session-1' } : undefined),
     );
-    expect(sessions.map((s) => [s.id, s.projectId, s.chatId])).toEqual([['g1', 'p', 'session-1'], ['g2', 'p', undefined]]);
+    expect(sessions.map((s) => [s.id, s.projectId, s.chatId])).toEqual([['g1', 'p', 'session-1'], ['g2', undefined, undefined]]);
   });
 });

@@ -35,8 +35,8 @@ const iconButton = cn(
 );
 
 /**
- * The browser drawer at the window's right edge: the headless browsers the project's task runs
- * and chats open, one tab per page, live and usable. Closed, it leaves a handle on the edge that
+ * The browser drawer at the window's right edge: the headless browsers the project's Claude chats
+ * open (never a task run's), one tab per page, live and usable. Closed, it leaves a handle on the edge that
  * opens it again; the browsers keep running either way. On the Claude page it shows the chat's
  * own browser, which the user can open there (picking its profile) to work in it with the chat
  */

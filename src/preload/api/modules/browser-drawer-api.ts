@@ -1,5 +1,5 @@
 /**
- * Browser drawer API for the renderer: the live Playwright sessions of task runs and chats, their
+ * Browser drawer API for the renderer: the live Playwright sessions of Claude chats, their
  * pages, and streaming and driving one page in the drawer (src/main/browser-drawer/)
  */
 

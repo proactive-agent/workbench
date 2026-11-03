@@ -522,7 +522,7 @@ export interface ElectronAPI {
   onLiveAgentStatus: (callback: (status: import('./live-agent').LiveAgentStatus) => void) => () => void;
   onLiveAgentMessage: (callback: (clientId: string, data: string) => void) => () => void;
 
-  // Browser drawer (the headless browsers of task runs and chats, shown in Workbench)
+  // Browser drawer (the headless browsers of Claude chats, shown in Workbench)
   getBrowserDrawerState: () => Promise<IPCResult<import('./browser-drawer').BrowserDrawerState>>;
   subscribeBrowserDrawer: () => Promise<IPCResult>;
   unsubscribeBrowserDrawer: () => Promise<IPCResult>;

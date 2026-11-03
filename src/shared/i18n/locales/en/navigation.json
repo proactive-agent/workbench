@@ -122,7 +122,7 @@
     "addressPlaceholder": "Enter an address",
     "loading": "Connecting to the browser...",
     "empty": "No browsers are open",
-    "emptyDescription": "Browsers that tasks and chats open with the Playwright connector show up here, where you can watch and use them",
+    "emptyDescription": "Browsers that Claude chats open with the Playwright connector show up here, where you can watch and use them",
     "emptyChatDescription": "Open this chat's browser to sign in or set something up by hand, then ask Claude to carry on in it. Claude also opens it when it needs a browser",
     "openBrowser": "Open browser",
     "restorable_one": "This chat's browser closed when Workbench stopped unexpectedly. Opening it with the same profile brings back its sign-ins and {{count}} tab",

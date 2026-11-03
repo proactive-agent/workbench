@@ -292,7 +292,7 @@ export const IPC_CHANNELS = {
   LIVE_AGENT_STATUS: 'liveAgent:status',   // main -> renderer: the relay started, stopped or failed
   LIVE_AGENT_MESSAGE: 'liveAgent:message', // main -> renderer: a relay message for one graph
 
-  // Browser drawer (the headless browsers of task runs and chats, shown in Workbench)
+  // Browser drawer (the headless browsers of Claude chats, shown in Workbench)
   BROWSER_DRAWER_GET_STATE: 'browserDrawer:getState',
   BROWSER_DRAWER_SUBSCRIBE: 'browserDrawer:subscribe',     // A window's drawer opened: pages are tracked for it
   BROWSER_DRAWER_UNSUBSCRIBE: 'browserDrawer:unsubscribe', // A window's drawer closed

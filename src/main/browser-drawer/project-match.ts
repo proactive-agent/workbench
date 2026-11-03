@@ -2,12 +2,11 @@
  * Which project a Playwright browser session belongs to
  * =====================================================
  *
- * A bound browser's workspace folder is where its MCP server works: a task run's worktree
- * (`<project>/.workbench/worktrees/tasks/<task>`) or the project itself (a task without a
- * worktree), so a session belongs to the project whose folder holds it (the innermost one, for
- * projects inside other projects). A Claude chat's server works in the turn's own temporary
- * folder (insights/playwright-guard.cjs), which the turn registers here for its project while it
- * runs. In WSL mode the folders are the distribution's Linux paths, compared as the Windows paths
+ * Only Claude chats' browsers belong to a project here: the drawer shows nothing else. A chat's
+ * browser works in a folder of its own (the chat browser's holder folder, or a turn's temporary
+ * folder, insights/playwright-guard.cjs), registered here for its project while it runs. Task runs'
+ * browsers (their workspace is the task's worktree or the project) stay headless and unseen, as
+ * does any other tool's Playwright. In WSL mode the folders are the distribution's Linux paths, compared as the Windows paths
  * the app stores (toHostPath: `/mnt/c/x` as `C:\x`, `/home/x` as `\\wsl.localhost\<distro>\home\x`).
  */
 
@@ -42,13 +41,10 @@ function normalize(dir: string, caseInsensitive: boolean): string {
   return caseInsensitive ? resolved.toLowerCase() : resolved;
 }
 
-function isInside(dir: string, base: string): boolean {
-  return dir === base || dir.startsWith(base + '/') || dir.startsWith(base + '\\');
-}
 
 /**
- * The project a session's workspace folder belongs to, or undefined for a session started
- * elsewhere (another tool's Playwright, the availability probe)
+ * The project of a chat's browser, by its registered workspace folder; undefined for every other
+ * session (task runs, another tool's Playwright, the availability probe)
  */
 export function sessionProjectId(
   workspaceDir: string | undefined,
@@ -65,12 +61,6 @@ export function sessionProjectId(
       break;
     }
   }
-  let best: { id: string; length: number } | undefined;
-  for (const project of projects) {
-    if (!project.path) continue;
-    const base = normalize(project.path, caseInsensitive);
-    const matches = projectDir !== undefined ? projectDir === base : isInside(dir, base);
-    if (matches && (!best || base.length > best.length)) best = { id: project.id, length: base.length };
-  }
-  return best?.id;
+  if (projectDir === undefined) return undefined;
+  return projects.find((project) => project.path && normalize(project.path, caseInsensitive) === projectDir)?.id;
 }

@@ -3,10 +3,12 @@
  * ==================
  *
  * Playwright runs (task runs, Claude chats) launch their browsers headless; the user sees and
- * drives them in the main window's browser drawer, Workbench's own UI. This service:
+ * drives Claude chats' browsers in the main window's browser drawer, Workbench's own UI. Task runs'
+ * browsers stay headless and unseen: no project is matched for them, so no window shows them and
+ * the bridge never connects to them. This service:
  * - watches Playwright's registry (registry.ts) every few seconds and tells every window the
- *   live sessions, each with the project it belongs to (project-match.ts), so a window can show
- *   that its project has browsers and open the drawer when one starts
+ *   live sessions, each chat's with the project it belongs to (project-match.ts), so a window can
+ *   show that its project has browsers and open the drawer when one starts
  * - once a drawer opens, runs the browser bridge (bridge-process.ts, until quit), which connects to the
  *   projects' browsers and reports their pages, streams the page a window views as JPEG frames
  *   (sent to that window only), sizes it to the window's drawer, replays the window's input and

@@ -21,22 +21,22 @@ describe('browser drawer service', () => {
     const chats = new Map([['\\\\wsl.localhost\\Ubuntu\\home\\me\\.cache\\workbench\\tmp\\workbench-chat-browser-x', 'C:\\work\\app']]);
     const sessions = toDrawerSessions(linux, [{ id: 'app', path: 'C:\\work\\app' }], chats, true, () => ({ projectId: 'app', chatId: 'c1' }), hostPath);
     expect(sessions.map((s) => [s.id, s.projectId, s.workspaceDir])).toEqual([
-      ['task', 'app', 'C:\\work\\app\\.workbench\\worktrees\\tasks\\001'],
+      // A task run's browser stays headless: no project, so no drawer shows it
+      ['task', undefined, 'C:\\work\\app\\.workbench\\worktrees\\tasks\\001'],
       ['chat', 'app', '\\\\wsl.localhost\\Ubuntu\\home\\me\\.cache\\workbench\\tmp\\workbench-chat-browser-x'],
     ]);
     expect(sessions[1].chatId).toBe('c1');
   });
 
-  it('gives each session its project', () => {
+  it("gives chats' browsers their project, and no other session", () => {
     const sessions = toDrawerSessions(descriptors, [{ id: 'app', path: '/work/app' }], new Map([['/tmp/workbench-insights-x/playwright', '/work/app']]), false);
     expect(sessions).toEqual([
-      { id: 'task', title: 'claude-code', browserName: 'chromium', workspaceDir: '/work/app/.workbench/worktrees/tasks/001', projectId: 'app' },
+      { id: 'task', title: 'claude-code', browserName: 'chromium', workspaceDir: '/work/app/.workbench/worktrees/tasks/001' },
       { id: 'chat', title: 'claude-code', browserName: 'firefox', workspaceDir: '/tmp/workbench-insights-x/playwright', projectId: 'app' },
       { id: 'elsewhere', title: 'playwright-cli', browserName: 'chromium', workspaceDir: '/home/me' },
     ]);
-    // The bridge connects to the projects' browsers only
+    // The bridge connects to the chats' browsers only (never a task's or another tool's)
     expect(bridgeSessions(descriptors, sessions)).toEqual([
-      { id: 'task', endpoint: '/s/task.sock', browserName: 'chromium', playwrightLib: '/npx/a/playwright-core' },
       { id: 'chat', endpoint: '/s/chat.sock', browserName: 'firefox', playwrightLib: '/npx/a/playwright-core' },
     ]);
   });
