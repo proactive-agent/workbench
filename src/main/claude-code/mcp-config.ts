@@ -19,8 +19,9 @@
  * `moz-firefox` channel, which it still calls experimental): Playwright's `firefox` alone means
  * its own patched build, which can't drive a stock Firefox. Without a profile (Playwright's own
  * browsers, the availability check) the server gets command line options and a profile in
- * memory (`--isolated`). Pages fill the window: headed, the server leaves the viewport to the
- * window. chrome-devtools-mcp was weighed and left out: it supports Chrome only (no Firefox), its
+ * memory (`--isolated`). Every run's browser is headless (`--headless`): no window opens, and the
+ * user watches and drives it in Workbench's browser drawer (browser-drawer/), which also sizes the
+ * viewed page to the drawer. chrome-devtools-mcp was weighed and left out: it supports Chrome only (no Firefox), its
  * --autoConnect needs Chrome 144+ with remote debugging switched on by hand and drives the user's
  * live browser from runs without permission checks.
  */
@@ -140,12 +141,23 @@ const MANAGED_BROWSER_OPTION: Record<PlaywrightBrowserChoice['engine'], string> 
 };
 
 /**
+ * Runs never open a browser window: the browser runs headless and the user sees and drives it in
+ * Workbench's browser drawer (browser-drawer/). On the command line, so it also applies over
+ * a profile copy's config file
+ */
+const PLAYWRIGHT_HEADLESS_OPTION = '--headless';
+
+/**
  * The server's options for the chosen browser. With a run's profile copy: the config file in it.
  * Otherwise a profile in memory (`--isolated`): Playwright's own build of the browser (its
  * Chromium when nothing is chosen, with the sandbox on), or the chosen browser's executable (`chrome` / `moz-firefox`
  * only pick the engine and keep Chromium's sandbox on; the executable is the chosen one)
  */
 export function playwrightServerArgs(choice: PlaywrightBrowserChoice | undefined, browserProfileDir?: string): string[] {
+  return [...playwrightBrowserArgs(choice, browserProfileDir), PLAYWRIGHT_HEADLESS_OPTION];
+}
+
+function playwrightBrowserArgs(choice: PlaywrightBrowserChoice | undefined, browserProfileDir?: string): string[] {
   if (choice && !choice.managed && browserProfileDir) {
     return ['--config', toRuntimePath(joinHostPath(browserProfileDir, PLAYWRIGHT_CONFIG_FILE))];
   }

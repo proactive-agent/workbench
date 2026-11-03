@@ -11,6 +11,7 @@ import { SelfImproveAPI, createSelfImproveAPI } from './modules/self-improve-api
 import { ProjectIndexAPI, createProjectIndexAPI } from './modules/project-index-api';
 import { LiveAgentAPI, createLiveAgentAPI } from './modules/live-agent-api';
 import { McpAPI, createMcpAPI } from './modules/mcp-api';
+import { BrowserDrawerAPI, createBrowserDrawerAPI } from './modules/browser-drawer-api';
 import { ProfileAPI, createProfileAPI } from './profile-api';
 import { QueueAPI, createQueueAPI } from './queue-api';
 import { WindowAPI, createWindowAPI } from './modules/window-api';
@@ -30,6 +31,7 @@ export interface ElectronAPI extends
   ProjectIndexAPI,
   LiveAgentAPI,
   McpAPI,
+  BrowserDrawerAPI,
   ProfileAPI,
   WindowAPI,
   ShellRuntimeAPI {
@@ -50,6 +52,7 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createProjectIndexAPI(),
   ...createLiveAgentAPI(),
   ...createMcpAPI(),
+  ...createBrowserDrawerAPI(),
   ...createProfileAPI(),
   ...createWindowAPI(),
   ...createShellRuntimeAPI(),

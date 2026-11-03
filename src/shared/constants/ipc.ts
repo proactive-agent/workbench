@@ -292,6 +292,20 @@ export const IPC_CHANNELS = {
   LIVE_AGENT_STATUS: 'liveAgent:status',   // main -> renderer: the relay started, stopped or failed
   LIVE_AGENT_MESSAGE: 'liveAgent:message', // main -> renderer: a relay message for one graph
 
+  // Browser drawer (the headless browsers of task runs and chats, shown in Workbench)
+  BROWSER_DRAWER_GET_STATE: 'browserDrawer:getState',
+  BROWSER_DRAWER_SUBSCRIBE: 'browserDrawer:subscribe',     // A window's drawer opened: pages are tracked for it
+  BROWSER_DRAWER_UNSUBSCRIBE: 'browserDrawer:unsubscribe', // A window's drawer closed
+  BROWSER_DRAWER_VIEW: 'browserDrawer:view',               // Stream a page (or none) sized to the drawer
+  BROWSER_DRAWER_INPUT: 'browserDrawer:input',             // Mouse, wheel and keys for the viewed page
+  BROWSER_DRAWER_NAVIGATE: 'browserDrawer:navigate',       // Back, forward, reload or an address
+  BROWSER_DRAWER_CLOSE_PAGE: 'browserDrawer:closePage',
+  BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser
+  BROWSER_DRAWER_OPEN_CHAT_BROWSER: 'browserDrawer:openChatBrowser',   // Open a chat's own browser
+  BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser
+  BROWSER_DRAWER_STATE: 'browserDrawer:state',             // main -> renderer: sessions or pages changed
+  BROWSER_DRAWER_FRAME: 'browserDrawer:frame',             // main -> renderer: a frame of the viewed page
+
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check
   MCP_TEST_CONNECTION: 'mcp:testConnection',     // Full MCP protocol test

@@ -47,6 +47,7 @@ import { getAppLanguage, initAppLanguage } from './app-language';
 import { readSettingsFile } from './settings-utils';
 import { liveAgentRelay } from './live-agent/live-agent-relay';
 import { stopMcpProbes } from './mcp-availability';
+import { browserDrawer } from './browser-drawer';
 import { syncLiveAgentAtStartup } from './live-agent/live-agent-projects';
 import { appLog, setupErrorLogging } from './app-logger';
 import { preWarmToolCache, warmToolInfo } from './cli-tool-manager';
@@ -641,6 +642,8 @@ app.whenReady().then(async () => {
   void initShellRuntime(readSettingsFile()?.windowsShell);
   // Browser profiles for the Playwright connector, looked for once (after the shell runtime is known)
   void detectBrowserProfiles();
+  // The browser drawer: Playwright's headless browsers (task runs, chats), watched for every window
+  void browserDrawer.start();
 
   // Linux shells take the dock/taskbar icon from a desktop entry matching the window class; give the
   // development build ("Workbench Dev") its own one, or it shows a generic icon
@@ -932,6 +935,9 @@ app.on('before-quit', (event) => {
       // Stop the Live agent relay worker (removes its discovery files, closes its hook server)
       await liveAgentRelay.shutdown();
 
+      // Stop the browser drawer's bridge (it disconnects; the browsers stop with their runs)
+      await browserDrawer.shutdown();
+
       // Kill all running agent processes
       if (agentManager) {
         await agentManager.killAll();
@@ -961,6 +967,7 @@ app.on('before-quit', (event) => {
 // Safety net: no Live agent relay worker outlives the app (before-quit normally stopped it)
 app.on('will-quit', () => {
   liveAgentRelay.terminateNow();
+  browserDrawer.killNow();
 });
 
 // Note: Uncaught exceptions and unhandled rejections are now

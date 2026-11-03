@@ -50,6 +50,13 @@ import { browserProfileCopyBlocked } from './browser-profiles/profile-copy';
 import { PLAYWRIGHT_MCP_PACKAGE, playwrightInstallCommand } from './browser-profiles/managed';
 import { appLog } from './app-logger';
 
+/**
+ * The probe's MCP client name, which Playwright gives the browser it opens as its session title:
+ * Playwright's prefix for its own sessions keeps the probe's browser out of its dashboard and so
+ * out of the browser drawer
+ */
+const PROBE_CLIENT_NAME = '--playwright-internal-workbench-probe';
+
 /** How long a server may take to answer: its first start downloads it */
 const START_TIMEOUT_MS = 5 * 60 * 1000;
 /** How long an HTTP server may take to answer */
@@ -113,11 +120,11 @@ function verifyCall(id: string, settings: McpConnectorSettings | undefined): Ver
 }
 
 /**
- * The entry a probe starts: a run's, headless for Playwright (a check never shows a window; the
- * option overrides the run's headed default)
+ * The entry a probe starts: a run's, headless for Playwright (a check never shows a window; runs
+ * are headless too)
  */
 function probedEntry(id: string, entry: McpServerEntry): McpServerEntry {
-  if (id !== 'playwright' || entry.type !== 'stdio') return entry;
+  if (id !== 'playwright' || entry.type !== 'stdio' || entry.args?.includes('--headless')) return entry;
   return { ...entry, args: [...(entry.args ?? []), '--headless'] };
 }
 
@@ -564,7 +571,7 @@ function startAndInitialize(
     send({
       id: 1,
       method: 'initialize',
-      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'workbench', version: '1.0.0' } },
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: PROBE_CLIENT_NAME, version: '1.0.0' } },
     });
   });
 }

@@ -19,7 +19,7 @@ export interface InsightsAPI {
   // Operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
   sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
-  stopInsightsMessage: (projectId: string) => Promise<boolean>;
+  stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   clearInsightsSession: (projectId: string) => Promise<IPCResult>;
@@ -46,10 +46,10 @@ export interface InsightsAPI {
     callback: (projectId: string, chunk: InsightsStreamChunk) => void
   ) => IpcListenerCleanup;
   onInsightsStatus: (
-    callback: (projectId: string, status: InsightsChatStatus) => void
+    callback: (projectId: string, status: InsightsChatStatus, sessionId?: string) => void
   ) => IpcListenerCleanup;
   onInsightsError: (
-    callback: (projectId: string, error: string) => void
+    callback: (projectId: string, error: string, sessionId?: string) => void
   ) => IpcListenerCleanup;
   onInsightsSessionUpdated: (
     callback: (projectId: string, session: InsightsSession) => void
@@ -67,8 +67,8 @@ export const createInsightsAPI = (): InsightsAPI => ({
   sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]): void =>
     sendIpc(IPC_CHANNELS.INSIGHTS_SEND_MESSAGE, projectId, message, modelConfig, images),
 
-  stopInsightsMessage: (projectId: string): Promise<boolean> =>
-    invokeIpc(IPC_CHANNELS.INSIGHTS_STOP, projectId),
+  stopInsightsMessage: (projectId: string, sessionId?: string): Promise<boolean> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_STOP, projectId, sessionId),
 
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string): void =>
     sendIpc(IPC_CHANNELS.INSIGHTS_REGENERATE, projectId, modelConfig, sessionId),
@@ -127,12 +127,12 @@ export const createInsightsAPI = (): InsightsAPI => ({
     createIpcListener(IPC_CHANNELS.INSIGHTS_STREAM_CHUNK, callback),
 
   onInsightsStatus: (
-    callback: (projectId: string, status: InsightsChatStatus) => void
+    callback: (projectId: string, status: InsightsChatStatus, sessionId?: string) => void
   ): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.INSIGHTS_STATUS, callback),
 
   onInsightsError: (
-    callback: (projectId: string, error: string) => void
+    callback: (projectId: string, error: string, sessionId?: string) => void
   ): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.INSIGHTS_ERROR, callback),
 

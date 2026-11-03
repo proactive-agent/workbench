@@ -165,6 +165,7 @@
     "stoppedByUser": "You stopped this response",
     "sending": "Sending…",
     "thinking": "Thinking…",
+    "replying": "Writing a reply",
     "disclaimer": "Claude is AI and can make mistakes.",
     "copyResponse": "Copy",
     "copyMessage": "Copy",

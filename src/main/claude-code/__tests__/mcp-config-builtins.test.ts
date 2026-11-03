@@ -85,16 +85,16 @@ describe('built-in MCP servers', () => {
       type: 'stdio',
       command: 'npx',
       // `chromium` is Playwright's Chrome for Testing build, never the installed Chrome
-      args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox'],
+      args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless'],
     });
   });
 
   it("runs Playwright's own Firefox and WebKit without a profile", () => {
     expect(buildMcpConfig(['playwright'], { playwrightBrowser: managed('firefox') }).mcpServers.playwright)
-      .toMatchObject({ args: ['-y', PACKAGE, '--browser', 'firefox', '--isolated'] });
+      .toMatchObject({ args: ['-y', PACKAGE, '--browser', 'firefox', '--isolated', '--headless'] });
     // The run's profile copy is never made for a managed browser, and would be ignored
     expect(buildMcpConfig(['playwright'], { playwrightBrowser: managed('webkit') }, { browserProfileDir: '/p/copy' }).mcpServers.playwright)
-      .toMatchObject({ args: ['-y', PACKAGE, '--browser', 'webkit', '--isolated'] });
+      .toMatchObject({ args: ['-y', PACKAGE, '--browser', 'webkit', '--isolated', '--headless'] });
   });
 
   it("passes the config file in the run's profile copy", () => {
@@ -103,17 +103,17 @@ describe('built-in MCP servers', () => {
     expect(entry).toEqual({
       type: 'stdio',
       command: 'npx',
-      args: ['-y', PACKAGE, '--config', '/data/browser-profiles/p/chrome_Profile_1/task-1/.workbench-playwright.json'],
+      args: ['-y', PACKAGE, '--config', '/data/browser-profiles/p/chrome_Profile_1/task-1/.workbench-playwright.json', '--headless'],
     });
   });
 
   it('checks a chosen browser with its executable and a profile in memory', () => {
     expect(mcpServerEntry('playwright', { playwrightBrowser: chrome })).toMatchObject({
-      args: ['-y', PACKAGE, '--browser', 'chrome', '--executable-path', '/opt/google/chrome/chrome', '--isolated'],
+      args: ['-y', PACKAGE, '--browser', 'chrome', '--executable-path', '/opt/google/chrome/chrome', '--isolated', '--headless'],
     });
     // The user's Firefox over WebDriver BiDi; snap Firefox through the snap's own binary
     expect(mcpServerEntry('playwright', { playwrightBrowser: snapFirefox })).toMatchObject({
-      args: ['-y', PACKAGE, '--browser', 'moz-firefox', '--executable-path', '/snap/firefox/current/usr/lib/firefox/firefox', '--isolated'],
+      args: ['-y', PACKAGE, '--browser', 'moz-firefox', '--executable-path', '/snap/firefox/current/usr/lib/firefox/firefox', '--isolated', '--headless'],
     });
   });
 
@@ -150,14 +150,14 @@ describe('built-in MCP servers', () => {
     platform.wsl = true;
     const copy = 'C:\\data\\browser-profiles\\x\\chat';
     expect(buildMcpConfig(['playwright'], { playwrightBrowser: chrome }, { browserProfileDir: copy }).mcpServers.playwright)
-      .toMatchObject({ args: ['-y', PACKAGE, '--config', '/mnt/c/data/browser-profiles/x/chat/.workbench-playwright.json'] });
+      .toMatchObject({ args: ['-y', PACKAGE, '--config', '/mnt/c/data/browser-profiles/x/chat/.workbench-playwright.json', '--headless'] });
     expect(playwrightProfileConfig(chrome, copy)).toMatchObject({ browser: { userDataDir: '/mnt/c/data/browser-profiles/x/chat' } });
   });
 
   it("sends Playwright's files to the run's folder, leaving other servers alone", () => {
     const servers = buildMcpConfig(['context7', 'playwright'], undefined).mcpServers;
     const withDir = withPlaywrightOutputDir(servers, '/tmp/run/playwright');
-    expect(withDir.playwright).toMatchObject({ args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--output-dir', '/tmp/run/playwright'] });
+    expect(withDir.playwright).toMatchObject({ args: ['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless', '--output-dir', '/tmp/run/playwright'] });
     expect(withDir.context7).toBe(servers.context7);
     expect(withPlaywrightOutputDir(servers, undefined)).toBe(servers);
     // A custom server that happens to be named playwright isn't changed

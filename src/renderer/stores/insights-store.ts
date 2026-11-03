@@ -12,10 +12,25 @@ import type {
   Task,
   ImageAttachment
 } from '../../shared/types';
+import { DEFAULT_AGENT_PROFILES } from '../../shared/constants';
+import { NEW_CHAT_BROWSER_ID } from '../../shared/types/browser-drawer';
+import { useBrowserDrawerStore } from './browser-drawer-store';
 
 interface ToolUsage {
   name: string;
   input?: string;
+}
+
+/**
+ * A chat's reply in flight: the shown chat's is the store's own fields; other chats' (a project's
+ * chats reply at the same time, each in its own Claude Code session) are kept by conversation id
+ */
+interface ChatRun {
+  status: InsightsChatStatus;
+  streamingContent: string;
+  streamingTasks: NonNullable<InsightsChatMessage['suggestedTasks']>;
+  currentTool: ToolUsage | null;
+  toolsUsed: InsightsToolUsage[];
 }
 
 interface InsightsState {
@@ -33,6 +48,10 @@ interface InsightsState {
   isLoadingSessions: boolean;
   showArchived: boolean; // Whether to include archived sessions in listings
   pendingImages: ImageAttachment[]; // Images pending attachment to next message
+  /** Model and tool choices made before the conversation exists (the conversation's own config wins) */
+  draftModelConfig: InsightsModelConfig | undefined;
+  /** Replies of chats not on screen, by conversation id, until they end */
+  backgroundRuns: Record<string, ChatRun>;
 
   // Actions
   setProjectId: (projectId: string) => void;
@@ -53,6 +72,14 @@ interface InsightsState {
   setLoadingSessions: (loading: boolean) => void;
   setShowArchived: (showArchived: boolean) => void;
   setPendingImages: (images: ImageAttachment[]) => void;
+  setDraftModelConfig: (config: InsightsModelConfig | undefined) => void;
+  /**
+   * Show another chat (null: the New chat page). A reply the shown chat is writing goes on in the
+   * background; the chat shown next comes back with its own reply in flight, if it has one
+   */
+  showSession: (session: InsightsSession | null) => void;
+  /** A chat that isn't shown got a stream chunk, status or error */
+  updateBackgroundRun: (sessionId: string, update: (run: ChatRun) => ChatRun | null) => void;
 }
 
 const initialStatus: InsightsChatStatus = {
@@ -65,6 +92,74 @@ const initialStatus: InsightsChatStatus = {
  * reports the conversation it created for it
  */
 export const DRAFT_SESSION_ID = 'draft';
+
+const IDLE_RUN: ChatRun = { status: { phase: 'idle', message: '' }, streamingContent: '', streamingTasks: [], currentTool: null, toolsUsed: [] };
+
+/** Whether a reply is being written */
+function isReplying(status: InsightsChatStatus): boolean {
+  return status.phase === 'thinking' || status.phase === 'streaming';
+}
+
+/**
+ * A chat's reply that isn't shown, after one of its stream chunks; null once it ended (the main
+ * process saved it in its chat, which shows it when opened)
+ */
+export function applyBackgroundChunk(run: ChatRun, chunk: InsightsStreamChunk): ChatRun | null {
+  switch (chunk.type) {
+    case 'text':
+      return chunk.content
+        ? { ...run, streamingContent: run.streamingContent + chunk.content, currentTool: null, status: { phase: 'streaming', message: 'Receiving response...' } }
+        : run;
+    case 'tool_start':
+      return chunk.tool
+        ? {
+          ...run,
+          currentTool: { name: chunk.tool.name, input: chunk.tool.input },
+          toolsUsed: [...run.toolsUsed, { name: chunk.tool.name, input: chunk.tool.input, timestamp: new Date() }],
+          status: { phase: 'streaming', message: `Using ${chunk.tool.name}...` },
+        }
+        : run;
+    case 'tool_end':
+      return { ...run, currentTool: null };
+    case 'task_suggestion':
+      return { ...run, currentTool: null, streamingTasks: [...run.streamingTasks, ...(chunk.suggestedTasks ?? [])] };
+    case 'done':
+      return null;
+    case 'error':
+      return { ...run, currentTool: null, status: { phase: 'error', error: chunk.error } };
+    default:
+      return run;
+  }
+}
+
+/** A chat's reply that isn't shown, after a status from the main process; null once it ended */
+export function applyBackgroundStatus(run: ChatRun, status: InsightsChatStatus): ChatRun | null {
+  return status.phase === 'complete' || status.phase === 'idle' ? null : { ...run, status };
+}
+
+/** The conversations replying now: the shown one and those in the background */
+export function replyingSessionIds(state: Pick<InsightsState, 'session' | 'status' | 'backgroundRuns'>): Set<string> {
+  const ids = new Set(Object.entries(state.backgroundRuns).filter(([, run]) => isReplying(run.status)).map(([id]) => id));
+  if (state.session && state.session.id !== DRAFT_SESSION_ID && isReplying(state.status)) ids.add(state.session.id);
+  return ids;
+}
+
+/** The chat's id for its own browser (the browser drawer): its conversation, or the New chat page */
+export function chatBrowserId(session: InsightsSession | null): string {
+  return session && session.id !== DRAFT_SESSION_ID ? session.id : NEW_CHAT_BROWSER_ID;
+}
+
+/** The shown chat's model and tool choices: its conversation's, else the ones made before it exists */
+export function chatModelConfig(state: Pick<InsightsState, 'session' | 'draftModelConfig'>): InsightsModelConfig | undefined {
+  return state.session?.modelConfig ?? state.draftModelConfig;
+}
+
+/** A chat's config, or the Balanced profile's model for a chat that has none yet */
+export function withDefaultModelConfig(config: InsightsModelConfig | undefined): InsightsModelConfig {
+  if (config) return config;
+  const balanced = DEFAULT_AGENT_PROFILES.find((profile) => profile.id === 'balanced');
+  return { profileId: 'balanced', model: balanced?.model ?? 'sonnet', thinkingLevel: balanced?.thinkingLevel ?? 'medium' };
+}
 
 /** A message id that stays unique for messages created in the same millisecond */
 function newMessageId(): string {
@@ -85,6 +180,8 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   isLoadingSessions: false,
   showArchived: false,
   pendingImages: [],
+  draftModelConfig: undefined,
+  backgroundRuns: {},
 
   // Actions
   // Switching projects drops the previous project's in-flight state; its reply is still
@@ -100,11 +197,43 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
             streamingContent: '',
             streamingTasks: [],
             currentTool: null,
-            toolsUsed: []
+            toolsUsed: [],
+            backgroundRuns: {}
           }
     ),
 
   setSession: (session) => set({ session }),
+
+  setDraftModelConfig: (draftModelConfig) => set({ draftModelConfig }),
+
+  showSession: (session) =>
+    set((state) => {
+      const runs = { ...state.backgroundRuns };
+      const currentId = state.session?.id;
+      // The shown chat's reply goes on in the background
+      if (currentId && currentId !== DRAFT_SESSION_ID && currentId !== session?.id && isReplying(state.status)) {
+        runs[currentId] = {
+          status: state.status,
+          streamingContent: state.streamingContent,
+          streamingTasks: state.streamingTasks,
+          currentTool: state.currentTool,
+          toolsUsed: state.toolsUsed,
+        };
+      }
+      if (session && currentId === session.id) return { session, backgroundRuns: runs };
+      const restored = session ? runs[session.id] : undefined;
+      if (session) delete runs[session.id];
+      return { session, backgroundRuns: runs, ...(restored ?? IDLE_RUN) };
+    }),
+
+  updateBackgroundRun: (sessionId, update) =>
+    set((state) => {
+      const next = update(state.backgroundRuns[sessionId] ?? IDLE_RUN);
+      const runs = { ...state.backgroundRuns };
+      if (next) runs[sessionId] = next;
+      else delete runs[sessionId];
+      return { backgroundRuns: runs };
+    }),
 
   setSessions: (sessions) => set({ sessions }),
 
@@ -347,7 +476,9 @@ export function sendMessage(projectId: string, message: string, modelConfig?: In
  * when nothing was running there (e.g. it just finished), the chat is settled here instead
  */
 export async function stopMessage(projectId: string): Promise<void> {
-  const stopped = await window.electronAPI.stopInsightsMessage(projectId).catch(() => false);
+  // The shown chat's reply (other chats' go on); before the conversation exists, the open one's
+  const sessionId = savedSessionId(useInsightsStore.getState().session);
+  const stopped = await window.electronAPI.stopInsightsMessage(projectId, sessionId).catch(() => false);
   if (stopped) return;
   const store = useInsightsStore.getState();
   if (store.status.phase !== 'thinking' && store.status.phase !== 'streaming') return;
@@ -406,6 +537,8 @@ export function editMessage(projectId: string, messageId: string, content: strin
 
 export async function openInsightsPage(projectId: string, includeArchived?: boolean): Promise<void> {
   useInsightsStore.getState().setProjectId(projectId);
+  // Choices made before a conversation existed last only while the page is open
+  useInsightsStore.getState().setDraftModelConfig(undefined);
   const { phase } = useInsightsStore.getState().status;
   if (phase === 'thinking' || phase === 'streaming') {
     await loadInsightsSessions(projectId, includeArchived);
@@ -418,12 +551,8 @@ export async function newSession(projectId: string): Promise<void> {
   // The conversation is created when the first message is sent
   const result = await window.electronAPI.newInsightsSession(projectId);
   if (result.success) {
-    useInsightsStore.getState().setSession(null);
-    // A fresh conversation starts clean: drop the previous one's error/streaming state
-    useInsightsStore.getState().clearStreamingContent();
-    useInsightsStore.getState().clearToolsUsed();
-    useInsightsStore.getState().setCurrentTool(null);
-    useInsightsStore.getState().setStatus({ phase: 'idle', message: '' });
+    // A fresh conversation starts clean; a reply the previous chat is writing goes on in it
+    useInsightsStore.getState().showSession(null);
     // Reload sessions list
     await loadInsightsSessions(projectId);
   }
@@ -432,12 +561,8 @@ export async function newSession(projectId: string): Promise<void> {
 export async function switchSession(projectId: string, sessionId: string): Promise<void> {
   const result = await window.electronAPI.switchInsightsSession(projectId, sessionId);
   if (result.success && result.data) {
-    useInsightsStore.getState().setSession(result.data);
-    // Reset streaming state when switching sessions
-    useInsightsStore.getState().clearStreamingContent();
-    useInsightsStore.getState().clearToolsUsed();
-    useInsightsStore.getState().setCurrentTool(null);
-    useInsightsStore.getState().setStatus({ phase: 'idle', message: '' });
+    // The chat comes with its own reply in flight, if it is writing one (the one left goes on)
+    useInsightsStore.getState().showSession(result.data);
   }
 }
 
@@ -452,6 +577,8 @@ export async function deleteSession(projectId: string, sessionId: string, includ
       store.setCurrentTool(null);
       store.setStatus({ phase: 'idle', message: '' });
     }
+    // Its reply was stopped with it
+    store.updateBackgroundRun(sessionId, () => null);
     // Reload sessions list and current session
     await loadInsightsSession(projectId, includeArchived);
     return true;
@@ -472,6 +599,17 @@ export async function renameSession(projectId: string, sessionId: string, newTit
 export async function unarchiveSession(projectId: string, sessionId: string): Promise<boolean> {
   const result = await window.electronAPI.unarchiveInsightsSession(projectId, sessionId);
   return result.success;
+}
+
+/**
+ * Change the shown chat's model and tool choices: applied at once (they are sent with the next
+ * message, before the conversation exists on disk) and saved with its conversation
+ */
+export async function changeChatModelConfig(projectId: string, config: InsightsModelConfig): Promise<void> {
+  const store = useInsightsStore.getState();
+  store.setDraftModelConfig(config);
+  const sessionId = savedSessionId(store.session);
+  if (sessionId) await updateModelConfig(projectId, sessionId, config);
 }
 
 export async function updateModelConfig(projectId: string, sessionId: string, modelConfig: InsightsModelConfig): Promise<boolean> {
@@ -518,13 +656,25 @@ export async function createTaskFromSuggestion(
 export function setupInsightsListeners(): () => void {
   const store = useInsightsStore.getState;
   const isCurrentProject = (projectId: string) => projectId === store().projectId;
+  /**
+   * Whether an event of this chat goes to the chat on screen; the others' replies go on in the
+   * background. A new chat's first reply belongs to the shown draft until its conversation arrives
+   */
+  const isShown = (sessionId: string | undefined) => {
+    const shown = store().session?.id;
+    if (!sessionId || sessionId === shown) return true;
+    return shown === DRAFT_SESSION_ID && !store().backgroundRuns[sessionId] && !store().sessions.some((s) => s.id === sessionId);
+  };
 
   // Listen for streaming chunks
   const unsubStreamChunk = window.electronAPI.onInsightsStreamChunk(
     (projectId, chunk: InsightsStreamChunk) => {
       if (!isCurrentProject(projectId)) return;
-      // A reply of a chat the user left (stopped when they did) doesn't show in the chat on screen
-      if (chunk.sessionId && chunk.sessionId !== store().session?.id) return;
+      // Another chat's reply goes on where it is (saved in its chat when it ends)
+      if (!isShown(chunk.sessionId)) {
+        store().updateBackgroundRun(chunk.sessionId!, (run) => applyBackgroundChunk(run, chunk));
+        return;
+      }
       switch (chunk.type) {
         case 'text':
           if (chunk.content) {
@@ -584,14 +734,22 @@ export function setupInsightsListeners(): () => void {
   );
 
   // Listen for status updates
-  const unsubStatus = window.electronAPI.onInsightsStatus((projectId, status) => {
+  const unsubStatus = window.electronAPI.onInsightsStatus((projectId, status, sessionId) => {
     if (!isCurrentProject(projectId)) return;
+    if (!isShown(sessionId)) {
+      store().updateBackgroundRun(sessionId!, (run) => applyBackgroundStatus(run, status));
+      return;
+    }
     store().setStatus(status);
   });
 
   // Listen for errors
-  const unsubError = window.electronAPI.onInsightsError((projectId, error) => {
+  const unsubError = window.electronAPI.onInsightsError((projectId, error, sessionId) => {
     if (!isCurrentProject(projectId)) return;
+    if (!isShown(sessionId)) {
+      store().updateBackgroundRun(sessionId!, (run) => ({ ...run, currentTool: null, status: { phase: 'error', error } }));
+      return;
+    }
     store().setStatus({
       phase: 'error',
       error
@@ -609,6 +767,8 @@ export function setupInsightsListeners(): () => void {
       const createdForDraft = currentSession?.id === DRAFT_SESSION_ID &&
         session.messages[0]?.content === currentSession.messages[0]?.content;
       if (currentSession?.id === session.id || createdForDraft) {
+        // The New chat page's browser drawer (and browser) belong to the conversation now
+        if (createdForDraft) useBrowserDrawerStore.getState().adoptChatView(projectId, session.id);
         store().setSession(session);
       }
       // Also refresh sessions list for sidebar

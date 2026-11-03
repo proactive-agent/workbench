@@ -60,9 +60,9 @@ describe('chat browser profile copies', () => {
     expect(first).toMatch(/^chat-/);
     expect(second).not.toBe(first);
     expect(removeBrowserProfileCopy.mock.calls.map((call) => call[0])).toEqual([`/copies/${first}`, `/copies/${second}`]);
-    // The server reads the run's Playwright config from the copy
+    // The server reads the run's Playwright config from the copy, headless
     const args = runInsights.mock.calls[0][0].mcpServers.playwright.args as string[];
-    expect(args.slice(-2)).toEqual(['--config', `/copies/${first}/.workbench-playwright.json`]);
+    expect(args.slice(-3)).toEqual(['--config', `/copies/${first}/.workbench-playwright.json`, '--headless']);
   });
 
   it("returns the reply without waiting for the copy's removal", async () => {

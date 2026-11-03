@@ -23,6 +23,7 @@ import { registerSelfImproveHandlers } from './self-improve-handlers';
 import { registerProjectIndexHandlers } from './project-index-handlers';
 import { registerLiveAgentHandlers } from './live-agent-handlers';
 import { registerMcpHandlers } from './mcp-handlers';
+import { registerBrowserDrawerHandlers } from './browser-drawer-handlers';
 import { registerProfileHandlers } from './profile-handlers';
 import { registerShellRuntimeHandlers } from './shell-runtime-handlers';
 import { registerWindowHandlers, type WindowHandlerDeps } from './window-handlers';
@@ -90,6 +91,7 @@ export function setupIpcHandlers(
 
   // MCP server health check handlers
   registerMcpHandlers();
+  registerBrowserDrawerHandlers();
 
   // API Profile handlers (custom Anthropic-compatible endpoints)
   registerProfileHandlers();

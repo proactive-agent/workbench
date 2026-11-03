@@ -10,6 +10,7 @@ import type { TaskMetadata, ImageAttachment } from './task';
 
 import type { ThinkingLevel } from './settings';
 import type { ModelType } from './task';
+import type { PlaywrightBrowserChoice } from './browser-profiles';
 
 // Model configuration for insights sessions
 export interface InsightsModelConfig {
@@ -24,6 +25,11 @@ export interface InsightsModelConfig {
   githubTools?: boolean;
   /** The GitLab button: Claude can use the GitLab CLI (glab) in this conversation */
   gitlabTools?: boolean;
+  /**
+   * The browser the chat's Playwright opens (picked in the browser drawer; null: Playwright's own
+   * Chromium); unset = the one in Settings > Connectors
+   */
+  playwrightBrowser?: PlaywrightBrowserChoice | null;
 }
 
 type InsightsChatRole = 'user' | 'assistant';

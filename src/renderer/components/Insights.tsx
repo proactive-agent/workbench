@@ -33,7 +33,10 @@ import { GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/
 import { BUILTIN_CONNECTOR_META } from './settings/connector-meta';
 import {
   useInsightsStore,
-  DRAFT_SESSION_ID,
+  chatModelConfig,
+  changeChatModelConfig,
+  withDefaultModelConfig,
+  replyingSessionIds,
   loadInsightsSession,
   openInsightsPage,
   sendMessage,
@@ -45,13 +48,14 @@ import {
   deleteSession,
   renameSession,
   unarchiveSession,
-  updateModelConfig,
   createTaskFromSuggestion,
   loadInsightsSessions
 } from '../stores/insights-store';
 import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
+import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
+import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { useSettingsStore } from '../stores/settings-store';
@@ -60,18 +64,22 @@ import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
 import type { InsightsChatMessage, InsightsModelConfig, TaskMetadata, ImageAttachment } from '../../shared/types';
 import {
   MAX_IMAGE_SIZE,
-  parseInsightsError,
-  DEFAULT_AGENT_PROFILES
+  parseInsightsError
 } from '../../shared/constants';
 
 interface InsightsProps {
   projectId: string;
 }
 
+/** The Windows/Linux window controls cover the top bar's first row (the page draws its own drag strip outside development builds) */
+const WINDOW_CONTROLS_OVER_TOP_BAR = !IS_DEV_BUILD && TITLE_BAR_STRIP_HEIGHT > 0;
+
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
   const sessions = useInsightsStore((state) => state.sessions);
+  // Chats writing a reply (several can at once): marked in the history
+  const backgroundRuns = useInsightsStore((state) => state.backgroundRuns);
   const status = useInsightsStore((state) => state.status);
   const streamingContent = useInsightsStore((state) => state.streamingContent);
   const currentTool = useInsightsStore((state) => state.currentTool);
@@ -93,10 +101,11 @@ export function Insights({ projectId }: InsightsProps) {
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
 
   // Model choice made before a session exists (or before it is persisted); the session's own config wins
-  const [draftModelConfig, setDraftModelConfig] = useState<InsightsModelConfig | undefined>(undefined);
-  const effectiveModelConfig = session?.modelConfig ?? draftModelConfig;
+  const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
+  const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
+  const replyingIds = replyingSessionIds({ session, status, backgroundRuns });
 
   // Stop turns disabled once clicked, until the reply has ended
   const [stopRequested, setStopRequested] = useState(false);
@@ -294,13 +303,8 @@ export function Insights({ projectId }: InsightsProps) {
     }
   };
 
-  const handleModelConfigChange = async (config: InsightsModelConfig) => {
-    // Always apply locally so the choice sticks before the conversation exists on disk
-    setDraftModelConfig(config);
-    if (session?.id && session.id !== DRAFT_SESSION_ID) {
-      await updateModelConfig(projectId, session.id, config);
-    }
-  };
+  // Applied at once so the choice sticks before the conversation exists on disk
+  const handleModelConfigChange = (config: InsightsModelConfig) => changeChatModelConfig(projectId, config);
 
   const messages = session?.messages || [];
   const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
@@ -350,12 +354,7 @@ export function Insights({ projectId }: InsightsProps) {
   // Kanban button: gives Claude the project's task tools in this conversation (kept with the
   // conversation's model settings)
   const kanbanTools = effectiveModelConfig?.kanbanTools === true;
-  const balanced = DEFAULT_AGENT_PROFILES.find((profile) => profile.id === 'balanced');
-  const baseModelConfig: InsightsModelConfig = effectiveModelConfig ?? {
-    profileId: 'balanced',
-    model: balanced?.model ?? 'sonnet',
-    thinkingLevel: balanced?.thinkingLevel ?? 'medium',
-  };
+  const baseModelConfig = withDefaultModelConfig(effectiveModelConfig);
   const toggleKanbanTools = () => {
     void handleModelConfigChange({ ...baseModelConfig, kanbanTools: !kanbanTools });
   };
@@ -629,6 +628,7 @@ export function Insights({ projectId }: InsightsProps) {
           onUnarchiveSession={handleUnarchiveSession}
           showArchived={showArchived}
           onToggleShowArchived={handleToggleShowArchived}
+          replyingSessionIds={replyingIds}
         />
       )}
 
@@ -640,37 +640,42 @@ export function Insights({ projectId }: InsightsProps) {
         onDrop={handleDrop}
       >
         {/* Top bar: the history toggle sits level with the app sidebar's header row and "New chat"
-            below it, level with the sidebar's "New Task" row; the bar doubles as the window drag area */}
-        <div className="electron-drag flex shrink-0 flex-col items-start gap-3 px-3 pt-6">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="electron-no-drag h-8 w-8 text-muted-foreground"
-                onClick={() => setShowSidebar(!showSidebar)}
-                aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
-          </Tooltip>
-          <h2 className="sr-only">{t('insights.title')}</h2>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="electron-no-drag h-8 w-8 text-muted-foreground"
-                onClick={handleNewSession}
-                aria-label={t('insights.newChat')}
-              >
-                <SquarePen className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
-          </Tooltip>
+            below it, level with the sidebar's "New Task" row; the browser drawer's button is in the
+            top-right corner (a row lower where the Windows/Linux window controls cover the first);
+            the bar doubles as the window drag area */}
+        <div className="electron-drag flex shrink-0 items-start justify-between px-3 pt-6">
+          <div className="flex flex-col items-start gap-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="electron-no-drag h-8 w-8 text-muted-foreground"
+                  onClick={() => setShowSidebar(!showSidebar)}
+                  aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
+            </Tooltip>
+            <h2 className="sr-only">{t('insights.title')}</h2>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="electron-no-drag h-8 w-8 text-muted-foreground"
+                  onClick={handleNewSession}
+                  aria-label={t('insights.newChat')}
+                >
+                  <SquarePen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
+            </Tooltip>
+          </div>
+          <BrowserDrawerButton projectId={projectId} className={WINDOW_CONTROLS_OVER_TOP_BAR ? 'mt-11' : undefined} />
         </div>
 
         {isEmpty ? (

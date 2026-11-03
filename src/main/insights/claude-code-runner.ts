@@ -15,7 +15,7 @@
  * (`resolveClaudeEnv`).
  */
 
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { resolveClaudeEnv } from '../claude-code/env';
@@ -38,6 +38,7 @@ import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
 import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
+import { registerChatBrowserWorkspace } from '../browser-drawer/project-match';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
 // The bridge's source, bundled as text and written next to the turn's other temp files
 import TASK_TOOLS_BRIDGE_SOURCE from './task-tools-bridge.cjs?raw';
@@ -94,6 +95,8 @@ export interface InsightsRunConfig {
   sessionMessages?: boolean;
   /** Task messaging is on (Settings > Agents): the prompt tells the chat about message_task */
   taskMessaging?: boolean;
+  /** Playwright attaches to the chat's own browser (shared with the user in the browser drawer) */
+  sharedBrowser?: boolean;
 }
 
 /**
@@ -531,6 +534,11 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       Object.entries(config.mcpServers ?? {}).filter(([name]) => name !== TASK_TOOLS_SERVER_NAME)
     ), tempDir);
     const chatServers = playwright.servers;
+    // The browser drawer tells the turn's browser by its folder (the server's working folder,
+    // which macOS reports by its real path: /private/var/...)
+    const unregisterBrowserWorkspaces = playwright.dir
+      ? [playwright.dir, await realpath(playwright.dir).catch(() => playwright.dir!)].map((dir) => registerChatBrowserWorkspace(dir, projectDir))
+      : [];
     if (taskTools || Object.keys(chatServers).length > 0) {
       const configFile = join(tempDir, 'mcp-config.json');
       const mcpServers = { ...chatServers, ...(taskTools ? { [TASK_TOOLS_SERVER_NAME]: taskTools } : {}) };
@@ -557,6 +565,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       memory: config.memory,
       sessionMessaging,
       taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
+      sharedBrowser: config.sharedBrowser,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');
@@ -606,6 +615,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
         run = await attempt(plan);
       }
     } finally {
+      for (const unregister of unregisterBrowserWorkspaces) unregister();
       await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
     }
     const { state, outcome } = run;

@@ -144,6 +144,18 @@ const browserMockAPI: ElectronAPI = {
   unsubscribeLiveAgent: async () => ({ success: true }),
   onLiveAgentStatus: () => () => {},
   onLiveAgentMessage: () => () => {},
+  getBrowserDrawerState: async () => ({ success: true, data: { available: false, sessions: [], pages: [] } }),
+  subscribeBrowserDrawer: async () => ({ success: true }),
+  unsubscribeBrowserDrawer: async () => ({ success: true }),
+  viewBrowserPage: () => {},
+  sendBrowserInput: () => {},
+  navigateBrowserPage: () => {},
+  closeBrowserPage: () => {},
+  newBrowserPage: () => {},
+  openChatBrowser: async () => ({ success: false, error: 'Not available in the browser preview' }),
+  closeChatBrowser: async () => ({ success: true }),
+  onBrowserDrawerState: () => () => {},
+  onBrowserFrame: () => () => {},
 
   checkClaudeCodeVersion: async () => ({
     success: true,

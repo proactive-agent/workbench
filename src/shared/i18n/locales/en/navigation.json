@@ -104,5 +104,32 @@
     "layingOut": "{{nodes}} nodes and {{links}} links are loading",
     "empty": "The memory graph is empty",
     "loadFailed": "Couldn't load the memory graph"
+  },
+  "browserDrawer": {
+    "title": "Browser tabs",
+    "open": "Open browser",
+    "openWithSessions_one": "Open browser: {{count}} browser of this project is open",
+    "openWithSessions_other": "Open browser: {{count}} browsers of this project are open",
+    "close": "Close browser drawer",
+    "resize": "Resize browser drawer",
+    "closeTab": "Close tab",
+    "newTab": "New tab",
+    "untitled": "New tab",
+    "back": "Back",
+    "forward": "Forward",
+    "reload": "Reload",
+    "address": "Address",
+    "addressPlaceholder": "Enter an address",
+    "loading": "Connecting to the browser...",
+    "empty": "No browsers are open",
+    "emptyDescription": "Browsers that tasks and chats open with the Playwright connector show up here, where you can watch and use them",
+    "emptyChatDescription": "Open this chat's browser to sign in or set something up by hand, then ask Claude to carry on in it. Claude also opens it when it needs a browser",
+    "openBrowser": "Open browser",
+    "opening": "Opening the browser...",
+    "openFailed": "The browser could not be opened: {{error}}",
+    "openFailedUnknown": "Unknown error",
+    "noTabs": "No tabs are open",
+    "noTabsDescription": "Open a new tab to keep using this browser",
+    "unavailableWsl": "The browser drawer isn't available while Workbench runs in WSL: the browsers run inside the distribution"
   }
 }

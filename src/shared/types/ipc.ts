@@ -408,7 +408,7 @@ export interface ElectronAPI {
   // Insights operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
   sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
-  stopInsightsMessage: (projectId: string) => Promise<boolean>;
+  stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   clearInsightsSession: (projectId: string) => Promise<IPCResult>;
@@ -436,10 +436,10 @@ export interface ElectronAPI {
     callback: (projectId: string, chunk: InsightsStreamChunk) => void
   ) => () => void;
   onInsightsStatus: (
-    callback: (projectId: string, status: InsightsChatStatus) => void
+    callback: (projectId: string, status: InsightsChatStatus, sessionId?: string) => void
   ) => () => void;
   onInsightsError: (
-    callback: (projectId: string, error: string) => void
+    callback: (projectId: string, error: string, sessionId?: string) => void
   ) => () => void;
   onInsightsSessionUpdated: (
     callback: (projectId: string, session: InsightsSession) => void
@@ -521,6 +521,20 @@ export interface ElectronAPI {
   unsubscribeLiveAgent: (clientId: string) => Promise<IPCResult>;
   onLiveAgentStatus: (callback: (status: import('./live-agent').LiveAgentStatus) => void) => () => void;
   onLiveAgentMessage: (callback: (clientId: string, data: string) => void) => () => void;
+
+  // Browser drawer (the headless browsers of task runs and chats, shown in Workbench)
+  getBrowserDrawerState: () => Promise<IPCResult<import('./browser-drawer').BrowserDrawerState>>;
+  subscribeBrowserDrawer: () => Promise<IPCResult>;
+  unsubscribeBrowserDrawer: () => Promise<IPCResult>;
+  viewBrowserPage: (pageId: string | null, width: number, height: number) => void;
+  sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
+  navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
+  closeBrowserPage: (pageId: string) => void;
+  newBrowserPage: (sessionId: string) => void;
+  openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
+  closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
+  onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
+  onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
 
   // MCP Server health check operations
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;

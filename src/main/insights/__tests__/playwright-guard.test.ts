@@ -5,6 +5,8 @@
  */
 import { describe, it, expect, afterAll } from 'vitest';
 import { spawn } from 'node:child_process';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -70,5 +72,63 @@ describe('Playwright guard', () => {
     expect(replies.get(2)).toEqual({ tools: [{ name: 'browser_navigate' }] });
     expect(replies.get(3)).toMatchObject({ isError: true });
     expect(replies.get(4)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+  });
+
+  it("asks Workbench to open the chat's browser before each tool call, and keeps it open", async () => {
+    let opens = 0;
+    let fail = false;
+    const auth: string[] = [];
+    const server = createServer((request, response) => {
+      auth.push(request.headers.authorization ?? '');
+      opens += 1;
+      const result = fail ? { isError: true, content: [{ type: 'text', text: 'Chromium is not installed' }] } : { content: [{ type: 'text', text: 'open' }] };
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ jsonrpc: '2.0', id: 1, result }));
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
+
+    const workspace = mkdtempSync(join(root, 'turn-'));
+    const proc = spawn(process.execPath, [GUARD, workspace, process.execPath, fakeServer], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, WORKBENCH_CHAT_BROWSER_URL: url, WORKBENCH_CHAT_BROWSER_TOKEN: 'secret' },
+    });
+    const replies = new Map<number, Record<string, unknown>>();
+    let buffer = '';
+    proc.stdout.on('data', (data: Buffer) => {
+      buffer += data.toString();
+      let end;
+      while ((end = buffer.indexOf('\n')) >= 0) {
+        const message = JSON.parse(buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+        replies.set(message.id, message.result);
+      }
+    });
+    const send = (message: Record<string, unknown>) => proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+    const answered = (count: number) => new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no answers')), 10_000);
+      const poll = setInterval(() => {
+        if (replies.size < count) return;
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve();
+      }, 20);
+    });
+    send({ id: 1, method: 'initialize', params: { capabilities: {} } });
+    send({ id: 2, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'about:blank' } } });
+    send({ id: 3, method: 'tools/call', params: { name: 'browser_close', arguments: {} } });
+    await answered(3);
+    fail = true;
+    send({ id: 4, method: 'tools/call', params: { name: 'browser_snapshot', arguments: {} } });
+    await answered(4);
+    proc.stdin.end();
+    await new Promise((resolve) => server.close(resolve));
+
+    // Opened (asked for) before the tool call only, with the turn's token; initialize asks nothing
+    expect(opens).toBe(2);
+    expect(auth[0]).toBe('Bearer secret');
+    expect(replies.get(2)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+    expect(replies.get(3)).toMatchObject({ isError: true });
+    expect(JSON.stringify(replies.get(4))).toContain('Chromium is not installed');
+    expect(replies.get(4)).toMatchObject({ isError: true });
   });
 });

@@ -43,6 +43,8 @@ interface ChatHistorySidebarProps {
   onUnarchiveSession?: (sessionId: string) => Promise<void>;
   showArchived?: boolean;
   onToggleShowArchived?: () => void;
+  /** Conversations writing a reply now (shown with a spinner) */
+  replyingSessionIds?: ReadonlySet<string>;
 }
 
 export function ChatHistorySidebar({
@@ -55,7 +57,8 @@ export function ChatHistorySidebar({
   onRenameSession,
   onUnarchiveSession,
   showArchived = false,
-  onToggleShowArchived
+  onToggleShowArchived,
+  replyingSessionIds
 }: ChatHistorySidebarProps) {
   const { t } = useTranslation('common');
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -155,6 +158,7 @@ export function ChatHistorySidebar({
                       onUnarchiveSession ? () => onUnarchiveSession(session.id) : undefined
                     }
                     isArchived={!!session.archivedAt}
+                    isReplying={replyingSessionIds?.has(session.id) ?? false}
                   />
                 ))}
               </div>
@@ -196,6 +200,8 @@ interface SessionItemProps {
   onDelete: () => void;
   onUnarchive?: () => Promise<void>;
   isArchived: boolean;
+  /** The chat is writing a reply */
+  isReplying: boolean;
 }
 
 function SessionItem({
@@ -210,7 +216,8 @@ function SessionItem({
   onEditTitleChange,
   onDelete,
   onUnarchive,
-  isArchived
+  isArchived,
+  isReplying
 }: SessionItemProps) {
   const { t } = useTranslation('common');
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -283,6 +290,12 @@ function SessionItem({
       {/* Content with reserved space for the menu button */}
       <div className="flex min-w-0 flex-1 items-center gap-2 group-hover:pr-6 group-focus-within:pr-6">
         <span className="min-w-0 flex-1 truncate">{session.title}</span>
+        {isReplying && (
+          <span className="inline-flex shrink-0 items-center" title={t('insights.replying')}>
+            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+            <span className="sr-only">{t('insights.replying')}</span>
+          </span>
+        )}
         {isArchived && (
           <span className="inline-flex shrink-0 items-center gap-0.5 text-[0.6875rem] text-(--nav-label-color)">
             <Archive className="h-3 w-3" />

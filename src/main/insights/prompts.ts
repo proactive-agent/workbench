@@ -95,6 +95,8 @@ export interface InsightsPromptOptions {
   sessionMessaging?: boolean;
   /** Task messaging is on: message_task delivers (with the task tools) */
   taskMessaging?: boolean;
+  /** Playwright works in the chat's own browser, which the user sees and uses in the browser drawer */
+  sharedBrowser?: boolean;
 }
 
 /** The suggestion line's format, as Claude must write it */
@@ -142,6 +144,9 @@ function toolsPrompt(options: InsightsPromptOptions): string {
       : '- No shell commands.',
     ...(servers.length > 0
       ? [`- MCP servers the user turned on for this chat: ${servers.join(', ')} (tools named mcp__<server>__<tool>). Use them when they fit the question.`]
+      : []),
+    ...(options.sharedBrowser && servers.includes('playwright')
+      ? ["- Playwright works in this chat's own browser, which the user watches and uses too, in Workbench's browser drawer. It stays open between messages with its tabs and sign-ins, and the user may have opened a page or signed in for you: look at its tabs (browser_tabs) before navigating away, and leave it open. When a step needs the user (a sign-in, a multi-factor code, a captcha), ask them to do it in the drawer and tell you when they are done."]
       : []),
     '- WebSearch and WebFetch for the web: documentation, release notes, issues and anything else outside the project.',
     "- Files attached to the current message are part of it. Earlier messages note [User previously attached N file(s)]: those files aren't visible any more, so ask for them again when you need them.",

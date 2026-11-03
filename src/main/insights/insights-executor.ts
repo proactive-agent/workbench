@@ -13,8 +13,12 @@ import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector'
 import { runInsights, type InsightsSessionPlan } from './claude-code-runner';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
-import { openTaskToolsSession } from './task-tools-server';
-import { buildMcpConfig } from '../claude-code/mcp-config';
+import { openMcpToolsSession, openTaskToolsSession, type TaskToolsSession } from './task-tools-server';
+import { buildMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
+import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
+import { getWslInfo } from '../platform/shell-runtime';
+import { browserDrawer } from '../browser-drawer';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { readSettingsFileAsync } from '../settings-utils';
@@ -50,15 +54,70 @@ export interface InsightsTurnOptions {
   chatSessionId?: string;
 }
 
+/** The chat whose turn runs: its browser is the chat's own (chat-browsers.ts) */
+interface ChatBrowserTarget {
+  projectId: string;
+  chatId: string;
+}
+
+/**
+ * A turn's Playwright server attached to the chat's own browser (`--endpoint`, its bind title),
+ * through the guard, which asks for the browser to be opened (the turn's token) before each tool call
+ */
+async function attachedPlaywright(
+  target: ChatBrowserTarget,
+  choice: PlaywrightBrowserChoice | null | undefined,
+): Promise<{ entry: McpServerEntry; session: TaskToolsSession }> {
+  const session = await openMcpToolsSession({
+    instructions: "Open the chat's browser.",
+    tools: [{ name: 'open_chat_browser', description: "Open the chat's browser unless it is open", inputSchema: { type: 'object', properties: {} } }],
+    call: async () => {
+      await browserDrawer.openChatBrowser(target.projectId, target.chatId, choice);
+      return 'open';
+    },
+  });
+  const server = session.mcpServer;
+  const title = browserDrawer.chatBrowsers.titleFor(target.projectId, target.chatId);
+  return {
+    entry: {
+      type: 'stdio',
+      command: 'npx',
+      args: ['-y', PLAYWRIGHT_MCP_PACKAGE, '--endpoint', title],
+      env: {
+        WORKBENCH_CHAT_BROWSER_URL: server.url,
+        WORKBENCH_CHAT_BROWSER_TOKEN: server.headers.Authorization.replace(/^Bearer /, ''),
+      },
+    },
+    session,
+  };
+}
+
 /**
  * The chat's MCP servers: its own choice or the Connectors defaults, without unavailable ones.
- * With Playwright, each turn gets a fresh copy of the browser profile (sign-ins as they are now,
- * like task runs), which the caller removes when the turn ends
+ * Natively, Playwright attaches to the chat's own browser (opened on its first tool call, kept
+ * open between turns); the caller closes the returned token when the turn ends. In WSL (no
+ * drawer), each turn gets a fresh copy of the browser profile (sign-ins as they are now, like task
+ * runs), which the caller removes when the turn ends
  */
-async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
+async function chatMcpServers(
+  ids: string[] | undefined,
+  projectPath: string,
+  chatChoice: PlaywrightBrowserChoice | null | undefined,
+  target: ChatBrowserTarget | undefined,
+) {
   const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
-  const chosen = await usableMcpConnectorIds(ids ?? getDefaultMcpConnectorIds(connectorSettings), connectorSettings);
-  const browser = connectorSettings?.playwrightBrowser;
+  const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
+  const chatBrowser = target && !getWslInfo() ? target : undefined;
+  // An open chat browser is usable whatever the chosen browser's check says now
+  const open = chatBrowser && browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId);
+  const usable = await usableMcpConnectorIds(open ? wanted.filter((id) => id !== 'playwright') : wanted, connectorSettings, undefined, chatChoice);
+  const chosen = open && wanted.includes('playwright') ? [...usable, 'playwright'] : usable;
+  if (chatBrowser && chosen.includes('playwright')) {
+    const { entry, session } = await attachedPlaywright(chatBrowser, chatChoice);
+    const mcpServers = { ...buildMcpConfig(chosen.filter((id) => id !== 'playwright'), connectorSettings).mcpServers, playwright: entry };
+    return { mcpServers, browserProfileDir: undefined, chatBrowserSession: session };
+  }
+  const browser = chatChoice !== undefined ? chatChoice ?? undefined : connectorSettings?.playwrightBrowser;
   let browserProfileDir: string | undefined;
   if (browser && chosen.includes('playwright')) {
     // A slot per turn: a replaced turn may still be removing its own copy
@@ -70,7 +129,12 @@ async function chatMcpServers(ids: string[] | undefined, projectPath: string) {
       return null;
     })) ?? undefined;
   }
-  return { mcpServers: buildMcpConfig(chosen, connectorSettings, { browserProfileDir }).mcpServers, browserProfileDir };
+  const runSettings = chatChoice !== undefined ? { ...connectorSettings, playwrightBrowser: browser } : connectorSettings;
+  return {
+    mcpServers: buildMcpConfig(chosen, runSettings as AppSettings['mcpConnectors'], { browserProfileDir }).mcpServers,
+    browserProfileDir,
+    chatBrowserSession: undefined as TaskToolsSession | undefined,
+  };
 }
 
 /**
@@ -83,8 +147,12 @@ async function messagingSwitches(): Promise<{ taskMessaging: boolean; sessionMes
   return { taskMessaging: settings.taskMessaging, sessionMessages: settings.taskMessaging && settings.sessionMessages };
 }
 
+/** A running reply's key: one reply runs per chat, and a project's chats reply at the same time */
+const runKey = (projectId: string, chatSessionId: string | undefined) => `${projectId}\n${chatSessionId ?? ''}`;
+
 /**
- * Executor for insights: runs each chat turn through Claude Code
+ * Executor for insights: runs each chat turn through Claude Code. Every event names the chat
+ * (`sessionId`), since several chats of a project may be replying at once
  */
 export class InsightsExecutor extends EventEmitter {
   private abortControllers: Map<string, AbortController> = new Map();
@@ -94,21 +162,22 @@ export class InsightsExecutor extends EventEmitter {
   }
 
   /**
-   * Check if a session is currently active
+   * Check if a chat is replying
    */
-  isSessionActive(projectId: string): boolean {
-    return this.abortControllers.has(projectId);
+  isSessionActive(projectId: string, chatSessionId?: string): boolean {
+    return this.abortControllers.has(runKey(projectId, chatSessionId));
   }
 
   /**
-   * Cancel an active session
+   * Stop a chat's reply; returns false when it had none
    */
-  cancelSession(projectId: string): boolean {
-    const controller = this.abortControllers.get(projectId);
+  cancelSession(projectId: string, chatSessionId?: string): boolean {
+    const key = runKey(projectId, chatSessionId);
+    const controller = this.abortControllers.get(key);
     if (!controller) return false;
 
     controller.abort();
-    this.abortControllers.delete(projectId);
+    this.abortControllers.delete(key);
     return true;
   }
 
@@ -124,17 +193,18 @@ export class InsightsExecutor extends EventEmitter {
     images?: ImageAttachment[],
     turn: InsightsTurnOptions = {}
   ): Promise<ProcessorResult> {
-    // Cancel any existing session
-    this.cancelSession(projectId);
+    // The chat's earlier reply (if any) stops; other chats' replies go on
+    const key = runKey(projectId, turn.chatSessionId);
+    this.cancelSession(projectId, turn.chatSessionId);
+    const emitStatus = (status: InsightsChatStatus) => this.emit('status', projectId, status, turn.chatSessionId);
 
-    // Emit thinking status
-    this.emit('status', projectId, {
+    emitStatus({
       phase: 'thinking',
       message: 'Processing your message...'
-    } as InsightsChatStatus);
+    });
 
     const controller = new AbortController();
-    this.abortControllers.set(projectId, controller);
+    this.abortControllers.set(key, controller);
     const emitChunk = (chunk: InsightsStreamChunk) =>
       this.emit('stream-chunk', projectId, { ...chunk, sessionId: turn.chatSessionId });
 
@@ -164,6 +234,7 @@ export class InsightsExecutor extends EventEmitter {
       }).catch(() => undefined)
       : undefined;
     let browserProfileDir: string | undefined;
+    let chatBrowserSession: TaskToolsSession | undefined;
 
     try {
       const projectSettings = projectStore.getProject(projectId)?.settings;
@@ -173,8 +244,14 @@ export class InsightsExecutor extends EventEmitter {
         : undefined;
       // The MCP servers chosen with the chat's MCP button (Connectors defaults until changed)
       // (leaving out servers that can't start)
-      const mcp = await chatMcpServers(modelConfig?.mcpConnectors, projectPath);
+      const mcp = await chatMcpServers(
+        modelConfig?.mcpConnectors,
+        projectPath,
+        modelConfig?.playwrightBrowser,
+        turn.chatSessionId ? { projectId, chatId: turn.chatSessionId } : undefined,
+      );
       browserProfileDir = mcp.browserProfileDir;
+      chatBrowserSession = mcp.chatBrowserSession;
       const result = await runInsights(
         {
           projectDir: projectPath,
@@ -197,6 +274,7 @@ export class InsightsExecutor extends EventEmitter {
             gitlab: modelConfig?.gitlabTools === true && (await getToolInfoAsync('glab')).found,
           },
           mcpServers: mcp.mcpServers,
+          sharedBrowser: !!mcp.chatBrowserSession,
           // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
           // for other running sessions
           ...(await messagingSwitches()),
@@ -243,7 +321,7 @@ export class InsightsExecutor extends EventEmitter {
         },
       );
 
-      this.releaseController(projectId, controller);
+      this.releaseController(key, controller);
 
       // Each suggestion line of the reply becomes a card
       if (result.taskSuggestions.length > 0) {
@@ -259,9 +337,9 @@ export class InsightsExecutor extends EventEmitter {
         type: 'done',
       });
 
-      this.emit('status', projectId, {
+      emitStatus({
         phase: 'complete',
-      } as InsightsChatStatus);
+      });
 
       return {
         fullResponse: result.text.trim() || stripTaskSuggestions(accumulatedText).trim() || fullResponse,
@@ -270,7 +348,7 @@ export class InsightsExecutor extends EventEmitter {
         claudeRef: result.claudeRef,
       };
     } catch (error) {
-      this.releaseController(projectId, controller);
+      this.releaseController(key, controller);
 
       // Check for rate limit in accumulated output
       this.handleRateLimit(projectId, allOutput);
@@ -281,10 +359,10 @@ export class InsightsExecutor extends EventEmitter {
       if (error instanceof Error && error.name === 'AbortError') {
         // Stopped by the user: end the reply with what was written so far. When a newer message
         // replaced this run, that run owns the chat's state, so nothing is sent
-        const replaced = this.abortControllers.has(projectId);
+        const replaced = this.abortControllers.has(key);
         if (!replaced) {
           emitChunk({ type: 'done' });
-          this.emit('status', projectId, { phase: 'complete' } as InsightsChatStatus);
+          emitStatus({ phase: 'complete' });
         }
         return {
           replaced,
@@ -300,10 +378,11 @@ export class InsightsExecutor extends EventEmitter {
         error: errorMsg,
       });
 
-      this.emit('error', projectId, errorMsg);
+      this.emit('error', projectId, errorMsg, turn.chatSessionId);
       throw error;
     } finally {
       taskTools?.close();
+      chatBrowserSession?.close();
       // The turn's Claude Code session (and its browser) has ended. Not awaited: the reply must be
       // returned (and saved) right after 'done', before a next message can start a turn
       if (browserProfileDir) void removeBrowserProfileCopy(browserProfileDir);
@@ -313,9 +392,9 @@ export class InsightsExecutor extends EventEmitter {
   /**
    * Forget a run's controller, unless a newer run already took its place
    */
-  private releaseController(projectId: string, controller: AbortController): void {
-    if (this.abortControllers.get(projectId) === controller) {
-      this.abortControllers.delete(projectId);
+  private releaseController(key: string, controller: AbortController): void {
+    if (this.abortControllers.get(key) === controller) {
+      this.abortControllers.delete(key);
     }
   }
 
