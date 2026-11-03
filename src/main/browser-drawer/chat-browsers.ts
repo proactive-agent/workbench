@@ -27,9 +27,8 @@
 
 import { EventEmitter } from 'events';
 import { randomUUID } from 'crypto';
-import os from 'os';
 import path from 'path';
-import { mkdtemp, realpath, rm } from 'fs/promises';
+import { realpath, stat, writeFile } from 'fs/promises';
 import type { ChildProcess } from 'child_process';
 import type { AppSettings, McpConnectorSettings } from '../../shared/types/settings';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
@@ -40,9 +39,19 @@ import { buildMcpConfig, MCP_STARTUP_TIMEOUT_MS } from '../claude-code/mcp-confi
 import { readSettingsFileAsync } from '../settings-utils';
 import { resolveCommand } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
-import { isWindows } from '../platform';
+import { isMacOS, isWindows } from '../platform';
+import { defaultRegistryDir, removeClosedSessions } from './registry';
 import { killRuntimeProcessTree, spawnTool } from '../platform/runtime-exec';
-import { prepareBrowserProfileCopy, removeBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
+import {
+  CHAT_BROWSER_RECORD,
+  discardRestorable,
+  tabsToRestore,
+  type ChatBrowserRecord,
+  type ChatBrowserTab,
+  type RestorableChatBrowser,
+} from './chat-browser-restore';
 import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
 import { registerChatBrowserWorkspace } from './project-match';
 
@@ -60,6 +69,8 @@ export interface ChatBrowserHolder {
   close: () => Promise<void>;
   /** Called once when the holder exits (closed, crashed or stopped) */
   onExit: (listener: () => void) => void;
+  /** Keep its record current (the chat it belongs to, its open tabs), for a restart after a crash */
+  updateRecord?: (patch: Partial<Pick<ChatBrowserRecord, 'chatId' | 'tabs'>>) => void;
 }
 
 /** Starts a holder whose browser is bound under `title` (rejects with a readable message) */
@@ -68,6 +79,10 @@ export type StartChatBrowserHolder = (options: {
   title: string;
   /** The browser to open (undefined: Settings > Connectors) */
   choice: PlaywrightBrowserChoice | null | undefined;
+  projectId?: string;
+  chatId?: string;
+  /** The chat's browser left by a crash: started from its profile and tabs when it is the same browser */
+  restore?: RestorableChatBrowser;
 }) => Promise<ChatBrowserHolder>;
 
 interface Entry {
@@ -90,9 +105,14 @@ export class ChatBrowsers extends EventEmitter {
   private readonly titles = new Map<string, string>();
   /** Chats whose browser was closed while it started, until that start has ended */
   private readonly closing = new Map<string, Promise<void>>();
+  /** Chats' browsers left by a crash, opened again from their profile and tabs (chat-browser-restore.ts) */
+  private readonly restorables = new Map<string, RestorableChatBrowser>();
   private stopped = false;
 
-  constructor(private readonly startHolder: StartChatBrowserHolder = startPlaywrightHolder) {
+  constructor(
+    private readonly startHolder: StartChatBrowserHolder = startPlaywrightHolder,
+    private readonly discard: (restorable: RestorableChatBrowser) => Promise<void> = discardRestorable,
+  ) {
     super();
   }
 
@@ -120,7 +140,36 @@ export class ChatBrowsers extends EventEmitter {
 
   /** The chats' browsers being opened or open */
   list(): ChatBrowserInfo[] {
-    return [...this.entries.values()].map(({ projectId, chatId, status }) => ({ projectId, chatId, status }));
+    const open = [...this.entries.values()].map(({ projectId, chatId, status }): ChatBrowserInfo => ({ projectId, chatId, status }));
+    const restorable = [...this.restorables.entries()]
+      .filter(([key]) => !this.entries.has(key))
+      .map(([, { record }]): ChatBrowserInfo => ({
+        projectId: record.projectId,
+        chatId: record.chatId,
+        status: 'restorable',
+        tabs: tabsToRestore(record.tabs).length,
+      }));
+    return [...open, ...restorable];
+  }
+
+  /**
+   * A chat's browser left by a crash: kept until the chat's browser opens again (or the chat is
+   * deleted). Removed at once when the chat has a browser already (opened while the leftovers were looked at)
+   */
+  addRestorable(restorable: RestorableChatBrowser): void {
+    const key = keyOf(restorable.record.projectId, restorable.record.chatId);
+    const previous = this.restorables.get(key);
+    if (this.stopped || this.entries.has(key) || (previous && previous.dir !== restorable.dir)) {
+      void this.discard(restorable);
+      return;
+    }
+    this.restorables.set(key, restorable);
+    this.emit('change');
+  }
+
+  /** A chat's open tabs (from the drawer's bridge), kept in its record */
+  noteTabs(projectId: string, chatId: string, tabs: ChatBrowserTab[]): void {
+    this.entries.get(keyOf(projectId, chatId))?.holder?.updateRecord?.({ tabs });
   }
 
   isOpen(projectId: string, chatId: string): boolean {
@@ -143,7 +192,10 @@ export class ChatBrowsers extends EventEmitter {
 
     const entry: Entry = { projectId, chatId, title: this.titleFor(projectId, chatId), status: 'starting', seenLive: false };
     this.entries.set(key, entry);
-    entry.starting = this.startHolder({ projectPath, title: entry.title, choice }).then(
+    // Left by a crash: the holder starts from it, or removes it when the chat's browser changed
+    const restore = this.restorables.get(key);
+    this.restorables.delete(key);
+    entry.starting = this.startHolder({ projectPath, title: entry.title, choice, projectId, chatId, restore }).then(
       async (holder) => {
         entry.starting = undefined;
         // Closed (or the chat deleted, or the app quitting) while it started
@@ -153,11 +205,22 @@ export class ChatBrowsers extends EventEmitter {
         }
         entry.holder = holder;
         entry.status = 'open';
+        // The New chat page's browser may have moved to its conversation while it started
+        holder.updateRecord?.({ chatId: entry.chatId });
         holder.onExit(() => this.forget(entry));
         this.emit('change');
       },
       (error: unknown) => {
         entry.starting = undefined;
+        // A failed start keeps what it was to open again (its folder is left as it was)
+        if (restore && !this.stopped && !this.restorables.has(key)) {
+          void stat(restore.dir).then(() => {
+            if (!this.restorables.has(key) && !this.entries.has(key)) {
+              this.restorables.set(key, restore);
+              this.emit('change');
+            }
+          }, () => undefined);
+        }
         this.forget(entry);
         throw error instanceof Error ? error : new Error(String(error));
       },
@@ -186,6 +249,14 @@ export class ChatBrowsers extends EventEmitter {
 
   /** Close the browsers of chats that were deleted */
   async closeChats(projectId: string, chatIds: readonly string[]): Promise<void> {
+    for (const chatId of chatIds) {
+      const key = keyOf(projectId, chatId);
+      const restorable = this.restorables.get(key);
+      if (!restorable) continue;
+      this.restorables.delete(key);
+      void this.discard(restorable);
+      this.emit('change');
+    }
     await Promise.all(chatIds.map((chatId) => this.close(projectId, chatId)));
     for (const chatId of chatIds) this.titles.delete(keyOf(projectId, chatId));
   }
@@ -204,6 +275,7 @@ export class ChatBrowsers extends EventEmitter {
       this.entries.delete(from);
       entry.chatId = toChatId;
       this.entries.set(to, entry);
+      entry.holder?.updateRecord?.({ chatId: toChatId });
     }
     this.emit('change');
   }
@@ -224,7 +296,7 @@ export class ChatBrowsers extends EventEmitter {
     }
   }
 
-  /** Close every chat browser (the app is quitting) */
+  /** Close every chat browser (the app is quitting; browsers left by a crash stay for the next start) */
   async shutdown(): Promise<void> {
     this.stopped = true;
     const entries = [...this.entries.values()];
@@ -262,77 +334,126 @@ export function holderArgs(args: readonly string[], dir: string): string[] {
   return [...own, '--idle-timeout', '0', '--output-dir', dir];
 }
 
-/**
- * Talk MCP to a started holder: initialize as `title`, then open about:blank so the browser
- * launches (and binds). Resolves once it has; answers the server's own requests (ping)
- */
-function initializeHolder(proc: ChildProcess, title: string, timeoutMs = START_TIMEOUT_MS): Promise<void> {
-  return new Promise((resolve, reject) => {
-    let buffer = '';
-    let stderr = '';
-    let settled = false;
-    const finish = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      if (error) reject(error);
-      else resolve();
-    };
-    const timer = setTimeout(() => finish(new Error('The browser did not start in time')), timeoutMs);
-    const send = (message: Record<string, unknown>) => {
+/** A JSON-RPC client over a holder's stdio (answers the server's own requests: ping, roots) */
+interface HolderClient {
+  request: (method: string, params: Record<string, unknown>, timeoutMs: number) => Promise<HolderReply>;
+  notify: (method: string) => void;
+  /** Rejects when the holder exits, with its last error line */
+  exited: Promise<never>;
+}
+
+interface HolderReply {
+  result?: { isError?: boolean; content?: Array<{ text?: string }> };
+  error?: { message?: string };
+}
+
+function holderClient(proc: ChildProcess): HolderClient {
+  let buffer = '';
+  let stderr = '';
+  let nextId = 1;
+  const pending = new Map<number, (reply: HolderReply) => void>();
+  const write = (message: Record<string, unknown>) => {
+    try {
+      proc.stdin?.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+    } catch {
+      // The holder exited; its exit settles
+    }
+  };
+  proc.stdin?.on('error', () => undefined);
+  proc.stdout?.on('data', (data: Buffer) => {
+    buffer += data.toString('utf-8');
+    let end: number;
+    while ((end = buffer.indexOf('\n')) >= 0) {
+      const line = buffer.slice(0, end).trim();
+      buffer = buffer.slice(end + 1);
+      if (!line) continue;
+      let message: HolderReply & { id?: unknown; method?: string };
       try {
-        proc.stdin?.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
+        message = JSON.parse(line);
       } catch {
-        // The holder exited; its exit settles
+        continue;
       }
-    };
-    proc.stdin?.on('error', () => undefined);
-    proc.stdout?.on('data', (data: Buffer) => {
-      buffer += data.toString('utf-8');
-      let end: number;
-      while ((end = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, end).trim();
-        buffer = buffer.slice(end + 1);
-        if (!line) continue;
-        let message: { id?: unknown; method?: string; result?: { isError?: boolean; content?: Array<{ text?: string }> }; error?: { message?: string } };
-        try {
-          message = JSON.parse(line);
-        } catch {
-          continue;
-        }
-        // The server's own requests (ping, roots) get an empty answer
-        if (message.method && message.id !== undefined) {
-          send({ id: message.id, result: message.method === 'roots/list' ? { roots: [] } : {} });
-          continue;
-        }
-        if (message.id === 1) {
-          if (message.error) {
-            finish(new Error(message.error.message ?? 'The browser could not be opened'));
-            continue;
-          }
-          send({ method: 'notifications/initialized' });
-          send({ id: 2, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'about:blank' } } });
-        } else if (message.id === 2) {
-          const failure = message.error?.message
-            ?? (message.result?.isError ? message.result.content?.map((part) => part.text ?? '').join(' ') : undefined);
-          finish(failure === undefined ? undefined : new Error(holderError(failure)));
-        }
+      // The server's own requests (ping, roots) get an empty answer
+      if (message.method && message.id !== undefined) {
+        write({ id: message.id, result: message.method === 'roots/list' ? { roots: [] } : {} });
+        continue;
       }
-    });
-    proc.stderr?.on('data', (data: Buffer) => {
-      stderr = (stderr + data.toString('utf-8')).slice(-2000);
-    });
-    proc.once('error', (error) => finish(error));
+      if (typeof message.id === 'number') {
+        pending.get(message.id)?.(message);
+        pending.delete(message.id);
+      }
+    }
+  });
+  proc.stderr?.on('data', (data: Buffer) => {
+    stderr = (stderr + data.toString('utf-8')).slice(-2000);
+  });
+  const exited = new Promise<never>((_, reject) => {
+    const fail = (error: Error) => reject(error);
+    proc.once('error', fail);
     proc.once('exit', (code) => {
       const lastLine = stderr.trim().split('\n').filter(Boolean).at(-1);
-      finish(new Error(lastLine || `The browser stopped (code ${code ?? 'unknown'})`));
-    });
-    send({
-      id: 1,
-      method: 'initialize',
-      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: title, version: '1.0.0' } },
+      fail(new Error(lastLine || `The browser stopped (code ${code ?? 'unknown'})`));
     });
   });
+  exited.catch(() => undefined);
+  return {
+    request: (method, params, timeoutMs) => {
+      const id = nextId++;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const reply = new Promise<HolderReply>((resolve, reject) => {
+        pending.set(id, resolve);
+        timer = setTimeout(() => {
+          pending.delete(id);
+          reject(new Error('The browser did not start in time'));
+        }, timeoutMs);
+        write({ id, method, params });
+      });
+      return Promise.race([reply, exited]).finally(() => clearTimeout(timer));
+    },
+    notify: (method) => write({ method }),
+    exited,
+  };
+}
+
+/** A tool call's failure, as text (undefined: it worked) */
+function replyFailure(reply: HolderReply): string | undefined {
+  return reply.error?.message ?? (reply.result?.isError ? reply.result.content?.map((part) => part.text ?? '').join(' ') : undefined);
+}
+
+/**
+ * Talk MCP to a started holder: initialize as `title`, then open about:blank so the browser
+ * launches (and binds). Resolves once it has
+ */
+async function initializeHolder(client: HolderClient, title: string, timeoutMs = START_TIMEOUT_MS): Promise<void> {
+  const init = await client.request('initialize', {
+    protocolVersion: '2025-06-18',
+    capabilities: {},
+    clientInfo: { name: title, version: '1.0.0' },
+  }, timeoutMs);
+  if (init.error) throw new Error(init.error.message ?? 'The browser could not be opened');
+  client.notify('notifications/initialized');
+  const opened = await client.request('tools/call', { name: 'browser_navigate', arguments: { url: 'about:blank' } }, timeoutMs);
+  const failure = replyFailure(opened);
+  if (failure !== undefined) throw new Error(holderError(failure));
+}
+
+/** How long reopening one saved tab may take */
+const RESTORE_TAB_TIMEOUT_MS = 30_000;
+
+/** Open a crashed chat browser's tabs again: the first in the tab the browser opened with (best effort) */
+async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]): Promise<void> {
+  for (const [index, tab] of tabs.entries()) {
+    const call = index === 0
+      ? { name: 'browser_navigate', arguments: { url: tab.url } }
+      : { name: 'browser_tabs', arguments: { action: 'new', url: tab.url } };
+    try {
+      const failure = replyFailure(await client.request('tools/call', call, RESTORE_TAB_TIMEOUT_MS));
+      if (failure !== undefined) appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}: ${holderError(failure)}`);
+    } catch (error) {
+      appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}:`, error);
+      if (!(error instanceof Error) || /stopped|exited/i.test(error.message)) return;
+    }
+  }
 }
 
 /** Ask a holder to close its browser (its input ends), and stop it when it doesn't exit in time */
@@ -360,36 +481,93 @@ function chatRunSettings(settings: McpConnectorSettings | undefined, choice: Pla
   return { ...settings, playwrightBrowser: getTaskPlaywrightBrowser(choice, settings) } as McpConnectorSettings;
 }
 
-/** Start a holder for a chat: copy the chosen profile, start the server, open the browser */
-const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice }) => {
+/** How long a record change waits before it is written (tabs change in bursts while pages load) */
+const RECORD_WRITE_DELAY_MS = 1000;
+
+/** Keeps a chat browser's record file current (debounced writes; the last one before close wins) */
+function recordWriter(dir: string, initial: ChatBrowserRecord) {
+  let record = initial;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let closed = false;
+  const write = () => {
+    timer = undefined;
+    if (closed) return;
+    void writeFile(path.join(dir, CHAT_BROWSER_RECORD), JSON.stringify(record), { mode: 0o600 }).catch(() => undefined);
+  };
+  return {
+    writeNow: write,
+    update: (patch: Partial<Pick<ChatBrowserRecord, 'chatId' | 'tabs'>>) => {
+      const next = { ...record, ...patch };
+      if (JSON.stringify({ ...next, updatedAt: 0 }) === JSON.stringify({ ...record, updatedAt: 0 })) return;
+      record = { ...next, updatedAt: Date.now() };
+      if (!timer && !closed) timer = setTimeout(write, RECORD_WRITE_DELAY_MS);
+    },
+    close: () => {
+      closed = true;
+      clearTimeout(timer);
+    },
+  };
+}
+
+/**
+ * Start a holder for a chat: copy the chosen profile, start the server, open the browser. With a
+ * browser left by a crash (`restore`) for the same browser, its folder and profile copy are used
+ * again and its tabs reopened; for another browser it is removed and the chat's browser starts anew
+ */
+const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice, projectId, chatId, restore }) => {
   const settings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
   const runSettings = chatRunSettings(settings, choice);
   const browser = runSettings.playwrightBrowser;
+  const browserId = browser?.id ?? null;
+  const reuse = restore && restore.record.browserId === browserId ? restore : undefined;
+  if (restore && !reuse) await discardRestorable(restore);
 
   const cleanups: Array<() => Promise<void> | void> = [];
   const cleanup = async () => {
     for (const fn of cleanups.splice(0).reverse()) await Promise.resolve(fn()).catch(() => undefined);
   };
+  // What is removed when the browser closes: at once for a new one; for a reused one only once it
+  // started (a failed start leaves it to open again)
+  const removals: Array<() => Promise<void> | void> = [];
   try {
     // The holder's own folder: its workspace and output folder, registered for the project
-    const dir = await mkdtemp(path.join(os.tmpdir(), 'workbench-chat-browser-'));
-    cleanups.push(() => rm(dir, { recursive: true, force: true }));
+    const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser);
+    removals.push(() => removeTempFolder(dir));
     for (const folder of new Set([dir, await realpath(dir).catch(() => dir)])) {
       cleanups.push(registerChatBrowserWorkspace(folder, projectPath));
     }
 
     let browserProfileDir: string | undefined;
     if (browser && !browser.managed) {
-      const inUse = await browserChoicesInUse(projectPath, settings?.playwrightBrowser).catch(() => undefined);
-      browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, `chat-${randomUUID().slice(0, 8)}`, inUse).catch((error) => {
-        appLog.warn('[BrowserDrawer] Could not copy the browser profile for a chat:', error);
-        return null;
-      })) ?? undefined;
+      if (reuse?.record.profileCopyDir) {
+        browserProfileDir = reuse.record.profileCopyDir;
+        useKeptBrowserProfileCopy(browserProfileDir);
+      } else {
+        const inUse = await browserChoicesInUse(projectPath, settings?.playwrightBrowser).catch(() => undefined);
+        browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, `chat-${randomUUID().slice(0, 8)}`, inUse).catch((error) => {
+          appLog.warn('[BrowserDrawer] Could not copy the browser profile for a chat:', error);
+          return null;
+        })) ?? undefined;
+      }
       if (browserProfileDir) {
         const copy = browserProfileDir;
-        cleanups.push(() => removeBrowserProfileCopy(copy));
+        removals.push(() => removeBrowserProfileCopy(copy));
       }
     }
+    if (!reuse) cleanups.push(...removals.splice(0));
+
+    // Its record, for a restart after a crash (a close or quit removes it with the folder)
+    const record = recordWriter(dir, {
+      projectId: projectId ?? reuse?.record.projectId ?? '',
+      projectPath,
+      chatId: chatId ?? reuse?.record.chatId ?? '',
+      browserId,
+      profileCopyDir: browserProfileDir ?? null,
+      tabs: reuse?.record.tabs ?? [],
+      updatedAt: Date.now(),
+    });
+    record.writeNow();
+    cleanups.push(() => record.close());
 
     const entry = buildMcpConfig(['playwright'], runSettings, { browserProfileDir }).mcpServers.playwright;
     if (entry?.type !== 'stdio') throw new Error('Playwright is not available');
@@ -405,17 +583,23 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       detached: !isWindows(),
     });
     const exited = new Promise<void>((resolve) => proc.once('exit', () => resolve()));
+    const client = holderClient(proc);
     try {
-      await initializeHolder(proc, title);
+      await initializeHolder(client, title);
     } catch (error) {
       await closeHolderProcess(proc);
       throw error;
     }
+    // Started: a reused folder and copy go when it closes, like a new one's
+    cleanups.push(...removals.splice(0));
+    if (reuse) void restoreTabs(client, tabsToRestore(reuse.record.tabs));
 
     const listeners: Array<() => void> = [];
     // Gone (closed, crashed or stopped): its folder, profile copy and registration go too
     const done = exited.then(async () => {
       await cleanup();
+      // Its closed browser's entry in Playwright's registry (kept there because it had a profile folder)
+      await removeClosedSessions(defaultRegistryDir(isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux'), title);
       for (const listener of listeners) listener();
     });
     return {
@@ -426,6 +610,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       onExit: (listener) => {
         listeners.push(listener);
       },
+      updateRecord: (patch) => record.update(patch),
     };
   } catch (error) {
     await cleanup();

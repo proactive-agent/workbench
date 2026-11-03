@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 
@@ -32,10 +32,27 @@ vi.mock('../platform/runtime-exec', () => ({
   killRuntimeProcessTree: mocks.killRuntimeProcessTree,
   toRuntimeArg: (arg: string) => arg,
 }));
-vi.mock('../platform', () => ({ isWindows: () => mocks.windows }));
+vi.mock('../platform', () => ({ isWindows: () => mocks.windows, isLinux: () => process.platform === 'linux' }));
 vi.mock('../cli-utils', () => ({ getToolEnvAsync: async () => ({ PATH: '/usr/bin' }) }));
 vi.mock('../browser-profiles/profile-copy', () => ({ browserProfileCopyBlocked: (browser: unknown) => mocks.inUse(browser) }));
 vi.mock('../app-logger', () => ({ appLog: { warn: vi.fn(), info: vi.fn() } }));
+// Probe folders go into the suite's own folder (a probe left waiting when a test ends keeps its folder)
+const probeParent = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { mkdtempSync } = require('fs') as typeof import('fs');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { join } = require('path') as typeof import('path');
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return mkdtempSync(join((require('os') as typeof import('os')).tmpdir(), 'mcp-availability-test-'));
+});
+vi.mock('../temp-folders', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../temp-folders')>();
+  return { ...actual, makeTempFolder: (prefix: Parameters<typeof actual.makeTempFolder>[0]) => actual.makeTempFolder(prefix, probeParent) };
+});
+afterAll(async () => {
+  const { rm } = await import('fs/promises');
+  await rm(probeParent, { recursive: true, force: true });
+});
 
 let getMcpAvailability: typeof import('../mcp-availability').getMcpAvailability;
 let onMcpAvailabilityChange: typeof import('../mcp-availability').onMcpAvailabilityChange;
@@ -141,8 +158,8 @@ describe('MCP availability', () => {
       params: { name: 'browser_navigate', arguments: { url: 'about:blank' } },
     }));
     expect(mocks.spawnTool.mock.calls[0][1]).toEqual(['-y', PACKAGE, '--browser', 'chromium', '--isolated', '--sandbox', '--headless', '--output-dir', PROBE_DIR]);
-    // Its folder for Playwright's files is gone with it
-    expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false);
+    // Its folder for Playwright's files goes once the server has stopped
+    await vi.waitFor(() => expect(existsSync(mocks.spawnTool.mock.calls[0][1].at(-1) as string)).toBe(false), { timeout: 3000 });
   });
 
   it('checks the chosen browser, offers no install command, and checks again for another choice', async () => {

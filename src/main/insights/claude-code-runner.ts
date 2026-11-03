@@ -15,8 +15,8 @@
  * (`resolveClaudeEnv`).
  */
 
-import { mkdir, mkdtemp, realpath, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { makeTempFolder, noteTempFolderRun, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import { dirname, join } from 'node:path';
 import { resolveClaudeEnv } from '../claude-code/env';
 import { startClaudeProcess } from '../claude-code/process';
@@ -521,7 +521,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       if (!wsl) env.PATH = [dirname(graphify.cli), env.PATH].filter(Boolean).join(getPathDelimiter());
     }
 
-    const tempDir = await mkdtemp(join(tmpdir(), 'workbench-insights-'));
+    const tempDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.chatTurn);
     // The MCP servers go through a file, so the task tools' URL and token aren't in the process
     // list; the chat's own servers can't take the task tools' name. Tools and MCP servers are
     // given to every turn afresh: a resumed session has only what this turn passes
@@ -599,6 +599,8 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
         },
         abortSignal,
       });
+      // A crash leaves the turn's folder to the next startup, which keeps it while this run goes on
+      void noteTempFolderRun(tempDir, handle.child.pid);
       return { state, outcome: await handle.done };
     };
 
@@ -616,7 +618,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       }
     } finally {
       for (const unregister of unregisterBrowserWorkspaces) unregister();
-      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      await removeTempFolder(tempDir);
     }
     const { state, outcome } = run;
 

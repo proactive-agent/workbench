@@ -33,9 +33,7 @@
  */
 
 import { EventEmitter } from 'events';
-import os from 'os';
-import path from 'path';
-import { mkdtemp, rm } from 'fs/promises';
+import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from './temp-folders';
 import type { ChildProcess } from 'child_process';
 import type { McpConnectorSettings } from '../shared/types/settings';
 import type { McpAvailability } from '../shared/types/project';
@@ -447,12 +445,35 @@ async function probeEntry(entry: McpServerEntry, verify: VerifyCall | undefined,
   // Playwright saves a snapshot of each page it opens: into a folder removed after the probe,
   // not the app's working folder. Not part of the probe's key (each probe has its own)
   if (!args.includes(PLAYWRIGHT_MCP_PACKAGE)) return startAndInitialize(command, args, entry.env, baseEnv, verify);
-  const outputDir = await mkdtemp(path.join(os.tmpdir(), 'workbench-mcp-probe-'));
+  const outputDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.mcpProbe);
+  let exited: Promise<void> = Promise.resolve();
   try {
-    return await startAndInitialize(command, [...args, '--output-dir', toRuntimePath(outputDir)], entry.env, baseEnv, verify);
+    return await startAndInitialize(command, [...args, '--output-dir', toRuntimePath(outputDir)], entry.env, baseEnv, verify, (proc) => {
+      exited = processGone(proc);
+    });
   } finally {
-    await rm(outputDir, { recursive: true, force: true }).catch(() => undefined);
+    // Once the server has stopped: a server still closing its browser writes into the folder
+    // again (which left empty folders behind). Not awaited: the result doesn't wait for it
+    void exited.then(() => removeTempFolder(outputDir));
   }
+}
+
+/** How long a stopped probe's server may take to exit before its folder is removed anyway */
+const PROBE_EXIT_LIMIT_MS = 10_000;
+/** Time after the exit for what its browser still writes (it outlives the server briefly) */
+const PROBE_SETTLE_MS = 1000;
+
+/** Resolves once a probe's server has exited (and a moment more), or after PROBE_EXIT_LIMIT_MS */
+function processGone(proc: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    const limit = setTimeout(resolve, PROBE_EXIT_LIMIT_MS);
+    const settle = () => {
+      clearTimeout(limit);
+      setTimeout(resolve, PROBE_SETTLE_MS);
+    };
+    if (proc.exitCode !== null || proc.signalCode !== null) settle();
+    else proc.once('close', settle);
+  });
 }
 
 async function probeHttp(url: string, headers: Record<string, string> | undefined): Promise<McpAvailability> {
@@ -493,7 +514,8 @@ function startAndInitialize(
   args: string[],
   env: Record<string, string> | undefined,
   baseEnv: NodeJS.ProcessEnv,
-  verify?: VerifyCall
+  verify?: VerifyCall,
+  onStarted?: (proc: ChildProcess) => void
 ): Promise<McpAvailability> {
   return new Promise((resolve) => {
     let proc: ChildProcess;
@@ -513,6 +535,7 @@ function startAndInitialize(
     }
 
     running.add(proc);
+    onStarted?.(proc);
     // Writing to (or closing) the input of a server that already exited must not throw
     proc.stdin?.on('error', () => undefined);
     let stdout = '';

@@ -275,6 +275,7 @@ export class BrowserDrawerService {
     if (message.type === 'pages') {
       this.pages = message.pages;
       this.connectedSessions = message.connected ?? [];
+      this.noteChatTabs();
       this.broadcast();
     } else if (message.type === 'frame') {
       for (const viewerId of message.viewers) {
@@ -290,6 +291,18 @@ export class BrowserDrawerService {
       }
     } else if (message.type === 'log') {
       appLog.warn(`[BrowserDrawer] ${message.message}`);
+    }
+  }
+
+  /** The chats' browsers' open tabs, kept in their records for a restart after a crash */
+  private noteChatTabs(): void {
+    const connected = new Set(this.connectedSessions);
+    for (const session of this.sessions) {
+      if (!session.chatId || !session.projectId || !connected.has(session.id)) continue;
+      const tabs = this.pages
+        .filter((page) => page.sessionId === session.id)
+        .map((page) => ({ url: page.url, title: page.title }));
+      this.chatBrowsers.noteTabs(session.projectId, session.chatId, tabs);
     }
   }
 

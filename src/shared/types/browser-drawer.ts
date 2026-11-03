@@ -27,7 +27,10 @@ export interface ChatBrowserInfo {
   projectId: string;
   /** The chat's conversation id, or NEW_CHAT_BROWSER_ID */
   chatId: string;
-  status: 'starting' | 'open';
+  /** restorable: it closed when Workbench stopped unexpectedly; opening it brings back its sign-ins and tabs */
+  status: 'starting' | 'open' | 'restorable';
+  /** A restorable browser's tabs that open again */
+  tabs?: number;
 }
 
 /** A page (tab) of a session's browser */

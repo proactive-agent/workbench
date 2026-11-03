@@ -346,6 +346,17 @@ New chat page's browser (chat id `new`) moves to the conversation its first mess
 the user closes its last tab, its chat is deleted, its browser goes away (its registry entry stops answering) or the
 app quits.
 
+**Crash leftovers** — Workbench's folders in the system temp folder (`temp-folders.ts`: `workbench-task-`,
+`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`) are made with an
+owner file naming the Workbench process (`folder-owner.ts`, the same one profile copies have), and a task phase's or chat
+turn's also names its Claude Code process. At startup (`removeCrashLeftovers()` in `index.ts`, in the background),
+`browser-drawer/chat-browser-restore.ts` looks at the chat browsers a crash left: each holder folder keeps a record
+(`.workbench-chat-browser.json`: project, chat, browser, profile copy, open tabs from the bridge), and a chat that still
+exists keeps its newest one for 7 days (this process takes over the folder and its profile copy, which sweeps and
+quitting then leave). The drawer offers it (`ChatBrowserInfo.status: 'restorable'`): the chat's next browser with the
+same profile starts from that profile and reopens its tabs; another profile discards it. Then the temp folders no
+running Workbench or run holds go (folders without an owner file only after an hour), then profile copies.
+
 ### Graphify Memory Graph
 
 `src/main/graphify.ts` detects the `graphify` CLI (PyPI package `graphifyy`; status, version and install on

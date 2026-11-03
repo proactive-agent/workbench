@@ -1,3 +1,4 @@
+import os from 'os';
 import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { ChatBrowsers, holderArgs, holderError, type ChatBrowserHolder, type StartChatBrowserHolder } from '../chat-browsers';
@@ -5,11 +6,11 @@ import { toDrawerSessions } from '../browser-drawer-service';
 
 /** A holder that starts when `start()` is called and records closes */
 function fakeHolders() {
-  const started: Array<{ title: string; choice: unknown; resolve: () => void; reject: (e: Error) => void; exit: () => void; closed: boolean }> = [];
-  const start: StartChatBrowserHolder = ({ title, choice }) => new Promise<ChatBrowserHolder>((resolve, reject) => {
+  const started: Array<{ title: string; choice: unknown; restore: unknown; resolve: () => void; reject: (e: Error) => void; exit: () => void; closed: boolean }> = [];
+  const start: StartChatBrowserHolder = ({ title, choice, restore }) => new Promise<ChatBrowserHolder>((resolve, reject) => {
     const listeners: Array<() => void> = [];
     const entry = {
-      title, choice, closed: false,
+      title, choice, restore, closed: false,
       exit: () => listeners.forEach((l) => l()),
       resolve: () => resolve({
         close: async () => { entry.closed = true; entry.exit(); },
@@ -21,6 +22,58 @@ function fakeHolders() {
   });
   return { start, started };
 }
+
+describe('chat browsers left by a crash', () => {
+  const restorable = (chatId: string, dir = os.tmpdir()) => ({
+    dir,
+    record: {
+      projectId: 'p', projectPath: '/proj', chatId, browserId: null, profileCopyDir: null, updatedAt: Date.now(),
+      tabs: [{ url: 'https://a.test/', title: 'A' }, { url: 'about:blank', title: '' }, { url: 'https://b.test/', title: 'B' }],
+    },
+  });
+
+  it('lists them for their chats and starts the chat browser from them', async () => {
+    const { start, started } = fakeHolders();
+    const discard = vi.fn(async () => undefined);
+    const chats = new ChatBrowsers(start, discard);
+    const left = restorable('session-1');
+    chats.addRestorable(left);
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'restorable', tabs: 2 }]);
+    expect(chats.isOpen('p', 'session-1')).toBe(false);
+
+    const opening = chats.ensure('p', '/proj', 'session-1', undefined);
+    expect(started[0].restore).toBe(left);
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'starting' }]);
+    started[0].resolve();
+    await opening;
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'open' }]);
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('keeps one whose start failed, and removes those of deleted chats or chats that have a browser', async () => {
+    const { start, started } = fakeHolders();
+    const discard = vi.fn(async () => undefined);
+    const chats = new ChatBrowsers(start, discard);
+    const left = restorable('session-1');
+    chats.addRestorable(left);
+    const failing = chats.ensure('p', '/proj', 'session-1', undefined);
+    started[0].reject(new Error('Chromium is not installed'));
+    await expect(failing).rejects.toThrow('Chromium is not installed');
+    await vi.waitFor(() => expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'restorable', tabs: 2 }]));
+
+    await chats.closeChats('p', ['session-1']);
+    expect(discard).toHaveBeenCalledWith(left);
+    expect(chats.list()).toEqual([]);
+
+    const opening = chats.ensure('p', '/proj', 'session-2', null);
+    const late = restorable('session-2');
+    chats.addRestorable(late);
+    expect(discard).toHaveBeenCalledWith(late);
+    started[1].resolve();
+    await opening;
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-2', status: 'open' }]);
+  });
+});
 
 describe('chat browsers', () => {
   it('opens one browser per chat, once, with a title that names the chat', async () => {

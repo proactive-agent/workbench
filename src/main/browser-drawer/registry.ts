@@ -15,7 +15,7 @@
  * probe's) own and never shown.
  */
 
-import { readdir, readFile, stat } from 'fs/promises';
+import { readdir, readFile, stat, unlink } from 'fs/promises';
 import net from 'net';
 import os from 'os';
 import path from 'path';
@@ -151,4 +151,28 @@ export async function readLiveSessions(
     }
   }));
   return results.filter((d): d is RegistryDescriptor => d !== null);
+}
+
+/**
+ * Remove the files of closed browsers bound under `title` (a browser with a profile folder keeps
+ * its file after it closes, and each chat browser has a title of its own). Best effort
+ */
+export async function removeClosedSessions(dir: string, title: string, connect: (endpoint: string) => Promise<boolean> = canConnect): Promise<void> {
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch {
+    return;
+  }
+  await Promise.all(names.map(async (name) => {
+    const file = path.join(dir, name);
+    try {
+      const descriptor = parseDescriptor(await readFile(file, 'utf-8'));
+      if (!descriptor || descriptor.title !== title) return;
+      if (descriptor.endpoint && (await connect(descriptor.endpoint))) return;
+      await unlink(file);
+    } catch {
+      // Gone meanwhile
+    }
+  }));
 }

@@ -23,7 +23,8 @@
 
 import { randomUUID } from 'crypto';
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'fs';
-import { cp, mkdtemp, rm, writeFile } from 'fs/promises';
+import { cp, writeFile } from 'fs/promises';
+import { makeTempFolder, noteTempFolderRun, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import os from 'os';
 import path from 'path';
 import { resolveClaudeEnv } from './env';
@@ -1246,12 +1247,12 @@ no notes came with the request, so review the change against the task with fresh
     // Support files of the phase (MCP config with the tools' token, the WSL bridge, Playwright's
     // screenshots), removed after it
     const tempDir = messaging || this.config.connectorIds?.includes('playwright')
-      ? await mkdtemp(path.join(os.tmpdir(), 'workbench-task-'))
+      ? await makeTempFolder(TEMP_FOLDER_PREFIXES.task)
       : undefined;
     try {
       return await this.runClaudeProcess(params, tempDir);
     } finally {
-      if (tempDir) await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      if (tempDir) await removeTempFolder(tempDir);
     }
   }
 
@@ -1413,6 +1414,8 @@ no notes came with the request, so review the change against the task with fresh
         if (line) this.emitLog(line);
       },
     });
+    // A crash leaves the phase's folder to the next startup, which keeps it while this run goes on
+    if (tempDir) void noteTempFolderRun(tempDir, handle.child.pid);
     this.current = handle;
     // Messages for the task go to this process while it runs
     const detach = messaging?.attach((text, id) => handle.send(text, id), inboxIds);

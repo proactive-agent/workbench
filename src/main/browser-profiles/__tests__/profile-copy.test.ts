@@ -62,6 +62,8 @@ import {
   browserProfileCopyBlocked,
   refreshSavedBrowserProfileCopy,
   browserProfileCopyDir,
+  isBrowserProfileCopyPath,
+  keepBrowserProfileCopy,
   prepareBrowserProfileCopy,
   removeBrowserProfileCopy,
   removeLeftoverBrowserProfileCopies,
@@ -107,6 +109,34 @@ describe('browser profile copies', () => {
     process.env.HOME = realHome;
     vi.useRealTimers();
     await rm(root, { recursive: true, force: true });
+  });
+
+  it("keeps a crashed chat browser's copy for its chat through every sweep, and quitting leaves it", async () => {
+    const project = path.join(root, 'project');
+    const choice: PlaywrightBrowserChoice = {
+      id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Default',
+      executablePath: '/opt/google/chrome/chrome', userDataDir: path.join(root, 'chrome'), profileDirectory: 'Default',
+      profilePath: path.join(root, 'chrome', 'Default'),
+    };
+    const kept = browserProfileCopyDir(project, choice, 'chat-kept');
+    const other = browserProfileCopyDir(project, choice, 'chat-other');
+    await leftover(kept, 'Cookies');
+    await leftover(other, 'Cookies');
+    expect(isBrowserProfileCopyPath(kept)).toBe(true);
+    expect(isBrowserProfileCopyPath(path.join(root, 'home'))).toBe(false);
+    expect(isBrowserProfileCopyPath(path.dirname(kept))).toBe(false);
+
+    expect(await keepBrowserProfileCopy(kept)).toBe(true);
+    // This process holds it now
+    expect(JSON.parse(await readFile(path.join(kept, OWNER_FILE), 'utf-8'))).toMatchObject({ pid: process.pid });
+    await removeLeftoverBrowserProfileCopies([project]);
+    await removeOldBrowserProfileCopies(project, { force: true, keep: [] });
+    await removeLiveBrowserProfileCopies();
+    expect(existsSync(path.join(kept, 'Cookies'))).toBe(true);
+    expect(existsSync(other)).toBe(false);
+    // Nothing to keep where there is no copy
+    expect(await keepBrowserProfileCopy(other)).toBe(false);
+    await removeBrowserProfileCopy(kept);
   });
 
   it('copies a Chromium profile with Local State, leaving out caches and locks', async () => {

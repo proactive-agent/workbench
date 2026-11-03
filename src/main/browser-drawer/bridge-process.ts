@@ -11,8 +11,8 @@
  */
 
 import { fork, type ChildProcess } from 'child_process';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
-import os from 'os';
+import { writeFile } from 'fs/promises';
+import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import path from 'path';
 import { EventEmitter } from 'events';
 import { appLog } from '../app-logger';
@@ -73,7 +73,7 @@ export class BrowserBridgeProcess extends EventEmitter {
   private async spawn(): Promise<void> {
     let script = this.options.scriptPath;
     if (!script) {
-      this.tempDir = await mkdtemp(path.join(os.tmpdir(), 'workbench-browser-bridge-'));
+      this.tempDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.browserBridge);
       script = path.join(this.tempDir, 'browser-bridge.cjs');
       await writeFile(script, BRIDGE_SOURCE, 'utf-8');
     }
@@ -137,6 +137,6 @@ export class BrowserBridgeProcess extends EventEmitter {
   private async removeTempDir(): Promise<void> {
     const dir = this.tempDir;
     this.tempDir = null;
-    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    if (dir) await removeTempFolder(dir);
   }
 }

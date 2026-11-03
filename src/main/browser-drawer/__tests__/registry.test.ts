@@ -1,9 +1,10 @@
+import { existsSync } from 'fs';
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, rm, writeFile, utimes } from 'fs/promises';
 import net from 'net';
 import os from 'os';
 import path from 'path';
-import { canConnect, parseDescriptor, readLiveSessions, registryDir } from '../registry';
+import { canConnect, parseDescriptor, readLiveSessions, registryDir, removeClosedSessions } from '../registry';
 
 const descriptor = (guid: string, extra: Record<string, unknown> = {}) => JSON.stringify({
   playwrightVersion: '1.64.0-alpha-1790635538000',
@@ -63,6 +64,17 @@ describe('live sessions', () => {
   let dir: string;
   afterEach(async () => {
     if (dir) await rm(dir, { recursive: true, force: true });
+  });
+
+  it("removes a title's closed browsers only", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'pw-registry-'));
+    await writeFile(path.join(dir, 'closed'), descriptor('closed', { title: 'Workbench chat 1' }));
+    await writeFile(path.join(dir, 'live'), descriptor('live', { title: 'Workbench chat 1' }));
+    await writeFile(path.join(dir, 'other'), descriptor('other', { title: 'claude-code' }));
+    await removeClosedSessions(dir, 'Workbench chat 1', async (endpoint) => endpoint.includes('/live.sock'));
+    expect(existsSync(path.join(dir, 'closed'))).toBe(false);
+    expect(existsSync(path.join(dir, 'live'))).toBe(true);
+    expect(existsSync(path.join(dir, 'other'))).toBe(true);
   });
 
   it('lists the browsers whose socket answers, without internal ones', async () => {

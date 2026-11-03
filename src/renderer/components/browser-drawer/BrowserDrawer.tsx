@@ -160,9 +160,16 @@ export function BrowserDrawer({ projectId, showHandle = true, chatId = null }: B
   else if (selected) body = <BrowserPageView pageId={selected.id} label={pageLabel(selected) || t('browserDrawer.untitled')} />;
   else if (noTabs) body = message(t('browserDrawer.noTabs'), t('browserDrawer.noTabsDescription'));
   else if (sessions.length > 0) body = loader(t('browserDrawer.loading'));
-  else if (chatBrowser) body = loader(chatBrowser.status === 'starting' ? t('browserDrawer.opening') : t('browserDrawer.loading'));
-  else if (chatId !== null) {
-    body = message(t('browserDrawer.empty'), t('browserDrawer.emptyChatDescription'), <ChatBrowserStart projectId={projectId} chatId={chatId} />);
+  else if (chatBrowser && chatBrowser.status !== 'restorable') {
+    body = loader(chatBrowser.status === 'starting' ? t('browserDrawer.opening') : t('browserDrawer.loading'));
+  } else if (chatId !== null) {
+    // A browser left by a crash opens again from its profile and tabs
+    const restorable = chatBrowser?.status === 'restorable' ? { tabs: chatBrowser.tabs ?? 0 } : undefined;
+    body = message(
+      t('browserDrawer.empty'),
+      t('browserDrawer.emptyChatDescription'),
+      <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} />,
+    );
   } else body = message(t('browserDrawer.empty'), t('browserDrawer.emptyDescription'));
 
   // Closing a chat browser's last tab closes that browser

@@ -16,7 +16,7 @@
  * are private (0700) where the filesystem keeps modes; in WSL they are made private from inside
  * the distribution, since modes set over `\\wsl.localhost` don't apply.
  *
- * Each copy names the Workbench process that made it (OWNER_FILE: pid, plus the process's start
+ * Each copy names the Workbench process that made it (folder-owner.ts's OWNER_FILE: pid, plus the process's start
  * on Linux), since two Workbench processes can share the data folder (`npm run dev` next to the
  * installed app). The owner refreshes the file's time while the copy is in use, so where a
  * process can't be told from one that later took its id (off Linux), a claim not refreshed for an
@@ -46,9 +46,9 @@
 import path from 'path';
 import { execFile } from 'child_process';
 import { createHash } from 'crypto';
-import { homedir, hostname } from 'os';
+import { homedir } from 'os';
 import { app } from 'electron';
-import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, utimes, writeFile } from 'fs/promises';
+import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'fs/promises';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { isLinux, isWindows } from '../platform';
@@ -59,6 +59,7 @@ import { CONFINED_SNAPS, confinedSnapName } from './locations';
 import { isBrowserProfileInUse } from './in-use';
 import { PLAYWRIGHT_CONFIG_FILE, playwrightProfileConfig } from '../claude-code/mcp-config';
 import { appLog } from '../app-logger';
+import { claimFolder, folderClaim, releaseFolder, writeOwner } from '../folder-owner';
 
 /** Folders and files (relative to the profile, with `/`) a copy leaves out */
 const SKIPPED_PATHS = new Set([
@@ -92,17 +93,6 @@ const QUIT_REMOVE_LIMIT_MS = 3000;
 const STALE_COPY_AGE_MS = 24 * 60 * 60 * 1000;
 /** How often a project's old copies are looked for */
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
-/** The file in each copy naming the Workbench process that made it (browsers ignore it) */
-const OWNER_FILE = '.workbench-copy-owner.json';
-/** A copy without an owner file this recent may be one another process is setting up: kept */
-const UNOWNED_GRACE_MS = 10 * 60 * 1000;
-/** How often the owner refreshes its owner files' time while their copies are in use */
-const OWNER_HEARTBEAT_MS = 10 * 60 * 1000;
-/**
- * Where an owner can't be told apart from a process that later took its id (off Linux, or another
- * host sharing the folder), its claim on a copy ends when not refreshed for this long
- */
-const UNVERIFIED_OWNER_AGE_MS = 60 * 60 * 1000;
 /** How long listing WSL's running distributions may take (it doesn't start one) */
 const WSL_LIST_TIMEOUT_MS = 10_000;
 /** How long making a WSL copy private from inside the distribution may take */
@@ -110,6 +100,11 @@ const WSL_CHMOD_TIMEOUT_MS = 15_000;
 
 /** Copies made or being made for runs of this app session (host paths), never swept */
 const liveCopies = new Set<string>();
+/**
+ * Copies of chat browsers that closed when Workbench stopped unexpectedly, kept for their chats
+ * to open again (chat-browser-restore.ts): never swept, and not removed on quit
+ */
+const keptCopies = new Set<string>();
 /** Where the saved copies live, under each copies base (never a project's folder: no hash suffix) */
 const SAVED_FOLDER = '_saved';
 /** Written into a saved copy once it is complete */
@@ -121,48 +116,6 @@ const savedRefreshes = new Map<string, Promise<void>>();
 /** Saved copies runs of this process are copying from now (not removed while read) */
 const savedReaders = new Map<string, number>();
 const lastSweep = new Map<string, number>();
-let heartbeat: ReturnType<typeof setInterval> | undefined;
-
-/** Refresh the owner files of this process's copies while any is in use (see UNVERIFIED_OWNER_AGE_MS) */
-function startOwnerHeartbeat(): void {
-  if (heartbeat) return;
-  heartbeat = setInterval(() => {
-    const now = new Date();
-    for (const dir of liveCopies) void utimes(path.join(dir, OWNER_FILE), now, now).catch(() => undefined);
-  }, OWNER_HEARTBEAT_MS);
-  heartbeat.unref?.();
-}
-
-function stopOwnerHeartbeatWhenIdle(): void {
-  if (liveCopies.size > 0 || !heartbeat) return;
-  clearInterval(heartbeat);
-  heartbeat = undefined;
-}
-
-/** Who made a copy: the process id, the host, and on Linux the boot and the process's start (clock ticks since boot) */
-interface CopyOwner {
-  pid: number;
-  host: string;
-  boot?: string;
-  start?: string;
-}
-
-/** The boot id and a process's start time from /proc (Linux; both empty elsewhere or when unreadable) */
-async function linuxProcessIdentity(pid: number): Promise<Pick<CopyOwner, 'boot' | 'start'>> {
-  if (!isLinux()) return {};
-  const [boot, start] = await Promise.all([
-    readFile('/proc/sys/kernel/random/boot_id', 'utf-8').then((text) => text.trim() || undefined, () => undefined),
-    // Fields after `(comm)`, which may hold spaces and parentheses: state is field 3, starttime 22
-    readFile(`/proc/${pid}/stat`, 'utf-8').then((text) => text.slice(text.lastIndexOf(')') + 2).split(' ')[19] || undefined, () => undefined),
-  ]);
-  return { boot, start };
-}
-
-let thisProcess: Promise<CopyOwner> | undefined;
-function thisOwner(): Promise<CopyOwner> {
-  thisProcess ??= linuxProcessIdentity(process.pid).then((identity) => ({ pid: process.pid, host: hostname(), ...identity }));
-  return thisProcess;
-}
 
 /**
  * Whether another Workbench process that still runs owns this copy, so a sweep must leave it. A
@@ -170,44 +123,10 @@ function thisOwner(): Promise<CopyOwner> {
  * is recent. This process's own copies don't count: liveCopies says which of them are in use
  */
 async function ownedByAnotherProcess(dir: string): Promise<boolean> {
-  let owner: CopyOwner;
-  let claimedMs: number;
-  try {
-    const file = path.join(dir, OWNER_FILE);
-    const [text, info] = await Promise.all([readFile(file, 'utf-8'), stat(file)]);
-    owner = JSON.parse(text) as CopyOwner;
-    claimedMs = info.mtimeMs;
-    if (!Number.isInteger(owner.pid) || owner.pid <= 0 || typeof owner.host !== 'string') throw new Error('bad owner');
-  } catch {
-    try {
-      return Date.now() - (await stat(dir)).mtimeMs < UNOWNED_GRACE_MS;
-    } catch {
-      return false;
-    }
-  }
-  const self = await thisOwner();
-  if (owner.pid === self.pid && owner.host === self.host && owner.boot === self.boot && owner.start === self.start) return false;
-  const recentClaim = Date.now() - claimedMs < UNVERIFIED_OWNER_AGE_MS;
-  // Another host's process (a shared home folder) can't be checked from here
-  if (owner.host !== self.host) return recentClaim;
-  try {
-    process.kill(owner.pid, 0);
-  } catch (error) {
-    // EPERM: it runs, as another user
-    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return false;
-  }
-  if (owner.boot !== undefined && owner.start !== undefined && isLinux()) {
-    // The same boot and start time: the owner itself, not a process that took its id
-    const now = await linuxProcessIdentity(owner.pid);
-    return now.boot === owner.boot && now.start === owner.start;
-  }
-  return recentClaim;
+  return (await folderClaim(dir)) === 'live';
 }
 
-/** Mark a copy as this process's */
-async function writeOwner(dir: string): Promise<void> {
-  await writeFile(path.join(dir, OWNER_FILE), JSON.stringify(await thisOwner()), { mode: 0o600 });
-}
+
 
 /** A folder name for a profile id (`chrome:Profile 1` -> `chrome_Profile_1`) */
 function slug(id: string): string {
@@ -547,7 +466,7 @@ export async function prepareBrowserProfileCopy(
   }
   const target = browserProfileCopyDir(projectPath, choice, slot);
   liveCopies.add(target);
-  startOwnerHeartbeat();
+  claimFolder(target);
   void removeOldBrowserProfileCopies(projectPath, { keep: [...inUse.project, choice], keepSaved: [...inUse.all, choice] });
   let skipped: number;
   try {
@@ -590,7 +509,7 @@ export async function prepareBrowserProfileCopy(
 
 /** Whether a sweep may remove this copy: no run of this process uses it and no other running Workbench owns it */
 async function removable(dir: string): Promise<boolean> {
-  return !liveCopies.has(dir) && !(await ownedByAnotherProcess(dir));
+  return !liveCopies.has(dir) && !keptCopies.has(dir) && !(await ownedByAnotherProcess(dir));
 }
 
 /**
@@ -780,6 +699,42 @@ export async function removeBrowserProfileCopy(dir: string): Promise<void> {
     appLog.warn(`[BrowserProfiles] Could not remove ${dir}:`, error);
   } finally {
     liveCopies.delete(dir);
-    stopOwnerHeartbeatWhenIdle();
+    keptCopies.delete(dir);
+    releaseFolder(dir);
   }
+}
+
+/** Whether a folder is where a run's profile copy goes (`<base>/<project>/<profile>/<slot>`, not a saved copy) */
+export function isBrowserProfileCopyPath(dir: string): boolean {
+  const bases = new Set([...runtimeCopiesBases(), nativeCopiesBase()]);
+  for (const base of bases) {
+    const parts = path.relative(base, dir).split(/[\\/]/);
+    if (parts.length === 3 && parts.every((part) => part && part !== '..' && part !== '.') && parts[0] !== SAVED_FOLDER) return true;
+  }
+  return false;
+}
+
+/**
+ * Keep a chat browser's copy left by a crash for its chat (chat-browser-restore.ts): this process
+ * takes it over (owner file), so neither its sweeps nor another Workbench's remove it, and quitting
+ * leaves it. False when it isn't there or another running Workbench holds it
+ */
+export async function keepBrowserProfileCopy(dir: string): Promise<boolean> {
+  try {
+    if (!(await stat(dir)).isDirectory()) return false;
+    if ((await folderClaim(dir)) === 'live') return false;
+    await writeOwner(dir);
+  } catch {
+    return false;
+  }
+  keptCopies.add(dir);
+  claimFolder(dir);
+  return true;
+}
+
+/** A kept copy is used by a run again (its chat's browser opened): removed on quit like any run's */
+export function useKeptBrowserProfileCopy(dir: string): void {
+  keptCopies.delete(dir);
+  liveCopies.add(dir);
+  claimFolder(dir);
 }

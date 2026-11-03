@@ -57,6 +57,8 @@ import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
 import { detectBrowserProfiles } from './browser-profiles/detect';
 import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
+import { removeLeftoverTempFolders, TEMP_FOLDER_PREFIXES } from './temp-folders';
+import { scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -332,6 +334,21 @@ function fillScreenOnMaximize(window: BrowserWindow): void {
  * page's "New window", or a window reopened at launch); null restores the project shown last.
  * `restored` is a saved window's place and state (windows reopened at launch).
  */
+/** Look at what an earlier run left behind (see the call at startup); best effort, one folder at a time */
+async function removeCrashLeftovers(): Promise<void> {
+  const projects = projectStore.getProjects();
+  try {
+    const restorable = await scanChatBrowserLeftovers({ projects: projects.map((project) => ({ id: project.id, path: project.path })) });
+    for (const browser of restorable) browserDrawer.chatBrowsers.addRestorable(browser);
+  } catch (error) {
+    appLog.warn('[Startup] Could not look at the chat browsers left by an earlier run:', error);
+  }
+  await removeLeftoverTempFolders({ skip: [TEMP_FOLDER_PREFIXES.chatBrowser] }).catch((error: unknown) => {
+    appLog.warn('[Startup] Could not remove the temp folders left by an earlier run:', error);
+  });
+  await removeLeftoverBrowserProfileCopies(projects.map((project) => project.path));
+}
+
 function createWindow(assignedProjectId: string | null = null, restored: RestoredWindow | null = null): BrowserWindow {
   // Get the primary display's work area (accounts for taskbar, dock, etc.)
   // Wrapped in try/catch to handle potential failures with fallback to safe defaults
@@ -692,8 +709,10 @@ app.whenReady().then(async () => {
   await Promise.all(
     projectStore.getProjects().map((project) => migrateProjectDataDirs(project.path, project.autoBuildPath))
   );
-  // Browser profile copies (they hold cookies) left by a crash or a quit during a run; nothing runs yet
-  void removeLeftoverBrowserProfileCopies(projectStore.getProjects().map((project) => project.path));
+  // Leftovers of a crash, a kill or a quit during a run (in the background): chat browsers are kept
+  // for their chats to open again (their profile copies too), then the temp folders and browser
+  // profile copies (they hold cookies) no running Workbench or run uses are removed
+  void removeCrashLeftovers();
 
   // Initialize agent manager
   agentManager = new AgentManager();
