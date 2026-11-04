@@ -76,6 +76,8 @@ export interface ChatBrowserHolder {
   onExit: (listener: () => void) => void;
   /** Keep its record current (the chat it belongs to, its open tabs), for a restart after a crash */
   updateRecord?: (patch: Partial<Pick<ChatBrowserRecord, 'chatId' | 'tabs'>>) => void;
+  /** The browser it opened (null: Playwright's own Chromium), whose icon the drawer's tabs show */
+  browser?: PlaywrightBrowserChoice | null;
 }
 
 /** Starts a holder whose browser is bound under `title` (rejects with a readable message) */
@@ -132,13 +134,17 @@ export class ChatBrowsers extends EventEmitter {
     return title;
   }
 
-  /** The chat a bind title belongs to */
-  chatOfTitle(title: string): { projectId: string; chatId: string } | undefined {
+  /**
+   * The chat a bind title belongs to, with the browser its holder opened (undefined while it starts;
+   * null: Playwright's own Chromium)
+   */
+  chatOfTitle(title: string): { projectId: string; chatId: string; browser?: PlaywrightBrowserChoice | null } | undefined {
     if (!title.startsWith(CHAT_BROWSER_TITLE_PREFIX)) return undefined;
     for (const [key, value] of this.titles) {
       if (value !== title) continue;
       const [projectId, chatId] = key.split('\n');
-      return { projectId, chatId };
+      const browser = this.entries.get(key)?.holder?.browser;
+      return { projectId, chatId, ...(browser !== undefined ? { browser } : {}) };
     }
     return undefined;
   }
@@ -611,6 +617,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       for (const listener of listeners) listener();
     });
     return {
+      browser: browser ?? null,
       close: async () => {
         await closeHolderProcess(proc);
         await done;

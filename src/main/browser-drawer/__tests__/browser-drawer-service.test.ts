@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'events';
+import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 import { BrowserDrawerService, bridgeSessions, frameScale, isDrawerInput, toDrawerSessions, viewportDimension } from '../browser-drawer-service';
 import type { BrowserBridgeProcess } from '../bridge-process';
 import type { WebContents } from 'electron';
@@ -39,6 +40,20 @@ describe('browser drawer service', () => {
     expect(bridgeSessions(descriptors, sessions)).toEqual([
       { id: 'chat', endpoint: '/s/chat.sock', browserName: 'firefox', playwrightLib: '/npx/a/playwright-core' },
     ]);
+  });
+
+  it("shows a chat browser's tabs with the browser the chat chose, not what the registry suggests", () => {
+    const chats = new Map([['/tmp/workbench-insights-x/playwright', '/work/app']]);
+    const projects = [{ id: 'app', path: '/work/app' }];
+    const tabsFor = (browser: PlaywrightBrowserChoice | null | undefined) =>
+      toDrawerSessions(descriptors, projects, chats, false, () => ({ projectId: 'app', chatId: 'c1', ...(browser !== undefined ? { browser } : {}) }))[1];
+    const edge = { id: 'windows-edge:Default', browser: 'edge', engine: 'chromium', profileName: 'Default', executablePath: 'C:\\edge.exe', userDataDir: 'C:\\ud', profilePath: 'C:\\ud\\Default' } as const;
+    // A Windows Edge attached over CDP has no executable in its entry, which reads as Playwright's own
+    expect(tabsFor(edge)).toMatchObject({ browserName: 'chromium', managed: false });
+    // Playwright's own Chromium
+    expect(tabsFor(null)).toMatchObject({ browserName: 'chromium', managed: true });
+    // Still starting: the registry's word
+    expect(tabsFor(undefined)).toMatchObject({ browserName: 'firefox' });
   });
 
   it('asks frames at the window\'s pixel density, 1 to 2', () => {

@@ -58,7 +58,7 @@ export function toDrawerSessions(
   projects: readonly ProjectLocation[],
   chats: ReadonlyMap<string, string>,
   caseInsensitive: boolean,
-  chatOfTitle: (title: string) => { projectId: string; chatId: string } | undefined = () => undefined,
+  chatOfTitle: (title: string) => { projectId: string; chatId: string; browser?: PlaywrightBrowserChoice | null } | undefined = () => undefined,
   /** A workspace folder as the app stores paths (WSL mode: the distribution's Linux paths as Windows ones) */
   hostPath: (dir: string) => string = (dir) => dir,
 ): BrowserDrawerSession[] {
@@ -66,11 +66,15 @@ export function toDrawerSessions(
     const workspaceDir = descriptor.workspaceDir ? hostPath(descriptor.workspaceDir) : undefined;
     const projectId = sessionProjectId(workspaceDir, projects, chats, caseInsensitive);
     const chat = projectId ? chatOfTitle(descriptor.title) : undefined;
+    // A chat's browser shows the browser the chat chose: the registry can't tell, since a profile's
+    // browser may run on Playwright's own build (a Windows Firefox profile in WSL) or be attached
+    // over CDP with no executable recorded (a Windows Chromium browser in WSL)
+    const chosen = chat && chat.projectId === projectId ? chat.browser : undefined;
     return {
       id: descriptor.guid,
       title: descriptor.title,
-      browserName: descriptor.browserName,
-      managed: descriptor.managed,
+      browserName: chosen === undefined ? descriptor.browserName : chosen?.engine ?? 'chromium',
+      managed: chosen === undefined ? descriptor.managed : chosen === null || !!chosen.managed,
       ...(workspaceDir ? { workspaceDir } : {}),
       ...(projectId ? { projectId } : {}),
       ...(chat && chat.projectId === projectId ? { chatId: chat.chatId } : {}),
