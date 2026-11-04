@@ -55,6 +55,7 @@ import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
+import { useBrowserDrawerStore } from '../stores/browser-drawer-store';
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
@@ -71,8 +72,12 @@ interface InsightsProps {
   projectId: string;
 }
 
-/** The Windows/Linux window controls cover the top bar's first row (the page draws its own drag strip outside development builds) */
-const WINDOW_CONTROLS_OVER_TOP_BAR = !IS_DEV_BUILD && TITLE_BAR_STRIP_HEIGHT > 0;
+/**
+ * The page's own window drag strip above its top bar, under the Windows/Linux window controls (in
+ * development builds the content area's strip and the DEVELOPMENT BUILD strip are above it instead).
+ * The browser drawer starts at the same height, so its top border and the top bar's line meet
+ */
+const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
 
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
@@ -102,6 +107,9 @@ export function Insights({ projectId }: InsightsProps) {
 
   // Model choice made before a session exists (or before it is persisted); the session's own config wins
   const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
+  // The browser drawer beside the chat (its top border runs on along the top bar while it is open)
+  const drawerOpen = useBrowserDrawerStore((state) => state.open);
+
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
@@ -639,11 +647,17 @@ export function Insights({ projectId }: InsightsProps) {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Top bar: the history toggle sits level with the app sidebar's header row and "New chat"
-            below it, level with the sidebar's "New Task" row; the browser drawer's button is in the
-            top-right corner (a row lower where the Windows/Linux window controls cover the first);
-            the bar doubles as the window drag area */}
-        <div className="electron-drag flex shrink-0 items-start justify-between px-3 pt-6">
+        {/* Top bar, below the window drag strip: the history toggle and the browser drawer's button
+            share the first row, as far from the bar's top as the button is from the right edge, and
+            "New chat" sits below the toggle. While the drawer is open the bar's top line continues
+            the drawer's top border to the chat history. The bar doubles as the window drag area */}
+        <div className="electron-drag shrink-0" style={{ height: TOP_STRIP_HEIGHT }} />
+        <div
+          className={cn(
+            'electron-drag flex shrink-0 items-start justify-between border-t px-3 pt-3',
+            drawerOpen ? 'border-border' : 'border-transparent'
+          )}
+        >
           <div className="flex flex-col items-start gap-3">
             <Tooltip>
               <TooltipTrigger asChild>
@@ -675,7 +689,7 @@ export function Insights({ projectId }: InsightsProps) {
               <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
             </Tooltip>
           </div>
-          <BrowserDrawerButton projectId={projectId} className={WINDOW_CONTROLS_OVER_TOP_BAR ? 'mt-11' : undefined} />
+          <BrowserDrawerButton projectId={projectId} />
         </div>
 
         {isEmpty ? (
