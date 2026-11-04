@@ -222,7 +222,7 @@ export function PlaywrightBrowserSelect({ value, onChange, chromiumMissing = fal
         )}
         {list.map((profile) => {
           const reason = disabledReasonText(t, profile.disabledReason);
-          const detail = reason ?? profile.email;
+          const detail = reason ?? (profile.signedOut ? t('settings:mcp.browserProfile.signedOut') : profile.email);
           const Icon = browserProfileIcon(profile);
           return (
             <div key={profile.id} className="relative">

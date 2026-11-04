@@ -430,6 +430,7 @@
         "safari": "Safari",
         "webkit": "WebKit"
       },
+      "signedOut": "Saved sign-ins don't carry over",
       "variants": {
         "snap": "Snap",
         "flatpak": "Flatpak",
@@ -438,7 +439,7 @@
       "reasons": {
         "unsupportedEngine": "Playwright can't drive Safari; use Playwright's WebKit",
         "executableMissing": "Browser not installed",
-        "windowsBrowserInWsl": "Its sign-ins only open on Windows; tools run in WSL",
+        "windowsBrowserInWsl": "WSL interop is off, so Windows browsers can't start",
         "needsFirefoxInWsl": "Download Playwright's Firefox to run it in WSL",
         "sandboxedPackage": "Flatpak browsers can't be used",
         "notDownloaded": "Not downloaded",

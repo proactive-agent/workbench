@@ -26,6 +26,7 @@
  * live browser from runs without permission checks.
  */
 
+import os from 'os';
 import path from 'path';
 import type { CustomMcpServer } from '../../shared/types/project';
 import type { McpConnectorSettings } from '../../shared/types/settings';
@@ -38,6 +39,7 @@ import { toRuntimeArg } from '../platform/runtime-exec';
 import { SNAP_UNCONFINED_BINARIES } from '../browser-profiles/locations';
 import { appAliasTarget } from '../browser-profiles/app-alias';
 import { PLAYWRIGHT_MCP_PACKAGE, isPlaywrightBuild } from '../browser-profiles/managed';
+import { isWindowsBrowserInWsl, windowsBrowserScripts } from '../browser-profiles/windows-browser';
 
 export type McpServerEntry =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
@@ -236,7 +238,32 @@ function joinHostPath(dir: string, name: string): string {
  * command), or the browser chosen in Settings > Connectors or the task
  */
 function playwrightServer(choice: PlaywrightBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
+  if (choice && isWindowsBrowserInWsl(choice)) return windowsBrowserServer(choice, options.browserProfileDir);
   return { type: 'stdio', command: 'npx', args: ['-y', PLAYWRIGHT_MCP_PACKAGE, ...playwrightServerArgs(choice, options.browserProfileDir)] };
+}
+
+/**
+ * A Windows Chromium browser while tools run in WSL (browser-profiles/windows-browser.ts): the
+ * distribution's node runs the launcher, which starts the browser on the run's profile copy (or a
+ * new profile in the Windows temp folder) and then the server attached to it over CDP. Windows
+ * paths for the Windows processes, runtime paths for the launcher
+ */
+function windowsBrowserServer(choice: PlaywrightBrowserChoice, browserProfileDir: string | undefined): McpServerEntry {
+  const scripts = windowsBrowserScripts();
+  const launch = {
+    executable: toRuntimePath(choice.executablePath),
+    // No --force-device-scale-factor (other runs' HiDPI switch): with it, the viewport the drawer
+    // sets over CDP leaves Playwright's screencast without frames, so the drawer stays blank
+    args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`],
+    ...(browserProfileDir ? { userDataDir: { windows: browserProfileDir, runtime: toRuntimePath(browserProfileDir) } } : {}),
+    tempDir: { windows: os.tmpdir(), runtime: toRuntimePath(os.tmpdir()) },
+    relay: { command: toRuntimePath(process.execPath), script: scripts.relay },
+  };
+  return {
+    type: 'stdio',
+    command: 'node',
+    args: [toRuntimePath(scripts.launcher), JSON.stringify(launch), 'npx', '-y', PLAYWRIGHT_MCP_PACKAGE, PLAYWRIGHT_HEADLESS_OPTION],
+  };
 }
 
 /**

@@ -16,7 +16,7 @@ export type BrowserProfileDisabledReason =
   | 'unsupported-engine'
   /** The browser's profiles are there but its executable isn't */
   | 'executable-missing'
-  /** A Windows Chromium browser while tools run in WSL: its sign-ins only decrypt on Windows */
+  /** A Windows browser while tools run in WSL with interop off: the distribution can't start it */
   | 'windows-browser-in-wsl'
   /** A Windows Firefox profile while tools run in WSL, with no Firefox in WSL to run its copy */
   | 'needs-firefox-in-wsl'
@@ -55,6 +55,11 @@ export interface BrowserProfile {
   managed?: boolean;
   /** Set while the browser can be downloaded: which one the download button installs */
   downloadable?: DownloadableBrowser;
+  /**
+   * Runs start signed out: a Windows Chrome or Edge profile, whose cookies are encrypted with an
+   * app-bound key that only opens in the browser's own profile folder, never in a run's copy
+   */
+  signedOut?: boolean;
 }
 
 /** The profile the Playwright connector uses (unset: Playwright's own Chromium) */

@@ -43,6 +43,7 @@ import { resetCommandLookups, resolveCommand } from './mcp-commands';
 import { getToolEnvAsync } from './cli-utils';
 import { isWindows } from './platform';
 import { getWslInfo, toRuntimePath, whenShellRuntimeReady } from './platform/shell-runtime';
+import { ensureWindowsBrowserScripts } from './browser-profiles/windows-browser';
 import { killRuntimeProcessTree, spawnTool } from './platform/runtime-exec';
 import { browserProfileCopyBlocked } from './browser-profiles/profile-copy';
 import { PLAYWRIGHT_MCP_PACKAGE, playwrightInstallCommand } from './browser-profiles/managed';
@@ -434,6 +435,8 @@ async function probeEntry(entry: McpServerEntry, verify: VerifyCall | undefined,
   if (entry.type === 'http') return probeHttp(entry.url, entry.headers);
 
   await whenShellRuntimeReady();
+  // A Windows browser in WSL starts through the launcher (browser-profiles/windows-browser.ts)
+  if (getWslInfo()) await ensureWindowsBrowserScripts().catch(() => undefined);
   // The command's full path where the server runs: inside the distribution in WSL; natively on
   // Windows with its extension (`npx.cmd`), which spawn needs and then starts through a shell
   const command = await resolveCommand(entry.command, { refresh });

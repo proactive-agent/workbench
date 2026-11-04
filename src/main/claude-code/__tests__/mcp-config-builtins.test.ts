@@ -9,6 +9,7 @@ vi.mock('../../platform/shell-runtime', () => ({
 }));
 vi.mock('../../platform/runtime-exec', () => ({ toRuntimeArg: (arg: string) => arg }));
 vi.mock('../../app-logger', () => ({ appLog: { warn: vi.fn() } }));
+vi.mock('electron', () => ({ app: { getPath: () => 'C:\\Users\\me\\AppData\\Roaming\\workbench' } }));
 
 import { buildMcpConfig, mcpServerEntry, playwrightProfileConfig, playwrightScaleConfig, setPlaywrightDisplayScale, withPlaywrightOutputDir } from '../mcp-config';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
@@ -201,6 +202,37 @@ describe('built-in MCP servers', () => {
     expect(buildMcpConfig(['playwright'], { playwrightBrowser: windowsFirefox }).mcpServers.playwright).toMatchObject({
       args: ['-y', PACKAGE, '--browser', 'firefox', '--executable-path', '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox', '--isolated', '--headless'],
     });
+  });
+
+  it('runs a Windows Edge while tools run in WSL through the launcher, attached over CDP', () => {
+    platform.windows = true;
+    platform.wsl = true;
+    const edge: PlaywrightBrowserChoice = {
+      id: 'windows-edge:Profile 1',
+      browser: 'edge',
+      engine: 'chromium',
+      profileName: 'Work',
+      executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      userDataDir: 'C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge\\User Data',
+      profileDirectory: 'Profile 1',
+      profilePath: 'C:\\Users\\me\\AppData\\Local\\Microsoft\\Edge\\User Data\\Profile 1',
+    };
+    const copy = 'C:\\Users\\me\\AppData\\Roaming\\workbench\\browser-profiles\\x\\windows-edge_Profile_1\\chat';
+    const entry = buildMcpConfig(['playwright'], { playwrightBrowser: edge }, { browserProfileDir: copy }).mcpServers.playwright;
+    expect(entry).toMatchObject({ type: 'stdio', command: 'node' });
+    const args = entry?.type === 'stdio' ? entry.args ?? [] : [];
+    expect(args[0]).toBe('/mnt/c/Users/me/AppData/Roaming/workbench/windows-browser/windows-browser-launcher.cjs');
+    expect(args.slice(2)).toEqual(['npx', '-y', PACKAGE, '--headless']);
+    expect(JSON.parse(args[1])).toMatchObject({
+      executable: '/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe',
+      args: ['--profile-directory=Profile 1'],
+      userDataDir: { windows: copy, runtime: '/mnt/c/Users/me/AppData/Roaming/workbench/browser-profiles/x/windows-edge_Profile_1/chat' },
+      // A Windows path in the app (path.join is win32 there)
+      relay: { script: expect.stringMatching(/^C:\\Users\\me\\AppData\\Roaming\\workbench[\\/]windows-browser[\\/]windows-cdp-relay\.cjs$/) },
+    });
+    // Natively, the same choice runs as before
+    platform.wsl = false;
+    expect(buildMcpConfig(['playwright'], { playwrightBrowser: edge }).mcpServers.playwright).toMatchObject({ command: 'npx' });
   });
 
   it("gives the profile copy's WSL paths when tools run in WSL", () => {

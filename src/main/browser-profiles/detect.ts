@@ -33,6 +33,7 @@ import {
 } from './locations';
 import { parseChromiumLocalState, parseFirefoxProfilesIni } from './parsing';
 import { findManagedBrowser, scanManagedBrowsers } from './managed';
+import { ensureWindowsBrowserScripts } from './windows-browser';
 
 /** Profiles with no sign of use for this long are left out (leftovers of old or removed installs) */
 export const STALE_PROFILE_MS = 365 * 24 * 60 * 60 * 1000;
@@ -300,15 +301,23 @@ async function detect(refresh: boolean): Promise<BrowserProfile[]> {
   const native: ScanContext = { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p) => p, lookUpCommands: !isWindows(), refresh };
   if (!wsl) return scanBrowserProfiles(native);
 
-  // Tools (and so Playwright) run in the distribution: its own browsers can be used, and Windows
-  // Firefox profiles with a Firefox there (runs copy them in, profile-copy.ts). Windows Chromium
-  // profiles can't: their cookies and passwords are encrypted with keys only Windows unlocks
+  // Tools (and so Playwright) run in the distribution: its own browsers can be used; Windows Firefox
+  // profiles with a Firefox there (runs copy them in, profile-copy.ts); Windows Chromium browsers
+  // through the launcher (windows-browser.ts, which needs interop), signed out: their cookies are
+  // encrypted with an app-bound key that only opens in the browser's own profile folder
   const linuxContext: ScanContext = { os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh };
   const linux = await scanBrowserProfiles(linuxContext);
+  void ensureWindowsBrowserScripts().catch((error: unknown) => appLog.warn('[BrowserProfiles] Could not write the Windows browser launcher:', error));
   const windowsProfiles = await scanBrowserProfiles({ ...native, lookUpCommands: false, skipManaged: true });
   const firefoxes = windowsProfiles.some((profile) => profile.engine === 'firefox') ? await wslFirefoxes(linuxContext) : null;
   const windows = await Promise.all(windowsProfiles.map(async (profile): Promise<BrowserProfile> => {
     const id = `windows-${profile.id}`;
+    if (profile.engine === 'chromium') {
+      if (!profile.usable) return { ...profile, id };
+      return wsl.interop === false
+        ? { ...profile, id, usable: false, disabledReason: 'windows-browser-in-wsl' }
+        : { ...profile, id, signedOut: true };
+    }
     if (profile.engine !== 'firefox' || !firefoxes) return { ...profile, id, usable: false, disabledReason: 'windows-browser-in-wsl' };
     const { disabledReason: _disabledReason, ...rest } = profile;
     const executablePath = pickWslFirefox(await windowsProfileFirefoxMajor(profile.profilePath), firefoxes);

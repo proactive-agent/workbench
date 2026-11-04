@@ -296,10 +296,17 @@ listed but can't be used; WebKit is the closest engine. Microsoft Store Firefox 
 (`%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming\Mozilla\Firefox`) and run through its app execution alias's target
 (`app-alias.ts`). Profiles a browser never opened (no activity files) are left out after a week.
 
-In WSL mode Windows Firefox profiles work without anything installed on Windows (`detect.ts`): a profile is copied into
-the distribution and run by a Firefox there (an installed one at least the profile's version, else Playwright's with
-`--allow-downgrade`), keeping its sign-ins. Windows Chromium profiles stay disabled: Chrome and Edge encrypt cookies
-with keys only Windows unlocks.
+In WSL mode Windows profiles work without anything installed on Windows (`detect.ts`): a Windows Firefox profile is
+copied into the distribution and run by a Firefox there (an installed one at least the profile's version, else
+Playwright's with `--allow-downgrade`), keeping its sign-ins. A Windows Chromium browser (Edge, Chrome) runs on Windows
+through `browser-profiles/windows-browser-launcher.cjs`, the server's command run by the distribution's node: it starts
+the browser through interop on a copy kept on Windows (headless, `--no-startup-window`, Edge's Alt+Tab tabs off with
+`--disable-features=msWindowTabManagerPublic`, no `--force-device-scale-factor`, which leaves the drawer's screencast
+without frames), relays a local port to its
+DevTools port through `windows-cdp-relay.cjs` (Workbench's executable as Node, on Windows) and starts Playwright with
+`--cdp-endpoint`; the relay's `--keep` mode closes the browser and removes a temporary profile when the launcher goes,
+even when it is killed. Those profiles are marked "Saved sign-ins don't carry over": Chrome and Edge encrypt cookies
+with an app-bound key that only opens in the browser's own profile folder, never in a copy.
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
 answers `initialize` (Playwright is also asked to open `about:blank` with `browser_navigate`, headless, since it needs

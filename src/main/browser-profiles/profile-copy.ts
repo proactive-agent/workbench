@@ -57,6 +57,7 @@ import { checkWslAvailable, decodeWslOutput, getWslExePath, parseDistroList } fr
 import { runTool } from '../platform/runtime-exec';
 import { CONFINED_SNAPS, confinedSnapName } from './locations';
 import { isBrowserProfileInUse } from './in-use';
+import { ensureWindowsBrowserScripts, isWindowsBrowserInWsl } from './windows-browser';
 import { PLAYWRIGHT_CONFIG_FILE, playwrightProfileConfig } from '../claude-code/mcp-config';
 import { appLog } from '../app-logger';
 import { claimFolder, folderClaim, releaseFolder, writeOwner } from '../folder-owner';
@@ -157,19 +158,27 @@ function copiesBase(): string {
   return nativeCopiesBase();
 }
 
-/** Where a browser's copies live (host path): a confined snap's own folder, or copiesBase() */
+/**
+ * Where a browser's copies live (host path): a confined snap's own folder, the app's own folder for
+ * a Windows browser while tools run in WSL (the browser runs on Windows and reads it natively), or
+ * copiesBase()
+ */
 function copiesBaseFor(choice: PlaywrightBrowserChoice | undefined): string {
+  if (isWindowsBrowserInWsl(choice)) return nativeCopiesBase();
   const snap = choice ? confinedSnapName(choice.executablePath) : undefined;
   const home = snap ? runtimeLinuxHome() : undefined;
   if (snap && home) return toHostPath(path.posix.join(home, ...snapCopies(snap)));
   return copiesBase();
 }
 
-/** Every place this runtime keeps copies (host paths): copiesBase() and the confined snaps' folders */
+/**
+ * Every place this runtime keeps copies (host paths): copiesBase(), the confined snaps' folders and,
+ * in WSL, the app's own folder (Windows browsers' copies)
+ */
 function runtimeCopiesBases(): string[] {
   const home = runtimeLinuxHome();
   const snaps = home ? CONFINED_SNAPS.map((name) => toHostPath(path.posix.join(home, ...snapCopies(name)))) : [];
-  return [copiesBase(), ...snaps];
+  return [copiesBase(), ...snaps, ...(getWslInfo() ? [nativeCopiesBase()] : [])];
 }
 
 /** `wsl.exe` with these arguments (it doesn't start a distribution to list them): its output, or null */
@@ -456,6 +465,8 @@ export async function prepareBrowserProfileCopy(
     void removeOldBrowserProfileCopies(projectPath, { keep: inUse.project, keepSaved: inUse.all });
     return null;
   }
+  // A Windows browser in WSL starts through the launcher, which the run's config names
+  if (isWindowsBrowserInWsl(choice)) await ensureWindowsBrowserScripts();
   const source = toHostPath(choice.profilePath);
   try {
     if (!(await stat(source)).isDirectory()) throw new Error('not a folder');
