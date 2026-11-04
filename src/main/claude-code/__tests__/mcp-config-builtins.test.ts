@@ -173,6 +173,36 @@ describe('built-in MCP servers', () => {
     });
   });
 
+  it("runs a Windows Firefox profile in WSL with Playwright's Firefox, letting it open the newer profile", () => {
+    platform.windows = true;
+    platform.wsl = true;
+    const windowsFirefox: PlaywrightBrowserChoice = {
+      id: 'windows-firefox-store:m.default-release',
+      browser: 'firefox',
+      engine: 'firefox',
+      profileName: 'default-release',
+      variant: 'store',
+      executablePath: '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox',
+      userDataDir: 'C:\\Users\\me\\AppData\\Local\\Packages\\Mozilla.Firefox_x\\LocalCache\\Roaming\\Mozilla\\Firefox',
+      profilePath: 'C:\\Users\\me\\AppData\\Local\\Packages\\Mozilla.Firefox_x\\LocalCache\\Roaming\\Mozilla\\Firefox\\Profiles\\m.default-release',
+    };
+    expect(playwrightProfileConfig(windowsFirefox, '/home/me/.cache/workbench/browser-profiles/x/chat')).toEqual({
+      browser: {
+        browserName: 'firefox',
+        userDataDir: '/home/me/.cache/workbench/browser-profiles/x/chat',
+        launchOptions: {
+          executablePath: '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox',
+          args: ['--allow-downgrade'],
+          firefoxUserPrefs: NO_SYNC,
+        },
+      },
+    });
+    // Without a copy: Playwright's build by its own name, on a new profile
+    expect(buildMcpConfig(['playwright'], { playwrightBrowser: windowsFirefox }).mcpServers.playwright).toMatchObject({
+      args: ['-y', PACKAGE, '--browser', 'firefox', '--executable-path', '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox', '--isolated', '--headless'],
+    });
+  });
+
   it("gives the profile copy's WSL paths when tools run in WSL", () => {
     platform.windows = true;
     platform.wsl = true;

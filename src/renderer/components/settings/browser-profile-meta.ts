@@ -23,6 +23,7 @@ const REASON_KEYS: Record<BrowserProfileDisabledReason, string> = {
   'unsupported-engine': 'settings:mcp.browserProfile.reasons.unsupportedEngine',
   'executable-missing': 'settings:mcp.browserProfile.reasons.executableMissing',
   'windows-browser-in-wsl': 'settings:mcp.browserProfile.reasons.windowsBrowserInWsl',
+  'needs-firefox-in-wsl': 'settings:mcp.browserProfile.reasons.needsFirefoxInWsl',
   'sandboxed-package': 'settings:mcp.browserProfile.reasons.sandboxedPackage',
   'not-downloaded': 'settings:mcp.browserProfile.reasons.notDownloaded',
   'snap-needs-newer-glibc': 'settings:mcp.browserProfile.reasons.snapNeedsNewerGlibc',

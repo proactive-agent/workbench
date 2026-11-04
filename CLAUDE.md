@@ -296,6 +296,11 @@ listed but can't be used; WebKit is the closest engine. Microsoft Store Firefox 
 (`%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming\Mozilla\Firefox`) and run through its app execution alias's target
 (`app-alias.ts`). Profiles a browser never opened (no activity files) are left out after a week.
 
+In WSL mode Windows Firefox profiles work without anything installed on Windows (`detect.ts`): a profile is copied into
+the distribution and run by a Firefox there (an installed one at least the profile's version, else Playwright's with
+`--allow-downgrade`), keeping its sign-ins. Windows Chromium profiles stay disabled: Chrome and Edge encrypt cookies
+with keys only Windows unlocks.
+
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
 answers `initialize` (Playwright is also asked to open `about:blank` with `browser_navigate`, headless, since it needs
 a browser; a missing build of Playwright's own browser offers its install-browser command; `mcp-commands.ts` finds the

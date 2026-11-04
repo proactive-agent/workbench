@@ -438,7 +438,8 @@
       "reasons": {
         "unsupportedEngine": "Playwright can't drive Safari; use Playwright's WebKit",
         "executableMissing": "Browser not installed",
-        "windowsBrowserInWsl": "Windows browser; tools run in WSL",
+        "windowsBrowserInWsl": "Its sign-ins only open on Windows; tools run in WSL",
+        "needsFirefoxInWsl": "Download Playwright's Firefox to run it in WSL",
         "sandboxedPackage": "Flatpak browsers can't be used",
         "notDownloaded": "Not downloaded",
         "snapNeedsNewerGlibc": "This snap needs a newer glibc than the system has"

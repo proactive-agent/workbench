@@ -20,7 +20,7 @@ vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => mocks.toHost(p),
 }));
 
-import { STALE_PROFILE_MS, UNOPENED_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserProfiles } from '../detect';
+import { STALE_PROFILE_MS, UNOPENED_PROFILE_MS, detectBrowserProfiles, isStaleProfile, majorVersion, pickWslFirefox, scanBrowserProfiles } from '../detect';
 import { findManagedBrowser, playwrightCacheDir } from '../managed';
 
 let root: string;
@@ -320,5 +320,28 @@ describe('browser profile detection', () => {
         profilePath: '/home/wsl/.config/chromium/Default',
       }),
     ]);
+  });
+});
+
+describe('the Firefox in WSL that runs a Windows Firefox profile', () => {
+  const installed = { executablePath: '/usr/lib/firefox/firefox', major: 158 };
+  const playwright = '/home/me/.cache/ms-playwright/firefox-1553/firefox/firefox';
+
+  it('reads major versions from `--version` and compatibility.ini', () => {
+    expect(majorVersion('Mozilla Firefox 156.0')).toBe(156);
+    expect(majorVersion('158.0.1_20261019185856/20261019185856')).toBe(158);
+    expect(majorVersion('')).toBeUndefined();
+  });
+
+  it('takes the installed Firefox when it is at least the profile\'s version', () => {
+    expect(pickWslFirefox(158, { installed, playwright })).toBe(installed.executablePath);
+    expect(pickWslFirefox(undefined, { installed, playwright })).toBe(installed.executablePath);
+  });
+
+  it("takes Playwright's Firefox for a profile a newer Firefox wrote, else the older installed one", () => {
+    expect(pickWslFirefox(159, { installed, playwright })).toBe(playwright);
+    expect(pickWslFirefox(159, { installed })).toBe(installed.executablePath);
+    expect(pickWslFirefox(158, { playwright })).toBe(playwright);
+    expect(pickWslFirefox(158, {})).toBeUndefined();
   });
 });

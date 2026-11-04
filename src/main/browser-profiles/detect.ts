@@ -300,15 +300,74 @@ async function detect(refresh: boolean): Promise<BrowserProfile[]> {
   const native: ScanContext = { os: nativeOs(), home: os.homedir(), env: process.env, toHost: (p) => p, lookUpCommands: !isWindows(), refresh };
   if (!wsl) return scanBrowserProfiles(native);
 
-  // Tools (and so Playwright) run in the distribution: its own browsers can be used, Windows ones can't
-  const linux = await scanBrowserProfiles({ os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh });
-  const windows = (await scanBrowserProfiles({ ...native, lookUpCommands: false, skipManaged: true })).map((profile) => ({
-    ...profile,
-    id: `windows-${profile.id}`,
-    usable: false,
-    disabledReason: 'windows-browser-in-wsl' as const,
+  // Tools (and so Playwright) run in the distribution: its own browsers can be used, and Windows
+  // Firefox profiles with a Firefox there (runs copy them in, profile-copy.ts). Windows Chromium
+  // profiles can't: their cookies and passwords are encrypted with keys only Windows unlocks
+  const linuxContext: ScanContext = { os: 'linux', home: wsl.home, env: {}, toHost: toHostPath, lookUpCommands: true, refresh };
+  const linux = await scanBrowserProfiles(linuxContext);
+  const windowsProfiles = await scanBrowserProfiles({ ...native, lookUpCommands: false, skipManaged: true });
+  const firefoxes = windowsProfiles.some((profile) => profile.engine === 'firefox') ? await wslFirefoxes(linuxContext) : null;
+  const windows = await Promise.all(windowsProfiles.map(async (profile): Promise<BrowserProfile> => {
+    const id = `windows-${profile.id}`;
+    if (profile.engine !== 'firefox' || !firefoxes) return { ...profile, id, usable: false, disabledReason: 'windows-browser-in-wsl' };
+    const { disabledReason: _disabledReason, ...rest } = profile;
+    const executablePath = pickWslFirefox(await windowsProfileFirefoxMajor(profile.profilePath), firefoxes);
+    return executablePath
+      ? { ...rest, id, executablePath, usable: true }
+      : { ...rest, id, executablePath: undefined, usable: false, disabledReason: 'needs-firefox-in-wsl', downloadable: 'firefox' };
   }));
   return [...linux, ...windows];
+}
+
+/** The Firefoxes in the distribution that can run a Windows Firefox profile's copy */
+export interface WslFirefoxes {
+  /** An installed Firefox (not the snap's: it may only read non-hidden folders), with its major version */
+  installed?: { executablePath: string; major: number };
+  /** Playwright's own Firefox build */
+  playwright?: string;
+}
+
+/** A version's major number (`Mozilla Firefox 156.0`, `158.0.1_20261019185856/...`), or undefined */
+export function majorVersion(text: string): number | undefined {
+  const major = Number(/(\d+)\.\d/.exec(text)?.[1]);
+  return major > 0 ? major : undefined;
+}
+
+async function wslFirefoxes(context: ScanContext): Promise<WslFirefoxes> {
+  const found: WslFirefoxes = {};
+  const playwright = await findManagedBrowser('firefox', context).catch(() => undefined);
+  if (playwright) found.playwright = playwright;
+  for (const location of browserLocations('linux', context)) {
+    if (location.engine !== 'firefox' || location.variant) continue;
+    const executablePath = await findExecutable(location, context);
+    if (!executablePath || (await startsSnapFirefox(executablePath, context))) continue;
+    try {
+      // Tool name aside, this runs the given executable where tools run
+      const { stdout } = await runTool('node', ['--version'], { command: executablePath, timeout: 15_000 });
+      const major = majorVersion(String(stdout));
+      if (major) found.installed = { executablePath, major };
+    } catch {
+      // Doesn't start: Playwright's Firefox, if any, runs the profiles
+    }
+    break;
+  }
+  return found;
+}
+
+/** The major version of the Firefox that last wrote a profile (its `compatibility.ini`), or undefined */
+async function windowsProfileFirefoxMajor(profilePath: string): Promise<number | undefined> {
+  const compatibility = await readText(pathApi('windows').join(profilePath, 'compatibility.ini'));
+  return compatibility ? majorVersion(/^LastVersion=(.*)$/m.exec(compatibility)?.[1] ?? '') : undefined;
+}
+
+/**
+ * The Firefox in the distribution that runs a Windows profile's copy: the installed one when it is
+ * at least the version that last wrote the profile (Firefox refuses a profile a newer version
+ * wrote), else Playwright's own build, which runs the copy with `--allow-downgrade` (mcp-config.ts)
+ */
+export function pickWslFirefox(profileMajor: number | undefined, firefoxes: WslFirefoxes): string | undefined {
+  if (firefoxes.installed && (profileMajor === undefined || firefoxes.installed.major >= profileMajor)) return firefoxes.installed.executablePath;
+  return firefoxes.playwright ?? firefoxes.installed?.executablePath;
 }
 
 let detection: Promise<BrowserProfile[]> | null = null;

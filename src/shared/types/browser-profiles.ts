@@ -16,8 +16,10 @@ export type BrowserProfileDisabledReason =
   | 'unsupported-engine'
   /** The browser's profiles are there but its executable isn't */
   | 'executable-missing'
-  /** A Windows browser while tools run in WSL, where it can't be started */
+  /** A Windows Chromium browser while tools run in WSL: its sign-ins only decrypt on Windows */
   | 'windows-browser-in-wsl'
+  /** A Windows Firefox profile while tools run in WSL, with no Firefox in WSL to run its copy */
+  | 'needs-firefox-in-wsl'
   /** A Flatpak browser: its sandbox keeps it from being started with another profile folder */
   | 'sandboxed-package'
   /** A browser Playwright downloads itself, not downloaded yet */

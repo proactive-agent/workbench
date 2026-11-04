@@ -37,7 +37,7 @@ import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
 import { SNAP_UNCONFINED_BINARIES } from '../browser-profiles/locations';
 import { appAliasTarget } from '../browser-profiles/app-alias';
-import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
+import { PLAYWRIGHT_MCP_PACKAGE, isPlaywrightBuild } from '../browser-profiles/managed';
 
 export type McpServerEntry =
   | { type: 'stdio'; command: string; args?: string[]; env?: Record<string, string> }
@@ -127,11 +127,26 @@ function launchExecutable(choice: PlaywrightBrowserChoice): string {
 }
 
 /**
+ * A Windows Firefox profile run by a Firefox in WSL (detect.ts): the copy goes into the
+ * distribution, and the Firefox there may be older than the one that wrote the profile
+ */
+function isWindowsProfileInWsl(choice: PlaywrightBrowserChoice): boolean {
+  return getWslInfo() !== null && /^[A-Za-z]:[\\/]/.test(choice.profilePath);
+}
+
+/**
+ * Firefox refuses a profile a newer version wrote ("Please create a new profile"); a run's copy
+ * may be opened anyway, since only the copy can be harmed
+ */
+const FIREFOX_ALLOW_DOWNGRADE = '--allow-downgrade';
+
+/**
  * The Playwright config of a run with a copy of the chosen profile (`browserProfileDir`, a host
  * path): the browser's executable with the copy as its profile. Chromium opens the profile's
  * folder inside the copied user data folder, with the sandbox on (Playwright's default off is for
  * its own build) and without Playwright's switches that keep it from decrypting the copied
- * sign-ins. Firefox runs over WebDriver BiDi (the `moz-firefox` channel) with Sync kept off
+ * sign-ins. Firefox runs over WebDriver BiDi (the `moz-firefox` channel; Playwright's own build,
+ * which runs Windows profiles in WSL, over its own protocol) with Sync kept off
  */
 export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browserProfileDir: string): Record<string, unknown> {
   const userDataDir = toRuntimePath(browserProfileDir);
@@ -143,7 +158,12 @@ export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browser
       browser: {
         browserName: 'firefox',
         userDataDir,
-        launchOptions: { channel: 'moz-firefox', executablePath, firefoxUserPrefs: FIREFOX_NO_SYNC_PREFS },
+        launchOptions: {
+          ...(isPlaywrightBuild(executablePath) ? {} : { channel: 'moz-firefox' }),
+          executablePath,
+          ...(isWindowsProfileInWsl(choice) ? { args: [FIREFOX_ALLOW_DOWNGRADE] } : {}),
+          firefoxUserPrefs: FIREFOX_NO_SYNC_PREFS,
+        },
         ...contextOptions,
       },
     };
@@ -200,7 +220,9 @@ function playwrightBrowserArgs(choice: PlaywrightBrowserChoice | undefined, brow
     // Playwright leaves its own Chromium's sandbox off on Linux (and so in WSL): pages would run unsandboxed
     return [...scaleConfig, '--browser', MANAGED_BROWSER_OPTION[engine], '--isolated', ...(engine === 'chromium' ? ['--sandbox'] : [])];
   }
-  const browser = choice.engine === 'firefox' ? 'moz-firefox' : 'chrome';
+  // Playwright's own Firefox build speaks its own protocol, not BiDi (`moz-firefox`)
+  const firefox = isPlaywrightBuild(choice.executablePath) ? 'firefox' : 'moz-firefox';
+  const browser = choice.engine === 'firefox' ? firefox : 'chrome';
   return [...scaleConfig, '--browser', browser, '--executable-path', launchExecutable(choice), '--isolated'];
 }
 

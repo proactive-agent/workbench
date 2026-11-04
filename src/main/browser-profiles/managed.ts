@@ -101,6 +101,11 @@ async function exists(p: string): Promise<boolean> {
   }
 }
 
+/** Whether an executable is one of Playwright's own builds (in its cache folder, `ms-playwright`) */
+export function isPlaywrightBuild(executablePath: string): boolean {
+  return /[\\/]ms-playwright[\\/]/.test(executablePath);
+}
+
 /** The executable of a downloaded build the pinned server needs (a path where tools run), or undefined */
 export async function findManagedBrowser(browser: DownloadableBrowser, context: ManagedScanContext): Promise<string | undefined> {
   const p = pathApi(context.os);
