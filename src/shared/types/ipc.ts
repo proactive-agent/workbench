@@ -214,6 +214,12 @@ export interface ElectronAPI {
   createTerminal: (options: TerminalCreateOptions) => Promise<IPCResult>;
   destroyTerminal: (id: string) => Promise<IPCResult>;
   sendTerminalInput: (id: string, data: string) => void;
+  /** The file's path on disk, or '' for a file that has none (an image pasted from the clipboard) */
+  getPathForFile: (file: File) => string;
+  /** Host paths as the agent windows' shell sees them (in WSL `C:\x` becomes `/mnt/c/x`) */
+  toTerminalRuntimePaths: (paths: string[]) => Promise<string[]>;
+  /** Files copied in a file manager that a paste event didn't carry (Linux, WSLg), as the runtime's paths */
+  readClipboardFilePaths: () => Promise<string[]>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<IPCResult<{ success: boolean }>>;
   invokeCLIInTerminal: (id: string, cwd?: string) => void;
   resumeTaskSessionInTerminal: (id: string, options: TerminalTaskSessionOptions) => void;

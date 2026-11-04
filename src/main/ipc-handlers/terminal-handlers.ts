@@ -19,6 +19,7 @@ import { getPathDelimiter, isWindows } from '../platform';
 import { isWslRuntime, toRuntimePath } from '../platform/shell-runtime';
 import { safeSendToRenderer } from './utils';
 import { openTerminalWithCommand } from './claude-code-handlers';
+import { readClipboardFilePaths } from '../terminal/clipboard-files';
 
 
 /**
@@ -61,6 +62,16 @@ export function registerTerminalHandlers(
     (_, id: string, data: string) => {
       terminalManager.write(id, data);
     }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_RUNTIME_PATHS,
+    async (_, paths: string[]): Promise<string[]> => paths.map((p) => toRuntimePath(p))
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_CLIPBOARD_FILES,
+    async (): Promise<string[]> => readClipboardFilePaths().catch(() => [])
   );
 
   ipcMain.handle(
