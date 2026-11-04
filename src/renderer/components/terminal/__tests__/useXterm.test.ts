@@ -12,6 +12,7 @@ import { act, render } from '@testing-library/react';
 import React from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useXterm } from '../useXterm';
+import { terminalBufferManager } from '../../../lib/terminal-buffer-manager';
 
 // Mock xterm.js
 vi.mock('@xterm/xterm', () => ({
@@ -111,6 +112,7 @@ async function setupMockXterm(overrides: {
   getSelection?: () => string;
   paste?: ReturnType<typeof vi.fn>;
   input?: ReturnType<typeof vi.fn>;
+  write?: ReturnType<typeof vi.fn>;
 } = {}) {
   let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
@@ -129,7 +131,7 @@ async function setupMockXterm(overrides: {
       onData: vi.fn(),
       onResize: vi.fn(),
       dispose: vi.fn(),
-      write: vi.fn(),
+      write: overrides.write ?? vi.fn(),
       cols: 80,
       rows: 24,
       options: {
@@ -739,6 +741,16 @@ describe('useXterm keyboard handlers', () => {
       );
 
       consoleErrorSpy.mockRestore();
+    });
+  });
+
+  describe('Replaying saved output', () => {
+    it('closes a link and resets the style the saved output was cut inside of', async () => {
+      const write = vi.fn();
+      // Saved while Claude Code was drawing its status line's link
+      terminalBufferManager.set('test-terminal', 'PR \x1b]8;;https://github.com/x/pull/19\x1b\\#19');
+      await setupMockXterm({ write });
+      expect(write).toHaveBeenCalledWith('PR \x1b]8;;https://github.com/x/pull/19\x1b\\#19\x1b]8;;\x1b\\\x1b[0m');
     });
   });
 

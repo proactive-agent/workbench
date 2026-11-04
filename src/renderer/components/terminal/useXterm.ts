@@ -16,6 +16,9 @@ import { isTerminalGridDragging } from '../../lib/terminal-grid-drag';
 import { formatPastedPaths, imagePasteKey, readTerminalPaste } from '../../lib/terminal-paste';
 
 
+/** Written after replayed output: closes an OSC 8 link left open and resets the SGR style */
+const REPLAY_END_RESET = '\x1b]8;;\x1b\\\x1b[0m';
+
 interface UseXtermOptions {
   terminalId: string;
   onCommandEnter?: (command: string) => void;
@@ -344,7 +347,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
         debugLog(`[useXterm] Skipping buffer replay for Claude-mode terminal on project switch remount: ${terminalId}`);
       } else {
         debugLog(`[useXterm] Replaying buffered output for terminal: ${terminalId}, buffer size: ${bufferedOutput.length} chars`);
-        xterm.write(bufferedOutput);
+        // The saved output is cut wherever it was last saved, which can be inside a link (Claude Code
+        // redraws its status line's PR link all the time) or a styled run: close the link and reset
+        // the style, or everything the resumed session prints would carry them (a link shows as a
+        // dashed underline under all text)
+        xterm.write(bufferedOutput + REPLAY_END_RESET);
         debugLog(`[useXterm] Buffer replay complete and cleared for terminal: ${terminalId}`);
       }
     } else {
