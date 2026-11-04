@@ -8,8 +8,8 @@
 // browsers it is given (Playwright's registry endpoint) with each browser's own playwright-core (`require(playwrightLib)`, the npx cache of
 // the MCP server that launched it), the way Playwright's own dashboard does; disconnecting leaves
 // the browser running. It reports their pages, streams the viewed pages as JPEG frames
-// (`page.screencast`), sizes a viewed page's viewport to the drawer, and replays the viewer's
-// mouse, wheel and keys on it; it also says which registry endpoints answer (`probe`), for WSL
+// (`page.screencast`), sizes a viewed page's viewport to the drawer, gives every page Workbench's
+// theme as its `prefers-color-scheme`, and replays the viewer's mouse, wheel and keys on it; it also says which registry endpoints answer (`probe`), for WSL
 // mode, where the main process can't reach the sockets. Plain Node, no packages of its own.
 'use strict';
 const net = require('net');
@@ -30,6 +30,8 @@ const CONNECT_TIMEOUT_MS = 15000;
 const casts = new Map();
 /** viewer id -> page id */
 const viewers = new Map();
+/** Workbench's theme, which every page gets as its `prefers-color-scheme` (null: the browser's own) */
+let colorScheme = null;
 
 // stdout is the message channel: anything else printed goes to stderr
 const writeOut = process.stdout.write.bind(process.stdout);
@@ -95,11 +97,17 @@ function pushPages() {
   }, 100);
 }
 
+/** Give a page Workbench's theme (some browsers can't emulate it: their pages keep their own) */
+function applyColorScheme(page) {
+  if (colorScheme) page.emulateMedia({ colorScheme }).catch(() => undefined);
+}
+
 function addPage(page, sessionId) {
   if (pageIds.has(page)) return;
   const id = `${sessionId}#${nextPageId++}`;
   pageIds.set(page, id);
   pages.set(id, { page, sessionId });
+  applyColorScheme(page);
   page.on('close', () => {
     pages.delete(id);
     casts.delete(id);
@@ -341,6 +349,10 @@ function onMessage(message) {
     case 'probe':
       // Not queued: answered while a slow connect runs
       probe(message.id, message.endpoints).catch(log);
+      break;
+    case 'colorScheme':
+      colorScheme = message.scheme === 'dark' ? 'dark' : 'light';
+      for (const entry of pages.values()) applyColorScheme(entry.page);
       break;
   }
 }

@@ -103,4 +103,24 @@ describe('browser drawer viewers', () => {
     await service.subscribe(window);
     expect(views(sent)).toEqual([]);
   });
+
+  it("gives the bridge Workbench's theme when it starts and whenever it changes", async () => {
+    const { bridge, sent } = fakeBridge();
+    (bridge as unknown as { running: boolean }).running = false;
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge });
+    const schemes = () => sent.filter((r) => (r as { type: string }).type === 'colorScheme');
+
+    // Kept until the bridge runs (a drawer opened), then sent before the sessions
+    service.setColorScheme('dark');
+    expect(schemes()).toEqual([]);
+    (bridge as unknown as { running: boolean }).running = true;
+    await service.subscribe(sender(3));
+    expect(sent[0]).toEqual({ type: 'colorScheme', scheme: 'dark' });
+
+    // Changes are passed on once; repeats and anything else are dropped
+    service.setColorScheme('dark');
+    service.setColorScheme('light');
+    service.setColorScheme('sepia');
+    expect(schemes()).toEqual([{ type: 'colorScheme', scheme: 'dark' }, { type: 'colorScheme', scheme: 'light' }]);
+  });
 });

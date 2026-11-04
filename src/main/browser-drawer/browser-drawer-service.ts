@@ -148,6 +148,8 @@ export class BrowserDrawerService {
    */
   private readonly views = new Map<number, { pageId: string | null; width: unknown; height: unknown; scale: unknown }>();
   private lastBridgeSessions = '';
+  /** Workbench's theme, which the chat browsers' pages get as their color scheme (null: not told yet) */
+  private colorScheme: 'light' | 'dark' | null = null;
   readonly chatBrowsers: ChatBrowsers;
 
   constructor(private readonly options: BrowserDrawerServiceOptions) {
@@ -211,12 +213,22 @@ export class BrowserDrawerService {
       });
     }
     await this.bridge.start();
+    // A bridge that just started knows no theme yet (sent before the sessions, so pages get it as they are found)
+    if (this.colorScheme) this.bridge.send({ type: 'colorScheme', scheme: this.colorScheme });
     this.syncBridgeSessions(true);
     // The view asked for before subscribing (unless the drawer closed again meanwhile)
     const pending = this.views.get(sender.id);
     if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
       this.view(sender, pending.pageId, pending.width, pending.height, pending.scale);
     }
+  }
+
+  /** Workbench's theme changed (or a drawer opened): the chat browsers' pages follow it */
+  setColorScheme(scheme: unknown): void {
+    if (scheme !== 'light' && scheme !== 'dark') return;
+    if (scheme === this.colorScheme) return;
+    this.colorScheme = scheme;
+    if (this.bridge.running) this.bridge.send({ type: 'colorScheme', scheme });
   }
 
   /** A window's drawer closed: its page is no longer streamed */

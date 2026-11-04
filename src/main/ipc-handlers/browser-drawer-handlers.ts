@@ -37,6 +37,10 @@ export function registerBrowserDrawerHandlers(): void {
     browserDrawer.view(event.sender, typeof pageId === 'string' ? pageId : null, width, height, scale);
   });
 
+  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, (_event, scheme: unknown) => {
+    browserDrawer.setColorScheme(scheme);
+  });
+
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_INPUT, (_event, pageId: unknown, input: unknown) => {
     if (typeof pageId === 'string') browserDrawer.input(pageId, input);
   });

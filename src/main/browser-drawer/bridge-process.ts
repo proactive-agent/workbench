@@ -40,7 +40,8 @@ export type BridgeRequest =
   | { type: 'navigate'; pageId: string; action: BrowserDrawerNavigation; url?: string }
   | { type: 'closePage'; pageId: string }
   | { type: 'newPage'; sessionId: string }
-  | { type: 'probe'; id: number; endpoints: string[] };
+  | { type: 'probe'; id: number; endpoints: string[] }
+  | { type: 'colorScheme'; scheme: 'light' | 'dark' };
 
 export type BridgeMessage =
   | { type: 'pages'; pages: BrowserDrawerPage[]; connected?: string[] }

@@ -31,6 +31,8 @@ export interface BrowserDrawerAPI {
   closeBrowserPage: (pageId: string) => void;
   /** A new tab in a session's browser */
   newBrowserPage: (sessionId: string) => void;
+  /** Workbench's theme, which the chat browsers' pages get as their color scheme */
+  setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   /** Open a chat's own browser with this browser (undefined: Settings > Connectors) */
   openChatBrowser: (projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
   /** Close a chat's own browser */
@@ -50,6 +52,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),
   newBrowserPage: (sessionId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, sessionId),
+  setBrowserColorScheme: (scheme) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, scheme),
   openChatBrowser: (projectId, chatId, choice) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_OPEN_CHAT_BROWSER, projectId, chatId, choice),
   closeChatBrowser: (projectId, chatId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId),
   onBrowserDrawerState: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_STATE, callback),

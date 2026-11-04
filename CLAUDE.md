@@ -340,7 +340,8 @@ opens, the browser bridge runs until quit (`browser-bridge.cjs`, started by `bri
 executable as Node; messages over its stdin/stdout as JSON headers with raw bytes for frames, `bridge-framing.ts`): it
 connects to the projects' browsers with each one's own playwright-core
 (`require(playwrightLib)` from the npx cache: nothing of Playwright ships with the app, the client always matches the
-server; disconnecting leaves the browser running) and reports their pages; the page a window shows gets its viewport set
+server; disconnecting leaves the browser running) and reports their pages, each given Workbench's theme as its
+`prefers-color-scheme` (`page.emulateMedia`; the drawer sends the theme, also when it changes); the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
 (`page.screencast`, quality 100) to that window only, drawn on a canvas at its CSS size; the canvas's mouse, wheel, keys
 and pasted text are replayed with `page.mouse` / `page.keyboard`. Frames are asked at the window's devicePixelRatio,

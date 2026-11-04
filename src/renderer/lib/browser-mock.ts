@@ -152,6 +152,7 @@ const browserMockAPI: ElectronAPI = {
   navigateBrowserPage: () => {},
   closeBrowserPage: () => {},
   newBrowserPage: () => {},
+  setBrowserColorScheme: () => {},
   openChatBrowser: async () => ({ success: false, error: 'Not available in the browser preview' }),
   closeChatBrowser: async () => ({ success: true }),
   onBrowserDrawerState: () => () => {},

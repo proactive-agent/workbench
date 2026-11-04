@@ -20,6 +20,7 @@ const api = {
   navigateBrowserPage: vi.fn(),
   closeBrowserPage: vi.fn(),
   onBrowserFrame: vi.fn(() => () => {}),
+  setBrowserColorScheme: vi.fn(),
 };
 
 class FakeResizeObserver {
@@ -54,6 +55,14 @@ describe('BrowserDrawer', () => {
     const { container } = renderDrawer();
     expect(container).toBeEmptyDOMElement();
     expect(api.subscribeBrowserDrawer).not.toHaveBeenCalled();
+  });
+
+  it("gives the chat browsers Workbench's theme, also when it changes", async () => {
+    document.documentElement.classList.add('dark');
+    renderDrawer();
+    expect(api.setBrowserColorScheme).toHaveBeenLastCalledWith('dark');
+    document.documentElement.classList.remove('dark');
+    await vi.waitFor(() => expect(api.setBrowserColorScheme).toHaveBeenLastCalledWith('light'));
   });
 
   it('shows the pages as tabs above the toolbar and the chosen page', () => {
