@@ -43,9 +43,9 @@ import { buildMcpConfig, MCP_STARTUP_TIMEOUT_MS } from '../claude-code/mcp-confi
 import { readSettingsFileAsync } from '../settings-utils';
 import { resolveCommand } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
-import { isMacOS, isWindows } from '../platform';
+import { isWindows } from '../platform';
 import { getWslInfo } from '../platform/shell-runtime';
-import { registryAccess, removeClosedSessions } from './registry';
+import { registryAccess, registryOs, removeClosedSessions } from './registry';
 import { killRuntimeProcessTree, spawnTool } from '../platform/runtime-exec';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
 import { makeTempFolder, removeTempFolder, runtimeTempParent, TEMP_FOLDER_PREFIXES } from '../temp-folders';
@@ -436,6 +436,8 @@ function replyFailure(reply: HolderReply): string | undefined {
  * launches (and binds). Resolves once it has
  */
 async function initializeHolder(client: HolderClient, title: string, timeoutMs = START_TIMEOUT_MS): Promise<void> {
+  // One deadline for the whole start, not one per request
+  const deadline = Date.now() + timeoutMs;
   const init = await client.request('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
@@ -443,7 +445,11 @@ async function initializeHolder(client: HolderClient, title: string, timeoutMs =
   }, timeoutMs);
   if (init.error) throw new Error(init.error.message ?? 'The browser could not be opened');
   client.notify('notifications/initialized');
-  const opened = await client.request('tools/call', { name: 'browser_navigate', arguments: { url: 'about:blank' } }, timeoutMs);
+  const opened = await client.request(
+    'tools/call',
+    { name: 'browser_navigate', arguments: { url: 'about:blank' } },
+    Math.max(0, deadline - Date.now()),
+  );
   const failure = replyFailure(opened);
   if (failure !== undefined) throw new Error(holderError(failure));
 }
@@ -453,7 +459,14 @@ const RESTORE_TAB_TIMEOUT_MS = 30_000;
 
 /** Open a crashed chat browser's tabs again: the first in the tab the browser opened with (best effort) */
 async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]): Promise<void> {
+  // Gone (closed or crashed): nothing more to open. Told by its exit, not its error's text (the
+  // holder's last stderr line, which can say anything)
+  let gone = false;
+  client.exited.catch(() => {
+    gone = true;
+  });
   for (const [index, tab] of tabs.entries()) {
+    if (gone) return;
     const call = index === 0
       ? { name: 'browser_navigate', arguments: { url: tab.url } }
       : { name: 'browser_tabs', arguments: { action: 'new', url: tab.url } };
@@ -461,8 +474,8 @@ async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]
       const failure = replyFailure(await client.request('tools/call', call, RESTORE_TAB_TIMEOUT_MS));
       if (failure !== undefined) appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}: ${holderError(failure)}`);
     } catch (error) {
+      if (gone) return;
       appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}:`, error);
-      if (!(error instanceof Error) || /stopped|exited/i.test(error.message)) return;
     }
   }
 }
@@ -550,20 +563,25 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     }
 
     let browserProfileDir: string | undefined;
+    // The crashed browser's copy stays kept (never swept, left on quit) until this start worked, so
+    // a failed start leaves it, sign-ins and all, to open again
+    let keptCopy: string | undefined;
     if (browser && !browser.managed) {
       if (reuse?.record.profileCopyDir) {
-        browserProfileDir = reuse.record.profileCopyDir;
-        useKeptBrowserProfileCopy(browserProfileDir);
+        const copy = reuse.record.profileCopyDir;
+        browserProfileDir = keptCopy = copy;
+        removals.push(() => removeBrowserProfileCopy(copy));
       } else {
         const inUse = await browserChoicesInUse(projectPath, settings?.playwrightBrowser).catch(() => undefined);
         browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, `chat-${randomUUID().slice(0, 8)}`, inUse).catch((error) => {
           appLog.warn('[BrowserDrawer] Could not copy the browser profile for a chat:', error);
           return null;
         })) ?? undefined;
-      }
-      if (browserProfileDir) {
-        const copy = browserProfileDir;
-        removals.push(() => removeBrowserProfileCopy(copy));
+        // A copy made now goes with a failed start too (the next try makes another)
+        if (browserProfileDir) {
+          const copy = browserProfileDir;
+          cleanups.push(() => removeBrowserProfileCopy(copy));
+        }
       }
     }
     if (!reuse) cleanups.push(...removals.splice(0));
@@ -603,7 +621,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       await closeHolderProcess(proc);
       throw error;
     }
-    // Started: a reused folder and copy go when it closes, like a new one's
+    // Started: a reused folder and copy go when it closes (or on quit), like a new one's
+    if (keptCopy) useKeptBrowserProfileCopy(keptCopy);
     cleanups.push(...removals.splice(0));
     if (reuse) void restoreTabs(client, tabsToRestore(reuse.record.tabs));
 
@@ -612,7 +631,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     const done = exited.then(async () => {
       await cleanup();
       // Its closed browser's entry in Playwright's registry (kept there because it had a profile folder)
-      const registry = registryAccess(isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux');
+      const registry = registryAccess(registryOs());
       await removeClosedSessions(registry.dir, title, registry.connect);
       for (const listener of listeners) listener();
     });

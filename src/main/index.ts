@@ -330,11 +330,6 @@ function fillScreenOnMaximize(window: BrowserWindow): void {
   window.on('resize', forgetFilled);
 }
 
-/**
- * Create an app window. `assignedProjectId` is the project the window opens (the Projects
- * page's "New window", or a window reopened at launch); null restores the project shown last.
- * `restored` is a saved window's place and state (windows reopened at launch).
- */
 /** Look at what an earlier run left behind (see the call at startup); best effort, one folder at a time */
 async function removeCrashLeftovers(): Promise<void> {
   const projects = projectStore.getProjects();
@@ -350,6 +345,11 @@ async function removeCrashLeftovers(): Promise<void> {
   await removeLeftoverBrowserProfileCopies(projects.map((project) => project.path));
 }
 
+/**
+ * Create an app window. `assignedProjectId` is the project the window opens (the Projects
+ * page's "New window", or a window reopened at launch); null restores the project shown last.
+ * `restored` is a saved window's place and state (windows reopened at launch).
+ */
 function createWindow(assignedProjectId: string | null = null, restored: RestoredWindow | null = null): BrowserWindow {
   // Get the primary display's work area (accounts for taskbar, dock, etc.)
   // Wrapped in try/catch to handle potential failures with fallback to safe defaults

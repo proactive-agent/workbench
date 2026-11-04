@@ -19,6 +19,7 @@ import { readdir, readFile, stat, unlink } from 'fs/promises';
 import net from 'net';
 import os from 'os';
 import path from 'path';
+import { isMacOS, isWindows } from '../platform';
 
 export interface RegistryDescriptor {
   guid: string;
@@ -38,6 +39,11 @@ export interface RegistryDescriptor {
 export const INTERNAL_TITLE_PREFIX = '--playwright-internal';
 
 export type RegistryOs = 'linux' | 'macos' | 'windows';
+
+/** This machine's OS, which says where its registry folder is */
+export function registryOs(): RegistryOs {
+  return isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux';
+}
 
 /** The registry folder playwright-core uses (serverRegistry.ts `registryDirectory`) */
 export function registryDir(platform: RegistryOs, env: Record<string, string | undefined>, home: string): string {

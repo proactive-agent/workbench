@@ -86,8 +86,8 @@ export const IPC_CHANNELS = {
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_DESTROY: 'terminal:destroy',
   TERMINAL_INPUT: 'terminal:input',
-  TERMINAL_RUNTIME_PATHS: 'terminal:runtimePaths',
-  TERMINAL_CLIPBOARD_FILES: 'terminal:clipboardFiles',  // Files copied in a file manager, for a paste that arrived empty (WSLg)  // Pasted file paths as the agent windows' shell sees them (WSL: /mnt/c/...)
+  TERMINAL_RUNTIME_PATHS: 'terminal:runtimePaths',     // Pasted file paths as the agent windows' shell sees them (WSL: /mnt/c/...)
+  TERMINAL_CLIPBOARD_FILES: 'terminal:clipboardFiles',  // Files copied in a file manager, for a paste that arrived empty (WSLg)
   TERMINAL_RESIZE: 'terminal:resize',
   TERMINAL_INVOKE_CLI: 'terminal:invokeClaude',
   TERMINAL_SET_TITLE: 'terminal:setTitle',  // Renderer -> Main: user renamed terminal

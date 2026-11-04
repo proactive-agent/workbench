@@ -66,6 +66,8 @@ export class BrowserBridgeProcess extends EventEmitter {
   private tempDir: string | null = null;
   private nextProbeId = 1;
   private readonly probes = new Map<number, (live: string[] | null) => void>();
+  /** Stopped (the app is quitting): never started again, also not by a probe */
+  private stopped = false;
 
   constructor(private readonly options: BridgeProcessOptions = {}) {
     super();
@@ -77,6 +79,7 @@ export class BrowserBridgeProcess extends EventEmitter {
 
   /** Start the bridge (once) */
   start(): Promise<void> {
+    if (this.stopped) return Promise.reject(new Error('The browser bridge was stopped'));
     if (this.child) return Promise.resolve();
     this.starting ??= this.spawn().finally(() => {
       this.starting = null;
@@ -109,6 +112,12 @@ export class BrowserBridgeProcess extends EventEmitter {
 
   private async spawn(): Promise<void> {
     await whenShellRuntimeReady();
+    // Looked up before the script's folder is made: without node in WSL every probe would make one
+    const wsl = getWslInfo();
+    const command = wsl ? await resolveCommand('node') : this.options.execPath ?? process.execPath;
+    if (!command) {
+      throw new Error(`Node.js was not found in WSL (${wsl?.distro ?? 'unknown'}), which the browser drawer needs`);
+    }
     let script = this.options.scriptPath;
     if (!script) {
       // On the Windows side in WSL mode too: the distribution's node reads it through /mnt
@@ -116,11 +125,10 @@ export class BrowserBridgeProcess extends EventEmitter {
       script = path.join(this.tempDir, 'browser-bridge.cjs');
       await writeFile(script, BRIDGE_SOURCE, 'utf-8');
     }
-    const wsl = getWslInfo();
-    const command = wsl ? await resolveCommand('node') : this.options.execPath ?? process.execPath;
-    if (!command) {
-      void this.removeTempDir();
-      throw new Error(`Node.js was not found in WSL (${wsl?.distro ?? 'unknown'}), which the browser drawer needs`);
+    // Stopped while it was being set up (quitting): it must not start after stop() returned
+    if (this.stopped) {
+      await this.removeTempDir();
+      throw new Error('The browser bridge was stopped');
     }
     const child = spawnTool('node', [script], {
       command,
@@ -183,6 +191,7 @@ export class BrowserBridgeProcess extends EventEmitter {
 
   /** Stop the bridge (it disconnects from the browsers, which keep running) */
   stop(): Promise<void> {
+    this.stopped = true;
     const child = this.child;
     this.child = null;
     for (const settle of [...this.probes.values()]) settle(null);
@@ -203,6 +212,7 @@ export class BrowserBridgeProcess extends EventEmitter {
 
   /** Stop at once (the app is exiting) */
   killNow(): void {
+    this.stopped = true;
     const child = this.child;
     this.child = null;
     child?.stdin?.destroy();

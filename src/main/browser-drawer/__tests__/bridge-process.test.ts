@@ -38,7 +38,10 @@ describe('browser bridge process', () => {
     await bridge.stop();
     expect(bridge.running).toBe(false);
     await Promise.race([exited, new Promise((r) => setTimeout(r, 2000))]);
-    // Stopped: nothing to ask
+    // Stopped (quitting): a probe doesn't start it again
+    await expect(bridge.probe([socket])).resolves.toBeNull();
+    expect(bridge.running).toBe(false);
+    // Nothing to start: nothing to ask
     await expect(new BrowserBridgeProcess({ execPath: path.join(dir, 'no-such-node') }).probe([socket])).resolves.toBeNull();
   }, 20_000);
 });

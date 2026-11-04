@@ -36,7 +36,7 @@ import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import path from 'path';
 import { getAllWindows } from '../window-manager';
-import { readLiveSessions, registryAccess, setRegistryAccess, type RegistryDescriptor, type RegistryOs } from './registry';
+import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type RegistryDescriptor } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
 import { ChatBrowsers } from './chat-browsers';
@@ -45,12 +45,6 @@ import { ChatBrowsers } from './chat-browsers';
 const POLL_INTERVAL_MS = 2000;
 /** The largest viewport the drawer may give a page */
 const MAX_VIEWPORT = 4096;
-/** Frames are asked at most at this many device pixels per CSS pixel (4x the pixels at 1, like a Retina screen) */
-const MAX_FRAME_SCALE = 2;
-
-function registryOs(): RegistryOs {
-  return isWindows() ? 'windows' : isMacOS() ? 'macos' : 'linux';
-}
 
 /** The sessions as the renderer gets them, each with its project (and chat, for a chat's browser) */
 export function toDrawerSessions(
@@ -90,6 +84,9 @@ export function bridgeSessions(descriptors: readonly RegistryDescriptor[], sessi
       withProject.has(d.guid) && !!d.endpoint && !!d.playwrightLib)
     .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib }));
 }
+
+/** Frames are asked at most at this many device pixels per CSS pixel (4x the pixels at 1, like a Retina screen) */
+const MAX_FRAME_SCALE = 2;
 
 /** A viewport size the drawer may ask for (whole CSS pixels within limits), or 0 for none */
 export function viewportDimension(value: unknown): number {
@@ -217,8 +214,6 @@ export class BrowserDrawerService {
       });
     }
     await this.bridge.start();
-    // A bridge that just started knows no theme yet (sent before the sessions, so pages get it as they are found)
-    if (this.colorScheme) this.bridge.send({ type: 'colorScheme', scheme: this.colorScheme });
     this.syncBridgeSessions(true);
     // The view asked for before subscribing (unless the drawer closed again meanwhile)
     const pending = this.views.get(sender.id);
@@ -346,6 +341,9 @@ export class BrowserDrawerService {
     const sessions = bridgeSessions(this.descriptors, this.sessions);
     const key = JSON.stringify(sessions);
     if (!force && key === this.lastBridgeSessions) return;
+    // A bridge that just started (a drawer opened, or in WSL a liveness probe started it again
+    // after it stopped) knows no theme yet: sent before the sessions, so pages get it as they are found
+    if (this.lastBridgeSessions === '' && this.colorScheme) this.bridge.send({ type: 'colorScheme', scheme: this.colorScheme });
     this.lastBridgeSessions = key;
     this.bridge.send({ type: 'sessions', sessions });
   }

@@ -71,8 +71,21 @@ const send = (message) => {
     // Workbench is gone
   }
 };
-/** Whether the channel is still writing earlier output (a frame is dropped then, not queued) */
+/** Whether the channel is still writing earlier output (a frame is held back then, not queued) */
 const outputBusy = () => process.stdout.writableNeedDrain;
+/**
+ * page id -> its newest frame held back while the channel was busy, sent once it drains: a page
+ * that stops changing sends no more frames, so dropping its last one would leave the drawer on an
+ * older picture
+ */
+const heldFrames = new Map();
+process.stdout.on('drain', () => {
+  for (const [pageId, frame] of [...heldFrames]) {
+    heldFrames.delete(pageId);
+    const cast = casts.get(pageId);
+    if (cast && cast.viewers.size > 0) send({ type: 'frame', pageId, viewers: [...cast.viewers.keys()], ...frame });
+  }
+});
 const log = (message) => send({ type: 'log', message: String(message && message.message ? message.message : message) });
 
 // Commands run one at a time (connects, screencasts, viewport changes); input has its own queue so
@@ -197,10 +210,16 @@ async function startCast(pageId) {
     quality: 100,
     onFrame: ({ data, viewportWidth, viewportHeight }) => {
       const current = casts.get(pageId);
-      if (!current || current.viewers.size === 0 || outputBusy()) return;
+      if (!current || current.viewers.size === 0) return;
       // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
       const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
-      send({ type: 'frame', pageId, viewers: [...current.viewers.keys()], data, width: css.width, height: css.height });
+      const frame = { data, width: css.width, height: css.height };
+      if (outputBusy()) {
+        heldFrames.set(pageId, frame);
+        return;
+      }
+      heldFrames.delete(pageId);
+      send({ type: 'frame', pageId, viewers: [...current.viewers.keys()], ...frame });
     },
   });
   // Only a cast that started counts: one that failed (the page was navigating) is tried again

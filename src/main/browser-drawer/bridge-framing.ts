@@ -46,8 +46,21 @@ export function createBridgeMessageReader(
   onNoise: (skipped: number) => void = () => undefined,
 ): (chunk: Buffer) => void {
   let buffer: Buffer = Buffer.alloc(0);
+  // Chunks of a message still arriving, joined once all of it is there: joining each chunk as it
+  // came copied a multi-megabyte frame over again for every 64 KB of it
+  let waiting: Buffer[] = [];
+  let waitingLength = 0;
+  /** The length `buffer` needs for the message it starts (0: not known yet) */
+  let needed = 0;
   return (chunk) => {
-    buffer = buffer.length ? Buffer.concat([buffer, chunk]) : chunk;
+    waiting.push(chunk);
+    waitingLength += chunk.length;
+    if (needed > 0 && buffer.length + waitingLength < needed) return;
+    const parts = buffer.length ? [buffer, ...waiting] : waiting;
+    buffer = parts.length === 1 ? parts[0] : Buffer.concat(parts);
+    waiting = [];
+    waitingLength = 0;
+    needed = 0;
     for (;;) {
       // Up to the next message's start
       let start = 0;
@@ -66,7 +79,10 @@ export function createBridgeMessageReader(
         continue;
       }
       const total = PREFIX_LENGTH + headerLength + bytesLength;
-      if (buffer.length < total) return;
+      if (buffer.length < total) {
+        needed = total;
+        return;
+      }
       const headerText = buffer.subarray(PREFIX_LENGTH, PREFIX_LENGTH + headerLength).toString('utf-8');
       const bytes = buffer.subarray(PREFIX_LENGTH + headerLength, total);
       buffer = buffer.subarray(total);
