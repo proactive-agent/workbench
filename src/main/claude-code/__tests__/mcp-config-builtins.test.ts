@@ -77,8 +77,17 @@ describe('built-in MCP servers', () => {
       },
     });
     expect(playwrightProfileConfig(firefox, '/data/copy')).toMatchObject({ browser: { contextOptions: { deviceScaleFactor: 2 } } });
+    // Chromium's switch is a whole factor (a fractional one leaves the drawer's screencast without
+    // frames); pages still render at the real density
     expect(playwrightScaleConfig('chromium', 1.5)).toEqual({
-      browser: { contextOptions: { deviceScaleFactor: 1.5 }, launchOptions: { args: ['--force-device-scale-factor=1.5'] } },
+      browser: { contextOptions: { deviceScaleFactor: 1.5 }, launchOptions: { args: ['--force-device-scale-factor=2'] } },
+    });
+    setPlaywrightDisplayScale({ scale: 1.25, configFiles });
+    expect(playwrightProfileConfig(chrome, '/data/copy')).toMatchObject({
+      browser: {
+        launchOptions: { args: ['--profile-directory=Profile 1', '--force-device-scale-factor=2'] },
+        contextOptions: { deviceScaleFactor: 1.25 },
+      },
     });
     expect(playwrightScaleConfig('other', 2)).toEqual({ browser: { contextOptions: { deviceScaleFactor: 2 } } });
 

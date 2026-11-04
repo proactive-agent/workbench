@@ -99,6 +99,7 @@ export const PLAYWRIGHT_CONFIG_FILE = '.workbench-playwright.json';
  * The browsers' pixel density: the screens' largest devicePixelRatio (display-scale.ts), so the
  * drawer can show their pages as sharp as the rest of the window. 1 adds nothing. Chromium needs its
  * own switch too: a context's deviceScaleFactor alone leaves its screencast frames at CSS size
+ * (chromiumScaleSwitch)
  */
 let playwrightScale: { scale: number; configFiles: Record<'chromium' | 'other', string> } | null = null;
 
@@ -107,12 +108,22 @@ export function setPlaywrightDisplayScale(value: typeof playwrightScale): void {
   playwrightScale = value && value.scale > 1 ? value : null;
 }
 
+/**
+ * Chromium's switch for frames at device pixels, rounded up to a whole factor: with a fractional
+ * one (1.25, 1.5) the screencast sends no frames once the drawer sets the page's viewport, so the
+ * drawer stays blank. Pages still render at the context's deviceScaleFactor (the real `scale`),
+ * and the frames come at the size the drawer asks for
+ */
+export function chromiumScaleSwitch(scale: number): string {
+  return `--force-device-scale-factor=${Math.ceil(scale)}`;
+}
+
 /** The Playwright config that renders pages at `scale` device pixels per CSS pixel */
 export function playwrightScaleConfig(engine: 'chromium' | 'other', scale: number): { browser: Record<string, unknown> } {
   return {
     browser: {
       contextOptions: { deviceScaleFactor: scale },
-      ...(engine === 'chromium' ? { launchOptions: { args: [`--force-device-scale-factor=${scale}`] } } : {}),
+      ...(engine === 'chromium' ? { launchOptions: { args: [chromiumScaleSwitch(scale)] } } : {}),
     },
   };
 }
@@ -177,7 +188,7 @@ export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browser
       launchOptions: {
         executablePath,
         chromiumSandbox: true,
-        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`, ...(scale ? [`--force-device-scale-factor=${scale}`] : [])],
+        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`, ...(scale ? [chromiumScaleSwitch(scale)] : [])],
         ignoreDefaultArgs: CHROMIUM_KEYCHAIN_ARGS,
       },
       ...contextOptions,
