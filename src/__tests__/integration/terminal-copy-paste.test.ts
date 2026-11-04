@@ -71,6 +71,21 @@ vi.mock('@xterm/addon-serialize', () => ({
   })
 }));
 
+/** Fire a paste event (as the browser does after Ctrl+V) carrying the given clipboard contents */
+function firePaste(target: Element, clipboard: { text?: string; files?: File[] }): Event {
+  const files = clipboard.files ?? [];
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: {
+      files,
+      items: files.map((file) => ({ kind: 'file', type: file.type })),
+      getData: (type: string) => (type === 'text/plain' ? clipboard.text ?? '' : ''),
+    },
+  });
+  target.dispatchEvent(event);
+  return event;
+}
+
 describe('Terminal copy/paste integration', () => {
   let mockClipboard: {
     writeText: Mock;
@@ -293,7 +308,7 @@ describe('Terminal copy/paste integration', () => {
     });
   });
 
-  describe('clipboard read with xterm paste integration', () => {
+  describe("the browser's paste event with xterm paste integration", () => {
     let originalNavigatorPlatform: string;
 
     beforeEach(() => {
@@ -309,7 +324,7 @@ describe('Terminal copy/paste integration', () => {
       });
     });
 
-    it('should integrate clipboard.readText() with xterm.paste()', async () => {
+    it("should integrate the browser's paste event with xterm.paste()", async () => {
       const { useXterm } = await import('../../renderer/components/terminal/useXterm');
 
       // Mock Windows platform
@@ -370,37 +385,33 @@ describe('Terminal copy/paste integration', () => {
         };
       });
 
-      mockClipboard.readText.mockResolvedValue('pasted text');
-
       // Create a test wrapper component that provides the DOM element
       const TestWrapper = () => {
         const { terminalRef } = useXterm({ terminalId: 'test-terminal' });
         return React.createElement('div', { ref: terminalRef });
       };
 
-      render(React.createElement(TestWrapper));
+      const { container } = render(React.createElement(TestWrapper));
 
+      let keyEvent: KeyboardEvent | undefined;
+      let handled: boolean | undefined;
       await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        if (keyEventHandler) {
-          keyEventHandler(event);
-          // Wait for clipboard read and paste
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
+        keyEvent = new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, cancelable: true });
+        handled = keyEventHandler?.(keyEvent);
+        // The browser's paste event follows the shortcut
+        firePaste(container.firstElementChild!, { text: 'pasted text' });
       });
 
-      // Verify integration: clipboard.readText() called
-      expect(mockClipboard.readText).toHaveBeenCalled();
+      // xterm doesn't send ^V, and the browser's paste goes ahead
+      expect(handled).toBe(false);
+      expect(keyEvent?.defaultPrevented).toBe(false);
 
-      // Verify integration: xterm.paste() called with clipboard content
+      // Verify integration: the paste event's text goes to xterm.paste(), without reading the clipboard
       expect(mockPaste).toHaveBeenCalledWith('pasted text');
+      expect(mockClipboard.readText).not.toHaveBeenCalled();
     });
 
-    it('should not paste when clipboard is empty', async () => {
+    it('sends the empty paste xterm would when the clipboard has neither text nor files (Linux)', async () => {
       const { useXterm } = await import('../../renderer/components/terminal/useXterm');
 
       // Mock Linux platform
@@ -461,8 +472,9 @@ describe('Terminal copy/paste integration', () => {
         };
       });
 
-      // Mock empty clipboard
-      mockClipboard.readText.mockResolvedValue('');
+      // Under WSLg a file copied in Windows arrives as an empty paste: the main process reads the clipboard's files
+      const readClipboardFilePaths = vi.fn(async () => [] as string[]);
+      (window as unknown as { electronAPI: unknown }).electronAPI = { sendTerminalInput: vi.fn(), readClipboardFilePaths };
 
       // Create a test wrapper component that provides the DOM element
       const TestWrapper = () => {
@@ -470,26 +482,18 @@ describe('Terminal copy/paste integration', () => {
         return React.createElement('div', { ref: terminalRef });
       };
 
-      render(React.createElement(TestWrapper));
+      const { container } = render(React.createElement(TestWrapper));
 
       await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        if (keyEventHandler) {
-          keyEventHandler(event);
-          // Wait for clipboard read
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
+        keyEventHandler?.(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, cancelable: true }));
+        firePaste(container.firstElementChild!, {});
+        await new Promise(resolve => setTimeout(resolve, 0));
       });
 
-      // Verify clipboard was read
-      expect(mockClipboard.readText).toHaveBeenCalled();
-
-      // Verify paste was NOT called for empty clipboard
-      expect(mockPaste).not.toHaveBeenCalled();
+      // No files either: the empty paste xterm would have sent (Claude Code then looks for an image)
+      expect(readClipboardFilePaths).toHaveBeenCalled();
+      expect(mockPaste).toHaveBeenCalledWith('');
+      expect(mockClipboard.readText).not.toHaveBeenCalled();
     });
   });
 
@@ -724,20 +728,13 @@ describe('Terminal copy/paste integration', () => {
       const mockInput = vi.fn();
       const mockSendTerminalInput = vi.fn();
       let onDataCallback: ((data: string) => void) | undefined;
-      let errorLogged = false;
 
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(function(...args: unknown[]) {
-        if (String(args[0]).includes('[useXterm]')) {
-          errorLogged = true;
-        }
-      });
-
-      // Mock clipboard error
-      mockClipboard.readText = vi.fn().mockRejectedValue(new Error('Clipboard denied'));
-
-      // Mock window.electronAPI with sendTerminalInput
-      (window as unknown as { electronAPI: { sendTerminalInput: Mock } }).electronAPI = {
-        sendTerminalInput: mockSendTerminalInput
+      // Pasted files' paths can't be translated for the terminal's runtime (the call fails)
+      const copied = new File(['x'], 'notes.txt', { type: 'text/plain' });
+      (window as unknown as { electronAPI: unknown }).electronAPI = {
+        sendTerminalInput: mockSendTerminalInput,
+        getPathForFile: () => 'C:\\notes.txt',
+        toTerminalRuntimePaths: vi.fn().mockRejectedValue(new Error('Clipboard denied')),
       };
 
       // Override XTerm mock to be constructable
@@ -797,24 +794,17 @@ describe('Terminal copy/paste integration', () => {
         return React.createElement('div', { ref: terminalRef });
       };
 
-      render(React.createElement(TestWrapper));
+      const { container } = render(React.createElement(TestWrapper));
 
       await act(async () => {
-        // Try to paste (will fail)
-        const pasteEvent = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        if (keyEventHandler) {
-          keyEventHandler(pasteEvent);
-          // Wait for clipboard error
-          await new Promise(resolve => setTimeout(resolve, 0));
-        }
+        // Paste a copied file (translating its path fails)
+        keyEventHandler?.(new KeyboardEvent('keydown', { key: 'v', ctrlKey: true, cancelable: true }));
+        firePaste(container.firstElementChild!, { files: [copied] });
+        await new Promise(resolve => setTimeout(resolve, 0));
       });
 
-      // Verify error was logged
-      expect(errorLogged).toBe(true);
+      // The paste falls back to the path as it was
+      expect(mockPaste).toHaveBeenCalledWith('C:\\notes.txt');
 
       // Verify terminal still works (can accept input through onData callback)
       const inputData = 'test command';
@@ -825,8 +815,6 @@ describe('Terminal copy/paste integration', () => {
 
       // Verify input was sent to electronAPI (terminal still functional)
       expect(mockSendTerminalInput).toHaveBeenCalledWith('test-terminal', 'test command');
-
-      consoleErrorSpy.mockRestore();
     });
   });
 });
