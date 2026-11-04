@@ -7,7 +7,6 @@
  */
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { fileURLToPath } from 'url';
 import { clipboard } from 'electron';
 import { isLinux, isWSL } from '../platform';
 
@@ -55,7 +54,11 @@ function readUriListFiles(): string[] {
   return parseFileUris(text);
 }
 
-/** `file://` URIs in a uri-list (or GNOME's "copy\nfile://..." form) as paths; other lines are skipped */
+/**
+ * `file://` URIs in a uri-list (or GNOME's "copy\nfile://..." form) as paths; other lines are skipped.
+ * They come from a Linux clipboard, so they are POSIX paths whatever OS this runs on (Node's
+ * fileURLToPath refuses a path without a drive letter on Windows)
+ */
 export function parseFileUris(text: string): string[] {
   return text
     .split(/\r?\n/)
@@ -63,7 +66,11 @@ export function parseFileUris(text: string): string[] {
     .filter((line) => line.startsWith('file://'))
     .flatMap((uri) => {
       try {
-        return [fileURLToPath(uri)];
+        const url = new URL(uri);
+        // A file on another host isn't a path here
+        if (url.hostname && url.hostname !== 'localhost') return [];
+        const path = decodeURIComponent(url.pathname);
+        return path.startsWith('/') && !path.includes('\0') ? [path] : [];
       } catch {
         return [];
       }
