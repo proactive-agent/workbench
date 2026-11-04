@@ -19,12 +19,15 @@
  *
  * The release workflows take the published version from the release tag, so what is written here
  * is what the app reports in a development or a locally packaged build.
+ *
+ * `--dry-run` prints the version without writing it.
  */
 const { execFileSync } = require('node:child_process');
 const { readFileSync, writeFileSync } = require('node:fs');
 const { join } = require('node:path');
 
 const root = join(__dirname, '..', '..');
+const dryRun = process.argv.includes('--dry-run');
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const lines = (out) => (out ? out.split('\n') : []);
 
@@ -33,14 +36,16 @@ const packageText = readFileSync(packagePath, 'utf8');
 const current = JSON.parse(packageText).version;
 const major = current.split('.')[0];
 
-const exists = (ref) => {
+/** Whether a git command succeeds (its exit status is the answer) */
+const succeeds = (...args) => {
   try {
-    execFileSync('git', ['rev-parse', '--verify', ref], { cwd: root, stdio: 'ignore' });
+    execFileSync('git', args, { cwd: root, stdio: 'ignore' });
     return true;
   } catch {
     return false;
   }
 };
+const exists = (ref) => succeeds('rev-parse', '--verify', ref);
 
 // Without the release tag there is nothing to count from: leave the version as it is rather than
 // guess one (a shallow clone, or a major raised before its release was tagged)
@@ -63,6 +68,18 @@ if (!exists(`refs/tags/${anchor}`)) {
  * branch's own line are taken for pull requests.
  */
 const mainRef = ['refs/remotes/origin/main', 'refs/heads/main'].find(exists);
+
+// The tag must be on the history that is counted. A tag made before main's history was rewritten
+// shares no history with it, and `git fetch` never moves a tag that already exists locally, so a
+// checkout can keep such a tag: counting from it would take every pull request main ever merged
+const counted = mainRef ?? 'HEAD';
+if (!succeeds('merge-base', '--is-ancestor', anchor, counted)) {
+  console.log(
+    `[sync-version] the ${anchor} tag is not on ${counted}'s history (a tag from before a rewrite? ` +
+      `\`git fetch --tags --force\` takes the remote's), keeping ${current}`
+  );
+  process.exit(0);
+}
 // Merges only, newest first: listing every commit's parents outgrew execFileSync's output
 // buffer on a long history
 const listMerges = (...args) => lines(git('rev-list', '--merges', '--parents', ...args)).map((line) => {
@@ -87,8 +104,8 @@ if (mainRef) {
 const patch = lines(git('rev-list', '--first-parent', '--no-merges', 'HEAD', '--not', anchor, ...merges.slice(0, 1))).length;
 const version = `${major}.${merges.length}.${patch}`;
 
-if (version === current) {
-  console.log(`[sync-version] ${version}`);
+if (version === current || dryRun) {
+  console.log(`[sync-version] ${version === current ? version : `${current} -> ${version} (dry run, not written)`}`);
   process.exit(0);
 }
 
