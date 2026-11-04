@@ -36,6 +36,7 @@ import { getWslInfo, toRuntimePath } from '../platform/shell-runtime';
 import { isWindows } from '../platform';
 import { toRuntimeArg } from '../platform/runtime-exec';
 import { SNAP_UNCONFINED_BINARIES } from '../browser-profiles/locations';
+import { appAliasTarget } from '../browser-profiles/app-alias';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 
 export type McpServerEntry =
@@ -117,9 +118,12 @@ export function playwrightScaleConfig(engine: 'chromium' | 'other', scale: numbe
 /** The server key of the Playwright connector in `--mcp-config` */
 const PLAYWRIGHT_SERVER_KEY = 'playwright';
 
-/** A chosen browser's executable where runs start it (snap launchers -> the snap's own binary) */
+/**
+ * A chosen browser's executable where runs start it: snap launchers -> the snap's own binary, a
+ * Microsoft Store app's execution alias -> the package's executable it points at
+ */
 function launchExecutable(choice: PlaywrightBrowserChoice): string {
-  return SNAP_BINARIES[choice.executablePath] ?? choice.executablePath;
+  return SNAP_BINARIES[choice.executablePath] ?? appAliasTarget(choice.executablePath);
 }
 
 /**

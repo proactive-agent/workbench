@@ -105,6 +105,28 @@ describe('browser profile detection', () => {
     });
   });
 
+  it('finds Microsoft Store Firefox by the profiles its package keeps, whatever the package is called', async () => {
+    const local = 'C:\\Users\\me\\AppData\\Local';
+    const store = `${local}\\Packages\\Some.Firefox_xyz\\LocalCache\\Roaming\\Mozilla\\Firefox`;
+    await put(`${store}\\profiles.ini`, '[Profile0]\r\nName=default-release\r\nIsRelative=1\r\nPath=Profiles/s.default-release\r\n');
+    await folder(`${store}\\Profiles\\s.default-release`);
+    await put(`${local}\\Microsoft\\WindowsApps\\Some.Firefox_xyz\\firefox.exe`);
+    // Another app's package, without Firefox profiles
+    await folder(`${local}\\Packages\\Microsoft.WindowsCalculator_8wekyb3d8bbwe\\LocalCache`);
+
+    const profiles = await scanUserProfiles({ os: 'windows', home: 'C:\\Users\\me', env: { LOCALAPPDATA: local }, toHost: fixturePath, lookUpCommands: false });
+
+    expect(profiles).toEqual([
+      expect.objectContaining({
+        id: 'firefox-store:s.default-release',
+        variant: 'store',
+        usable: true,
+        profilePath: `${store}\\Profiles\\s.default-release`,
+        executablePath: `${local}\\Microsoft\\WindowsApps\\Some.Firefox_xyz\\firefox.exe`,
+      }),
+    ]);
+  });
+
   it('lists Safari on macOS as unsupported and skips profiles whose folder is gone', async () => {
     const support = '/Users/me/Library/Application Support';
     await put(`${support}/BraveSoftware/Brave-Browser/Local State`, localState({ Default: { name: 'Brave me' }, 'Profile 3': { name: 'Deleted' } }));

@@ -13,7 +13,8 @@
  */
 
 import os from 'os';
-import { access, readFile, stat } from 'fs/promises';
+import path from 'path';
+import { access, readFile, readdir, stat } from 'fs/promises';
 import type { BrowserProfile, BrowserProfileDisabledReason, DownloadableBrowser } from '../../shared/types/browser-profiles';
 import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
@@ -25,6 +26,8 @@ import {
   SNAP_FIREFOX_LAUNCHER,
   browserLocations,
   pathApi,
+  storeFirefoxPaths,
+  windowsLocalAppData,
   type BrowserLocation,
   type BrowserOs,
 } from './locations';
@@ -235,11 +238,31 @@ async function scanLocation(location: BrowserLocation, context: ScanContext): Pr
   }));
 }
 
+/**
+ * The Microsoft Store packages that hold Firefox profiles, found by what they keep on disk rather
+ * than by name, so any Firefox the Store installs is covered
+ */
+async function findStoreFirefoxPackages(context: ScanContext): Promise<string[]> {
+  if (context.os !== 'windows') return [];
+  const localAppData = windowsLocalAppData(context);
+  let families: string[];
+  try {
+    families = await readdir(context.toHost(path.win32.join(localAppData, 'Packages')));
+  } catch {
+    return [];
+  }
+  const hasProfiles = await Promise.all(
+    families.map((family) => exists(context.toHost(path.win32.join(storeFirefoxPaths(localAppData, family).dataDir, 'profiles.ini'))))
+  );
+  return families.filter((_, index) => hasProfiles[index]);
+}
+
 /** Every profile of the browsers in one OS's table; a browser that can't be read is skipped */
 export async function scanBrowserProfiles(context: ScanContext): Promise<BrowserProfile[]> {
   const profiles: BrowserProfile[] = [];
   const seen = new Set<string>();
-  for (const location of browserLocations(context.os, context)) {
+  const storePackages = await findStoreFirefoxPackages(context);
+  for (const location of browserLocations(context.os, { ...context, storePackages })) {
     try {
       for (const profile of await scanLocation(location, context)) {
         if (seen.has(profile.id)) continue;

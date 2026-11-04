@@ -60,6 +60,8 @@ export interface BrowserLocation {
 export interface BrowserLocationContext {
   home: string;
   env: Record<string, string | undefined>;
+  /** Windows: Microsoft Store packages holding Firefox profiles, by package family name (detect.ts finds them) */
+  storePackages?: string[];
 }
 
 /** The path functions for an OS's paths */
@@ -67,9 +69,27 @@ export function pathApi(os: BrowserOs): PathApi {
   return os === 'windows' ? path.win32 : path.posix;
 }
 
-function windowsLocations({ home, env }: BrowserLocationContext): BrowserLocation[] {
+/** `%LOCALAPPDATA%`, or its default under the home folder */
+export function windowsLocalAppData({ home, env }: Pick<BrowserLocationContext, 'home' | 'env'>): string {
+  return env.LOCALAPPDATA || path.win32.join(home, 'AppData', 'Local');
+}
+
+/**
+ * A Microsoft Store (MSIX) package's Firefox folders, from its package family name (a folder
+ * name in `%LOCALAPPDATA%\Packages`): the package keeps what it writes to AppData in its own
+ * `LocalCache`, and starts through an app execution alias in `WindowsApps\<family>`
+ */
+export function storeFirefoxPaths(localAppData: string, packageFamily: string): { dataDir: string; executable: string } {
   const p = path.win32;
-  const localAppData = env.LOCALAPPDATA || p.join(home, 'AppData', 'Local');
+  return {
+    dataDir: p.join(localAppData, 'Packages', packageFamily, 'LocalCache', 'Roaming', 'Mozilla', 'Firefox'),
+    executable: p.join(localAppData, 'Microsoft', 'WindowsApps', packageFamily, 'firefox.exe'),
+  };
+}
+
+function windowsLocations({ home, env, storePackages = [] }: BrowserLocationContext): BrowserLocation[] {
+  const p = path.win32;
+  const localAppData = windowsLocalAppData({ home, env });
   const appData = env.APPDATA || p.join(home, 'AppData', 'Roaming');
   const programFiles = env.ProgramFiles || env.PROGRAMFILES || 'C:\\Program Files';
   const programFilesX86 = env['ProgramFiles(x86)'] || env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
@@ -102,6 +122,11 @@ function windowsLocations({ home, env }: BrowserLocationContext): BrowserLocatio
       // Machine-wide (release and ESR install to the same folder), then a per-user install
       executables: installed('Mozilla Firefox', 'firefox.exe'),
     },
+    // Microsoft Store installs (mcp-config.ts runs the alias's target)
+    ...storePackages.map((family): BrowserLocation => {
+      const { dataDir, executable } = storeFirefoxPaths(localAppData, family);
+      return { browser: 'firefox', engine: 'firefox', variant: 'store', dataDirs: [dataDir], executables: [executable] };
+    }),
   ];
 }
 

@@ -30,7 +30,29 @@ describe('browserLocations', () => {
         'C:\\Users\\me\\AppData\\Local\\Mozilla Firefox\\firefox.exe',
       ],
     });
+    // Store installs only when detection found their packages
+    expect(find(locations, 'firefox', 'store')).toBeUndefined();
     expect(find(locations, 'safari')).toBeUndefined();
+  });
+
+  it('adds a Firefox for each Microsoft Store package detection found', () => {
+    const locations = browserLocations('windows', {
+      home: 'C:\\Users\\me',
+      env: { LOCALAPPDATA: 'C:\\Users\\me\\AppData\\Local' },
+      storePackages: ['Mozilla.Firefox_abc', 'Mozilla.FirefoxNightly_abc'],
+    });
+    expect(locations.filter((l) => l.variant === 'store')).toEqual([
+      {
+        browser: 'firefox', engine: 'firefox', variant: 'store',
+        dataDirs: ['C:\\Users\\me\\AppData\\Local\\Packages\\Mozilla.Firefox_abc\\LocalCache\\Roaming\\Mozilla\\Firefox'],
+        executables: ['C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\Mozilla.Firefox_abc\\firefox.exe'],
+      },
+      {
+        browser: 'firefox', engine: 'firefox', variant: 'store',
+        dataDirs: ['C:\\Users\\me\\AppData\\Local\\Packages\\Mozilla.FirefoxNightly_abc\\LocalCache\\Roaming\\Mozilla\\Firefox'],
+        executables: ['C:\\Users\\me\\AppData\\Local\\Microsoft\\WindowsApps\\Mozilla.FirefoxNightly_abc\\firefox.exe'],
+      },
+    ]);
   });
 
   it('falls back to the home folder when the environment has no folders (Windows)', () => {

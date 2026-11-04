@@ -432,7 +432,8 @@
       },
       "variants": {
         "snap": "Snap",
-        "flatpak": "Flatpak"
+        "flatpak": "Flatpak",
+        "store": "Microsoft Store"
       },
       "reasons": {
         "unsupportedEngine": "Playwright can't drive Safari; use Playwright's WebKit",
