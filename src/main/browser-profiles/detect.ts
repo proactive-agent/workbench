@@ -36,6 +36,12 @@ import { findManagedBrowser, scanManagedBrowsers } from './managed';
 
 /** Profiles with no sign of use for this long are left out (leftovers of old or removed installs) */
 export const STALE_PROFILE_MS = 365 * 24 * 60 * 60 * 1000;
+/**
+ * Profiles no browser ever opened (none of the activity files) are left out once made this long
+ * ago: Firefox's placeholder `default` profile, made on its first run next to the
+ * `default-release` one it uses. A profile just made (about:profiles) is still listed
+ */
+export const UNOPENED_PROFILE_MS = 7 * 24 * 60 * 60 * 1000;
 /** Files a browser writes while a profile is in use, relative to the profile's folder */
 const ACTIVITY_FILES = [
   'Preferences', 'Cookies', 'Network/Cookies', 'History', 'Login Data',
@@ -74,7 +80,7 @@ async function exists(p: string): Promise<boolean> {
 /**
  * Whether nothing in a profile's folder changed for STALE_PROFILE_MS. Judged by the files a
  * browser writes in use (a folder's own date moves when anything is added to it); a profile
- * without any of them counts by its folder
+ * without any of them was never opened, and counts by its folder's date with UNOPENED_PROFILE_MS
  */
 export async function isStaleProfile(profileFolder: string, now = Date.now()): Promise<boolean> {
   let newest = 0;
@@ -87,7 +93,7 @@ export async function isStaleProfile(profileFolder: string, now = Date.now()): P
   }
   if (newest === 0) {
     try {
-      newest = (await stat(profileFolder)).mtimeMs;
+      return now - (await stat(profileFolder)).mtimeMs > UNOPENED_PROFILE_MS;
     } catch {
       return false;
     }

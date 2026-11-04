@@ -292,7 +292,9 @@ installed Chrome); the picker also lists Playwright's Firefox and WebKit (`manag
 `ms-playwright/<name>-<revision>` once `INSTALLATION_COMPLETE` is there) as disabled items with a download button
 that opens a terminal running `npx -y @playwright/mcp@<version> install-browser <name>` (`MCP_INSTALL_BROWSER`; the
 main process picks the command, then watches the cache, sends the new list and checks the connector again). Safari is
-listed but can't be used; WebKit is the closest engine.
+listed but can't be used; WebKit is the closest engine. Microsoft Store Firefox is found by the profiles its package keeps
+(`%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming\Mozilla\Firefox`) and run through its app execution alias's target
+(`app-alias.ts`). Profiles a browser never opened (no activity files) are left out after a week.
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
 answers `initialize` (Playwright is also asked to open `about:blank` with `browser_navigate`, headless, since it needs

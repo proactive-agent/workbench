@@ -20,7 +20,7 @@ vi.mock('../../platform/shell-runtime', () => ({
   toHostPath: (p: string) => mocks.toHost(p),
 }));
 
-import { STALE_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserProfiles } from '../detect';
+import { STALE_PROFILE_MS, UNOPENED_PROFILE_MS, detectBrowserProfiles, isStaleProfile, scanBrowserProfiles } from '../detect';
 import { findManagedBrowser, playwrightCacheDir } from '../managed';
 
 let root: string;
@@ -212,13 +212,18 @@ describe('browser profile detection', () => {
     await put(`${dir}/profiles.ini`, [
       '[Profile0]', 'Name=old', 'IsRelative=1', 'Path=a.old', '',
       '[Profile1]', 'Name=in-use', 'IsRelative=1', 'Path=b.in-use', '',
-      '[Profile2]', 'Name=never-opened', 'IsRelative=1', 'Path=c.fresh',
+      '[Profile2]', 'Name=never-opened', 'IsRelative=1', 'Path=c.fresh', '',
+      // Firefox's placeholder: made on its first run, never opened since
+      '[Profile3]', 'Name=default', 'IsRelative=1', 'Path=d.default',
     ].join('\n'));
     await put(`${dir}/a.old/prefs.js`);
     await put(`${dir}/b.in-use/prefs.js`);
     await folder(`${dir}/c.fresh`);
+    await put(`${dir}/d.default/times.json`);
     const longAgo = new Date(Date.now() - 2 * STALE_PROFILE_MS);
     await utimes(fixturePath(`${dir}/a.old/prefs.js`), longAgo, longAgo);
+    const weeksAgo = new Date(Date.now() - 2 * UNOPENED_PROFILE_MS);
+    await utimes(fixturePath(`${dir}/d.default`), weeksAgo, weeksAgo);
     await put('/usr/lib/firefox/firefox');
 
     const profiles = await scanUserProfiles({ os: 'linux', home: '/home/me', env: {}, toHost: fixturePath, lookUpCommands: false });
@@ -233,9 +238,11 @@ describe('browser profile detection', () => {
     await utimes(`${folderPath}/prefs.js`, longAgo, longAgo);
     // The folder itself was touched just now
     expect(await isStaleProfile(folderPath)).toBe(true);
-    // Without activity files the folder date counts
+    // Without activity files it was never opened: its folder date counts, with a shorter limit
     await folder('/p/empty');
-    await utimes(fixturePath('/p/empty'), longAgo, longAgo);
+    expect(await isStaleProfile(fixturePath('/p/empty'))).toBe(false);
+    const weeksAgo = new Date(Date.now() - 2 * UNOPENED_PROFILE_MS);
+    await utimes(fixturePath('/p/empty'), weeksAgo, weeksAgo);
     expect(await isStaleProfile(fixturePath('/p/empty'))).toBe(true);
     expect(await isStaleProfile(fixturePath('/p/missing'))).toBe(false);
   });
