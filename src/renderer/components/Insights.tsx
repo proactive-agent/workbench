@@ -55,7 +55,12 @@ import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
-import { useBrowserDrawerStore } from '../stores/browser-drawer-store';
+import {
+  useBrowserDrawerStore,
+  APP_SIDEBAR_COLLAPSED_WIDTH,
+  APP_SIDEBAR_WIDTH,
+  CHAT_MIN_WIDTH,
+} from '../stores/browser-drawer-store';
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
@@ -79,10 +84,10 @@ interface InsightsProps {
  */
 const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
 
-/** The chat's narrowest width (px) before resizing the browser drawer closes the chat history */
-const CHAT_MIN_WIDTH = 500;
 /** The chat history sidebar's width (px, ChatHistorySidebar's w-64) */
 const CHAT_HISTORY_WIDTH = 256;
+/** The width (px) collapsing the app's sidebar gives the chat */
+const APP_SIDEBAR_COLLAPSE_GAIN = APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH;
 
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
@@ -118,22 +123,50 @@ export function Insights({ projectId }: InsightsProps) {
   const chatColumnRef = useRef<HTMLDivElement | null>(null);
   /** The chat history was closed by the drawer (not by the user): the drawer may open it again */
   const historyClosedByDrawerRef = useRef(false);
+  const appSidebarSaved = useSettingsStore((state) => state.settings.sidebarCollapsed ?? false);
+  const appSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
+  const setAppSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
+  const narrowDrawerBy = useBrowserDrawerStore((state) => state.narrowBy);
+  /** The drawer as the last change left it: which way it moved decides what may close or open */
+  const lastDrawerRef = useRef({ open: false, width: drawerWidth });
   // Opening or widening the drawer until the chat is narrower than CHAT_MIN_WIDTH closes the chat
-  // history; narrowing or closing the drawer opens it again once the chat keeps that width with it.
-  // Only a history the drawer closed opens again: one the user closed stays closed
+  // history, then collapses the app's sidebar; narrowing or closing the drawer opens them again in
+  // the other order, each once the chat keeps that width with it. Only what the drawer closed opens
+  // again: a history or sidebar the user closed stays closed. Only the drawer growing closes them,
+  // so one the user opens again (which narrows the drawer by its width) stays open
   useLayoutEffect(() => {
-    const width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
+    const last = lastDrawerRef.current;
+    lastDrawerRef.current = { open: drawerOpen, width: drawerWidth };
+    const grew = drawerOpen && (!last.open || drawerWidth > last.width);
+    const shrank = drawerOpen ? last.open && drawerWidth < last.width : last.open;
+    let width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
     if (width <= 0) return;
-    if (showSidebar && drawerOpen && width < CHAT_MIN_WIDTH) {
-      historyClosedByDrawerRef.current = true;
-      setShowSidebar(false);
-    } else if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
+    if (grew && width < CHAT_MIN_WIDTH) {
+      if (showSidebar) {
+        historyClosedByDrawerRef.current = true;
+        setShowSidebar(false);
+        width += CHAT_HISTORY_WIDTH;
+      }
+      if (width < CHAT_MIN_WIDTH && !appSidebarSaved && !appSidebarCollapsedByDrawer) setAppSidebarCollapsedByDrawer(true);
+      return;
+    }
+    if (!shrank) return;
+    if (appSidebarCollapsedByDrawer) {
+      if (width - APP_SIDEBAR_COLLAPSE_GAIN < CHAT_MIN_WIDTH) return;
+      setAppSidebarCollapsedByDrawer(false);
+      width -= APP_SIDEBAR_COLLAPSE_GAIN;
+    }
+    if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
       historyClosedByDrawerRef.current = false;
       setShowSidebar(true);
     }
-    // The drawer's changes only: not the sidebar's, so the user's toggles stay as they are
+    // The drawer's changes only: not the sidebars', so the user's toggles stay as they are
   }, [drawerOpen, drawerWidth]);
+  // The app's sidebar is the drawer's to collapse only on this page
+  useEffect(() => () => setAppSidebarCollapsedByDrawer(false), [setAppSidebarCollapsedByDrawer]);
   const toggleHistory = () => {
+    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its width
+    if (!showSidebar && historyClosedByDrawerRef.current) narrowDrawerBy(CHAT_HISTORY_WIDTH);
     historyClosedByDrawerRef.current = false;
     setShowSidebar(!showSidebar);
   };

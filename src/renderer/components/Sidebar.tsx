@@ -17,6 +17,7 @@ import {
 import { cn } from '../lib/utils';
 import { useProjectStore } from '../stores/project-store';
 import { useSettingsStore, saveSettings } from '../stores/settings-store';
+import { useBrowserDrawerStore, APP_SIDEBAR_COLLAPSED_WIDTH, APP_SIDEBAR_WIDTH } from '../stores/browser-drawer-store';
 import { GitSetupModal } from './GitSetupModal';
 
 import { UsageIndicator } from './UsageIndicator';
@@ -91,10 +92,20 @@ export function Sidebar({
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
-  // Sidebar collapsed state from settings
-  const isCollapsed = settings.sidebarCollapsed ?? false;
+  // Sidebar collapsed state from settings, or for now while the browser drawer needs the room
+  const collapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
+  const setCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
+  const narrowDrawerBy = useBrowserDrawerStore((state) => state.narrowBy);
+  const isCollapsed = (settings.sidebarCollapsed ?? false) || collapsedByDrawer;
 
   const toggleSidebar = () => {
+    // Expanded by the user: the drawer's collapse ends (the saved choice was expanded), and the
+    // drawer gives up the room the sidebar takes, so the chat keeps its width
+    if (collapsedByDrawer) {
+      setCollapsedByDrawer(false);
+      narrowDrawerBy(APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH);
+      return;
+    }
     saveSettings({ sidebarCollapsed: !isCollapsed });
   };
 

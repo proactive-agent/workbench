@@ -48,10 +48,33 @@ describe('browser drawer store', () => {
     expect(chooseSelectedPage([], 'gone', null)).toEqual({ selectedPageId: null, revealSessionId: null });
   });
 
+  it('narrows an open drawer by the room a sidebar the user opened again takes, within its limits', () => {
+    vi.stubGlobal('window', { innerWidth: 1600 });
+    try {
+      useBrowserDrawerStore.setState({ open: true, width: 1044 });
+      useBrowserDrawerStore.getState().narrowBy(256);
+      expect(useBrowserDrawerStore.getState().width).toBe(788);
+      // From the width it is shown at (a stored width past the limit counts as the limit)
+      useBrowserDrawerStore.setState({ width: 5000 });
+      useBrowserDrawerStore.getState().narrowBy(232);
+      expect(useBrowserDrawerStore.getState().width).toBe(812);
+      // Never below its narrowest width, and a closed drawer stays as it is
+      useBrowserDrawerStore.getState().narrowBy(1000);
+      expect(useBrowserDrawerStore.getState().width).toBe(BROWSER_DRAWER_MIN_WIDTH);
+      useBrowserDrawerStore.setState({ open: false, width: 900 });
+      useBrowserDrawerStore.getState().narrowBy(256);
+      expect(useBrowserDrawerStore.getState().width).toBe(900);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('keeps its width within the window', () => {
     expect(clampDrawerWidth(100, 1600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
     expect(clampDrawerWidth(700, 1600)).toBe(700);
-    expect(clampDrawerWidth(1500, 1600)).toBe(800);
+    // Up to what leaves the chat 500px beside the app's collapsed sidebar (56px)
+    expect(clampDrawerWidth(1500, 1600)).toBe(1044);
+    expect(clampDrawerWidth(1044, 1600)).toBe(1044);
     expect(clampDrawerWidth(900, 600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
   });
 

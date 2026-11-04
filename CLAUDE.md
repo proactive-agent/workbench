@@ -327,8 +327,10 @@ the **browser drawer** at the main window's right edge (`src/main/browser-drawer
 `browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
 reload, address), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
 closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
-other pages have no drawer or handle (the browsers keep running). Its width is resizable (up to half the window) and
-remembered; each chat keeps its own view (open or closed, the tab shown).
+other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
+until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing
+the drawer opens them again in the other order, only what the drawer closed), and it stops where the chat keeps 500px
+beside the collapsed sidebar; each chat keeps its own view (open or closed, the tab shown).
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link

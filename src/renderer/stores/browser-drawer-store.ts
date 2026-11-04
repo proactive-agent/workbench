@@ -17,13 +17,22 @@ import {
 
 export const BROWSER_DRAWER_MIN_WIDTH = 420;
 const BROWSER_DRAWER_DEFAULT_WIDTH = 760;
-/** The drawer takes at most this share of the window */
-const BROWSER_DRAWER_MAX_SHARE = 0.5;
+/**
+ * The chat's narrowest width (px) beside the drawer: widening the drawer past it closes the chat
+ * history, then collapses the app's sidebar (Insights.tsx), and the drawer stops there
+ */
+export const CHAT_MIN_WIDTH = 500;
+/** The app's sidebar's width (px) expanded and collapsed to its icon rail (Sidebar's w-72 and w-14) */
+export const APP_SIDEBAR_WIDTH = 288;
+export const APP_SIDEBAR_COLLAPSED_WIDTH = 56;
 const WIDTH_STORAGE_KEY = 'workbench.browserDrawer.width';
 
-/** A width within the drawer's limits for a window this wide */
+/**
+ * A width within the drawer's limits for a window this wide: at most what leaves the chat
+ * CHAT_MIN_WIDTH beside the app's collapsed sidebar (the chat history closed)
+ */
 export function clampDrawerWidth(width: number, windowWidth: number): number {
-  const max = Math.max(BROWSER_DRAWER_MIN_WIDTH, Math.floor(windowWidth * BROWSER_DRAWER_MAX_SHARE));
+  const max = Math.max(BROWSER_DRAWER_MIN_WIDTH, Math.floor(windowWidth - APP_SIDEBAR_COLLAPSED_WIDTH - CHAT_MIN_WIDTH));
   return Math.round(Math.min(Math.max(width, BROWSER_DRAWER_MIN_WIDTH), max));
 }
 
@@ -107,8 +116,16 @@ interface BrowserDrawerStore extends DrawerView {
   views: Record<string, DrawerView>;
   /** A new tab was asked for in this session: it is shown once it appears */
   newTabSessionId: string | null;
+  /**
+   * The drawer collapsed the app's sidebar to keep the chat wide enough (Insights.tsx): collapsed
+   * while set, on top of the user's own choice (never saved), and expanded again by the drawer
+   */
+  appSidebarCollapsedByDrawer: boolean;
+  setAppSidebarCollapsedByDrawer: (collapsed: boolean) => void;
   setOpen: (open: boolean) => void;
   setWidth: (width: number) => void;
+  /** An open drawer gets narrower by `px` (a sidebar it had closed was opened: the chat keeps its width) */
+  narrowBy: (px: number) => void;
   selectPage: (pageId: string) => void;
   /** Show another context (keeping the current one's view for when it comes back) */
   setContext: (projectId: string | null, chatId: string | null) => void;
@@ -135,6 +152,8 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   chatId: null,
   views: {},
   newTabSessionId: null,
+  appSidebarCollapsedByDrawer: false,
+  setAppSidebarCollapsedByDrawer: (appSidebarCollapsedByDrawer) => set({ appSidebarCollapsedByDrawer }),
   setOpen: (open) => set({ open }),
   setWidth: (width) => {
     set({ width });
@@ -143,6 +162,12 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
     } catch {
       // The width is remembered only where storage works
     }
+  },
+  narrowBy: (px) => {
+    const { open, width, setWidth } = get();
+    if (!open) return;
+    const shown = clampDrawerWidth(width, window.innerWidth);
+    setWidth(clampDrawerWidth(shown - px, window.innerWidth));
   },
   selectPage: (pageId) => set({ selectedPageId: pageId, revealSessionId: null }),
   setContext: (projectId, chatId) => {
