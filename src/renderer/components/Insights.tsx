@@ -79,6 +79,11 @@ interface InsightsProps {
  */
 const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
 
+/** The chat's narrowest width (px) before resizing the browser drawer closes the chat history */
+const CHAT_MIN_WIDTH = 500;
+/** The chat history sidebar's width (px, ChatHistorySidebar's w-64) */
+const CHAT_HISTORY_WIDTH = 256;
+
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
@@ -109,6 +114,29 @@ export function Insights({ projectId }: InsightsProps) {
   const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
   // The browser drawer beside the chat (its top border runs on along the top bar while it is open)
   const drawerOpen = useBrowserDrawerStore((state) => state.open);
+  const drawerWidth = useBrowserDrawerStore((state) => state.width);
+  const chatColumnRef = useRef<HTMLDivElement | null>(null);
+  /** The chat history was closed by the drawer (not by the user): the drawer may open it again */
+  const historyClosedByDrawerRef = useRef(false);
+  // Opening or widening the drawer until the chat is narrower than CHAT_MIN_WIDTH closes the chat
+  // history; narrowing or closing the drawer opens it again once the chat keeps that width with it.
+  // Only a history the drawer closed opens again: one the user closed stays closed
+  useLayoutEffect(() => {
+    const width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
+    if (width <= 0) return;
+    if (showSidebar && drawerOpen && width < CHAT_MIN_WIDTH) {
+      historyClosedByDrawerRef.current = true;
+      setShowSidebar(false);
+    } else if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
+      historyClosedByDrawerRef.current = false;
+      setShowSidebar(true);
+    }
+    // The drawer's changes only: not the sidebar's, so the user's toggles stay as they are
+  }, [drawerOpen, drawerWidth]);
+  const toggleHistory = () => {
+    historyClosedByDrawerRef.current = false;
+    setShowSidebar(!showSidebar);
+  };
 
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
@@ -642,6 +670,7 @@ export function Insights({ projectId }: InsightsProps) {
 
       {/* Main Chat Area - files can be dropped anywhere in it */}
       <div
+        ref={chatColumnRef}
         className="flex min-w-0 flex-1 flex-col"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
@@ -665,7 +694,7 @@ export function Insights({ projectId }: InsightsProps) {
                   variant="ghost"
                   size="icon"
                   className="electron-no-drag h-8 w-8 text-muted-foreground"
-                  onClick={() => setShowSidebar(!showSidebar)}
+                  onClick={toggleHistory}
                   aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
                 >
                   <PanelLeft className="h-4 w-4" />
