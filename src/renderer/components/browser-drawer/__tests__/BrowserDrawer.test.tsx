@@ -50,10 +50,10 @@ describe('BrowserDrawer', () => {
 
   const renderDrawer = () => render(<TooltipProvider><BrowserDrawer projectId="app" /></TooltipProvider>);
 
-  it('leaves a handle that opens it again', () => {
-    renderDrawer();
-    fireEvent.click(screen.getByRole('button', { name: 'browserDrawer.openWithSessions' }));
-    expect(useBrowserDrawerStore.getState().open).toBe(true);
+  it('shows nothing while closed (the Claude chat\'s top bar opens it), and no handle', () => {
+    const { container } = renderDrawer();
+    expect(container).toBeEmptyDOMElement();
+    expect(api.subscribeBrowserDrawer).not.toHaveBeenCalled();
   });
 
   it('shows the pages as tabs above the toolbar and the chosen page', () => {

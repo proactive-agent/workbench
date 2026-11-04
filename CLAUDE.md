@@ -311,10 +311,10 @@ Runs' browsers are headless (`--headless` on every Playwright server's command l
 so no browser window opens. Task runs' browsers stay that way, unseen; Claude chats' browsers are watched and driven in
 the **browser drawer** at the main window's right edge (`src/main/browser-drawer/`, `components/browser-drawer/`,
 `browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
-reload, address), the live page below. Closed, the Claude chat opens it again from a button in its top-right corner and
-other pages from a handle on the window's right edge (both with a dot while the browsers shown are open); its width is
-resizable (up to half the window) and remembered. The drawer keeps a view per context (open or closed, the tab shown):
-each chat, and the other pages together; on the Claude page it shows only the chat's own browser (below).
+reload, address), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
+closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
+other pages have no drawer or handle (the browsers keep running). Its width is resizable (up to half the window) and
+remembered; each chat keeps its own view (open or closed, the tab shown).
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link

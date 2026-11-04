@@ -749,14 +749,10 @@ export function App() {
           </main>
         </div>
 
-        {/* Browser drawer: Playwright's browsers of Claude chats (the Claude chat opens it
-            from its own top bar, other pages from a handle on the window's edge) */}
-        {selectedProject && (
-          <BrowserDrawer
-            projectId={selectedProject.id}
-            showHandle={activeView !== 'insights'}
-            chatId={activeView === 'insights' ? chatBrowserId(insightsSession) : null}
-          />
+        {/* Browser drawer: the Claude chat's own browser, on the Claude page only (opened from
+            the chat's top bar); the browsers keep running while the user is on other pages */}
+        {selectedProject && activeView === 'insights' && (
+          <BrowserDrawer projectId={selectedProject.id} chatId={chatBrowserId(insightsSession)} />
         )}
 
         {/* Task detail modal */}

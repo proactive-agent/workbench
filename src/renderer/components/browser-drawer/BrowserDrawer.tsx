@@ -10,7 +10,6 @@ import {
 } from '../../stores/browser-drawer-store';
 import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
-import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { AgentLoader } from '../ui/agent-loader';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
@@ -19,11 +18,9 @@ import { addressToUrl, pageLabel, sessionBrowserIcon } from './browser-drawer-ut
 interface BrowserDrawerProps {
   /** The window's project: its sessions' pages are the drawer's tabs */
   projectId: string;
-  /** Closed, leave a handle on the window's edge that opens it (pages without their own button) */
-  showHandle?: boolean;
   /**
    * The Claude chat shown (its conversation, or the New chat page): the drawer shows only that
-   * chat's own browser and can open it. Null on the other pages: every browser of the project
+   * chat's own browser and can open it. Null: every chat browser of the project
    */
   chatId?: string | null;
 }
@@ -35,12 +32,12 @@ const iconButton = cn(
 );
 
 /**
- * The browser drawer at the window's right edge: the headless browsers the project's Claude chats
- * open (never a task run's), one tab per page, live and usable. Closed, it leaves a handle on the edge that
- * opens it again; the browsers keep running either way. On the Claude page it shows the chat's
- * own browser, which the user can open there (picking its profile) to work in it with the chat
+ * The browser drawer at the window's right edge, on the Claude page only: the chat's own headless
+ * browser (never a task run's), one tab per page, live and usable, which the user can open there
+ * (picking its profile) to work in it with the chat. Closed, it shows nothing: the chat's top bar
+ * has the button that opens it again (BrowserDrawerButton); the browsers keep running either way
  */
-export function BrowserDrawer({ projectId, showHandle = true, chatId = null }: BrowserDrawerProps) {
+export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) {
   const { t } = useTranslation('navigation');
   const open = useBrowserDrawerStore((s) => s.open);
   const width = useBrowserDrawerStore((s) => s.width);
@@ -90,30 +87,8 @@ export function BrowserDrawer({ projectId, showHandle = true, chatId = null }: B
 
   if (!contextReady) return null;
 
-  if (!open) {
-    if (!showHandle) return null;
-    const label = sessions.length > 0 ? t('browserDrawer.openWithSessions', { count: sessions.length }) : t('browserDrawer.open');
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => setOpen(true)}
-            aria-label={label}
-            className={cn(
-              'fixed right-0 top-1/2 z-40 flex h-14 w-5 -translate-y-1/2 items-center justify-center',
-              'rounded-l-md border border-r-0 border-border bg-card text-muted-foreground shadow-sm',
-              'transition-[width,color] duration-150 hover:w-6 hover:text-foreground focus-visible:outline-none focus-visible:shadow-(--shadow-focus)'
-            )}
-          >
-            <Globe className="h-3.5 w-3.5" strokeWidth={1.75} />
-            {sessions.length > 0 && <span className="absolute left-1 top-1.5 h-1.5 w-1.5 rounded-full bg-primary" aria-hidden="true" />}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="left">{label}</TooltipContent>
-      </Tooltip>
-    );
-  }
+  // Closed: the Claude chat's top bar has the button that opens it (BrowserDrawerButton)
+  if (!open) return null;
 
   const drawerWidth = clampDrawerWidth(width, windowWidth);
 
