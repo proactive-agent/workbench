@@ -5,8 +5,9 @@
 // carry). So this script, run by the distribution's node as the Playwright MCP server's command:
 // 1. starts the Windows browser (by its /mnt path, through interop) on the run's profile copy, or
 //    on a new profile in a temporary folder, with a DevTools port, headless and no first tab;
-// 2. starts the keeper (windows-cdp-relay.cjs --keep, on Windows), which closes the browser and
-//    removes its temporary profile once this script is gone, also when it is killed;
+// 2. starts the keeper (windows-cdp-relay.cjs --keep, on Windows) right after the browser, with the
+//    browser's port file, so it closes the browser and removes its temporary profile once this
+//    script is gone, also when it is killed or gave up on a browser slow to start;
 // 3. listens on the distribution's 127.0.0.1 and relays each connection to the browser's port
 //    through windows-cdp-relay.cjs, run on Windows by Workbench's own executable as Node (the
 //    Windows 127.0.0.1 can't be reached from WSL2 with NAT networking);
@@ -49,6 +50,12 @@ function profileFolder() {
   const separator = config.tempDir.windows.includes('\\') ? '\\' : '/';
   tempProfile = { runtime, windows: `${config.tempDir.windows.replace(/[\\/]+$/, '')}${separator}${path.posix.basename(runtime)}` };
   return tempProfile;
+}
+
+/** The browser's port file as the keeper (on Windows) finds it */
+function windowsPortFile(profile) {
+  const separator = profile.windows.includes('\\') ? '\\' : '/';
+  return `${profile.windows.replace(/[\\/]+$/, '')}${separator}DevToolsActivePort`;
 }
 
 async function devToolsPort(file) {
@@ -168,6 +175,8 @@ async function main() {
     '--disable-features=msWindowTabManagerPublic',
   ], { stdio: 'ignore' });
   browser.on('error', (error) => log(`The browser did not start: ${error.message}`));
+  // Before the port is known: a browser that starts after this script gave up on it is still closed
+  keeperInput = startKeeper([windowsPortFile(profile), ...(tempProfile ? [tempProfile.windows] : [])]);
   let port;
   try {
     port = await devToolsPort(portFile);
@@ -175,7 +184,6 @@ async function main() {
     log(`Could not start ${config.executable}: ${error.message}`);
     return finish(1);
   }
-  keeperInput = startKeeper([String(port), ...(tempProfile ? [tempProfile.windows] : [])]);
   const listener = await relayListener(port);
   const endpoint = `http://127.0.0.1:${listener.address().port}`;
   server = spawn(serverCommand, [...serverArgs, '--cdp-endpoint', endpoint], { stdio: 'inherit' });

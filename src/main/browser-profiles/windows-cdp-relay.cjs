@@ -8,9 +8,11 @@
 // `<port>`: once per connection Playwright opens; connects to the port and relays the bytes
 // between it and its stdin/stdout.
 //
-// `--keep <port> [<folder>]`: once per browser, for as long as the launcher runs. When its stdin
-// ends (the launcher exited, or was killed without a chance to clean up) it closes the browser
-// over DevTools and removes the browser's temporary profile folder, if one is given.
+// `--keep <port file> [<folder>]`: once per browser, started before it, for as long as the launcher
+// runs. When its stdin ends (the launcher exited, or was killed without a chance to clean up) it
+// reads the browser's DevTools port from the port file it writes (DevToolsActivePort; waiting for
+// it a while, for a browser still starting), closes the browser over DevTools and removes the
+// browser's temporary profile folder, if one is given. A number instead of the file is the port.
 //
 // Plain Node, no packages.
 'use strict';
@@ -21,6 +23,8 @@ const net = require('net');
 const CLOSE_TIMEOUT_MS = 10_000;
 /** How long the browser's files may stay held after it closed */
 const REMOVE_TIMEOUT_MS = 15_000;
+/** How long a browser still starting may take to write its port file */
+const PORT_TIMEOUT_MS = 90_000;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -49,12 +53,29 @@ async function closeBrowser(port) {
   }
 }
 
-function keep(port, folder) {
+/** The browser's DevTools port: given, or read from its port file once it is written */
+async function browserPort(portOrFile) {
+  if (/^\d+$/.test(portOrFile)) return Number(portOrFile);
+  const deadline = Date.now() + PORT_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const port = Number(fs.readFileSync(portOrFile, 'utf-8').split('\n')[0]);
+      if (port > 0) return port;
+    } catch {
+      // Not written yet
+    }
+    await sleep(250);
+  }
+  return 0;
+}
+
+function keep(portOrFile, folder) {
   let done = false;
   const finish = async () => {
     if (done) return;
     done = true;
-    await closeBrowser(port);
+    const port = await browserPort(portOrFile);
+    if (port > 0) await closeBrowser(port);
     // The browser releases its files a moment after it exits
     const deadline = Date.now() + REMOVE_TIMEOUT_MS;
     while (folder && Date.now() < deadline) {
@@ -75,9 +96,8 @@ function keep(port, folder) {
 
 const [first, second, third] = process.argv.slice(2);
 if (first === '--keep') {
-  const port = Number(second);
-  if (!(port > 0)) process.exit(2);
-  keep(port, third);
+  if (!second) process.exit(2);
+  keep(second, third);
 } else {
   const port = Number(first);
   if (!(port > 0)) process.exit(2);

@@ -78,17 +78,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     };
   }, [open, state.available]);
 
-  // The chat browsers' pages follow Workbench's theme (the `dark` class on <html>), also while it
-  // changes with the drawer closed: the agent keeps using them
-  useEffect(() => {
-    if (!state.available) return;
-    const send = () => window.electronAPI.setBrowserColorScheme?.(document.documentElement.classList.contains('dark') ? 'dark' : 'light');
-    send();
-    const observer = new MutationObserver(send);
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => observer.disconnect();
-  }, [state.available]);
-
   useEffect(() => {
     if (!open) return;
     const onResize = () => setWindowWidth(window.innerWidth);

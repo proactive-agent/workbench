@@ -66,7 +66,7 @@ describe('browser drawer in WSL mode', () => {
     bridge.killNow();
   });
 
-  it("reads the distribution's registry and asks the bridge which browsers answer", async () => {
+  it("reads the distribution's registry and asks a running bridge which browsers answer", async () => {
     const probes: string[][] = [];
     const bridge = Object.assign(new EventEmitter(), {
       running: false,
@@ -83,6 +83,10 @@ describe('browser drawer in WSL mode', () => {
     await service.start();
     const access = registryAccess('windows');
     expect(access.dir).toBe(path.join(root, 'wsl', '/home/me/.cache/ms-playwright/b'));
+    // Before a drawer started the bridge, nothing is asked (a check never starts it)
+    expect(await access.connect('/tmp/pw-1/browser/live.sock')).toBeNull();
+    expect(probes).toEqual([]);
+    bridge.running = true;
     expect(await access.connect('/tmp/pw-1/browser/live.sock')).toBe(true);
     expect(await access.connect('/tmp/pw-1/browser/closed.sock')).toBe(false);
     expect(probes).toEqual([['/tmp/pw-1/browser/live.sock'], ['/tmp/pw-1/browser/closed.sock']]);

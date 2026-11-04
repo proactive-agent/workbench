@@ -153,8 +153,11 @@ export async function readLiveSessions(
   dir: string,
   dead: DeadCache = new Map(),
   connect: EndpointCheck = canConnect,
-  /** Browsers known to be live without asking (the bridge is connected to them and hears when they go) */
-  knownLive: (guid: string) => boolean = () => false,
+  /**
+   * Browsers known to be live without asking: the bridge is connected to them and hears when they
+   * go, or (WSL mode, before a drawer started the bridge) Workbench holds them open
+   */
+  knownLive: (descriptor: RegistryDescriptor) => boolean = () => false,
 ): Promise<RegistryDescriptor[]> {
   let names: string[];
   try {
@@ -176,7 +179,7 @@ export async function readLiveSessions(
         dead.set(name, mtimeMs);
         return null;
       }
-      if (knownLive(descriptor.guid)) return descriptor;
+      if (knownLive(descriptor)) return descriptor;
       const live = await connect(descriptor.endpoint);
       // Not asked (the bridge didn't answer): left out now, asked again next time
       if (live === null) return null;

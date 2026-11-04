@@ -105,7 +105,7 @@ describe('live sessions', () => {
 
     // Browsers known to be live (the bridge's) aren't asked
     asked.length = 0;
-    const known = await readLiveSessions(dir, dead, connect, (guid) => guid === 'live');
+    const known = await readLiveSessions(dir, dead, connect, (descriptor) => descriptor.guid === 'live');
     expect(known.map((s) => s.guid)).toEqual(['live']);
     expect(asked).toEqual([]);
   });

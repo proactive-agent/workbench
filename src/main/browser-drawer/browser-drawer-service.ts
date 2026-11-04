@@ -36,6 +36,7 @@ import { isMacOS, isWindows } from '../platform';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import path from 'path';
 import { getAllWindows } from '../window-manager';
+import { clampPixelScale } from './pixel-scale';
 import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type RegistryDescriptor } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
@@ -85,9 +86,6 @@ export function bridgeSessions(descriptors: readonly RegistryDescriptor[], sessi
     .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib }));
 }
 
-/** Frames are asked at most at this many device pixels per CSS pixel (4x the pixels at 1, like a Retina screen) */
-const MAX_FRAME_SCALE = 2;
-
 /** A viewport size the drawer may ask for (whole CSS pixels within limits), or 0 for none */
 export function viewportDimension(value: unknown): number {
   const n = typeof value === 'number' && Number.isFinite(value) ? Math.round(value) : 0;
@@ -96,8 +94,7 @@ export function viewportDimension(value: unknown): number {
 
 /** Device pixels per CSS pixel the drawer's frames are asked at: the window's devicePixelRatio, 1 to 2 */
 export function frameScale(value: unknown): number {
-  const n = typeof value === 'number' && Number.isFinite(value) ? value : 1;
-  return Math.round(Math.min(Math.max(n, 1), MAX_FRAME_SCALE) * 100) / 100;
+  return clampPixelScale(value);
 }
 
 /** Whether a renderer's input event has the shape the bridge replays */
@@ -184,7 +181,11 @@ export class BrowserDrawerService {
     if (wsl && !this.options.registryDir) {
       setRegistryAccess({
         dir: toHostPath(path.posix.join(wsl.home, '.cache', 'ms-playwright', 'b')),
-        connect: (endpoint) => this.bridge.probe([endpoint]).then((live) => (live ? live.has(endpoint) : null)),
+        // Only a running bridge is asked: a check never starts it (it runs once a drawer opens).
+        // Until then the chat browsers Workbench holds open count as live (knownLive below)
+        connect: (endpoint) => (this.bridge.running
+          ? this.bridge.probe([endpoint]).then((live) => (live ? live.has(endpoint) : null))
+          : Promise.resolve(null)),
       });
     }
     void this.poll();
@@ -364,7 +365,13 @@ export class BrowserDrawerService {
       const registry = this.options.registryDir
         ? { dir: this.options.registryDir, connect: undefined }
         : registryAccess(registryOs());
-      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (guid) => connected.has(guid));
+      const wslBeforeBridge = !!getWslInfo() && !this.options.registryDir && !this.bridge.running;
+      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (descriptor) => {
+        if (connected.has(descriptor.guid)) return true;
+        if (!wslBeforeBridge) return false;
+        const chat = this.chatBrowsers.chatOfTitle(descriptor.title);
+        return !!chat && this.chatBrowsers.isOpen(chat.projectId, chat.chatId);
+      });
       this.chatBrowsers.syncLive(new Set(this.descriptors.map((descriptor) => descriptor.title)));
       const sessions = toDrawerSessions(
         this.descriptors,

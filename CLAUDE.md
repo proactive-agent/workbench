@@ -304,8 +304,8 @@ the browser through interop on a copy kept on Windows (headless, `--no-startup-w
 `--disable-features=msWindowTabManagerPublic`, no `--force-device-scale-factor`, which leaves the drawer's screencast
 without frames), relays a local port to its
 DevTools port through `windows-cdp-relay.cjs` (Workbench's executable as Node, on Windows) and starts Playwright with
-`--cdp-endpoint`; the relay's `--keep` mode closes the browser and removes a temporary profile when the launcher goes,
-even when it is killed. Those profiles are marked "Saved sign-ins don't carry over": Chrome and Edge encrypt cookies
+`--cdp-endpoint`; the relay's `--keep` mode (started with the browser, given its `DevToolsActivePort` file, so a browser slow to
+start is closed too) closes the browser and removes a temporary profile when the launcher goes, even when it is killed. Those profiles are marked "Saved sign-ins don't carry over": Chrome and Edge encrypt cookies
 with an app-bound key that only opens in the browser's own profile folder, never in a copy.
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
@@ -343,7 +343,7 @@ executable as Node; messages over its stdin/stdout as JSON headers with raw byte
 connects to the projects' browsers with each one's own playwright-core
 (`require(playwrightLib)` from the npx cache: nothing of Playwright ships with the app, the client always matches the
 server; disconnecting leaves the browser running) and reports their pages, each given Workbench's theme as its
-`prefers-color-scheme` (`page.emulateMedia`; the drawer sends the theme, also when it changes); the page a window shows gets its viewport set
+`prefers-color-scheme` (`page.emulateMedia`; every window sends the theme, also when it changes, from `useBrowserDrawerSync`); the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
 (`page.screencast`, quality 100) to that window only, drawn on a canvas at its CSS size; the canvas's mouse, wheel, keys
 and pasted text are replayed with `page.mouse` / `page.keyboard`. Frames are asked at the window's devicePixelRatio,
@@ -355,8 +355,9 @@ without a profile copy; screenshots for agents stay in CSS pixels. The renderer 
 The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
 browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
 runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through
-`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), the bridge also says which of its browsers answer
-(`probe`, `setRegistryAccess` in `registry.ts`), and workspace folders are matched to projects as Windows paths
+`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), a running bridge also says which of its browsers answer
+(`probe`, `setRegistryAccess` in `registry.ts`; a check never starts it: until a drawer does, the chat browsers
+Workbench holds open count as live), and workspace folders are matched to projects as Windows paths
 (`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
 (`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
 

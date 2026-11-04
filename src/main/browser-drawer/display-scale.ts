@@ -9,15 +9,12 @@ import { app, screen } from 'electron';
 import { mkdir, writeFile } from 'fs/promises';
 import path from 'path';
 import { appLog } from '../app-logger';
+import { clampPixelScale } from './pixel-scale';
 import { playwrightScaleConfig, setPlaywrightDisplayScale } from '../claude-code/mcp-config';
 
-/** Browsers render at most this many device pixels per CSS pixel (4x the pixels at 1) */
-const MAX_BROWSER_SCALE = 2;
-
-/** The density for screens of these scale factors: the largest, within 1..MAX_BROWSER_SCALE */
+/** The density for screens of these scale factors: the largest, within 1..MAX_PIXEL_SCALE */
 export function browserScaleFor(scaleFactors: readonly number[]): number {
-  const largest = Math.max(1, ...scaleFactors.filter((f) => Number.isFinite(f)));
-  return Math.round(Math.min(largest, MAX_BROWSER_SCALE) * 100) / 100;
+  return clampPixelScale(Math.max(1, ...scaleFactors.filter((f) => Number.isFinite(f))));
 }
 
 let applied = 1;
