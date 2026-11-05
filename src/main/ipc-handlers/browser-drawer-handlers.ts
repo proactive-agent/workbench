@@ -45,6 +45,10 @@ export function registerBrowserDrawerHandlers(): void {
     if (typeof pageId === 'string') browserDrawer.input(pageId, input);
   });
 
+  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_FRAME_DRAWN, (_event, pageId: unknown) => {
+    if (typeof pageId === 'string') browserDrawer.frameDrawn(pageId);
+  });
+
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, (_event, pageId: unknown, action: unknown, url: unknown) => {
     if (typeof pageId !== 'string' || typeof action !== 'string') return;
     browserDrawer.navigate(pageId, action as BrowserDrawerNavigation, typeof url === 'string' ? url : undefined);

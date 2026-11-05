@@ -17,6 +17,7 @@ const api = {
   unsubscribeBrowserDrawer: vi.fn(async () => ({ success: true })),
   viewBrowserPage: vi.fn(),
   sendBrowserInput: vi.fn(),
+  browserFrameDrawn: vi.fn(),
   navigateBrowserPage: vi.fn(),
   closeBrowserPage: vi.fn(),
   onBrowserFrame: vi.fn(() => () => {}),

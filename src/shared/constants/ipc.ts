@@ -300,6 +300,7 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_UNSUBSCRIBE: 'browserDrawer:unsubscribe', // A window's drawer closed
   BROWSER_DRAWER_VIEW: 'browserDrawer:view',               // Stream a page (or none) sized to the drawer
   BROWSER_DRAWER_INPUT: 'browserDrawer:input',             // Mouse, wheel and keys for the viewed page
+  BROWSER_DRAWER_FRAME_DRAWN: 'browserDrawer:frameDrawn',  // The window drew a frame: the next one may come
   BROWSER_DRAWER_NAVIGATE: 'browserDrawer:navigate',       // Back, forward, reload or an address
   BROWSER_DRAWER_CLOSE_PAGE: 'browserDrawer:closePage',
   BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser

@@ -149,6 +149,7 @@ const browserMockAPI: ElectronAPI = {
   unsubscribeBrowserDrawer: async () => ({ success: true }),
   viewBrowserPage: () => {},
   sendBrowserInput: () => {},
+  browserFrameDrawn: () => {},
   navigateBrowserPage: () => {},
   closeBrowserPage: () => {},
   newBrowserPage: () => {},

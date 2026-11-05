@@ -84,12 +84,14 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     };
   }, [pageId]);
 
-  // Frames: the newest one is drawn, older ones waiting meanwhile are dropped
+  // Frames: the newest one is drawn, older ones waiting meanwhile are dropped. Each one drawn (or
+  // dropped) is acknowledged: the next frame waits for it, so frames never pile up
   useEffect(() => {
     let pending: BrowserDrawerFrame | null = null;
     let drawing = false;
     let disposed = false;
     viewportRef.current = null;
+    const drawn = () => window.electronAPI.browserFrameDrawn(pageId);
     const draw = async () => {
       if (drawing || !pending) return;
       drawing = true;
@@ -113,11 +115,14 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
         // A frame that doesn't decode is skipped
       } finally {
         drawing = false;
+        if (!disposed) drawn();
         if (pending && !disposed) void draw();
       }
     };
     const cleanup = window.electronAPI.onBrowserFrame((frame) => {
       if (frame.pageId !== pageId) return;
+      // A frame still waiting is replaced: acknowledged as dropped
+      if (pending) drawn();
       pending = frame;
       void draw();
     });

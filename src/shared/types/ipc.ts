@@ -534,6 +534,7 @@ export interface ElectronAPI {
   unsubscribeBrowserDrawer: () => Promise<IPCResult>;
   viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
   sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
+  browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
   closeBrowserPage: (pageId: string) => void;
   newBrowserPage: (sessionId: string) => void;

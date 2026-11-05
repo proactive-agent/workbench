@@ -258,6 +258,11 @@ export class BrowserDrawerService {
     this.bridge.send({ type: 'input', pageId, event });
   }
 
+  /** A window drew a frame of the page: the bridge sends its next one (one frame is on its way at a time) */
+  frameDrawn(pageId: string): void {
+    if (this.bridge.running) this.bridge.send({ type: 'frameAck', pageId });
+  }
+
   navigate(pageId: string, action: BrowserDrawerNavigation, url?: string): void {
     if (!this.pages.some((page) => page.id === pageId)) return;
     if (action === 'goto') {

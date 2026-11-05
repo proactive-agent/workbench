@@ -27,6 +27,8 @@ export interface BrowserDrawerAPI {
    */
   viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
   sendBrowserInput: (pageId: string, input: BrowserDrawerInput) => void;
+  /** This window drew a frame of the page (the next frame waits for it) */
+  browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: BrowserDrawerNavigation, url?: string) => void;
   closeBrowserPage: (pageId: string) => void;
   /** A new tab in a session's browser */
@@ -49,6 +51,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   unsubscribeBrowserDrawer: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_UNSUBSCRIBE),
   viewBrowserPage: (pageId, width, height, scale) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_VIEW, pageId, width, height, scale),
   sendBrowserInput: (pageId, input) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_INPUT, pageId, input),
+  browserFrameDrawn: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_FRAME_DRAWN, pageId),
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),
   newBrowserPage: (sessionId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, sessionId),

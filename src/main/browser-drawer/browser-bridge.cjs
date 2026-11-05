@@ -8,7 +8,7 @@
 // browsers it is given (Playwright's registry endpoint) with each browser's own playwright-core (`require(playwrightLib)`, the npx cache of
 // the MCP server that launched it), the way Playwright's own dashboard does; disconnecting leaves
 // the browser running. It reports their pages, streams the viewed pages as JPEG frames
-// (`page.screencast`), sizes a viewed page's viewport to the drawer, gives every page Workbench's
+// (`page.screencast`, one at a time: the next goes once the drawer drew the last), sizes a viewed page's viewport to the drawer, gives every page Workbench's
 // theme as its `prefers-color-scheme`, and replays the viewer's mouse, wheel and keys on it; it also says which registry endpoints answer (`probe`), for WSL
 // mode, where the main process can't reach the sockets. Plain Node, no packages of its own.
 'use strict';
@@ -22,10 +22,20 @@ const pageIds = new WeakMap();
 let nextPageId = 1;
 /** How long connecting to a browser may take */
 const CONNECT_TIMEOUT_MS = 15000;
+/** How long a viewport change or a screencast's start or stop may hold up the commands after it */
+const COMMAND_TIMEOUT_MS = 5000;
+/** How long one input event may take before the page's next one goes (a page that never answers can't hold up its input) */
+const INPUT_TIMEOUT_MS = 5000;
+/** How long a frame may wait for the drawer to draw it before the next one goes anyway */
+const FRAME_ACK_TIMEOUT_MS = 1000;
 /**
- * page id -> { viewers: Map<viewer id, scale>, size: the frame size asked for | null }. Frames are
+ * page id -> { viewers: Map<viewer id, scale>, size: the frame size asked for | null, sending: the
+ * frame the drawer is drawing | null, next: the newest frame waiting for it | null }. Frames are
  * asked at the viewport times the largest viewer's devicePixelRatio, so they are sharp on HiDPI
- * screens (browsers render that many pixels only when launched for it: mcp-config.ts)
+ * screens (browsers render that many pixels only when launched for it: mcp-config.ts). One frame
+ * is on its way at a time and frames waiting meanwhile are replaced by newer ones; each frame's
+ * screencast acknowledgement waits for that, so the browser makes no more frames than the drawer
+ * draws (instead of flooding the main process and the window)
  */
 const casts = new Map();
 /** viewer id -> page id */
@@ -71,29 +81,29 @@ const send = (message) => {
     // Workbench is gone
   }
 };
-/** Whether the channel is still writing earlier output (a frame is held back then, not queued) */
-const outputBusy = () => process.stdout.writableNeedDrain;
-/**
- * page id -> its newest frame held back while the channel was busy, sent once it drains: a page
- * that stops changing sends no more frames, so dropping its last one would leave the drawer on an
- * older picture
- */
-const heldFrames = new Map();
-process.stdout.on('drain', () => {
-  for (const [pageId, frame] of [...heldFrames]) {
-    heldFrames.delete(pageId);
-    const cast = casts.get(pageId);
-    if (cast && cast.viewers.size > 0) send({ type: 'frame', pageId, viewers: [...cast.viewers.keys()], ...frame });
-  }
-});
 const log = (message) => send({ type: 'log', message: String(message && message.message ? message.message : message) });
 
-// Commands run one at a time (connects, screencasts, viewport changes); input has its own queue so
-// it stays in order without waiting behind a slow navigation
+// Commands run one at a time (connects, screencasts, viewport changes); input has a queue per
+// page (inputQueues) so it stays in order without waiting behind a slow navigation or another page
 let queue = Promise.resolve();
 const enqueue = (fn) => (queue = queue.then(fn).catch(log));
-let inputQueue = Promise.resolve();
-const enqueueInput = (fn) => (inputQueue = inputQueue.then(fn).catch(() => undefined));
+
+/** A promise's result, or `fallback` once it took `ms` (it may still settle later; a rejection passes through) */
+function bounded(promise, ms, fallback) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => resolve(fallback), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      }
+    );
+  });
+}
 
 let pagesTimer = null;
 function pushPages() {
@@ -123,7 +133,8 @@ function addPage(page, sessionId) {
   applyColorScheme(page);
   page.on('close', () => {
     pages.delete(id);
-    casts.delete(id);
+    dropCast(id);
+    inputQueues.delete(id);
     pushPages();
   });
   page.on('framenavigated', (frame) => {
@@ -174,7 +185,8 @@ function dropSession(sessionId) {
   for (const [id, entry] of pages) {
     if (entry.sessionId !== sessionId) continue;
     pages.delete(id);
-    casts.delete(id);
+    dropCast(id);
+    inputQueues.delete(id);
   }
   pushPages();
 }
@@ -192,6 +204,39 @@ async function setSessions(list) {
   }
 }
 
+/** Send a page's frame to its viewers; `done` acknowledges it to the browser once it is drawn */
+function sendFrame(pageId, cast, frame, done) {
+  send({ type: 'frame', pageId, viewers: [...cast.viewers.keys()], ...frame });
+  cast.sending = { done, timer: setTimeout(() => frameDrawn(pageId), FRAME_ACK_TIMEOUT_MS) };
+}
+
+/** A viewer drew the page's frame (or it took too long): the newest waiting frame goes next */
+function frameDrawn(pageId) {
+  const cast = casts.get(pageId);
+  if (!cast || !cast.sending) return;
+  clearTimeout(cast.sending.timer);
+  cast.sending.done();
+  cast.sending = null;
+  const next = cast.next;
+  cast.next = null;
+  if (!next) return;
+  if (cast.viewers.size > 0) sendFrame(pageId, cast, next.frame, next.done);
+  else next.done();
+}
+
+/** A cast ends: its frames on their way or waiting are acknowledged */
+function dropCast(pageId) {
+  const cast = casts.get(pageId);
+  if (!cast) return;
+  casts.delete(pageId);
+  if (cast.sending) {
+    clearTimeout(cast.sending.timer);
+    cast.sending.done();
+  }
+  cast.next?.done();
+  cast.sending = cast.next = null;
+}
+
 async function startCast(pageId) {
   const entry = pages.get(pageId);
   const cast = casts.get(pageId);
@@ -201,37 +246,46 @@ async function startCast(pageId) {
   const size = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
   if (cast.size && cast.size.width === size.width && cast.size.height === size.height) return;
   if (cast.size) {
-    await entry.page.screencast.stop().catch(() => undefined);
+    await bounded(entry.page.screencast.stop().catch(() => undefined), COMMAND_TIMEOUT_MS);
     cast.size = null;
   }
-  await entry.page.screencast.start({
-    size,
-    // The best JPEG quality: lower ones blur small text (frames are local, so their size matters little)
-    quality: 100,
-    onFrame: ({ data, viewportWidth, viewportHeight }) => {
-      const current = casts.get(pageId);
-      if (!current || current.viewers.size === 0) return;
-      // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
-      const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
-      const frame = { data, width: css.width, height: css.height };
-      if (outputBusy()) {
-        heldFrames.set(pageId, frame);
-        return;
-      }
-      heldFrames.delete(pageId);
-      send({ type: 'frame', pageId, viewers: [...current.viewers.keys()], ...frame });
-    },
-  });
+  const started = await bounded(
+    entry.page.screencast
+      .start({
+        size,
+        // The best JPEG quality: lower ones blur small text (frames are local, so their size matters little)
+        quality: 100,
+        onFrame: ({ data, viewportWidth, viewportHeight }) => {
+          const current = casts.get(pageId);
+          if (!current || current.viewers.size === 0) return;
+          // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
+          const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
+          const frame = { data, width: css.width, height: css.height };
+          // Acknowledged to the browser once drawn, or once a newer frame replaced it
+          return new Promise((done) => {
+            if (!current.sending) {
+              sendFrame(pageId, current, frame, done);
+              return;
+            }
+            current.next?.done();
+            current.next = { frame, done };
+          });
+        },
+      })
+      .then(() => true),
+    COMMAND_TIMEOUT_MS,
+    false
+  );
   // Only a cast that started counts: one that failed (the page was navigating) is tried again
-  cast.size = size;
+  if (started) cast.size = size;
 }
 
 async function stopCast(pageId) {
   const cast = casts.get(pageId);
   if (!cast || cast.viewers.size > 0) return;
-  casts.delete(pageId);
+  dropCast(pageId);
   const entry = pages.get(pageId);
-  if (entry && cast.size) await entry.page.screencast.stop().catch(() => undefined);
+  if (entry && cast.size) await bounded(entry.page.screencast.stop().catch(() => undefined), COMMAND_TIMEOUT_MS);
 }
 
 async function view(viewerId, pageId, width, height, scale) {
@@ -251,21 +305,60 @@ async function view(viewerId, pageId, width, height, scale) {
   if (width > 0 && height > 0) {
     const current = entry.page.viewportSize();
     if (!current || current.width !== width || current.height !== height) {
-      await entry.page.setViewportSize({ width, height }).catch((error) => log(error));
+      await bounded(entry.page.setViewportSize({ width, height }).catch((error) => log(error)), COMMAND_TIMEOUT_MS);
     }
   }
   let cast = casts.get(pageId);
   if (!cast) {
-    cast = { viewers: new Map(), size: null };
+    cast = { viewers: new Map(), size: null, sending: null, next: null };
     casts.set(pageId, cast);
   }
   cast.viewers.set(viewerId, Number.isFinite(scale) && scale >= 1 ? Math.min(scale, 2) : 1);
   await startCast(pageId);
 }
 
+/** page id -> { events: its input waiting to be replayed, in order; running } */
+const inputQueues = new Map();
+
+/**
+ * Queue a viewer's input for its page. Mouse moves and wheel steps waiting behind a slow one are
+ * merged into the newest (a busy page answers each event late: replaying every move of the
+ * pointer would hold a click up for seconds)
+ */
+function queueInput(pageId, event) {
+  if (!event || !pages.has(pageId)) return;
+  let queue = inputQueues.get(pageId);
+  if (!queue) {
+    queue = { events: [], running: false };
+    inputQueues.set(pageId, queue);
+  }
+  const last = queue.events[queue.events.length - 1];
+  if (last && last.kind === 'mousemove' && event.kind === 'mousemove') {
+    queue.events[queue.events.length - 1] = event;
+  } else if (last && last.kind === 'wheel' && event.kind === 'wheel') {
+    queue.events[queue.events.length - 1] = {
+      ...event,
+      deltaX: (last.deltaX || 0) + (event.deltaX || 0),
+      deltaY: (last.deltaY || 0) + (event.deltaY || 0),
+    };
+  } else {
+    queue.events.push(event);
+  }
+  if (!queue.running) void replayInput(pageId, queue);
+}
+
+async function replayInput(pageId, queue) {
+  queue.running = true;
+  while (queue.events.length > 0) {
+    const event = queue.events.shift();
+    await bounded(input(pageId, event).catch(() => undefined), INPUT_TIMEOUT_MS);
+  }
+  queue.running = false;
+}
+
 async function input(pageId, event) {
   const page = pages.get(pageId)?.page;
-  if (!page || !event) return;
+  if (!page) return;
   const button = ['left', 'right', 'middle'].includes(event.button) ? event.button : 'left';
   switch (event.kind) {
     case 'mousemove':
@@ -353,11 +446,14 @@ function onMessage(message) {
       enqueue(() => view(message.viewerId, message.pageId, Math.round(message.width), Math.round(message.height), Number(message.scale)));
       break;
     case 'input':
-      enqueueInput(() => input(message.pageId, message.event));
+      queueInput(message.pageId, message.event);
       break;
     case 'navigate':
       // Not queued: a slow page must not hold up the other commands
       navigate(message.pageId, message.action, message.url).catch(log);
+      break;
+    case 'frameAck':
+      frameDrawn(message.pageId);
       break;
     case 'closePage':
       pages.get(message.pageId)?.page.close().catch(log);
