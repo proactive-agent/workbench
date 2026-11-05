@@ -1,10 +1,15 @@
 import { useEffect, useRef } from 'react';
 import type { KeyboardEvent, MouseEvent, ClipboardEvent, WheelEvent } from 'react';
 import type { BrowserDrawerFrame, BrowserDrawerInput } from '../../../shared/types/browser-drawer';
-import { isPasteShortcut, mouseButton } from './browser-drawer-utils';
+import { alignedViewportLength, devicePixelOffset, isPasteShortcut, mouseButton } from './browser-drawer-utils';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
 const RESIZE_DEBOUNCE_MS = 150;
+/** At most this many device pixels per CSS pixel in frames (pixel-scale.ts in the main process) */
+const MAX_FRAME_SCALE = 2;
+
+/** The device pixels per CSS pixel frames are asked at: the window's devicePixelRatio, 1 to 2 */
+const frameScale = () => Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_FRAME_SCALE);
 
 interface BrowserPageViewProps {
   pageId: string;
@@ -13,8 +18,18 @@ interface BrowserPageViewProps {
 
 /**
  * A live page: its viewport is sized to this area (the page fills the drawer), its frames drawn
- * 1:1, and the mouse, wheel and keys on it replayed in the browser
+ * 1:1 on device pixels, and the mouse, wheel and keys on it replayed in the browser
  */
+/** Put the canvas on whole device pixels (the drawer's edge can sit between two), so frames are drawn without resampling */
+function alignCanvas(canvas: HTMLCanvasElement, container: HTMLElement) {
+  const rect = container.getBoundingClientRect();
+  const scale = window.devicePixelRatio || 1;
+  const dx = devicePixelOffset(rect.left, scale);
+  const dy = devicePixelOffset(rect.top, scale);
+  const transform = dx || dy ? `translate(${dx}px, ${dy}px)` : '';
+  if (canvas.style.transform !== transform) canvas.style.transform = transform;
+}
+
 export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -30,8 +45,12 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const report = () => {
       const { width, height } = container.getBoundingClientRect();
-      // Frames at the screen's pixel density, so the page is as sharp as the rest of the window
-      if (width > 0 && height > 0) window.electronAPI.viewBrowserPage(pageId, Math.floor(width), Math.floor(height), window.devicePixelRatio || 1);
+      // Frames at the screen's pixel density, so the page is as sharp as the rest of the window,
+      // and a viewport of whole device pixels, so they are drawn without resampling
+      const scale = frameScale();
+      if (width > 0 && height > 0) {
+        window.electronAPI.viewBrowserPage(pageId, alignedViewportLength(width, scale), alignedViewportLength(height, scale), window.devicePixelRatio || 1);
+      }
     };
     report();
     const observer = new ResizeObserver(() => {
@@ -39,6 +58,11 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       timer = setTimeout(report, RESIZE_DEBOUNCE_MS);
     });
     observer.observe(container);
+    // The window resized: the drawer's edge moved, maybe between device pixels (a still page sends no new frame)
+    const onWindowResize = () => {
+      if (canvasRef.current) alignCanvas(canvasRef.current, container);
+    };
+    window.addEventListener('resize', onWindowResize);
     // Moved to a screen of another density (or zoomed): frames follow
     let density: MediaQueryList | undefined;
     const onDensity = () => {
@@ -53,6 +77,7 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     watchDensity();
     return () => {
       observer.disconnect();
+      window.removeEventListener('resize', onWindowResize);
       density?.removeEventListener('change', onDensity);
       clearTimeout(timer);
       window.electronAPI.viewBrowserPage(null, 0, 0);
@@ -73,11 +98,13 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       try {
         const bitmap = await createImageBitmap(new Blob([frame.data as BlobPart], { type: 'image/jpeg' }));
         const canvas = canvasRef.current;
-        if (canvas && !disposed) {
+        const container = containerRef.current;
+        if (canvas && container && !disposed) {
           if (canvas.width !== bitmap.width) canvas.width = bitmap.width;
           if (canvas.height !== bitmap.height) canvas.height = bitmap.height;
           canvas.style.width = `${frame.width}px`;
           canvas.style.height = `${frame.height}px`;
+          alignCanvas(canvas, container);
           canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
           viewportRef.current = { width: frame.width, height: frame.height };
         }

@@ -30,3 +30,32 @@ export function mouseButton(button: number): Extract<BrowserDrawerInput, { kind:
 export function isPasteShortcut(event: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
   return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v';
 }
+
+/**
+ * The page's viewport length for `length` CSS pixels of drawer: the largest one up to it that is a
+ * whole, even number of device pixels at `scale` (frames are an even number of pixels wide and
+ * high). At a fractional devicePixelRatio (1.25, 1.5) other lengths make the browser and the
+ * canvas resample the frame, which blurs all text; at most a few pixels are left unused. A scale
+ * without such a length nearby keeps the whole length
+ */
+export function alignedViewportLength(length: number, scale: number): number {
+  const whole = Math.floor(length);
+  if (!(scale > 0)) return whole;
+  for (let candidate = whole; candidate > 0 && candidate > whole - 32; candidate--) {
+    const device = candidate * scale;
+    const rounded = Math.round(device);
+    if (Math.abs(device - rounded) < 1e-6 && rounded % 2 === 0) return candidate;
+  }
+  return whole;
+}
+
+/**
+ * How far (CSS pixels) to move something at `position` so it starts on a device pixel: a canvas
+ * between device pixels is resampled when drawn, blurring the page it shows
+ */
+export function devicePixelOffset(position: number, scale: number): number {
+  if (!(scale > 0)) return 0;
+  const device = position * scale;
+  const offset = (Math.round(device) - device) / scale;
+  return Math.abs(offset) < 1e-6 ? 0 : offset;
+}
