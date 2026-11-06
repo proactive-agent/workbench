@@ -102,7 +102,8 @@ export const TASK_RUN_TOOLS: TaskRunTool[] = [
     name: 'list_parallel_tasks',
     description:
       "The project's other tasks whose changes are not merged yet: id, title, status, session name, whether it runs right now, its base branch " +
-      'and the files its branch changes. Check it before editing files another task may touch.',
+      'and the files its branch changes. Use it to see where your work meets another task\'s: shared files are fine (only edits to the same lines conflict), ' +
+      'so agree with a task via message_task when you both need to change the same code.',
     inputSchema: { type: 'object', properties: {}, additionalProperties: false },
     readOnly: true,
     run: (context) => listParallelTasks(context),

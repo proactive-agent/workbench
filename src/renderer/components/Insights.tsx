@@ -33,7 +33,10 @@ import { GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/
 import { BUILTIN_CONNECTOR_META } from './settings/connector-meta';
 import {
   useInsightsStore,
-  DRAFT_SESSION_ID,
+  chatModelConfig,
+  changeChatModelConfig,
+  withDefaultModelConfig,
+  replyingSessionIds,
   loadInsightsSession,
   openInsightsPage,
   sendMessage,
@@ -45,13 +48,20 @@ import {
   deleteSession,
   renameSession,
   unarchiveSession,
-  updateModelConfig,
   createTaskFromSuggestion,
   loadInsightsSessions
 } from '../stores/insights-store';
 import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
+import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
+import {
+  useBrowserDrawerStore,
+  APP_SIDEBAR_COLLAPSED_WIDTH,
+  APP_SIDEBAR_WIDTH,
+  CHAT_MIN_WIDTH,
+} from '../stores/browser-drawer-store';
+import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { useSettingsStore } from '../stores/settings-store';
@@ -60,18 +70,31 @@ import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
 import type { InsightsChatMessage, InsightsModelConfig, TaskMetadata, ImageAttachment } from '../../shared/types';
 import {
   MAX_IMAGE_SIZE,
-  parseInsightsError,
-  DEFAULT_AGENT_PROFILES
+  parseInsightsError
 } from '../../shared/constants';
 
 interface InsightsProps {
   projectId: string;
 }
 
+/**
+ * The page's own window drag strip above its top bar, under the Windows/Linux window controls (in
+ * development builds the content area's strip and the DEVELOPMENT BUILD strip are above it instead).
+ * The browser drawer starts at the same height, so its top border and the top bar's line meet
+ */
+const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
+
+/** The chat history sidebar's width (px, ChatHistorySidebar's w-64) */
+const CHAT_HISTORY_WIDTH = 256;
+/** The width (px) collapsing the app's sidebar gives the chat */
+const APP_SIDEBAR_COLLAPSE_GAIN = APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH;
+
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
   const sessions = useInsightsStore((state) => state.sessions);
+  // Chats writing a reply (several can at once): marked in the history
+  const backgroundRuns = useInsightsStore((state) => state.backgroundRuns);
   const status = useInsightsStore((state) => state.status);
   const streamingContent = useInsightsStore((state) => state.streamingContent);
   const currentTool = useInsightsStore((state) => state.currentTool);
@@ -93,10 +116,65 @@ export function Insights({ projectId }: InsightsProps) {
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
 
   // Model choice made before a session exists (or before it is persisted); the session's own config wins
-  const [draftModelConfig, setDraftModelConfig] = useState<InsightsModelConfig | undefined>(undefined);
-  const effectiveModelConfig = session?.modelConfig ?? draftModelConfig;
+  const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
+  // The browser drawer beside the chat (its top border runs on along the top bar while it is open)
+  const drawerOpen = useBrowserDrawerStore((state) => state.open);
+  const drawerWidth = useBrowserDrawerStore((state) => state.width);
+  const chatColumnRef = useRef<HTMLDivElement | null>(null);
+  /** The chat history was closed by the drawer (not by the user): the drawer may open it again */
+  const historyClosedByDrawerRef = useRef(false);
+  const appSidebarSaved = useSettingsStore((state) => state.settings.sidebarCollapsed ?? false);
+  const appSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
+  const setAppSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
+  const narrowDrawerBy = useBrowserDrawerStore((state) => state.narrowBy);
+  /** The drawer as the last change left it: which way it moved decides what may close or open */
+  const lastDrawerRef = useRef({ open: false, width: drawerWidth });
+  // Opening or widening the drawer until the chat is narrower than CHAT_MIN_WIDTH closes the chat
+  // history, then collapses the app's sidebar; narrowing or closing the drawer opens them again in
+  // the other order, each once the chat keeps that width with it. Only what the drawer closed opens
+  // again: a history or sidebar the user closed stays closed. Only the drawer growing closes them,
+  // so one the user opens again (which narrows the drawer by its width) stays open
+  useLayoutEffect(() => {
+    const last = lastDrawerRef.current;
+    lastDrawerRef.current = { open: drawerOpen, width: drawerWidth };
+    const grew = drawerOpen && (!last.open || drawerWidth > last.width);
+    const shrank = drawerOpen ? last.open && drawerWidth < last.width : last.open;
+    let width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
+    if (width <= 0) return;
+    if (grew && width < CHAT_MIN_WIDTH) {
+      if (showSidebar) {
+        historyClosedByDrawerRef.current = true;
+        setShowSidebar(false);
+        width += CHAT_HISTORY_WIDTH;
+      }
+      if (width < CHAT_MIN_WIDTH && !appSidebarSaved && !appSidebarCollapsedByDrawer) setAppSidebarCollapsedByDrawer(true);
+      return;
+    }
+    if (!shrank) return;
+    if (appSidebarCollapsedByDrawer) {
+      if (width - APP_SIDEBAR_COLLAPSE_GAIN < CHAT_MIN_WIDTH) return;
+      setAppSidebarCollapsedByDrawer(false);
+      width -= APP_SIDEBAR_COLLAPSE_GAIN;
+    }
+    if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
+      historyClosedByDrawerRef.current = false;
+      setShowSidebar(true);
+    }
+    // The drawer's changes only: not the sidebars', so the user's toggles stay as they are
+  }, [drawerOpen, drawerWidth]);
+  // The app's sidebar is the drawer's to collapse only on this page
+  useEffect(() => () => setAppSidebarCollapsedByDrawer(false), [setAppSidebarCollapsedByDrawer]);
+  const toggleHistory = () => {
+    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its width
+    if (!showSidebar && historyClosedByDrawerRef.current) narrowDrawerBy(CHAT_HISTORY_WIDTH);
+    historyClosedByDrawerRef.current = false;
+    setShowSidebar(!showSidebar);
+  };
+
+  const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
+  const replyingIds = replyingSessionIds({ session, status, backgroundRuns });
 
   // Stop turns disabled once clicked, until the reply has ended
   const [stopRequested, setStopRequested] = useState(false);
@@ -294,13 +372,8 @@ export function Insights({ projectId }: InsightsProps) {
     }
   };
 
-  const handleModelConfigChange = async (config: InsightsModelConfig) => {
-    // Always apply locally so the choice sticks before the conversation exists on disk
-    setDraftModelConfig(config);
-    if (session?.id && session.id !== DRAFT_SESSION_ID) {
-      await updateModelConfig(projectId, session.id, config);
-    }
-  };
+  // Applied at once so the choice sticks before the conversation exists on disk
+  const handleModelConfigChange = (config: InsightsModelConfig) => changeChatModelConfig(projectId, config);
 
   const messages = session?.messages || [];
   const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
@@ -350,12 +423,7 @@ export function Insights({ projectId }: InsightsProps) {
   // Kanban button: gives Claude the project's task tools in this conversation (kept with the
   // conversation's model settings)
   const kanbanTools = effectiveModelConfig?.kanbanTools === true;
-  const balanced = DEFAULT_AGENT_PROFILES.find((profile) => profile.id === 'balanced');
-  const baseModelConfig: InsightsModelConfig = effectiveModelConfig ?? {
-    profileId: 'balanced',
-    model: balanced?.model ?? 'sonnet',
-    thinkingLevel: balanced?.thinkingLevel ?? 'medium',
-  };
+  const baseModelConfig = withDefaultModelConfig(effectiveModelConfig);
   const toggleKanbanTools = () => {
     void handleModelConfigChange({ ...baseModelConfig, kanbanTools: !kanbanTools });
   };
@@ -629,48 +697,61 @@ export function Insights({ projectId }: InsightsProps) {
           onUnarchiveSession={handleUnarchiveSession}
           showArchived={showArchived}
           onToggleShowArchived={handleToggleShowArchived}
+          replyingSessionIds={replyingIds}
         />
       )}
 
       {/* Main Chat Area - files can be dropped anywhere in it */}
       <div
+        ref={chatColumnRef}
         className="flex min-w-0 flex-1 flex-col"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {/* Top bar: the history toggle sits level with the app sidebar's header row and "New chat"
-            below it, level with the sidebar's "New Task" row; the bar doubles as the window drag area */}
-        <div className="electron-drag flex shrink-0 flex-col items-start gap-3 px-3 pt-6">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="electron-no-drag h-8 w-8 text-muted-foreground"
-                onClick={() => setShowSidebar(!showSidebar)}
-                aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
-              >
-                <PanelLeft className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
-          </Tooltip>
-          <h2 className="sr-only">{t('insights.title')}</h2>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="electron-no-drag h-8 w-8 text-muted-foreground"
-                onClick={handleNewSession}
-                aria-label={t('insights.newChat')}
-              >
-                <SquarePen className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
-          </Tooltip>
+        {/* Top bar, below the window drag strip: the history toggle and the browser drawer's button
+            share the first row, as far from the bar's top as the button is from the right edge, and
+            "New chat" sits below the toggle. While the drawer is open the bar's top line continues
+            the drawer's top border to the chat history. The bar doubles as the window drag area */}
+        <div className="electron-drag shrink-0" style={{ height: TOP_STRIP_HEIGHT }} />
+        <div
+          className={cn(
+            'electron-drag flex shrink-0 items-start justify-between border-t px-3 pt-3',
+            drawerOpen ? 'border-border' : 'border-transparent'
+          )}
+        >
+          <div className="flex flex-col items-start gap-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="electron-no-drag h-8 w-8 text-muted-foreground"
+                  onClick={toggleHistory}
+                  aria-label={showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}
+                >
+                  <PanelLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{showSidebar ? t('insights.hideHistory') : t('insights.showHistory')}</TooltipContent>
+            </Tooltip>
+            <h2 className="sr-only">{t('insights.title')}</h2>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="electron-no-drag h-8 w-8 text-muted-foreground"
+                  onClick={handleNewSession}
+                  aria-label={t('insights.newChat')}
+                >
+                  <SquarePen className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
+            </Tooltip>
+          </div>
+          <BrowserDrawerButton projectId={projectId} />
         </div>
 
         {isEmpty ? (

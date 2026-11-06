@@ -46,6 +46,9 @@ import { useTaskDetail } from './hooks/useTaskDetail';
 import { TaskMetadata } from './TaskMetadata';
 import { TaskOpenAgentButton } from './TaskOpenAgentButton';
 import { useTaskGitOptions } from '../task-form/TaskGitOptions';
+import { TaskConnectorRows } from '../task-form/TaskConnectorRows';
+import { useSettingsStore } from '../../stores/settings-store';
+import { getDefaultMcpConnectorIds } from '../../../shared/utils/mcp-connectors';
 import { TaskWarnings } from './TaskWarnings';
 import { TaskLogs, isTaskRunSettled } from './TaskLogs';
 import { PreviousRuns } from './PreviousRuns';
@@ -56,6 +59,9 @@ import { CreatePRDialog } from './task-review/CreatePRDialog';
 import { MergePRDialog } from './task-review/MergePRDialog';
 import { LocalMergeDialog } from './task-review/LocalMergeDialog';
 import type { Task, WorktreeCreatePROptions, WorktreeLocalMergeResult, WorktreeMergePROptions, WorktreeMergePRResult } from '../../../shared/types';
+
+/** A branch badge for something not there yet (a branch to be created, a merge to come) */
+const DRAFT_BADGE_CLASS = 'border-dashed text-muted-foreground';
 
 // Status label colors: the top line color of each Kanban column (globals.css `--column-*`)
 const STATUS_BADGE_CLASSES: Record<TaskStatusColumn, string> = {
@@ -92,6 +98,7 @@ export function TaskDetailModal({ open, task, onOpenChange }: TaskDetailModalPro
 function TaskDetailModalContent({ open, task, onOpenChange }: { open: boolean; task: Task; onOpenChange: (open: boolean) => void }) {
   const { t } = useTranslation(['tasks']);
   const state = useTaskDetail({ task });
+  const connectorSettings = useSettingsStore((settingsState) => settingsState.settings.mcpConnectors);
   const [isUnarchiving, setIsUnarchiving] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
   // Why the last footer action failed, shown in the footer (cleared by the next action)
@@ -236,8 +243,17 @@ function TaskDetailModalContent({ open, task, onOpenChange }: { open: boolean; t
 
   // Merging into the base branch, and opening a pull request against it, both need the project
   // to still have it: the branch the task's Git options label "Not in the project"
-  const baseBranch = state.worktreeStatus?.baseBranch;
-  const { isMissingBranch } = useTaskGitOptions(task.projectId, baseBranch);
+  // Whether the task's worktree (and branch) exists: its status says so in review; otherwise a run
+  // was started, which creates the worktree first
+  const worktreeExists = state.worktreeStatus
+    ? state.worktreeStatus.exists
+    : task.metadata?.useWorktree !== false && !!task.claudeRun;
+  // The worktree's base branch, or the one runs pick for it: the task's own, else the project's
+  // default branch (no git calls here)
+  const { isMissingBranch, projectDefaultBranch } = useTaskGitOptions(task.projectId, state.worktreeStatus?.baseBranch);
+  const baseBranch = state.worktreeStatus?.exists
+    ? state.worktreeStatus.baseBranch
+    : task.metadata?.baseBranch || projectDefaultBranch || undefined;
   const baseBranchMissing = isMissingBranch(baseBranch);
   const baseBranchMissingTitle = baseBranchMissing
     ? t('taskReview:workspace.baseBranchMissing', { branch: baseBranch })
@@ -271,26 +287,28 @@ function TaskDetailModalContent({ open, task, onOpenChange }: { open: boolean; t
                   </DialogPrimitive.Title>
                   <DialogPrimitive.Description asChild>
                     <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                      <Badge variant="outline" className="text-xs font-mono">
+                      {/* The task's branch: a draft (dashed, muted) until its worktree is created */}
+                      <Badge
+                        variant="outline"
+                        className={cn('text-xs font-mono', !worktreeExists && DRAFT_BADGE_CLASS)}
+                        title={t(worktreeExists ? 'tasks:detailHeader.taskBranch' : 'tasks:detailHeader.taskBranchDraft')}
+                      >
                         {task.specId}
                       </Badge>
-                      {/* The task's base branch: what it was branched from, and what it merges into */}
-                      {state.worktreeStatus?.exists && (
-                        <>
-                          <span className="text-xs text-muted-foreground" aria-hidden="true">→</span>
-                          <Badge
-                            variant="outline"
-                            className="text-xs font-mono"
-                            title={baseBranchMissingTitle ?? t('taskReview:workspace.targetBranch')}
-                          >
-                            {/* A branch the project no longer has reads as disabled, like the
-                                buttons that cannot use it; the tag itself keeps its look */}
-                            <span className={cn(baseBranchMissing && 'opacity-50')}>
-                              {state.worktreeStatus.baseBranch || 'main'}
-                            </span>
-                          </Badge>
-                        </>
-                      )}
+                      {/* The task's base branch: what it was (or will be) branched from, and what it
+                          merges into. A draft until the task is merged */}
+                      <span className="text-xs text-muted-foreground" aria-hidden="true">→</span>
+                      <Badge
+                        variant="outline"
+                        className={cn('text-xs font-mono', DRAFT_BADGE_CLASS)}
+                        title={baseBranchMissingTitle ?? t('taskReview:workspace.targetBranch')}
+                      >
+                        {/* A branch the project no longer has reads as disabled, like the
+                            buttons that cannot use it; the tag itself keeps its look */}
+                        <span className={cn(baseBranchMissing && 'opacity-50')}>
+                          {baseBranch || 'main'}
+                        </span>
+                      </Badge>
                       {/* Status labels share one look: text and border in the color, 10% tint */}
                       {state.isStuck ? (
                         <Badge variant="outline" className="text-xs border-current bg-warning/10 text-warning">
@@ -418,6 +436,17 @@ function TaskDetailModalContent({ open, task, onOpenChange }: { open: boolean; t
                           </>
                         ) : undefined}
                       />
+
+                      {/* The task's connectors, as the edit dialog sets them (read-only here) */}
+                      <section>
+                        <h3 className="mb-1 text-sm text-foreground">{t('tasks:form.sections.connectors')}</h3>
+                        <TaskConnectorRows
+                          value={task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(connectorSettings)}
+                          playwrightBrowser={task.metadata?.playwrightBrowser}
+                          readOnly
+                          idPrefix="detail-"
+                        />
+                      </section>
 
                       {/* Runs the task was started over from, above the change request */}
                       <PreviousRuns

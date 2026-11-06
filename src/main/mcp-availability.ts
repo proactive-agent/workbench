@@ -4,9 +4,9 @@
  *
  * Whether each connector's server can start where Claude Code runs. A stdio server is started
  * once, as a run would start it, until it answers the MCP `initialize` request: the first start
- * of an npx server downloads it (Puppeteer also downloads Chromium), so it is "preparing" until
+ * of an npx server downloads it, so it is "preparing" until
  * then. A missing command or a server that fails, exits or doesn't answer makes it
- * "unavailable". Servers that need more than their own process (Puppeteer needs a browser) are
+ * "unavailable". Servers that need more than their own process (Playwright needs a browser) are
  * also asked to use it once. HTTP servers are reachable or not.
  *
  * Results are kept per connector and its connection details and sent to every window as they
@@ -15,18 +15,46 @@
  * fix the user ran shows up. resetMcpAvailability() forgets everything (tool paths changed).
  * A probe's server runs in its own process group and is stopped with everything it started. The Connectors page, the task dialog and the chat's MCP menu keep
  * a server's switch off and disabled until it is ready; runs leave out unavailable servers.
+ *
+ * Results are kept per connector but found per connection details and verifying call: connectors
+ * with the same details (a custom server with the built-in Context7's command) share one probe, and
+ * its result goes to each of them. A probe that also asks the server to do its work (Playwright
+ * opening a browser) is never shared with one that only starts it.
+ *
+ * Playwright with a browser profile is also unavailable while that browser is open
+ * (browser-profiles/in-use.ts): runs copy the profile, which an open browser keeps locked. Open
+ * states are kept per browser. The chosen browser is the one in the settings the windows ask with
+ * (read from the settings file each time); a run's settings may be older, so a run looks at its own
+ * browser's lock without changing the chosen one. The chosen browser is looked at again when asked
+ * for after BROWSER_RECHECK_MS, and every BROWSER_RECHECK_MS while it is open (whether or not
+ * Playwright is on in the defaults: its switch is disabled while the browser is open, so the user
+ * can only switch it on after closing it), so closing the browser enables the switch without a
+ * page reload. A look is one read of the profile's lock.
  */
 
 import { EventEmitter } from 'events';
+import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from './temp-folders';
 import type { ChildProcess } from 'child_process';
 import type { McpConnectorSettings } from '../shared/types/settings';
 import type { McpAvailability } from '../shared/types/project';
+import type { DownloadableBrowser, PlaywrightBrowserChoice } from '../shared/types/browser-profiles';
 import { mcpServerEntry, type McpServerEntry } from './claude-code/mcp-config';
 import { resetCommandLookups, resolveCommand } from './mcp-commands';
 import { getToolEnvAsync } from './cli-utils';
 import { isWindows } from './platform';
-import { getWslInfo, whenShellRuntimeReady } from './platform/shell-runtime';
+import { getWslInfo, toRuntimePath, whenShellRuntimeReady } from './platform/shell-runtime';
+import { ensureWindowsBrowserScripts } from './browser-profiles/windows-browser';
 import { killRuntimeProcessTree, spawnTool } from './platform/runtime-exec';
+import { browserProfileCopyBlocked } from './browser-profiles/profile-copy';
+import { PLAYWRIGHT_MCP_PACKAGE, playwrightInstallCommand } from './browser-profiles/managed';
+import { appLog } from './app-logger';
+
+/**
+ * The probe's MCP client name, which Playwright gives the browser it opens as its session title:
+ * Playwright's prefix for its own sessions keeps the probe's browser out of its dashboard and so
+ * out of the browser drawer
+ */
+const PROBE_CLIENT_NAME = '--playwright-internal-workbench-probe';
 
 /** How long a server may take to answer: its first start downloads it */
 const START_TIMEOUT_MS = 5 * 60 * 1000;
@@ -34,39 +62,89 @@ const START_TIMEOUT_MS = 5 * 60 * 1000;
 const HTTP_TIMEOUT_MS = 10 * 1000;
 /** How old an unavailable result may get before it is checked again */
 export const UNAVAILABLE_RECHECK_MS = 30 * 1000;
+/** How old the chosen browser's open state may get, and how often it is looked at while open */
+const BROWSER_RECHECK_MS = 3 * 1000;
+
+/** Display names of the built-in connectors, for log lines */
+const BUILTIN_NAMES: Record<string, string> = { context7: 'Context7', electron: 'Electron', playwright: 'Playwright' };
+const BROWSER_NAMES: Record<string, string> = {
+  chrome: 'Chrome', edge: 'Edge', brave: 'Brave', chromium: 'Chromium', firefox: 'Firefox', safari: 'Safari',
+};
+
+/**
+ * Playwright's error when a build it downloads isn't there: `Browser "chrome-for-testing" is not
+ * installed; expected executable at ... Run \`npx @playwright/mcp install-browser ...\``. Other
+ * launch failures (missing system libraries, no display) aren't fixed by a download
+ */
+const BROWSER_NOT_INSTALLED = /Browser "([\w-]+)" is not installed/;
+
+/** Playwright's names of its builds (`--browser chromium` is the `chrome-for-testing` channel) -> the download that installs it */
+const INSTALLABLE: Record<string, DownloadableBrowser> = {
+  'chrome-for-testing': 'chromium',
+  chromium: 'chromium',
+  firefox: 'firefox',
+  webkit: 'webkit',
+};
+
+/** The command that downloads Playwright's own browser, when a failed launch says it's missing */
+function playwrightInstallFix(error: string): string | undefined {
+  const browser = INSTALLABLE[BROWSER_NOT_INSTALLED.exec(error)?.[1] ?? ''];
+  return browser ? playwrightInstallCommand(browser) : undefined;
+}
 
 /** A tool call that proves a server can do its work, not only start */
 interface VerifyCall {
   name: string;
   arguments: Record<string, unknown>;
-  /** The command that fixes a failed call, shown to the user (from the call's error) */
-  fix?: (error: string) => string;
+  /** The command that fixes a failed call, shown to the user (from the call's error), when there is one */
+  fix?: (error: string) => string | undefined;
 }
 
 /**
- * Puppeteer's server starts without a browser and only needs one for its tools: it opens a blank
- * page in a hidden browser (closed when the server is stopped)
+ * Playwright's server starts without a browser and only needs one for its tools: it opens a blank
+ * page in a headless browser (closed when the server is stopped). That is the browser chosen in
+ * Settings > Connectors (its executable comes with the server's entry, with a profile in memory,
+ * never the user's), otherwise Playwright's own Chromium
  */
-const VERIFY_CALLS: Record<string, VerifyCall> = {
-  puppeteer: {
-    name: 'puppeteer_navigate',
-    arguments: { url: 'about:blank', launchOptions: { headless: true } },
-    // Puppeteer needs the exact Chrome build its error names ("Could not find Chrome (ver. X)")
-    fix: (error) => {
-      const version = /\(ver\. ([\d.]+)\)/.exec(error)?.[1];
-      return `npx puppeteer browsers install chrome${version ? `@${version}` : ''}`;
-    },
-  },
-};
+function verifyCall(id: string, settings: McpConnectorSettings | undefined): VerifyCall | undefined {
+  if (id !== 'playwright') return undefined;
+  const browser = settings?.playwrightBrowser;
+  return {
+    name: 'browser_navigate',
+    arguments: { url: 'about:blank' },
+    // Playwright's own builds are downloaded with its install-browser; another chosen browser is
+    // fixed by choosing another one
+    ...(!browser || browser.managed ? { fix: playwrightInstallFix } : {}),
+  };
+}
+
+/**
+ * The entry a probe starts: a run's, headless for Playwright (a check never shows a window; runs
+ * are headless too)
+ */
+function probedEntry(id: string, entry: McpServerEntry): McpServerEntry {
+  if (id !== 'playwright' || entry.type !== 'stdio' || entry.args?.includes('--headless')) return entry;
+  return { ...entry, args: [...(entry.args ?? []), '--headless'] };
+}
 
 const events = new EventEmitter();
 /** Latest result per connector id and the entry it was found for */
 const results = new Map<string, { key: string; availability: McpAvailability; checkedAt: number }>();
 const probes = new Map<string, Promise<McpAvailability>>();
+/** Latest result per probe key, also for browsers only a run uses (checkRunServer) */
+const keyResults = new Map<string, { availability: McpAvailability; checkedAt: number }>();
 /** Servers being probed now */
 const running = new Set<ChildProcess>();
 /** Bumped by resetMcpAvailability: probes started before it don't report */
 let generation = 0;
+/** Whether each browser (by choice id) is open, and when that was seen */
+const browserOpen = new Map<string, { open: boolean; checkedAt: number }>();
+/** The looks at browsers' locks running now, by choice id */
+const browserLooks = new Map<string, Promise<boolean>>();
+/** Looks at the chosen browser again while it is open (for the choice id) */
+let browserTimer: { id: string; timer: NodeJS.Timeout } | undefined;
+/** The latest connector settings the windows asked with: the chosen browser now */
+let playwrightSettings: McpConnectorSettings | undefined;
 
 /** Called with each connector whose availability changed */
 export function onMcpAvailabilityChange(listener: (id: string, availability: McpAvailability) => void): () => void {
@@ -76,44 +154,220 @@ export function onMcpAvailabilityChange(listener: (id: string, availability: Mcp
 
 function set(id: string, key: string, availability: McpAvailability): McpAvailability {
   results.set(id, { key, availability, checkedAt: Date.now() });
-  events.emit('change', id, availability);
+  // What check() reads: an open browser keeps Playwright unavailable whatever its server says
+  events.emit('change', id, withBrowserOpen(id, availability, playwrightSettings));
   return availability;
+}
+
+/** The chosen browser whose open state matters (a profile of the user's, not Playwright's download) */
+function chosenProfileBrowser(settings: McpConnectorSettings | undefined): PlaywrightBrowserChoice | undefined {
+  const browser = settings?.playwrightBrowser;
+  return browser && !browser.managed ? browser : undefined;
+}
+
+/** A server's availability with the chosen browser's last known open state on top */
+function withBrowserOpen(id: string, availability: McpAvailability, settings: McpConnectorSettings | undefined): McpAvailability {
+  const browser = id === 'playwright' ? chosenProfileBrowser(settings) : undefined;
+  if (!browser || availability.state === 'unavailable') return availability;
+  return browserOpen.get(browser.id)?.open ? { state: 'unavailable', browserOpen: true } : availability;
+}
+
+/** Remember the latest settings (the chosen browser); a poll for another browser stops */
+function notePlaywrightSettings(settings: McpConnectorSettings | undefined): void {
+  playwrightSettings = settings;
+  if (browserTimer && browserTimer.id !== chosenProfileBrowser(settings)?.id) {
+    clearTimeout(browserTimer.timer);
+    browserTimer = undefined;
+  }
 }
 
 /**
  * The connectors' availability now; servers not checked yet (or whose connection details
- * changed) start being checked and read "preparing"
+ * changed) start being checked and read "preparing". `settings` are the latest saved ones (the
+ * IPC handler reads the settings file): their Playwright browser becomes the chosen one
  */
 export function getMcpAvailability(ids: string[], settings: McpConnectorSettings | undefined): Record<string, McpAvailability> {
+  if (ids.includes('playwright')) notePlaywrightSettings(settings);
   return Object.fromEntries(ids.map((id) => [id, check(id, settings)]));
 }
 
-/** The connector ids a run can use: unavailable ones are left out (preparing ones stay in) */
-export function usableMcpConnectorIds(ids: string[], settings: McpConnectorSettings | undefined): string[] {
-  return ids.filter((id) => check(id, settings).state !== 'unavailable');
+/** Why a run leaves a connector out, as a log line */
+export function describeLeftOutConnector(id: string, availability: McpAvailability, settings: McpConnectorSettings | undefined): string {
+  const name = BUILTIN_NAMES[id] ?? settings?.customServers?.find((server) => server.id === id)?.name ?? id;
+  let reason: string;
+  if (availability.browserOpen) {
+    const browser = settings?.playwrightBrowser;
+    const browserName = browser ? BROWSER_NAMES[browser.browser] ?? browser.browser : 'The chosen browser';
+    reason = `${browserName}${browser?.profileName ? ` (profile ${browser.profileName})` : ''} is open and has no saved copy of its profile yet. Close it once to use ${name} in later runs`;
+  } else if (availability.missingCommand) {
+    reason = `${availability.missingCommand} is not installed`;
+  } else {
+    reason = availability.message || 'its server could not start';
+  }
+  return `${name} connector left out of this run: ${reason}`;
+}
+
+/**
+ * The connector ids a run can use: unavailable ones are left out (preparing ones stay in). The
+ * run's browser is looked at now, so a run never copies the profile of an open one. Each one left
+ * out is logged, passed to `onLeftOut` (the run's log) and sent to every window again, so a view
+ * that still shows it on catches up. `runBrowser` is the run's own Playwright browser when it isn't
+ * the one in `settings` (a task's own choice, TaskMetadata.playwrightBrowser; null: Playwright's own
+ * Chrome): only its lock is looked at, the server's check stays the one for `settings`, so a task's
+ * choice never replaces the result the windows show
+ */
+export async function usableMcpConnectorIds(
+  ids: string[],
+  settings: McpConnectorSettings | undefined,
+  onLeftOut?: (id: string, availability: McpAvailability) => void,
+  runBrowser?: PlaywrightBrowserChoice | null
+): Promise<string[]> {
+  const runSettings: McpConnectorSettings | undefined = runBrowser === undefined
+    ? settings
+    : { ...settings, playwrightBrowser: runBrowser ?? undefined };
+  // The run's own browser (its settings may be older than the chosen one): looked at, never chosen
+  const browser = chosenProfileBrowser(runSettings);
+  // Its answer counts even when a reset forgot it while looking
+  const browserIsOpen = browser && ids.includes('playwright') ? await lookAtBrowser(browser) : false;
+  return ids.filter((id) => {
+    const found = runBrowser === undefined || id !== 'playwright'
+      ? check(id, settings)
+      // The run's own browser's check, without the chosen browser's open state (the run's browser counts)
+      : checkRunServer(id, runSettings);
+    const availability: McpAvailability = id === 'playwright' && browserIsOpen && found.state !== 'unavailable'
+      ? { state: 'unavailable', browserOpen: true }
+      : found;
+    if (availability.state !== 'unavailable') return true;
+    appLog.info(`[MCP] ${describeLeftOutConnector(id, availability, runSettings)}`);
+    // A task's own browser being open says nothing about the one the windows show
+    if (!(availability.browserOpen && runBrowser !== undefined)) events.emit('change', id, availability);
+    onLeftOut?.(id, availability);
+    return false;
+  });
 }
 
 function check(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
-  const entry = mcpServerEntry(id, settings);
-  if (!entry) return { state: 'ready' };
-  const key = JSON.stringify(entry);
+  const availability = checkServer(id, settings);
+  const browser = id === 'playwright' ? chosenProfileBrowser(settings) : undefined;
+  // Looks again at an old answer (the result arrives as a change)
+  if (browser && availability.state !== 'unavailable') refreshBrowserOpen(browser);
+  return withBrowserOpen(id, availability, settings);
+}
+
+/**
+ * Look at the chosen browser again when its last answer is missing or old; while it is open, make
+ * sure a look is coming (a poll stopped when another browser was chosen for a moment)
+ */
+function refreshBrowserOpen(browser: PlaywrightBrowserChoice): void {
+  const known = browserOpen.get(browser.id);
+  if (!known || Date.now() - known.checkedAt >= BROWSER_RECHECK_MS) {
+    void lookAtBrowser(browser);
+  } else if (known.open && isChosenBrowser(browser.id)
+    && browserTimer?.id !== browser.id && !browserLooks.has(browser.id)) {
+    pollBrowser(browser.id);
+  }
+}
+
+function isChosenBrowser(id: string): boolean {
+  return chosenProfileBrowser(playwrightSettings)?.id === id;
+}
+
+/** Look at the chosen browser again in BROWSER_RECHECK_MS (it is open) */
+function pollBrowser(id: string): void {
+  if (browserTimer) clearTimeout(browserTimer.timer);
+  const timer = setTimeout(() => {
+    browserTimer = undefined;
+    const current = chosenProfileBrowser(playwrightSettings);
+    if (current) void lookAtBrowser(current);
+  }, BROWSER_RECHECK_MS);
+  timer.unref();
+  browserTimer = { id, timer };
+}
+
+/**
+ * Look at a browser's lock and keep the answer for that browser; a change for the browser chosen
+ * now is sent like any other availability change, read with the latest settings
+ */
+function lookAtBrowser(browser: PlaywrightBrowserChoice): Promise<boolean> {
+  const running = browserLooks.get(browser.id);
+  if (running) return running;
+  const started = generation;
+  // Open with no saved copy to use instead (an open browser with a saved copy doesn't block runs)
+  const promise = browserProfileCopyBlocked(browser).catch(() => false).then((open) => {
+    if (browserLooks.get(browser.id) === promise) browserLooks.delete(browser.id);
+    if (started !== generation) return open;
+    const changed = (browserOpen.get(browser.id)?.open ?? false) !== open;
+    browserOpen.set(browser.id, { open, checkedAt: Date.now() });
+    // Not the chosen browser (a run's older choice, or the choice changed while looking): nothing to send
+    if (!isChosenBrowser(browser.id)) return open;
+    if (changed) events.emit('change', 'playwright', check('playwright', playwrightSettings));
+    // While it is open, keep looking, so closing it enables the connector
+    if (open) {
+      pollBrowser(browser.id);
+    } else if (browserTimer) {
+      clearTimeout(browserTimer.timer);
+      browserTimer = undefined;
+    }
+    return open;
+  });
+  browserLooks.set(browser.id, promise);
+  return promise;
+}
+
+/**
+ * What a probe is shared by: the server's entry and the call that verifies it (a server only
+ * started never vouches for one that must also do its work)
+ */
+function probeKey(entry: McpServerEntry, verify: VerifyCall | undefined): string {
+  return JSON.stringify([entry, verify ? { name: verify.name, arguments: verify.arguments, fix: !!verify.fix } : null]);
+}
+
+function checkServer(id: string, settings: McpConnectorSettings | undefined): McpAvailability {
+  const runEntry = mcpServerEntry(id, settings);
+  if (!runEntry) return { state: 'ready' };
+  const entry = probedEntry(id, runEntry);
+  const verify = verifyCall(id, settings);
+  const key = probeKey(entry, verify);
   const known = results.get(id);
   if (known?.key === key) {
     const stale = known.availability.state === 'unavailable' && Date.now() - known.checkedAt >= UNAVAILABLE_RECHECK_MS;
     // Checked again in the background: it reads unavailable (and runs leave it out) until then
-    if (stale && !probes.has(key)) startProbe(id, key, entry, true);
+    if (stale && !probes.has(key)) startProbe(key, entry, verify, true);
     return known.availability;
   }
-  if (!probes.has(key)) {
-    set(id, key, { state: 'preparing' });
-    startProbe(id, key, entry, false);
-  }
+  // These details are the connector's current ones from now on (preparing while a probe runs, which
+  // may be one started for them earlier: switching A -> B -> A keeps A's first probe)
+  set(id, key, { state: 'preparing' });
+  if (!probes.has(key)) startProbe(key, entry, verify, false);
   return { state: 'preparing' };
 }
 
-function startProbe(id: string, key: string, entry: McpServerEntry, recheck: boolean): void {
+/**
+ * The check of a run's own Playwright browser (a task's pick, TaskMetadata.playwrightBrowser): the
+ * probe for that browser, shared by its key and kept per key, never becoming the result the
+ * windows show for the connector
+ */
+function checkRunServer(id: string, runSettings: McpConnectorSettings | undefined): McpAvailability {
+  const runEntry = mcpServerEntry(id, runSettings);
+  if (!runEntry) return { state: 'ready' };
+  const entry = probedEntry(id, runEntry);
+  const verify = verifyCall(id, runSettings);
+  const key = probeKey(entry, verify);
+  // The windows' browser may be this one
+  const shown = results.get(id);
+  const known = shown?.key === key ? shown : keyResults.get(key);
+  if (known) {
+    const stale = known.availability.state === 'unavailable' && Date.now() - known.checkedAt >= UNAVAILABLE_RECHECK_MS;
+    if (stale && !probes.has(key)) startProbe(key, entry, verify, true);
+    return known.availability;
+  }
+  if (!probes.has(key)) startProbe(key, entry, verify, false);
+  return { state: 'preparing' };
+}
+
+function startProbe(key: string, entry: McpServerEntry, verify: VerifyCall | undefined, recheck: boolean): void {
   const started = generation;
-  const probe = probeEntry(entry, VERIFY_CALLS[id], recheck).catch((error: unknown) => ({
+  const probe = probeEntry(entry, verify, recheck).catch((error: unknown) => ({
     state: 'unavailable' as const,
     message: error instanceof Error ? error.message : String(error),
   }));
@@ -121,9 +375,24 @@ function startProbe(id: string, key: string, entry: McpServerEntry, recheck: boo
   void probe.then((availability) => {
     if (started !== generation) return;
     probes.delete(key);
-    // Only when the connector still has these connection details
-    if (results.get(id)?.key === key) set(id, key, availability);
+    keyResults.set(key, { availability, checkedAt: Date.now() });
+    // Every connector whose current connection details these are (another connector with the same
+    // details waited on this probe), not only the one that started it
+    for (const [otherId, known] of [...results]) {
+      if (known.key === key) set(otherId, key, availability);
+    }
   });
+}
+
+/**
+ * Check a connector again now, whatever its result's age (a fix finished: Playwright's browser was
+ * downloaded). It reads "preparing" until the new check ends, and every window is told
+ */
+export function recheckMcpConnector(id: string, settings: McpConnectorSettings | undefined): void {
+  results.delete(id);
+  // Runs' own browsers are checked again too when next asked (a download may be one of theirs)
+  keyResults.clear();
+  getMcpAvailability([id], settings);
 }
 
 /**
@@ -133,7 +402,12 @@ function startProbe(id: string, key: string, entry: McpServerEntry, recheck: boo
 export function resetMcpAvailability(): void {
   generation++;
   results.clear();
+  keyResults.clear();
   probes.clear();
+  browserOpen.clear();
+  browserLooks.clear();
+  if (browserTimer) clearTimeout(browserTimer.timer);
+  browserTimer = undefined;
   resetCommandLookups();
   stopMcpProbes();
 }
@@ -161,6 +435,8 @@ async function probeEntry(entry: McpServerEntry, verify: VerifyCall | undefined,
   if (entry.type === 'http') return probeHttp(entry.url, entry.headers);
 
   await whenShellRuntimeReady();
+  // A Windows browser in WSL starts through the launcher (browser-profiles/windows-browser.ts)
+  if (getWslInfo()) await ensureWindowsBrowserScripts().catch(() => undefined);
   // The command's full path where the server runs: inside the distribution in WSL; natively on
   // Windows with its extension (`npx.cmd`), which spawn needs and then starts through a shell
   const command = await resolveCommand(entry.command, { refresh });
@@ -168,7 +444,39 @@ async function probeEntry(entry: McpServerEntry, verify: VerifyCall | undefined,
   // Natively with the PATH Claude Code runs get (Node.js found through version managers too);
   // in WSL the distribution's login PATH applies
   const baseEnv = getWslInfo() ? process.env : await getToolEnvAsync();
-  return startAndInitialize(command, entry.args ?? [], entry.env, baseEnv, verify);
+  const args = entry.args ?? [];
+  // Playwright saves a snapshot of each page it opens: into a folder removed after the probe,
+  // not the app's working folder. Not part of the probe's key (each probe has its own)
+  if (!args.includes(PLAYWRIGHT_MCP_PACKAGE)) return startAndInitialize(command, args, entry.env, baseEnv, verify);
+  const outputDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.mcpProbe);
+  let exited: Promise<void> = Promise.resolve();
+  try {
+    return await startAndInitialize(command, [...args, '--output-dir', toRuntimePath(outputDir)], entry.env, baseEnv, verify, (proc) => {
+      exited = processGone(proc);
+    });
+  } finally {
+    // Once the server has stopped: a server still closing its browser writes into the folder
+    // again (which left empty folders behind). Not awaited: the result doesn't wait for it
+    void exited.then(() => removeTempFolder(outputDir));
+  }
+}
+
+/** How long a stopped probe's server may take to exit before its folder is removed anyway */
+const PROBE_EXIT_LIMIT_MS = 10_000;
+/** Time after the exit for what its browser still writes (it outlives the server briefly) */
+const PROBE_SETTLE_MS = 1000;
+
+/** Resolves once a probe's server has exited (and a moment more), or after PROBE_EXIT_LIMIT_MS */
+function processGone(proc: ChildProcess): Promise<void> {
+  return new Promise((resolve) => {
+    const limit = setTimeout(resolve, PROBE_EXIT_LIMIT_MS);
+    const settle = () => {
+      clearTimeout(limit);
+      setTimeout(resolve, PROBE_SETTLE_MS);
+    };
+    if (proc.exitCode !== null || proc.signalCode !== null) settle();
+    else proc.once('close', settle);
+  });
 }
 
 async function probeHttp(url: string, headers: Record<string, string> | undefined): Promise<McpAvailability> {
@@ -187,10 +495,17 @@ async function probeHttp(url: string, headers: Record<string, string> | undefine
   }
 }
 
-/** The first sentence of an error (Puppeteer's go on with installation hints) */
+function withFixCommand(availability: McpAvailability, fixCommand: string | undefined): McpAvailability {
+  return fixCommand ? { ...availability, fixCommand } : availability;
+}
+
+/**
+ * The first sentence of an error. Playwright's tool errors start with a `### Error` heading and
+ * go on with installation hints
+ */
 function firstSentence(text: string): string {
-  const firstLine = text.trim().split('\n')[0] ?? '';
-  return firstLine.split(/\.\s+(?=[A-Z])/)[0].replace(/\.$/, '');
+  const firstLine = text.trim().split('\n').map((line) => line.trim()).find((line) => line && !/^#+\s/.test(line)) ?? '';
+  return firstLine.replace(/^Error:\s*/, '').split(/\.\s+(?=[A-Z])/)[0].replace(/\.$/, '');
 }
 
 /**
@@ -202,7 +517,8 @@ function startAndInitialize(
   args: string[],
   env: Record<string, string> | undefined,
   baseEnv: NodeJS.ProcessEnv,
-  verify?: VerifyCall
+  verify?: VerifyCall,
+  onStarted?: (proc: ChildProcess) => void
 ): Promise<McpAvailability> {
   return new Promise((resolve) => {
     let proc: ChildProcess;
@@ -222,6 +538,7 @@ function startAndInitialize(
     }
 
     running.add(proc);
+    onStarted?.(proc);
     // Writing to (or closing) the input of a server that already exited must not throw
     proc.stdin?.on('error', () => undefined);
     let stdout = '';
@@ -263,7 +580,7 @@ function startAndInitialize(
             ?? (message.result?.isError ? message.result.content?.map((part) => part.text ?? '').join(' ') : undefined);
           finish(failure === undefined
             ? { state: 'ready' }
-            : { state: 'unavailable', message: firstSentence(failure) || 'Failed', ...(verify?.fix ? { fixCommand: verify.fix(failure) } : {}) });
+            : withFixCommand({ state: 'unavailable', message: firstSentence(failure) || 'Failed' }, verify?.fix?.(failure)));
           return;
         }
       }
@@ -280,7 +597,7 @@ function startAndInitialize(
     send({
       id: 1,
       method: 'initialize',
-      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'workbench', version: '1.0.0' } },
+      params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: PROBE_CLIENT_NAME, version: '1.0.0' } },
     });
   });
 }

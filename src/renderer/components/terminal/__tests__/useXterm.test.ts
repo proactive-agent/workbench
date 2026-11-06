@@ -12,6 +12,7 @@ import { act, render } from '@testing-library/react';
 import React from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useXterm } from '../useXterm';
+import { terminalBufferManager } from '../../../lib/terminal-buffer-manager';
 
 // Mock xterm.js
 vi.mock('@xterm/xterm', () => ({
@@ -111,6 +112,7 @@ async function setupMockXterm(overrides: {
   getSelection?: () => string;
   paste?: ReturnType<typeof vi.fn>;
   input?: ReturnType<typeof vi.fn>;
+  write?: ReturnType<typeof vi.fn>;
 } = {}) {
   let keyEventHandler: ((event: KeyboardEvent) => boolean) | null = null;
 
@@ -129,7 +131,7 @@ async function setupMockXterm(overrides: {
       onData: vi.fn(),
       onResize: vi.fn(),
       dispose: vi.fn(),
-      write: vi.fn(),
+      write: overrides.write ?? vi.fn(),
       cols: 80,
       rows: 24,
       options: {
@@ -181,12 +183,13 @@ async function setupMockXterm(overrides: {
     return React.createElement('div', { ref: terminalRef });
   };
 
-  render(React.createElement(TestWrapper));
+  const { container } = render(React.createElement(TestWrapper));
 
   // After rendering, keyEventHandler is guaranteed to be set by attachCustomKeyEventHandler
   // Use non-null assertion since we know the hook will set it
   return {
     keyEventHandler: keyEventHandler!,
+    terminalElement: container.firstElementChild as HTMLElement,
     mockInstance: {
       hasSelection: overrides.hasSelection,
       getSelection: overrides.getSelection,
@@ -194,6 +197,21 @@ async function setupMockXterm(overrides: {
       input: overrides.input
     }
   };
+}
+
+/** Fire a paste event (as the browser does after Ctrl+V) carrying the given clipboard contents */
+function firePaste(target: HTMLElement, clipboard: { text?: string; files?: File[]; imageTypes?: string[] }): Event {
+  const files = clipboard.files ?? [];
+  const items = [
+    ...files.map((file) => ({ kind: 'file', type: file.type })),
+    ...(clipboard.imageTypes ?? []).map((type) => ({ kind: 'file', type })),
+  ];
+  const event = new Event('paste', { bubbles: true, cancelable: true });
+  Object.defineProperty(event, 'clipboardData', {
+    value: { files, items, getData: (type: string) => (type === 'text/plain' ? clipboard.text ?? '' : '') },
+  });
+  target.dispatchEvent(event);
+  return event;
 }
 
 describe('useXterm keyboard handlers', () => {
@@ -271,16 +289,20 @@ describe('useXterm keyboard handlers', () => {
         writable: true
       });
 
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
+      const { keyEventHandler, terminalElement } = await setupMockXterm({ paste: mockPaste });
 
       await act(async () => {
         const event = new KeyboardEvent('keydown', {
           key: 'v',
           ctrlKey: true,
-          shiftKey: false
+          shiftKey: false,
+          cancelable: true
         });
 
-        keyEventHandler(event);
+        // xterm doesn't send ^V and the browser's paste goes ahead
+        expect(keyEventHandler(event)).toBe(false);
+        expect(event.defaultPrevented).toBe(false);
+        firePaste(terminalElement, { text: 'test clipboard content' });
         await vi.advanceTimersByTimeAsync(0);
       });
 
@@ -297,7 +319,7 @@ describe('useXterm keyboard handlers', () => {
         writable: true
       });
 
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
+      const { keyEventHandler, terminalElement } = await setupMockXterm({ paste: mockPaste });
 
       // Test CTRL+V
       await act(async () => {
@@ -307,7 +329,8 @@ describe('useXterm keyboard handlers', () => {
           shiftKey: false
         });
 
-        keyEventHandler(event);
+        expect(keyEventHandler(event)).toBe(false);
+        firePaste(terminalElement, { text: 'test clipboard content' });
         await vi.advanceTimersByTimeAsync(0);
       });
 
@@ -321,7 +344,8 @@ describe('useXterm keyboard handlers', () => {
           shiftKey: true
         });
 
-        keyEventHandler(event);
+        expect(keyEventHandler(event)).toBe(false);
+        firePaste(terminalElement, { text: 'test clipboard content' });
         await vi.advanceTimersByTimeAsync(0);
       });
 
@@ -502,91 +526,126 @@ describe('useXterm keyboard handlers', () => {
     });
   });
 
-  describe('CTRL+V paste behavior', () => {
-    it('should paste clipboard content on Windows', async () => {
+  describe('Pasting images and files', () => {
+    it('sends Alt+V on Windows for an image with no text, so Claude Code reads the clipboard image', async () => {
       const mockPaste = vi.fn();
+      const mockInput = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Win32', writable: true });
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste, input: mockInput });
 
-      // Mock Windows platform (navigator)
-      Object.defineProperty(navigator, 'platform', {
-        value: 'Win32',
-        writable: true
-      });
-
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
-
+      let event: Event | undefined;
       await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        if (keyEventHandler) {
-          const handled = keyEventHandler?.(event);
-          expect(handled).toBe(false); // Should prevent literal ^V
-
-          // Wait for clipboard read and paste
-          await vi.advanceTimersByTimeAsync(0);
-        }
-      });
-
-      // Verify clipboard read and paste
-      expect(mockClipboard.readText).toHaveBeenCalled();
-      expect(mockPaste).toHaveBeenCalledWith('test clipboard content');
-    });
-
-    it('should paste clipboard content on Linux', async () => {
-      const mockPaste = vi.fn();
-
-      // Mock Linux platform (navigator)
-      Object.defineProperty(navigator, 'platform', {
-        value: 'Linux',
-        writable: true
-      });
-
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
-
-      await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        const handled = keyEventHandler(event);
-        expect(handled).toBe(false);
-
+        event = firePaste(terminalElement, { imageTypes: ['image/png'] });
         await vi.advanceTimersByTimeAsync(0);
       });
 
-      expect(mockClipboard.readText).toHaveBeenCalled();
-      expect(mockPaste).toHaveBeenCalledWith('test clipboard content');
+      expect(mockInput).toHaveBeenCalledWith('\x1bv');
+      expect(mockPaste).not.toHaveBeenCalled();
+      expect(event?.defaultPrevented).toBe(true);
     });
 
-    it('should NOT paste on macOS (Cmd+V should work through existing handlers)', async () => {
-      const mockPaste = vi.fn();
-
-      // Mock macOS platform (navigator)
-      Object.defineProperty(navigator, 'platform', {
-        value: 'MacIntel',
-        writable: true
-      });
-
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
+    it('sends Ctrl+V on Linux for an image with no text', async () => {
+      const mockInput = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Linux', writable: true });
+      const { terminalElement } = await setupMockXterm({ input: mockInput });
 
       await act(async () => {
-        // On Mac, this would be Cmd+V which is metaKey
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true, // ctrlKey, not metaKey
-          metaKey: false
-        });
-
-        // On Mac, ctrlKey+V should NOT trigger paste (only Cmd+V works)
-        keyEventHandler(event);
+        firePaste(terminalElement, { imageTypes: ['image/png'] });
+        await vi.advanceTimersByTimeAsync(0);
       });
 
-      // Should not paste for ctrlKey+V on Mac
-      expect(mockClipboard.readText).not.toHaveBeenCalled();
+      expect(mockInput).toHaveBeenCalledWith('\x16');
+    });
+
+    it('pastes copied files as their paths, quoted when they have spaces, as the runtime sees them', async () => {
+      const mockPaste = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Win32', writable: true });
+      const shot = new File(['x'], 'shot.png', { type: 'image/png' });
+      const notes = new File(['x'], 'notes.txt', { type: 'text/plain' });
+      const paths = new Map<File, string>([
+        [shot, 'C:\\Users\\me\\My Pictures\\shot.png'],
+        [notes, 'C:\\notes.txt'],
+      ]);
+      const toTerminalRuntimePaths = vi.fn(async (list: string[]) =>
+        list.map((p) => p.replace('C:\\', '/mnt/c/').replace(/\\/g, '/')));
+      (window as unknown as { electronAPI: unknown }).electronAPI = {
+        sendTerminalInput: vi.fn(),
+        getPathForFile: (file: File) => paths.get(file) ?? '',
+        toTerminalRuntimePaths,
+      };
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste });
+
+      await act(async () => {
+        firePaste(terminalElement, { files: [shot, notes], text: 'ignored' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(toTerminalRuntimePaths).toHaveBeenCalledWith(['C:\\Users\\me\\My Pictures\\shot.png', 'C:\\notes.txt']);
+      expect(mockPaste).toHaveBeenCalledWith('"/mnt/c/Users/me/My Pictures/shot.png" /mnt/c/notes.txt');
+    });
+
+    it('treats text with NUL characters as an image (a WSLg screenshot arrives as bitmap bytes)', async () => {
+      const mockPaste = vi.fn();
+      const mockInput = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Linux', writable: true });
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste, input: mockInput });
+
+      await act(async () => {
+        firePaste(terminalElement, { text: 'BM\u0000\u0000\u0000(' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(mockInput).toHaveBeenCalledWith('\x16');
       expect(mockPaste).not.toHaveBeenCalled();
+    });
+
+    it('asks the main process for copied files when a paste on Linux arrives empty (WSLg)', async () => {
+      const mockPaste = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Linux', writable: true });
+      const readClipboardFilePaths = vi.fn(async () => ['/mnt/c/Users/me/shot one.png']);
+      (window as unknown as { electronAPI: unknown }).electronAPI = { sendTerminalInput: vi.fn(), readClipboardFilePaths };
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste });
+
+      let event: Event | undefined;
+      await act(async () => {
+        event = firePaste(terminalElement, {});
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(event?.defaultPrevented).toBe(true);
+      expect(readClipboardFilePaths).toHaveBeenCalled();
+      expect(mockPaste).toHaveBeenCalledWith('"/mnt/c/Users/me/shot one.png"');
+    });
+
+    it('sends the empty paste xterm would have sent when the clipboard has no files either', async () => {
+      const mockPaste = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Linux', writable: true });
+      (window as unknown as { electronAPI: unknown }).electronAPI = {
+        sendTerminalInput: vi.fn(),
+        readClipboardFilePaths: vi.fn(async () => []),
+      };
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste });
+
+      await act(async () => {
+        firePaste(terminalElement, {});
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(mockPaste).toHaveBeenCalledWith('');
+    });
+
+    it('leaves an image-only paste to xterm on macOS', async () => {
+      const mockInput = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'MacIntel', writable: true });
+      const { terminalElement } = await setupMockXterm({ input: mockInput });
+
+      let event: Event | undefined;
+      await act(async () => {
+        event = firePaste(terminalElement, { imageTypes: ['image/png'] });
+      });
+
+      expect(mockInput).not.toHaveBeenCalled();
+      expect(event?.defaultPrevented).toBe(false);
     });
   });
 
@@ -651,36 +710,6 @@ describe('useXterm keyboard handlers', () => {
     });
   });
 
-  describe('Linux CTRL+SHIFT+V paste shortcut', () => {
-    it('should paste on Linux when CTRL+SHIFT+V is pressed', async () => {
-      const mockPaste = vi.fn();
-
-      // Mock Linux platform (navigator)
-      Object.defineProperty(navigator, 'platform', {
-        value: 'Linux',
-        writable: true
-      });
-
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
-
-      await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'V',
-          ctrlKey: true,
-          shiftKey: true
-        });
-
-        const handled = keyEventHandler(event);
-        expect(handled).toBe(false);
-
-        await vi.advanceTimersByTimeAsync(0);
-      });
-
-      expect(mockClipboard.readText).toHaveBeenCalled();
-      expect(mockPaste).toHaveBeenCalledWith('test clipboard content');
-    });
-  });
-
   describe('Clipboard error handling', () => {
     it('should handle clipboard write errors gracefully', async () => {
       const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -713,39 +742,15 @@ describe('useXterm keyboard handlers', () => {
 
       consoleErrorSpy.mockRestore();
     });
+  });
 
-    it('should handle clipboard read errors gracefully', async () => {
-      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-      const mockPaste = vi.fn();
-
-      // Mock Windows platform to enable custom paste handler
-      Object.defineProperty(navigator, 'platform', {
-        value: 'Win32',
-        writable: true
-      });
-
-      // Mock clipboard read failure
-      mockClipboard.readText = vi.fn().mockRejectedValue(new Error('Clipboard read failed'));
-
-      const { keyEventHandler } = await setupMockXterm({ paste: mockPaste });
-
-      await act(async () => {
-        const event = new KeyboardEvent('keydown', {
-          key: 'v',
-          ctrlKey: true
-        });
-
-        keyEventHandler(event);
-        await vi.advanceTimersByTimeAsync(0);
-      });
-
-      // Should log error but not throw
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[useXterm] Failed to read clipboard:',
-        expect.any(Error)
-      );
-
-      consoleErrorSpy.mockRestore();
+  describe('Replaying saved output', () => {
+    it('closes a link and resets the style the saved output was cut inside of', async () => {
+      const write = vi.fn();
+      // Saved while Claude Code was drawing its status line's link
+      terminalBufferManager.set('test-terminal', 'PR \x1b]8;;https://github.com/x/pull/19\x1b\\#19');
+      await setupMockXterm({ write });
+      expect(write).toHaveBeenCalledWith('PR \x1b]8;;https://github.com/x/pull/19\x1b\\#19\x1b]8;;\x1b\\\x1b[0m');
     });
   });
 

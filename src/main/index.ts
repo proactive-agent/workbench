@@ -47,6 +47,8 @@ import { getAppLanguage, initAppLanguage } from './app-language';
 import { readSettingsFile } from './settings-utils';
 import { liveAgentRelay } from './live-agent/live-agent-relay';
 import { stopMcpProbes } from './mcp-availability';
+import { browserDrawer } from './browser-drawer';
+import { watchBrowserDisplayScale } from './browser-drawer/display-scale';
 import { syncLiveAgentAtStartup } from './live-agent/live-agent-projects';
 import { appLog, setupErrorLogging } from './app-logger';
 import { preWarmToolCache, warmToolInfo } from './cli-tool-manager';
@@ -54,6 +56,10 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
+import { detectBrowserProfiles } from './browser-profiles/detect';
+import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
+import { removeLeftoverTempFolders, TEMP_FOLDER_PREFIXES } from './temp-folders';
+import { scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -322,6 +328,21 @@ function fillScreenOnMaximize(window: BrowserWindow): void {
   };
   window.on('move', forgetFilled);
   window.on('resize', forgetFilled);
+}
+
+/** Look at what an earlier run left behind (see the call at startup); best effort, one folder at a time */
+async function removeCrashLeftovers(): Promise<void> {
+  const projects = projectStore.getProjects();
+  try {
+    const restorable = await scanChatBrowserLeftovers({ projects: projects.map((project) => ({ id: project.id, path: project.path })) });
+    for (const browser of restorable) browserDrawer.chatBrowsers.addRestorable(browser);
+  } catch (error) {
+    appLog.warn('[Startup] Could not look at the chat browsers left by an earlier run:', error);
+  }
+  await removeLeftoverTempFolders({ skip: [TEMP_FOLDER_PREFIXES.chatBrowser] }).catch((error: unknown) => {
+    appLog.warn('[Startup] Could not remove the temp folders left by an earlier run:', error);
+  });
+  await removeLeftoverBrowserProfileCopies(projects.map((project) => project.path));
 }
 
 /**
@@ -637,6 +658,12 @@ app.whenReady().then(async () => {
   // Decide where tools run on Windows (native, or WSL with the windowsShell setting) before the
   // tool cache and Claude accounts are read; detection runs in the background, windows don't wait
   void initShellRuntime(readSettingsFile()?.windowsShell);
+  // Browser profiles for the Playwright connector, looked for once (after the shell runtime is known)
+  void detectBrowserProfiles();
+  // The browser drawer: Playwright's headless browsers (task runs, chats), watched for every window
+  void browserDrawer.start();
+  // Its browsers render at the screens' pixel density, so the drawer shows them sharp
+  watchBrowserDisplayScale();
 
   // Linux shells take the dock/taskbar icon from a desktop entry matching the window class; give the
   // development build ("Workbench Dev") its own one, or it shows a generic icon
@@ -685,6 +712,10 @@ app.whenReady().then(async () => {
   await Promise.all(
     projectStore.getProjects().map((project) => migrateProjectDataDirs(project.path, project.autoBuildPath))
   );
+  // Leftovers of a crash, a kill or a quit during a run (in the background): chat browsers are kept
+  // for their chats to open again (their profile copies too), then the temp folders and browser
+  // profile copies (they hold cookies) no running Workbench or run uses are removed
+  void removeCrashLeftovers();
 
   // Initialize agent manager
   agentManager = new AgentManager();
@@ -926,6 +957,9 @@ app.on('before-quit', (event) => {
       // Stop the Live agent relay worker (removes its discovery files, closes its hook server)
       await liveAgentRelay.shutdown();
 
+      // Stop the browser drawer's bridge (it disconnects; the browsers stop with their runs)
+      await browserDrawer.shutdown();
+
       // Kill all running agent processes
       if (agentManager) {
         await agentManager.killAll();
@@ -935,6 +969,9 @@ app.on('before-quit', (event) => {
       if (terminalManager) {
         await terminalManager.killAll();
       }
+
+      // Browser profile copies of runs still going (chat turns aren't stopped by quitting)
+      await removeLiveBrowserProfileCopies();
 
       // Shut down PTY daemon client AFTER terminal cleanup completes,
       // ensuring all kill commands reach PTY processes before the daemon disconnects
@@ -952,6 +989,7 @@ app.on('before-quit', (event) => {
 // Safety net: no Live agent relay worker outlives the app (before-quit normally stopped it)
 app.on('will-quit', () => {
   liveAgentRelay.terminateNow();
+  browserDrawer.killNow();
 });
 
 // Note: Uncaught exceptions and unhandled rejections are now

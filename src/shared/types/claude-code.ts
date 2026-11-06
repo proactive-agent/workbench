@@ -21,6 +21,15 @@ export type TriageMode = 'auto' | 'fixed';
 /** Whether a task is planned (Claude Code plan mode) before it is implemented */
 export type PlanningPolicy = 'auto' | 'always' | 'never';
 
+/**
+ * Claude Code dynamic workflows for large tasks: `off` disables them for task runs, `default` keeps
+ * the user's own Claude Code guideline (medium, or small on Pro), the others set Claude Code's
+ * `workflowSizeGuideline` (small < 5 agents, medium < 10, large < 50, unrestricted)
+ */
+export type WorkflowSize = 'off' | 'default' | 'small' | 'medium' | 'large' | 'unrestricted';
+
+export const WORKFLOW_SIZES: readonly WorkflowSize[] = ['off', 'default', 'small', 'medium', 'large', 'unrestricted'] as const;
+
 /** App-wide defaults for running tasks with Claude Code (Settings > Claude Code) */
 export interface ClaudeCodeTaskSettings {
   /** auto: a triage run assesses each task; fixed: always use fixedModel/fixedEffort */
@@ -41,10 +50,27 @@ export interface ClaudeCodeTaskSettings {
   fallbackModel?: string;
   /**
    * Parallel tasks message each other (Workbench's `message_task` and `list_parallel_tasks`
-   * tools) and get Workbench's notices about each other (started, overlapping files, finished,
-   * merged)
+   * tools) and get Workbench's notices about each other (started, conflicting changes,
+   * finished, merged)
    */
   taskMessaging: boolean;
+  /**
+   * Other Claude Code sessions on this machine (agent windows, the Claude chat, `claude` in the
+   * user's own terminal) can message running tasks with Claude Code's built-in SendMessage: task
+   * runs accept cross-session messages (`crossSessionInbound: "accept"`). Applies only while
+   * `taskMessaging` is on. Off by default: task runs skip permission checks, so an accepted
+   * message runs unattended with the run's full access (opt-in, Settings > Agents)
+   */
+  sessionMessages: boolean;
+  /**
+   * Workflows (many subagents run from a script) for tasks triage sizes as large: a checked
+   * multi-angle review at validation, and optionally the implementation. The size is the guideline
+   * Claude Code gives Claude (`workflowSizeGuideline`); `default` leaves it to the user's Claude Code
+   * configuration, `off` disables workflows in task runs
+   */
+  workflowSize: WorkflowSize;
+  /** Most workflow agents a task runs at once (`CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`); unset = Claude Code's default */
+  workflowMaxConcurrentAgents?: number;
 }
 
 export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
@@ -56,6 +82,8 @@ export const DEFAULT_CLAUDE_CODE_TASK_SETTINGS: ClaudeCodeTaskSettings = {
   validation: true,
   allowFable: false,
   taskMessaging: true,
+  sessionMessages: true,
+  workflowSize: 'default',
 };
 
 /** Size of a task as judged by triage */
@@ -124,6 +152,29 @@ interface ClaudeRunSubagent {
   endedAt?: string;
 }
 
+/** A Claude Code workflow run a task's session launched (the Workflow tool) */
+export interface ClaudeRunWorkflow {
+  /** The run's id (`wf_...`), which a relaunch passes as `resumeFromRunId` */
+  runId: string;
+  /** The Workflow tool call that launched it */
+  toolUseId?: string;
+  /** Claude Code's background task id for the run (matches its `task_notification`) */
+  taskId?: string;
+  /** The workflow's name (its script's `meta.name`), when known */
+  name?: string;
+  /** The run's persisted script, which a relaunch can pass back as `scriptPath` */
+  scriptPath?: string;
+  /** The step that launched it */
+  phase: ClaudeRunPhaseName;
+  /** Session that launched it: a run can only be resumed in that session */
+  sessionId?: string;
+  status: 'running' | 'completed' | 'failed' | 'stopped';
+  startedAt: string;
+  endedAt?: string;
+  /** The branch's commit when it was launched: a validation's review run is only relaunched on the same commit */
+  head?: string;
+}
+
 interface ValidationCheck {
   name: string;
   command?: string;
@@ -174,6 +225,8 @@ export interface ClaudeRunInfo {
   /** Final summary Claude wrote for the user */
   summary?: string;
   subagents: ClaudeRunSubagent[];
+  /** Workflow runs the session launched (missing in runs saved before workflows were tracked) */
+  workflows?: ClaudeRunWorkflow[];
   totalCostUsd: number;
   /** Absolute path of the worktree the session runs in */
   worktreePath?: string;

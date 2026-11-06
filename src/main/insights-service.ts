@@ -15,6 +15,7 @@ import { SessionStorage } from './insights/session-storage';
 import { SessionManager } from './insights/session-manager';
 import { InsightsExecutor } from './insights/insights-executor';
 import type { InsightsSessionPlan } from './insights/claude-code-runner';
+import { browserDrawer } from './browser-drawer';
 
 /** A message id that stays unique for messages created in the same millisecond */
 function newMessageId(): string {
@@ -56,8 +57,6 @@ class InsightsService extends EventEmitter {
   private storage: SessionStorage;
   private sessionManager: SessionManager;
   private executor: InsightsExecutor;
-  /** The conversation each project's running reply belongs to (one reply runs per project) */
-  private replying: Map<string, { sessionId: string }> = new Map();
 
   constructor() {
     super();
@@ -70,14 +69,14 @@ class InsightsService extends EventEmitter {
     this.executor = new InsightsExecutor();
 
     // Forward executor events
-    this.executor.on('status', (projectId, status) => {
-      this.emit('status', projectId, status);
+    this.executor.on('status', (projectId, status, sessionId) => {
+      this.emit('status', projectId, status, sessionId);
     });
     this.executor.on('stream-chunk', (projectId, chunk) => {
       this.emit('stream-chunk', projectId, chunk);
     });
-    this.executor.on('error', (projectId, error) => {
-      this.emit('error', projectId, error);
+    this.executor.on('error', (projectId, error, sessionId) => {
+      this.emit('error', projectId, error, sessionId);
     });
     this.executor.on('tasks-changed', (projectId) => {
       this.emit('tasks-changed', projectId);
@@ -119,8 +118,7 @@ class InsightsService extends EventEmitter {
    * Open a new chat; its conversation is created when the first message is sent
    */
   startNewChat(projectId: string, projectPath: string): void {
-    // A reply still being written stops: it is saved in its own chat, not in the new one
-    this.stopReplyUnless(projectId, null);
+    // A reply still being written goes on: it is saved in its own chat
     this.sessionManager.startNewChat(projectId, projectPath);
   }
 
@@ -128,10 +126,8 @@ class InsightsService extends EventEmitter {
    * Switch to a different session
    */
   switchSession(projectId: string, projectPath: string, sessionId: string): InsightsSession | null {
-    const session = this.sessionManager.switchSession(projectId, projectPath, sessionId);
-    // Another chat's reply stops when the user leaves it (it is saved there as a stopped reply)
-    if (session) this.stopReplyUnless(projectId, sessionId);
-    return session;
+    // Other chats' replies go on while the user is elsewhere (each is saved in its own chat)
+    return this.sessionManager.switchSession(projectId, projectPath, sessionId);
   }
 
   /**
@@ -139,7 +135,11 @@ class InsightsService extends EventEmitter {
    */
   deleteSession(projectId: string, projectPath: string, sessionId: string): boolean {
     const deleted = this.sessionManager.deleteSession(projectId, projectPath, sessionId);
-    if (deleted) this.stopReplyIn(projectId, [sessionId]);
+    if (deleted) {
+      this.executor.cancelSession(projectId, sessionId);
+      // The chat's own browser goes with it
+      void browserDrawer.chatBrowsers.closeChats(projectId, [sessionId]);
+    }
     return deleted;
   }
 
@@ -162,7 +162,8 @@ class InsightsService extends EventEmitter {
    */
   deleteSessions(projectId: string, projectPath: string, sessionIds: string[]): { deletedIds: string[]; failedIds: string[] } {
     const result = this.sessionManager.deleteSessions(projectId, projectPath, sessionIds);
-    this.stopReplyIn(projectId, result.deletedIds);
+    for (const id of result.deletedIds) this.executor.cancelSession(projectId, id);
+    void browserDrawer.chatBrowsers.closeChats(projectId, result.deletedIds);
     return result;
   }
 
@@ -188,22 +189,11 @@ class InsightsService extends EventEmitter {
   }
 
   /**
-   * Stop the reply being written for a project; returns false when nothing is running
+   * Stop the reply a chat is writing (without an id: the open chat's); returns false when it has none
    */
-  stopMessage(projectId: string): boolean {
-    return this.executor.cancelSession(projectId);
-  }
-
-  /** Stop the project's running reply unless it belongs to the given conversation */
-  private stopReplyUnless(projectId: string, sessionId: string | null): void {
-    const running = this.replying.get(projectId);
-    if (running && running.sessionId !== sessionId) this.executor.cancelSession(projectId);
-  }
-
-  /** Stop the project's running reply if it belongs to one of the given conversations */
-  private stopReplyIn(projectId: string, sessionIds: string[]): void {
-    const running = this.replying.get(projectId);
-    if (running && sessionIds.includes(running.sessionId)) this.executor.cancelSession(projectId);
+  stopMessage(projectId: string, sessionId?: string): boolean {
+    const id = sessionId ?? this.sessionManager.getCachedSession(projectId)?.id;
+    return id ? this.executor.cancelSession(projectId, id) : false;
   }
 
   /**
@@ -220,9 +210,9 @@ class InsightsService extends EventEmitter {
    * Regenerate or edit found nothing to act on: the chat shows its saved conversation again and
    * says why, instead of waiting for a reply that never comes
    */
-  private failTurn(projectId: string, session: InsightsSession | null, error: string): void {
+  private failTurn(projectId: string, session: InsightsSession | null, error: string, sessionId?: string): void {
     if (session) this.emit('session-updated', projectId, session);
-    this.emit('error', projectId, error);
+    this.emit('error', projectId, error, session?.id ?? sessionId);
   }
 
   /**
@@ -235,13 +225,14 @@ class InsightsService extends EventEmitter {
     modelConfig?: InsightsModelConfig,
     images?: ImageAttachment[]
   ): Promise<void> {
-    // Cancel any existing session
-    this.executor.cancelSession(projectId);
-
     // Load or create session
     let session = this.sessionManager.loadSession(projectId, projectPath);
+    // The chat's own reply stops (other chats' go on)
+    if (session) this.executor.cancelSession(projectId, session.id);
     if (!session) {
       session = this.sessionManager.createNewSession(projectId, projectPath);
+      // A browser opened on the New chat page belongs to the conversation its first message made
+      browserDrawer.chatBrowsers.adopt(projectId, session.id);
     }
 
     // Auto-generate title from first user message if still default
@@ -284,13 +275,12 @@ class InsightsService extends EventEmitter {
    * the message before it, with that message's attachments
    */
   async regenerate(projectId: string, projectPath: string, modelConfig?: InsightsModelConfig, sessionId?: string): Promise<void> {
-    this.executor.cancelSession(projectId);
-
     const session = this.loadShownSession(projectId, projectPath, sessionId);
+    if (session) this.executor.cancelSession(projectId, session.id);
     while (session?.messages.at(-1)?.role === 'assistant') session.messages.pop();
     const userMessage = session?.messages.at(-1);
     if (!session || !userMessage) {
-      this.failTurn(projectId, session, 'There is no message to answer again');
+      this.failTurn(projectId, session, 'There is no message to answer again', sessionId);
       return;
     }
 
@@ -314,12 +304,11 @@ class InsightsService extends EventEmitter {
     modelConfig?: InsightsModelConfig,
     sessionId?: string
   ): Promise<void> {
-    this.executor.cancelSession(projectId);
-
     const session = this.loadShownSession(projectId, projectPath, sessionId);
+    if (session) this.executor.cancelSession(projectId, session.id);
     const index = session?.messages.findIndex((m) => m.id === messageId && m.role === 'user') ?? -1;
     if (!session || index < 0) {
-      this.failTurn(projectId, session, 'The edited message is no longer in this chat');
+      this.failTurn(projectId, session, 'The edited message is no longer in this chat', sessionId);
       return;
     }
     const original = session.messages[index];
@@ -382,8 +371,6 @@ class InsightsService extends EventEmitter {
     // Use provided modelConfig or fall back to session's config
     const configToUse = modelConfig || session.modelConfig;
 
-    const run = { sessionId: session.id };
-    this.replying.set(projectId, run);
     try {
       const result = await this.executor.execute(
         projectId,
@@ -427,8 +414,6 @@ class InsightsService extends EventEmitter {
     } catch (error) {
       // Error already emitted by executor
       console.error('[InsightsService] Error executing insights:', error);
-    } finally {
-      if (this.replying.get(projectId) === run) this.replying.delete(projectId);
     }
   }
 

@@ -5,6 +5,7 @@
 import type { ThinkingLevel } from './settings';
 import type { ExecutionPhase as ExecutionPhaseType, CompletablePhase } from '../constants/phase-protocol';
 import type { ClaudeRunInfo, ClaudeRunPhase } from './claude-code';
+import type { PlaywrightBrowserChoice } from './browser-profiles';
 
 export type TaskStatus = 'backlog' | 'queue' | 'in_progress' | 'ai_review' | 'human_review' | 'done' | 'pr_created' | 'error';
 
@@ -154,6 +155,8 @@ export interface TaskDraft {
   description: string;
   images: ImageAttachment[];
   mcpConnectors?: string[];
+  /** The Playwright connector's browser profile picked for the task (see TaskMetadata.playwrightBrowser) */
+  playwrightBrowser?: PlaywrightBrowserChoice | null;
   pushNewBranches?: boolean;
   savedAt: Date;
 }
@@ -194,9 +197,12 @@ export interface TaskMetadata {
   // Image attachments (screenshots, mockups, diagrams)
   attachedImages?: ImageAttachment[];
 
-  // MCP connectors enabled for this task (ids: context7, memory, electron, puppeteer, custom ids).
+  // MCP connectors enabled for this task (ids: context7, electron, playwright, custom ids).
   // Copied from the Connectors defaults when the task is created; unset means use the defaults
   mcpConnectors?: string[];
+  // The Playwright connector's browser profile for this task, set only when one was picked for it:
+  // null is Playwright's own Chromium; unset follows Settings > Connectors
+  playwrightBrowser?: PlaywrightBrowserChoice | null;
 
   // Git/Worktree configuration
   baseBranch?: string;  // Override base branch for this task's worktree

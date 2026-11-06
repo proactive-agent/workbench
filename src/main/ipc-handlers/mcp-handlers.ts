@@ -8,13 +8,19 @@ import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/ipc';
 import type { CustomMcpServer, McpHealthCheckResult, McpHealthStatus, McpTestConnectionResult } from '../../shared/types/project';
 import { spawn, type ChildProcess } from 'child_process';
+import path from 'path';
 import { appLog } from '../app-logger';
 import { isWindows } from '../platform';
 import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
-import { findWslCommand, isCommandAvailable } from '../mcp-commands';
+import { findWslCommand, isCommandAvailable, resolveCommand } from '../mcp-commands';
+import { escapeShellArg } from '../../shared/utils/shell-escape';
 import { getToolEnvAsync } from '../cli-utils';
-import { getMcpAvailability, onMcpAvailabilityChange } from '../mcp-availability';
+import { getMcpAvailability, onMcpAvailabilityChange, recheckMcpConnector } from '../mcp-availability';
+import { detectBrowserProfiles, waitForManagedBrowser } from '../browser-profiles/detect';
+import { playwrightInstallCommand } from '../browser-profiles/managed';
+import { openTerminalWithCommand } from './claude-code-handlers';
+import type { DownloadableBrowser } from '../../shared/types/browser-profiles';
 import { readSettingsFileAsync } from '../settings-utils';
 import { getAllWindows } from '../window-manager';
 import type { AppSettings } from '../../shared/types';
@@ -552,6 +558,69 @@ async function testCommandConnection(server: CustomMcpServer, startTime: number)
   });
 }
 
+/** How an `npx ...` command reaches a new terminal (see terminalNpxCommand) */
+interface TerminalNpxLaunch {
+  command: string;
+  env?: NodeJS.ProcessEnv;
+  /** On Windows, the command for a terminal that runs bash (Git Bash, Cygwin, MSYS2) */
+  windowsBashCommand?: string;
+}
+
+/**
+ * An `npx ...` command as a new terminal can run it. A terminal opened from the app doesn't load
+ * the user's shell setup (on Linux it runs `bash -c` with the app's PATH), so Node.js from a
+ * version manager (nvm, fnm) isn't found by name: natively the npx Workbench finds runs by its full
+ * path with its folder (where node is) first on PATH (through `env`, which any login shell a
+ * macOS terminal starts can run, csh and fish included). On Windows the terminal also gets the
+ * tool PATH, and PowerShell runs `npx.cmd` by its path: a bare `npx` would resolve `npx.ps1`,
+ * which Windows PowerShell's default execution policy blocks. A bash terminal on Windows runs npm's
+ * `npx` shell script next to it. A WSL console starts a login shell, which finds npx itself
+ */
+export async function terminalNpxCommand(command: string): Promise<TerminalNpxLaunch> {
+  await whenShellRuntimeReady();
+  if (getWslInfo()) return { command };
+  const npx = await resolveCommand('npx', { refresh: true });
+  if (!npx) throw new Error('npx was not found: install Node.js, or set its path in Settings > Developer');
+  const args = command.replace(/^npx\s+/, '');
+  if (isWindows()) {
+    // The terminal escapes `&`, `$` and parentheses for PowerShell, so the call operator can't be
+    // used: a quoted path runs with the dot operator, which also runs a native command
+    const powershell = /^[\w:\\.-]+$/.test(npx) ? `${npx} ${args}` : `. '${npx.replace(/'/g, "''")}' ${args}`;
+    const bashNpx = npx.replace(/\.cmd$/i, '').replace(/\\/g, '/');
+    return { command: powershell, env: await getToolEnvAsync(), windowsBashCommand: `${escapeShellArg(bashNpx)} ${args}` };
+  }
+  return { command: `env PATH=${escapeShellArg(path.dirname(npx))}:"$PATH" ${escapeShellArg(npx)} ${args}` };
+}
+
+/**
+ * How long a download counts as running when nothing says it finished (the terminal may have been
+ * closed): a second one is refused until then. The picker's button waits as long
+ */
+const BROWSER_INSTALL_GUARD_MS = 5 * 60 * 1000;
+
+const DOWNLOADABLE_BROWSERS: readonly DownloadableBrowser[] = ['chromium', 'firefox', 'webkit'];
+
+/**
+ * Downloads started from the browser picker and not known to be over, by browser. Each has a
+ * token of its own, so an earlier download ending never ends a later one's guard
+ */
+const installsRunning = new Map<DownloadableBrowser, { token: symbol; timer: NodeJS.Timeout }>();
+
+function startInstall(browser: DownloadableBrowser): symbol {
+  const token = Symbol(browser);
+  const timer = setTimeout(() => endInstall(browser, token), BROWSER_INSTALL_GUARD_MS);
+  timer.unref?.();
+  installsRunning.set(browser, { token, timer });
+  return token;
+}
+
+function endInstall(browser: DownloadableBrowser, token: symbol): void {
+  const install = installsRunning.get(browser);
+  if (install?.token !== token) return;
+  clearTimeout(install.timer);
+  installsRunning.delete(browser);
+}
+
 /**
  * Register MCP IPC handlers.
  */
@@ -570,6 +639,49 @@ export function registerMcpHandlers(): void {
     for (const window of getAllWindows()) {
       if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_AVAILABILITY_CHANGED, id, availability);
     }
+  });
+
+  // Browser profiles the Playwright connector can use (found when the app started)
+  ipcMain.handle(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES, async () => {
+    try {
+      return { success: true, data: await detectBrowserProfiles() };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Browser detection failed' };
+    }
+  });
+
+  // The download buttons of the browser picker: a terminal runs the pinned Playwright server's
+  // install-browser for the build it needs. The command is chosen here (never sent by the window).
+  // Once the build is in Playwright's cache, every window gets the new list and Playwright is
+  // checked again. A second download of a browser being downloaded opens no terminal (two installs
+  // into one cache would race)
+  ipcMain.handle(IPC_CHANNELS.MCP_INSTALL_BROWSER, async (_event, browser: DownloadableBrowser) => {
+    if (!DOWNLOADABLE_BROWSERS.includes(browser)) return { success: false, error: 'Unknown browser' };
+    const command = playwrightInstallCommand(browser);
+    if (installsRunning.has(browser)) return { success: true, data: { command, alreadyRunning: true } };
+    // Taken before anything is awaited, so a quick second click finds it
+    const token = startInstall(browser);
+    try {
+      const launch = await terminalNpxCommand(command);
+      await openTerminalWithCommand(launch.command, launch.env, { windowsBashCommand: launch.windowsBashCommand });
+    } catch (error) {
+      endInstall(browser, token);
+      appLog.error('Browser download error:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Could not open the terminal' };
+    }
+    void waitForManagedBrowser(browser).then(async (profiles) => {
+      endInstall(browser, token);
+      if (!profiles) return;
+      for (const window of getAllWindows()) {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, profiles);
+      }
+      const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+      recheckMcpConnector('playwright', settings?.mcpConnectors);
+    }).catch((error: unknown) => {
+      endInstall(browser, token);
+      appLog.warn(`Watching the ${browser} download failed:`, error);
+    });
+    return { success: true, data: { command } };
   });
 
   // Quick health check

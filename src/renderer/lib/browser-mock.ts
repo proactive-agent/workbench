@@ -144,6 +144,20 @@ const browserMockAPI: ElectronAPI = {
   unsubscribeLiveAgent: async () => ({ success: true }),
   onLiveAgentStatus: () => () => {},
   onLiveAgentMessage: () => () => {},
+  getBrowserDrawerState: async () => ({ success: true, data: { available: false, sessions: [], pages: [] } }),
+  subscribeBrowserDrawer: async () => ({ success: true }),
+  unsubscribeBrowserDrawer: async () => ({ success: true }),
+  viewBrowserPage: () => {},
+  sendBrowserInput: () => {},
+  browserFrameDrawn: () => {},
+  navigateBrowserPage: () => {},
+  closeBrowserPage: () => {},
+  newBrowserPage: () => {},
+  setBrowserColorScheme: () => {},
+  openChatBrowser: async () => ({ success: false, error: 'Not available in the browser preview' }),
+  closeChatBrowser: async () => ({ success: true }),
+  onBrowserDrawerState: () => () => {},
+  onBrowserFrame: () => () => {},
 
   checkClaudeCodeVersion: async () => ({
     success: true,
@@ -241,7 +255,10 @@ const browserMockAPI: ElectronAPI = {
     success: true,
     data: Object.fromEntries(ids.map((id) => [id, { state: 'ready' as const }]))
   }),
-  onMcpAvailabilityChanged: () => () => {}
+  onMcpAvailabilityChanged: () => () => {},
+  detectBrowserProfiles: async () => ({ success: true, data: [] }),
+  installPlaywrightBrowser: async () => ({ success: false, error: 'Not available in browser mode' }),
+  onBrowserProfilesChanged: () => () => {}
 };
 
 /**

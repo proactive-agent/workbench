@@ -30,22 +30,33 @@ function listen(): void {
 export interface McpUnavailable {
   reason: string;
   fixCommand?: string;
+  /** What to do about it, for the switch's tooltip (where the row already shows the reason) */
+  tip?: string;
 }
 
 /**
  * Why a connector can't be switched on yet (its server is being prepared, its command isn't
  * installed, or it failed to start), or null when it can be used. Its switches are off and
- * disabled while there is a reason
+ * disabled while there is a reason. `enabled: false` (a read-only view) asks the main process
+ * nothing, so no server is started for it
  */
-export function useMcpUnavailableReason(): (connectorId: string) => McpUnavailable | null {
+export function useMcpUnavailableReason({ enabled = true }: { enabled?: boolean } = {}): (connectorId: string) => McpUnavailable | null {
   const { t } = useTranslation(['settings']);
   const connectors = useSettingsStore((state) => state.settings.mcpConnectors);
   const [, setVersion] = useState(0);
   const ids = [...BUILTIN_CONNECTOR_META.map(({ id }) => id), ...getUsableCustomServers(connectors).map((server) => server.id)];
-  // Edited connection details are checked again
-  const key = JSON.stringify([ids, getUsableCustomServers(connectors).map(({ id, type, command, args, url, headers }) => ({ id, type, command, args, url, headers }))]);
+  // Edited connection details (and another browser for Playwright) are checked again
+  const browser = connectors?.playwrightBrowser;
+  const key = JSON.stringify([
+    ids,
+    getUsableCustomServers(connectors).map(({ id, type, command, args, url, headers }) => ({ id, type, command, args, url, headers })),
+    browser ? [browser.id, browser.executablePath] : null,
+    // The main process keeps the settings each ask carries (the chosen browser and its switch)
+    connectors?.playwrightEnabled === true,
+  ]);
 
   useEffect(() => {
+    if (!enabled) return undefined;
     const update = () => setVersion((v) => v + 1);
     subscribers.add(update);
     listen();
@@ -58,13 +69,20 @@ export function useMcpUnavailableReason(): (connectorId: string) => McpUnavailab
       subscribers.delete(update);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `key` covers the ids and their details
-  }, [key]);
+  }, [key, enabled]);
 
   return (connectorId) => {
     const availability = known.get(connectorId) ?? { state: 'preparing' };
     if (availability.state === 'ready') return null;
     if (availability.state === 'preparing') return { reason: t('settings:mcp.preparing') };
     if (availability.missingCommand) return { reason: commandMissingText(t, availability.missingCommand) };
+    if (availability.browserOpen) {
+      const name = browser ? t(`settings:mcp.browserProfile.browsers.${browser.browser}`) : '';
+      return {
+        reason: t('settings:mcp.browserProfile.browserOpen', { browser: name }),
+        tip: t('settings:mcp.browserProfile.closeBrowser', { browser: name }),
+      };
+    }
     return { reason: t('settings:mcp.unavailable', { reason: availability.message ?? '' }), fixCommand: availability.fixCommand };
   };
 }

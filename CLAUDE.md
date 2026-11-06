@@ -30,9 +30,10 @@ reviews, requests changes (same session continues) or merges.
   an open PR stays in Human Review (PR Created); Merge PR (`src/main/ai/runners/github/pr-merger.ts`) pulls the target
   branch into the task branch, lets the merge agent (`src/main/ai/runners/merge-agent.ts`, Claude Code) resolve
   conflicts, checks that no line the target added was lost, pushes and merges the PR, then moves the task to Done
-- **Connectors** — MCP servers added to a task's Claude Code session (`--mcp-config`: Context7, Electron, Puppeteer,
+- **Connectors** — MCP servers added to a task's Claude Code session (`--mcp-config`: Context7, Electron, Playwright,
   user-added servers) with app-wide defaults in Settings and per-task choices in the task dialog; a server stays
-  disabled until it can start
+  disabled until it can start. Playwright's browsers run headless; Claude chats' browsers show in the browser drawer
+  inside Workbench, task runs' stay unseen
 - **Graphify memory graph** — Optional [Graphify](https://github.com/Graphify-Labs/graphify) knowledge graph of a
   project's code, built into `.workbench/knowledge` and offered to agents
 - **Self-improve** — Optional project memory: Claude Code's auto memory kept in `.workbench/compeng` and shared by
@@ -169,6 +170,7 @@ workbench/
 │   │   ├── task-resync/     # Out-of-date tasks take in a merged branch
 │   │   ├── self-improve/    # Project memory (Claude Code auto memory in .workbench/compeng)
 │   │   ├── live-agent/      # Live agent graph: hooks setup and relay worker
+│   │   ├── browser-drawer/  # Browser drawer: Playwright's registry, the browser bridge
 │   │   ├── updater/         # Release selection for app updates
 │   │   ├── claude-profile/  # Multi-profile credentials, token refresh, usage
 │   │   ├── terminal/        # PTY processes, lifecycle, CLI integration, session menu
@@ -195,6 +197,12 @@ workbench/
     without a worktree it uses `--permission-mode auto`) and the triage model/effort.
   - `validate`: same session runs checks, reviews the diff with fresh eyes (`/code-review` or a subagent), commits,
     returns a structured `ValidationReport`. `revise` mode applies "request changes" feedback, then validates again.
+  - Workflows (`workflows.ts`): when triage sizes a task `large`, validation asks for a Claude Code workflow that
+    reviews the diff from several angles and has each finding checked before it counts, and implementation may use
+    one for many-file changes. Settings > Agents > Limits sets `workflowSizeGuideline` (passed with `--settings`) and
+    `CLAUDE_CODE_WORKFLOW_MAX_CONCURRENT_AGENTS`, or turns workflows off. Launches are recorded in
+    `ClaudeRunInfo.workflows`, so a step continued after a stop or usage limit relaunches its run with
+    `resumeFromRunId` (finished agents reuse their results; a profile swap copies the session's directory with them).
   - State in `<specDir>/claude_run.json` (`ClaudeRunInfo`: session id, triage, plan, phases with cost, `system/init`
     info, subagents, validation) so stopped / rate-limited runs continue; logs in `task_logs.json`. Claude Code's
     task list (TaskCreate/TaskUpdate, enabled with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`) is mirrored as the task's subtasks.
@@ -228,31 +236,165 @@ enters (state machine transitions and manual moves) and on the files its Claude 
 MultiEdit, NotebookEdit tool calls). `src/main/task-changelog-writer.ts` turns them into the project's
 `.workbench/changelog.jsonl` (one JSON entry per line; state entries carry every file the task's branch changes).
 At every phase, `buildParallelTasksPrompt()` (`src/main/task-changelog.ts`) adds a "Parallel tasks" section to the
-task's system prompt: the other tasks with unmerged changes and the files they touch, so Claude Code can stay clear of
-them and avoid merge conflicts.
+task's system prompt: the other tasks with unmerged changes and the files they touch. Tasks edit whatever files they
+need (git merges changes to different parts of a file by itself); the prompt asks them to skip churn in shared files
+and to agree via `message_task` when both need the same lines.
 
 ### Task messaging and resync
 
 With Task messaging on (Settings > Agents, `claudeCodeTasks.taskMessaging`, on by default), task runs get Workbench's
 `message_task` and `list_parallel_tasks` tools (`src/main/task-messaging/`, served by the task tools server with a
-token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks change the
-same files). The broker (`broker.ts`) writes a message to a live run's stdin or keeps it in the target's
-`task_inbox.json` for its next phase. When a task is merged, the other tasks based on that branch go back to In
+token per run) and `[Workbench]` notices (`notices.ts`: a task started, finished or was merged, two tasks' changes
+conflict). After a task edits a file another task changes, `conflict-check.ts` test-merges both tasks' work
+(uncommitted edits snapshotted with a temp index, `git merge-tree --write-tree`) and names the conflicting files and
+lines; when that can't run, sharing the file is announced instead. The broker (`broker.ts`) writes a message to a live
+run's stdin or keeps it in the target's `task_inbox.json` for its next phase. With Messages from your Claude sessions on
+(`claudeCodeTasks.sessionMessages`, on by default), task runs also accept Claude Code's built-in SendMessage from the
+user's other sessions (`--settings {"crossSessionInbound":"accept"}`): agent windows are told the task session names
+(`task-messaging/window-hint.ts`), and the Claude chat gets `message_task` (through the broker) plus ListAgents /
+SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
 Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync/`), also while messaging is off.
 
 ### MCP Connectors
 
 Settings > Connectors (`settings.mcpConnectors`, `McpConnectorSettings`) holds the defaults: Context7, Electron and
-Puppeteer, plus custom servers, which must pass a connection test before they can be switched on. New tasks copy the
+Playwright, plus custom servers, which must pass a connection test before they can be switched on. New tasks copy the
 enabled ids into `TaskMetadata.mcpConnectors` and can change them in the task dialog. When a task runs,
 `buildMcpConfig()` (`src/main/claude-code/mcp-config.ts`) turns that task's ids into `--mcp-config` for its Claude Code
 session, on top of the user's own Claude Code MCP configuration. Helpers live in `src/shared/utils/mcp-connectors.ts`.
+Data saved before the browser connector moved from Puppeteer to Playwright (id `puppeteer`, `puppeteerEnabled`,
+`puppeteerBrowser`) is renamed where it is read (`migrate*` helpers there: the settings file in `settings-utils.ts`,
+task metadata in the project store, drafts, chats), so nothing else knows the old names.
+
+Playwright is Microsoft's `@playwright/mcp`, pinned (`PLAYWRIGHT_MCP_PACKAGE` in `browser-profiles/managed.ts`, with the
+browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Its row picks a browser profile
+(`McpConnectorSettings.playwrightBrowser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
+Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a copy of the chosen profile in the
+app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
+`~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
+`~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
+cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
+(`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
+copies. Each copy also holds the run's Playwright config (`.workbench-playwright.json`, `playwrightProfileConfig()`),
+passed with `--config`: Chromium browsers run their executable on the copy with `--profile-directory`, the sandbox on
+and without Playwright's `--password-store=basic` / `--use-mock-keychain` (so copied sign-ins decrypt); the user's
+Firefox runs over WebDriver BiDi (channel `moz-firefox`, which Playwright calls experimental; Playwright's plain
+`firefox` is its own patched build) with Sync prefs off. Without a copy (Playwright's own browsers, the availability
+check, a failed copy) the server gets `--browser` / `--executable-path` and `--isolated` (a profile in memory;
+Playwright's own Chromium also `--sandbox`, which Playwright leaves off on Linux). Runs
+pass `--output-dir` to their temporary folder, since Playwright otherwise saves snapshots and screenshots in the
+session's working folder (`.playwright-mcp` in the worktree). The task dialog's Playwright row picks a profile for
+that task (`TaskMetadata.playwrightBrowser`, null for Playwright's own Chromium; unset follows Settings), which its runs
+use instead; sweeps keep the copies of every profile Settings or a task still chooses
+(`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
+`mcp-config.ts`. The default is Playwright's own Chromium (Chrome for Testing, `--browser chromium`, never the
+installed Chrome); the picker also lists Playwright's Firefox and WebKit (`managed.ts`, found in Playwright's cache
+`ms-playwright/<name>-<revision>` once `INSTALLATION_COMPLETE` is there) as disabled items with a download button
+that opens a terminal running `npx -y @playwright/mcp@<version> install-browser <name>` (`MCP_INSTALL_BROWSER`; the
+main process picks the command, then watches the cache, sends the new list and checks the connector again). Safari is
+listed but can't be used; WebKit is the closest engine. Microsoft Store Firefox is found by the profiles its package keeps
+(`%LOCALAPPDATA%\Packages\<family>\LocalCache\Roaming\Mozilla\Firefox`) and run through its app execution alias's target
+(`app-alias.ts`). Profiles a browser never opened (no activity files) are left out after a week.
+
+In WSL mode Windows profiles work without anything installed on Windows (`detect.ts`): a Windows Firefox profile is
+copied into the distribution and run by a Firefox there (an installed one at least the profile's version, else
+Playwright's with `--allow-downgrade`), keeping its sign-ins. A Windows Chromium browser (Edge, Chrome) runs on Windows
+through `browser-profiles/windows-browser-launcher.cjs`, the server's command run by the distribution's node: it starts
+the browser through interop on a copy kept on Windows (headless, `--no-startup-window`, Edge's Alt+Tab tabs off with
+`--disable-features=msWindowTabManagerPublic`, no `--force-device-scale-factor`, which leaves the drawer's screencast
+without frames), relays a local port to its
+DevTools port through `windows-cdp-relay.cjs` (Workbench's executable as Node, on Windows) and starts Playwright with
+`--cdp-endpoint`; the relay's `--keep` mode (started with the browser, given its `DevToolsActivePort` file, so a browser slow to
+start is closed too) closes the browser and removes a temporary profile when the launcher goes, even when it is killed. Those profiles are marked "Saved sign-ins don't carry over": Chrome and Edge encrypt cookies
+with an app-bound key that only opens in the browser's own profile folder, never in a copy.
 
 `src/main/mcp-availability.ts` starts each connector's server once where Claude Code runs, as a run would, until it
-answers `initialize` (Puppeteer is also asked to navigate once, since it needs a browser; `mcp-commands.ts` finds the
+answers `initialize` (Playwright is also asked to open `about:blank` with `browser_navigate`, headless, since it needs
+a browser; a missing build of Playwright's own browser offers its install-browser command; `mcp-commands.ts` finds the
 command, and the built-in servers need npx from Node.js). Until a server is ready, its switch is off and disabled on
 the Connectors page, in the task dialog and in the chat's MCP menu, and runs leave out unavailable servers. An
-unavailable result is checked again when asked for after 30 seconds.
+unavailable result is checked again when asked for after 30 seconds. Runs copy the chosen browser profile, and an
+open browser keeps it locked and half written (`browser-profiles/in-use.ts` reads its lock), so each profile also has
+one saved copy, made in the background whenever the browser is found closed: a run that starts while the browser is
+open copies the saved one instead. Only an open browser with no saved copy yet makes Playwright unavailable; the
+switch's tooltip asks to close it once, and closing it enables the connector within a few seconds. A task's own
+browser is probed for its runs apart from the windows' result (`checkRunServer`). Custom servers never take a
+built-in's id (moved to `<id>-custom` when the settings are read).
+
+Runs' browsers are headless (`--headless` on every Playwright server's command line, also over a profile copy's config),
+so no browser window opens. Task runs' browsers stay that way, unseen; Claude chats' browsers are watched and driven in
+the **browser drawer** at the main window's right edge (`src/main/browser-drawer/`, `components/browser-drawer/`,
+`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
+reload, address), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
+closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
+other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
+until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing
+the drawer opens them again in the other order, only what the drawer closed), and it stops where the chat keeps 500px
+beside the collapsed sidebar; each chat keeps its own view (open or closed, the tab shown).
+@playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
+JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
+`registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link
+reports when they go). Only chats' browsers belong to a project (`project-match.ts`): a chat browser's holder works in
+its own temp folder, registered for its project while it runs (with WSL interop off, a chat's server works in the turn's temp folder,
+registered while the turn runs). A task run's browser (its workspace is the task's worktree or the project) matches no
+project, so no window lists it and the bridge never connects to it. A session the drawer shows that starts opens the drawer on its page. Once a drawer
+opens, the browser bridge runs until quit (`browser-bridge.cjs`, started by `bridge-process.ts` with Workbench's
+executable as Node; messages over its stdin/stdout as JSON headers with raw bytes for frames, `bridge-framing.ts`): it
+connects to the projects' browsers with each one's own playwright-core
+(`require(playwrightLib)` from the npx cache: nothing of Playwright ships with the app, the client always matches the
+server; disconnecting leaves the browser running) and reports their pages, each given Workbench's theme as its
+`prefers-color-scheme` (`page.emulateMedia`; every window sends the theme, also when it changes, from `useBrowserDrawerSync`); the page a window shows gets its viewport set
+to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
+(`page.screencast`, quality 100) to that window only, one at a time: the window acknowledges each frame it draws
+(`BROWSER_DRAWER_FRAME_DRAWN`), the next waits for that (or a second), and frames waiting meanwhile are replaced by
+newer ones, so the browser makes no more frames than the drawer draws. Frames are drawn on a canvas at their CSS size,
+the viewport a whole, even number of device pixels (`alignedViewportLength`) and the canvas moved onto whole device
+pixels, since at a fractional devicePixelRatio (1.25, 1.5) anything else resamples the frame and blurs its text. The
+canvas's mouse, wheel, keys and pasted text are replayed with `page.mouse` / `page.keyboard` from a queue per page,
+mouse moves and wheel steps waiting behind a slow one merged into the newest (a busy page answers each late: replaying
+every move held a click up for seconds), each step given at most 5 seconds. Frames are asked at the window's devicePixelRatio,
+and on HiDPI screens the browsers render that many pixels: `browser-drawer/display-scale.ts` follows the screens'
+largest scale factor (up to 2) into the runs' Playwright config (`setPlaywrightDisplayScale`: `deviceScaleFactor`, plus
+`--force-device-scale-factor` for Chromium, whose screencast otherwise stays at CSS size, rounded up to a whole factor:
+a fractional one leaves the screencast without frames once the viewport is set), a small config file for runs
+without a profile copy; screenshots for agents stay in CSS pixels. The renderer gets bytes and text only (no remote content, no webview).
+The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
+browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
+runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through
+`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), a running bridge also says which of its browsers answer
+(`probe`, `setRegistryAccess` in `registry.ts`; a check never starts it: until a drawer does, the chat browsers
+Workbench holds open count as live), and workspace folders are matched to projects as Windows paths
+(`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
+(`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
+
+**Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
+by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in
+the same pages (the user signs in or passes multi-factor checks by hand, then asks the chat to carry on). A long-lived
+Playwright MCP server Workbench starts itself (the holder: the turn's server and browser options for the chat's browser,
+its profile copy, `--idle-timeout 0`, a profile in its folder instead of `--isolated`) initializes with the chat's bind
+title (`Workbench chat <uuid>`) and opens `about:blank`, so its browser is bound under that title; a turn's Playwright
+gets `--endpoint <title>` and attaches to it (`contexts()[0]`). The chat's guard asks Workbench to open the browser
+before each tool call (`open_chat_browser`, a token per turn on the task tools server) and refuses `browser_close`;
+inside WSL2 with NAT networking (no way to the app's 127.0.0.1) it sends that call through the task tools bridge
+(`task-tools-bridge.cjs`, a Windows process it starts once through interop: `WORKBENCH_CHAT_BROWSER_RELAY`), and with
+interop off chats fall back to a browser per turn. The
+drawer's empty state on the Claude page has the chat's browser profile picker (`InsightsModelConfig.playwrightBrowser`;
+unset = Settings > Connectors; the New chat page starts from Settings) and an Open browser button, which also switches
+Playwright on for the chat; the picker shows only while the chat has no browser (one profile per chat at a time). The
+New chat page's browser (chat id `new`) moves to the conversation its first message creates. A chat browser closes when
+the user closes its last tab, its chat is deleted, its browser goes away (its registry entry stops answering) or the
+app quits.
+
+**Crash leftovers** — Workbench's folders in the system temp folder (`temp-folders.ts`: `workbench-task-`,
+`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`) are made with an
+owner file naming the Workbench process (`folder-owner.ts`, the same one profile copies have), and a task phase's or chat
+turn's also names its Claude Code process. At startup (`removeCrashLeftovers()` in `index.ts`, in the background),
+`browser-drawer/chat-browser-restore.ts` looks at the chat browsers a crash left: each holder folder keeps a record
+(`.workbench-chat-browser.json`: project, chat, browser, profile copy, open tabs from the bridge), and a chat that still
+exists keeps its newest one for 7 days (this process takes over the folder and its profile copy, which sweeps and
+quitting then leave). The drawer offers it (`ChatBrowserInfo.status: 'restorable'`): the chat's next browser with the
+same profile starts from that profile and reopens its tabs; another profile discards it. Then the temp folders no
+running Workbench or run holds go (folders without an owner file only after an hour), then profile copies.
 
 ### Graphify Memory Graph
 
@@ -277,12 +419,20 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
 - **One session per chat** — the first message starts a session (`--session-id`, named `Workbench chat: <title>`),
   later turns `--resume` it, and editing a sent message or regenerating a reply forks it at the earlier reply
   (`--resume <id> --resume-session-at <uuid> --fork-session`), leaving the original session as it was. Chats are saved
-  in `.workbench/chats/` (`session-storage.ts`); a new chat is saved only once it has a message. Stop ends the reply,
-  as does leaving its chat.
+  in `.workbench/chats/` (`session-storage.ts`); a new chat is saved only once it has a message.
+- **Chats reply at the same time** — one reply runs per chat (`insights-executor.ts`, keyed by project and chat), and
+  switching chats, opening a new chat or leaving the page never stops one; Stop ends the reply of the chat it is pressed
+  in, and deleting a chat stops its reply and closes its browser. Every event (stream chunks, status, errors) names its
+  chat: the renderer streams the shown chat's reply and keeps the others' in `backgroundRuns` until they end (each is
+  saved in its own chat), so a chat opened again shows its reply still streaming; the history marks replying chats.
 - **Can't change the project's files** — `--tools` gives Read, Glob, Grep, WebFetch and WebSearch, plus Bash only for
   graphify's searches (Use Graphify on) and read-only `gh` / `glab` commands (the GitHub / GitLab buttons,
   `INSIGHTS_GITHUB_COMMANDS` / `INSIGHTS_GITLAB_COMMANDS` in `insights/prompts.ts`), and Edit/Write only for
   `.workbench/compeng/**` (Self-improve on). `--permission-mode dontAsk` denies everything else without asking.
+  Playwright runs through `insights/playwright-guard.cjs`, in the turn's own folder without the client's roots, so
+  its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
+  leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
+  It attaches to the chat's own browser (see Chat browsers above); in WSL with interop off each turn launches its own.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,
@@ -311,8 +461,9 @@ Switching off moves the memories aside to `.workbench/compeng.disabled` unless g
 The Live agent switch (Settings > Agents) shows agent-flow's graph of a project's Claude Code sessions next to each
 agent window (`src/main/live-agent/`, `src/renderer/components/live-agent/`). It installs `.workbench/flow/hook.cjs`
 and Claude Code hooks in the project's and its worktrees' `.claude/settings.local.json` (`project-setup.ts`); the
-`.workbench/flow` folder's existence is the setting. A relay worker (`live-agent-relay.ts`, `relay/`) runs while any
-project has it on; each window's graph shows only the sessions run in it, never headless ones.
+`.workbench/flow` folder's existence is the setting, switched on when a project is set up. A relay worker
+(`live-agent-relay.ts`, `relay/`) runs while any project has it on; each window's graph shows only the sessions run in
+it, never headless ones.
 
 ### Electron MCP (testing the app from a task)
 
@@ -354,7 +505,7 @@ Project, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_B
   notifications.
 - **Accounts** — Claude accounts, API profiles and Metrics (spending per project, `src/main/project-metrics.ts`).
 - **Agents** — how tasks run (triage, planning, validation, Fable, fallback model, Task messaging, Live agent) and
-  limits such as Maximum parallel tasks.
+  limits such as Maximum parallel tasks and the workflow size and concurrency.
 - **Project** — the selected project's page: Project (Project index: CLAUDE.md written by Claude Code's `/init`,
   `src/main/project-index.ts`; Knowledge index: Graphify; Memory index: Self-improve), Knowledge (Use CLAUDE.md, Use
   Graphify, Self-improve), Tasks, Branches. The project's `useClaudeMd`, `maxBudgetUsd` (budget per task),

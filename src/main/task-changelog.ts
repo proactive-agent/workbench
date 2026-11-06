@@ -2,7 +2,8 @@
  * The project's task changelog: `.workbench/changelog.jsonl`, one JSON entry per line (oldest
  * first) for every state a task enters and the files its Claude Code session edits. Tasks run in
  * parallel in their own worktrees, so each task's prompt lists what the others are changing, and
- * they can re-read the file to avoid editing the same files (merge conflicts).
+ * they can re-read the file to see where their work meets another task's (only edits to the same
+ * lines conflict when the branches are merged).
  *
  * This module reads the file and builds the prompt section; `task-changelog-writer.ts` writes it.
  */
@@ -152,10 +153,16 @@ export async function buildParallelTasksPrompt(
     ? `Other tasks whose changes are not merged yet, as of now:\n${others.map((task) => describeTask(task, messaging?.projectId)).join('\n')}`
     : 'No other task has unmerged changes right now.';
   const check = messaging?.tools
-    ? 'Before editing a file, check whether another task is changing it with `list_parallel_tasks` (the changelog is the fallback).'
-    : 'Before editing a file, check whether another task is changing it (re-read the changelog for newer entries during long work).';
+    ? 'Use `list_parallel_tasks` for the live picture of which files the others change (the changelog is the fallback).'
+    : 'Re-read the changelog for newer entries during long work.';
+  const coordinate = messaging?.tools
+    ? 'agree with that task via `message_task` on who changes what'
+    : 'keep your edit to what the task needs and mention the overlap in your final summary';
+  const notices = messaging
+    ? ' Workbench test-merges your work with the other tasks\' and sends a `[Workbench]` notice naming the file and lines when your changes actually conflict. When another task is merged into your base branch, a `[Workbench]` notice tells you to merge it into your branch: do it right away, as the notice says.'
+    : '';
   return `## Parallel tasks
-Other tasks of this project run in parallel in their own worktrees, and their branches are merged into the same base branch, so editing the same files causes merge conflicts. Workbench logs every task's states and the files it changes in \`${promptPath}\` (JSON Lines, newest last; don't modify it).
+Other tasks of this project run in parallel in their own worktrees, and their branches are merged into the same base branch. Workbench logs every task's states and the files it changes in \`${promptPath}\` (JSON Lines, newest last; don't modify it).
 ${list}
-${check} Prefer approaches that leave those files alone; when the task needs them, keep those edits small and mention the overlap in your final summary.${messaging ? ' When another task is merged into your base branch, a `[Workbench]` notice tells you to merge it into your branch: do it right away, as the notice says.' : ''}`;
+${check} Edit whatever files your task needs, including files other tasks change: git merges changes to different parts of a file by itself, so only edits to the same lines conflict. In a file another task also changes, don't make changes your task doesn't need (reformatting, reordering, renaming or moving code): that churn is what turns a shared file into a conflict. When you both need to change the same function or lines, or a shared interface, ${coordinate}.${notices}`;
 }

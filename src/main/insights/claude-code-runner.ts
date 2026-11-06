@@ -15,8 +15,8 @@
  * (`resolveClaudeEnv`).
  */
 
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { mkdir, realpath, writeFile } from 'node:fs/promises';
+import { makeTempFolder, noteTempFolderRun, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import { dirname, join } from 'node:path';
 import { resolveClaudeEnv } from '../claude-code/env';
 import { startClaudeProcess } from '../claude-code/process';
@@ -36,10 +36,13 @@ import semver from 'semver';
 import { extractTaskSuggestions, stripTaskSuggestions } from '../../shared/utils/task-suggestions';
 import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
-import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig } from '../claude-code/mcp-config';
+import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
+import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
+import { registerChatBrowserWorkspace } from '../browser-drawer/project-match';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
 // The bridge's source, bundled as text and written next to the turn's other temp files
 import TASK_TOOLS_BRIDGE_SOURCE from './task-tools-bridge.cjs?raw';
+import PLAYWRIGHT_GUARD_SOURCE from './playwright-guard.cjs?raw';
 import { buildMessageContent } from './message-content';
 import {
   INSIGHTS_GITHUB_COMMANDS,
@@ -85,6 +88,15 @@ export interface InsightsRunConfig {
   session?: InsightsSessionPlan;
   /** The chat's title, shown in Claude Code's session list for a new session */
   title?: string;
+  /**
+   * The user's sessions may message running tasks (Settings > Agents): with the task tools on,
+   * the chat also gets Claude Code's ListAgents and SendMessage for other running sessions
+   */
+  sessionMessages?: boolean;
+  /** Task messaging is on (Settings > Agents): the prompt tells the chat about message_task */
+  taskMessaging?: boolean;
+  /** Playwright attaches to the chat's own browser (shared with the user in the browser drawer) */
+  sharedBrowser?: boolean;
 }
 
 /**
@@ -188,6 +200,9 @@ export function supportsSystemPromptSnapshot(version: string | null | undefined)
   return !!parsed && semver.gte(parsed, SYSTEM_PROMPT_SNAPSHOT_MIN_VERSION);
 }
 
+/** Claude Code's built-in messaging between running sessions */
+export const INSIGHTS_SESSION_MESSAGING_TOOLS = ['ListAgents', 'SendMessage'] as const;
+
 /** MCP tools rule for Workbench's task tools (every tool of the server) */
 export const INSIGHTS_TASK_TOOLS_RULE = `mcp__${TASK_TOOLS_SERVER_NAME}`;
 
@@ -201,6 +216,11 @@ export interface InsightsMcpArgs {
   taskTools: boolean;
   /** Names of the chat's other MCP servers in the file */
   servers: string[];
+  /**
+   * Folders the turn may read besides the project (where tools run): its Playwright folder, which
+   * tool results link to (snapshots, screenshots)
+   */
+  readDirs?: string[];
 }
 
 /**
@@ -216,7 +236,9 @@ export function sessionArgs(plan: InsightsSessionPlan, newSessionId: string, tit
 
 /**
  * CLI arguments for a headless turn that can't change the project's files.
- * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot)
+ * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot).
+ * `sessionMessaging`: ListAgents and SendMessage, to reach other running sessions (agent windows,
+ * tasks); they never change the project's files
  */
 export function buildInsightsArgs(
   model: string,
@@ -228,6 +250,7 @@ export function buildInsightsArgs(
   memory = false,
   session: string[] = [],
   systemPromptSnapshot = false,
+  sessionMessaging = false,
 ): string[] {
   const cliRules = [
     ...(cliTools.github ? INSIGHTS_GITHUB_RULES : []),
@@ -240,6 +263,7 @@ export function buildInsightsArgs(
     ...(withBash ? ['Bash'] : []),
     // Saving memories; every other write is denied (dontAsk allows only the rule below)
     ...(memory ? ['Write', 'Edit'] : []),
+    ...(sessionMessaging ? INSIGHTS_SESSION_MESSAGING_TOOLS : []),
   ];
   const allowed = [
     ...(memory ? [INSIGHTS_MEMORY_RULE] : []),
@@ -248,6 +272,7 @@ export function buildInsightsArgs(
     ...(mcp?.taskTools ? [INSIGHTS_TASK_TOOLS_RULE] : []),
     ...(mcp?.servers ?? []).map((server) => `mcp__${server}`),
     ...INSIGHTS_WEB_TOOLS,
+    ...(sessionMessaging ? INSIGHTS_SESSION_MESSAGING_TOOLS : []),
   ];
   return [
     '-p',
@@ -259,6 +284,9 @@ export function buildInsightsArgs(
     '--effort', effort,
     '--tools', tools.join(','),
     '--allowedTools', ...allowed,
+    // Also left out by the Playwright guard: Node.js code in the server, which could write anywhere
+    ...(mcp?.servers.includes('playwright') ? ['--disallowedTools', 'mcp__playwright__browser_run_code_unsafe'] : []),
+    ...(mcp?.readDirs ?? []).flatMap((dir) => ['--add-dir', dir]),
     '--permission-mode', 'dontAsk',
     '--strict-mcp-config',
     ...(mcp ? ['--mcp-config', mcp.configFile] : []),
@@ -384,6 +412,10 @@ function handleInsightsEvent(
  */
 export type TaskToolsRoute = 'direct' | 'bridge' | 'off';
 
+/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL NAT) the relay to it */
+export const CHAT_BROWSER_URL_ENV = 'WORKBENCH_CHAT_BROWSER_URL';
+export const CHAT_BROWSER_RELAY_ENV = 'WORKBENCH_CHAT_BROWSER_RELAY';
+
 /** Set once the bridge failed to start, so later turns don't offer tools Claude can't reach */
 let taskToolsBridgeFailed = false;
 
@@ -411,6 +443,40 @@ function noteBridgeFailure(event: ClaudeStreamMessage | Record<string, unknown>)
  */
 export function resetTaskToolsBridgeForTests(): void {
   taskToolsBridgeFailed = false;
+}
+
+/**
+ * The chat's Playwright server through the guard (playwright-guard.cjs, written to `tempDir`):
+ * it runs in `<tempDir>/playwright`, which becomes its workspace root, so the files a tool call
+ * names land there and never in the project, and its Node.js code tool is left out. Its own files
+ * go there too, linked with absolute paths the chat can read (`dir`, given with --add-dir).
+ * Natively Workbench's executable runs the guard as Node; in WSL the distribution's node does
+ * (the server runs there)
+ */
+export async function guardChatPlaywright(
+  servers: Record<string, McpServerEntry>,
+  tempDir: string,
+): Promise<{ servers: Record<string, McpServerEntry>; dir?: string }> {
+  const entry = servers.playwright;
+  if (entry?.type !== 'stdio' || !entry.args?.includes(PLAYWRIGHT_MCP_PACKAGE)) return { servers };
+  const dir = join(tempDir, 'playwright');
+  await mkdir(dir, { recursive: true });
+  const script = join(tempDir, 'playwright-guard.cjs');
+  await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
+  const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
+  // The chat's browser is opened through Workbench's local tools server; inside WSL2 with NAT
+  // networking the guard reaches it through the task tools bridge, a Windows process it starts
+  // through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
+  let env = entry.env;
+  if (getWslInfo() && env?.[CHAT_BROWSER_URL_ENV] && getTaskToolsRoute() === 'bridge') {
+    const relayScript = join(tempDir, 'task-tools-bridge.cjs');
+    await writeFile(relayScript, TASK_TOOLS_BRIDGE_SOURCE, 'utf-8');
+    env = { ...env, [CHAT_BROWSER_RELAY_ENV]: JSON.stringify({ command: toRuntimePath(process.execPath), script: relayScript }) };
+  }
+  const guarded: McpServerEntry = getWslInfo()
+    ? { type: 'stdio', command: 'node', args: [toRuntimePath(script), toRuntimePath(dir), ...server], ...(env ? { env } : {}) }
+    : { type: 'stdio', command: process.execPath, args: [script, dir, ...server], env: { ...env, ELECTRON_RUN_AS_NODE: '1' } };
+  return { servers: { ...servers, playwright: guarded }, dir };
 }
 
 /** The task tools entry of the turn's MCP config (the bridge script is written to `tempDir`) */
@@ -452,6 +518,8 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     }
     const taskToolsRoute = getTaskToolsRoute();
     const offeredTaskTools = taskToolsRoute === 'off' ? undefined : config.taskTools;
+    // Messaging other running sessions comes with the task tools (the Kanban button)
+    const sessionMessaging = !!offeredTaskTools && config.sessionMessages === true;
 
     // A resumed or forked session runs on the account that holds its transcript; when the
     // project's account is set to another one, or that account can't be used, a new session starts
@@ -466,7 +534,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       if (!wsl) env.PATH = [dirname(graphify.cli), env.PATH].filter(Boolean).join(getPathDelimiter());
     }
 
-    const tempDir = await mkdtemp(join(tmpdir(), 'workbench-insights-'));
+    const tempDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.chatTurn);
     // The MCP servers go through a file, so the task tools' URL and token aren't in the process
     // list; the chat's own servers can't take the task tools' name. Tools and MCP servers are
     // given to every turn afresh: a resumed session has only what this turn passes
@@ -474,14 +542,26 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     const taskTools = offeredTaskTools && taskToolsRoute !== 'off'
       ? await taskToolsEntry(offeredTaskTools, taskToolsRoute, tempDir)
       : undefined;
-    const chatServers = Object.fromEntries(
+    // Playwright works in the turn's own folder (its files, and the only folder it may write)
+    const playwright = await guardChatPlaywright(Object.fromEntries(
       Object.entries(config.mcpServers ?? {}).filter(([name]) => name !== TASK_TOOLS_SERVER_NAME)
-    );
+    ), tempDir);
+    const chatServers = playwright.servers;
+    // The browser drawer tells the turn's browser by its folder (the server's working folder,
+    // which macOS reports by its real path: /private/var/...)
+    const unregisterBrowserWorkspaces = playwright.dir
+      ? [playwright.dir, await realpath(playwright.dir).catch(() => playwright.dir!)].map((dir) => registerChatBrowserWorkspace(dir, projectDir))
+      : [];
     if (taskTools || Object.keys(chatServers).length > 0) {
       const configFile = join(tempDir, 'mcp-config.json');
       const mcpServers = { ...chatServers, ...(taskTools ? { [TASK_TOOLS_SERVER_NAME]: taskTools } : {}) };
       await writeFile(configFile, JSON.stringify({ mcpServers }), 'utf-8');
-      mcp = { configFile, taskTools: !!taskTools, servers: Object.keys(chatServers) };
+      mcp = {
+        configFile,
+        taskTools: !!taskTools,
+        servers: Object.keys(chatServers),
+        ...(playwright.dir ? { readDirs: [toRuntimePath(playwright.dir)] } : {}),
+      };
       if (taskTools) env.MCP_TOOL_TIMEOUT = String(TASK_TOOL_TIMEOUT_MS);
       // Time for a connector's first start, when npx downloads it (unless the user set their own)
       if (mcp.servers.length > 0 && !env.MCP_TIMEOUT) env.MCP_TIMEOUT = String(MCP_STARTUP_TIMEOUT_MS);
@@ -496,6 +576,9 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       graphify: !!graphify,
       mcpServers: Object.keys(chatServers),
       memory: config.memory,
+      sessionMessaging,
+      taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
+      sharedBrowser: config.sharedBrowser,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');
@@ -517,6 +600,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
           config.memory,
           sessionArgs(turnPlan, randomUUID(), config.title),
           supportsSystemPromptSnapshot(cliVersion),
+          sessionMessaging,
         ),
         cwd: projectDir,
         env,
@@ -528,6 +612,8 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
         },
         abortSignal,
       });
+      // A crash leaves the turn's folder to the next startup, which keeps it while this run goes on
+      void noteTempFolderRun(tempDir, handle.child.pid);
       return { state, outcome: await handle.done };
     };
 
@@ -544,7 +630,8 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
         run = await attempt(plan);
       }
     } finally {
-      await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+      for (const unregister of unregisterBrowserWorkspaces) unregister();
+      await removeTempFolder(tempDir);
     }
     const { state, outcome } = run;
 

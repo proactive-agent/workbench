@@ -51,6 +51,7 @@ import { claudeConfigDirs } from '../claude-profile/profile-config-dirs';
 import { appLog } from '../app-logger';
 import { projectAccount } from '../project-account';
 import { claudeThemeFlag } from '../claude-cli-theme';
+import { agentWindowMessagingHint } from '../task-messaging/window-hint';
 
 // ============================================================================
 // CLI DISPATCH UTILITIES
@@ -457,12 +458,17 @@ function quoteFlagText(text: string, shellKind: ShellKind): string {
 
 /**
  * The one `--append-system-prompt` flag of an agent window: Claude Code keeps only the last such
- * flag, so the Graphify hint and the self-improve instruction (save what it learns about the
+ * flag, so the Graphify hint, the self-improve instruction (save what it learns about the
  * project, when the project's switch is on; its `.claude/MEMORY.md` carries the same text for
- * sessions started outside the app) go in together.
+ * sessions started outside the app) and how to message the project's running tasks (when
+ * Settings > Agents lets sessions do that) go in together.
  */
-function appendSystemPromptFlag(terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind'>): string {
-  const texts = [graphifyHintText(terminal), terminal.selfImprove ? SELF_IMPROVE_NUDGE_ONE_LINE : ''].filter(Boolean);
+function appendSystemPromptFlag(terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>): string {
+  const texts = [
+    graphifyHintText(terminal),
+    terminal.selfImprove ? SELF_IMPROVE_NUDGE_ONE_LINE : '',
+    agentWindowMessagingHint(terminal.projectPath),
+  ].filter(Boolean);
   if (texts.length === 0) return '';
   return ` --append-system-prompt ${quoteFlagText(texts.join(' '), shellKindOf(terminal))}`;
 }
@@ -713,7 +719,7 @@ async function releaseBackgroundSession(
  * session gets, YOLO mode, the Graphify hint and the theme matching the app's
  */
 function buildClaudeExtraFlags(
-  terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind'>,
+  terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>,
   dangerouslySkipPermissions: boolean | undefined,
   resumeSessionId?: string,
   newSessionId?: string

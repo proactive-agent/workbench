@@ -4,6 +4,7 @@
 
 import type { NotificationSettings, CustomMcpServer } from './project';
 import type { ClaudeCodeTaskSettings } from './claude-code';
+import type { PlaywrightBrowserChoice } from './browser-profiles';
 
 // Color theme types for multi-theme support
 export type ColorTheme = 'default';
@@ -17,8 +18,10 @@ export interface McpConnectorSettings {
   context7Enabled?: boolean;
   /** Electron automation (default off) */
   electronEnabled?: boolean;
-  /** Puppeteer browser automation (default off) */
-  puppeteerEnabled?: boolean;
+  /** Playwright browser automation (default off) */
+  playwrightEnabled?: boolean;
+  /** The browser Playwright uses (unset: Playwright's own Chromium with a blank profile) */
+  playwrightBrowser?: PlaywrightBrowserChoice;
   /** User-added servers; only ones that passed a connection test can be used */
   customServers?: CustomMcpServer[];
 }

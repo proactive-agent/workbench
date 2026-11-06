@@ -4,12 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const execute = vi.fn();
-const cancel = vi.fn((_projectId: string) => false);
+const cancel = vi.fn((_projectId: string, _sessionId?: string) => false);
 
 vi.mock('../insights/insights-executor', async () => {
   const { EventEmitter } = await import('events');
   class FakeExecutor extends EventEmitter {
-    cancelSession(projectId: string) { return cancel(projectId); }
+    cancelSession(projectId: string, sessionId?: string) { return cancel(projectId, sessionId); }
     execute(...args: unknown[]) { return execute(...args); }
   }
   return { InsightsExecutor: FakeExecutor };
@@ -163,7 +163,7 @@ describe('Claude Code sessions of a chat', () => {
   });
 });
 
-describe('a reply running when the user leaves its chat', () => {
+describe('a reply running when the user leaves its chat (it goes on)', () => {
   /** The next reply runs until it is stopped, then ends as a stopped reply with what it wrote */
   function answerUntilStopped(text = 'Partial') {
     execute.mockImplementationOnce(() => new Promise((resolve) => {
@@ -180,21 +180,31 @@ describe('a reply running when the user leaves its chat', () => {
     return { ids, stop: () => service.off('session-updated', listener) };
   }
 
-  it('stops when a new chat opens and stays in its own chat', async () => {
-    answerUntilStopped();
+  /** The next reply runs until `finish` is called (or it is stopped) */
+  function answerLater(text = 'Full reply') {
+    let finish: () => void = () => undefined;
+    execute.mockImplementationOnce(() => new Promise((resolve) => {
+      finish = () => resolve({ fullResponse: text, toolsUsed: [] });
+    }));
+    return { finish: () => finish() };
+  }
+
+  it('keeps running when a new chat opens, and is saved in its own chat', async () => {
+    const reply = answerLater();
     const sending = service.sendMessage(pid, projectDir, 'first');
     const chatId = service.loadSession(pid, projectDir)!.id;
 
     service.startNewChat(pid, projectDir);
+    expect(cancel).not.toHaveBeenCalled();
+    reply.finish();
     await sending;
 
-    expect(cancel).toHaveBeenCalled();
-    // The new chat stays empty; the stopped reply is kept in the chat it belongs to
+    // The new chat stays empty; the reply is kept in the chat it belongs to
     expect(service.loadSession(pid, projectDir)).toBeNull();
     const chat = service.switchSession(pid, projectDir, chatId)!;
     expect(chat.messages.map((m) => [m.role, m.content, m.stopped])).toEqual([
       ['user', 'first', undefined],
-      ['assistant', 'Partial', true],
+      ['assistant', 'Full reply', undefined],
     ]);
   });
 
@@ -214,24 +224,47 @@ describe('a reply running when the user leaves its chat', () => {
     expect(service.loadSession(pid, projectDir)).toBeNull();
   });
 
-  it('stops when the user switches to another chat, which stays the open one', async () => {
+  it('keeps running when the user switches to another chat, which stays the open one', async () => {
     answer('Other reply');
     await service.sendMessage(pid, projectDir, 'other chat');
     const otherId = service.loadSession(pid, projectDir)!.id;
     service.startNewChat(pid, projectDir);
 
-    answerUntilStopped();
+    const reply = answerLater();
     const sending = service.sendMessage(pid, projectDir, 'first');
     const chatId = service.loadSession(pid, projectDir)!.id;
     expect(chatId).not.toBe(otherId);
 
     service.switchSession(pid, projectDir, otherId);
+    expect(cancel).not.toHaveBeenCalled();
+    reply.finish();
     await sending;
 
-    expect(cancel).toHaveBeenCalled();
     expect(service.loadSession(pid, projectDir)!.id).toBe(otherId);
     expect(service.loadSession(pid, projectDir)!.messages).toHaveLength(2);
-    expect(service.switchSession(pid, projectDir, chatId)!.messages.at(-1)).toMatchObject({ content: 'Partial', stopped: true });
+    expect(service.switchSession(pid, projectDir, chatId)!.messages.at(-1)).toMatchObject({ content: 'Full reply' });
+  });
+
+  it('replies in two chats at once; stop and a new message act on their own chat only', async () => {
+    const replyA = answerLater('Reply A');
+    const sendingA = service.sendMessage(pid, projectDir, 'question A');
+    const chatA = service.loadSession(pid, projectDir)!.id;
+    service.startNewChat(pid, projectDir);
+    answerUntilStopped('Partial B');
+    const sendingB = service.sendMessage(pid, projectDir, 'question B');
+    const chatB = service.loadSession(pid, projectDir)!.id;
+
+    // Sending in B stopped only B's own earlier reply (none)
+    expect(cancel.mock.calls.every(([, id]) => id === chatB)).toBe(true);
+    service.stopMessage(pid, chatB);
+    await sendingB;
+    expect(cancel).toHaveBeenLastCalledWith(pid, chatB);
+    expect(cancel).not.toHaveBeenCalledWith(pid, chatA);
+
+    replyA.finish();
+    await sendingA;
+    expect(service.switchSession(pid, projectDir, chatA)!.messages.at(-1)).toMatchObject({ content: 'Reply A' });
+    expect(service.switchSession(pid, projectDir, chatB)!.messages.at(-1)).toMatchObject({ content: 'Partial B', stopped: true });
   });
 
   it('keeps running when another chat is deleted or its own chat is opened again', async () => {
@@ -247,7 +280,7 @@ describe('a reply running when the user leaves its chat', () => {
 
     service.deleteSession(pid, projectDir, otherId);
     service.switchSession(pid, projectDir, chatId);
-    expect(cancel).not.toHaveBeenCalled();
+    expect(cancel).not.toHaveBeenCalledWith(pid, chatId);
 
     service.stopMessage(pid);
     await sending;

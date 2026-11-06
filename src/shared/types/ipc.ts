@@ -214,6 +214,12 @@ export interface ElectronAPI {
   createTerminal: (options: TerminalCreateOptions) => Promise<IPCResult>;
   destroyTerminal: (id: string) => Promise<IPCResult>;
   sendTerminalInput: (id: string, data: string) => void;
+  /** The file's path on disk, or '' for a file that has none (an image pasted from the clipboard) */
+  getPathForFile: (file: File) => string;
+  /** Host paths as the agent windows' shell sees them (in WSL `C:\x` becomes `/mnt/c/x`) */
+  toTerminalRuntimePaths: (paths: string[]) => Promise<string[]>;
+  /** Files copied in a file manager that a paste event didn't carry (Linux, WSLg), as the runtime's paths */
+  readClipboardFilePaths: () => Promise<string[]>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<IPCResult<{ success: boolean }>>;
   invokeCLIInTerminal: (id: string, cwd?: string) => void;
   resumeTaskSessionInTerminal: (id: string, options: TerminalTaskSessionOptions) => void;
@@ -408,7 +414,7 @@ export interface ElectronAPI {
   // Insights operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
   sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
-  stopInsightsMessage: (projectId: string) => Promise<boolean>;
+  stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   clearInsightsSession: (projectId: string) => Promise<IPCResult>;
@@ -436,10 +442,10 @@ export interface ElectronAPI {
     callback: (projectId: string, chunk: InsightsStreamChunk) => void
   ) => () => void;
   onInsightsStatus: (
-    callback: (projectId: string, status: InsightsChatStatus) => void
+    callback: (projectId: string, status: InsightsChatStatus, sessionId?: string) => void
   ) => () => void;
   onInsightsError: (
-    callback: (projectId: string, error: string) => void
+    callback: (projectId: string, error: string, sessionId?: string) => void
   ) => () => void;
   onInsightsSessionUpdated: (
     callback: (projectId: string, session: InsightsSession) => void
@@ -522,11 +528,33 @@ export interface ElectronAPI {
   onLiveAgentStatus: (callback: (status: import('./live-agent').LiveAgentStatus) => void) => () => void;
   onLiveAgentMessage: (callback: (clientId: string, data: string) => void) => () => void;
 
+  // Browser drawer (the headless browsers of Claude chats, shown in Workbench)
+  getBrowserDrawerState: () => Promise<IPCResult<import('./browser-drawer').BrowserDrawerState>>;
+  subscribeBrowserDrawer: () => Promise<IPCResult>;
+  unsubscribeBrowserDrawer: () => Promise<IPCResult>;
+  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
+  sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
+  browserFrameDrawn: (pageId: string) => void;
+  navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
+  closeBrowserPage: (pageId: string) => void;
+  newBrowserPage: (sessionId: string) => void;
+  setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
+  openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
+  closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
+  onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
+  onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
+
   // MCP Server health check operations
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;
   testMcpConnection: (server: CustomMcpServer) => Promise<IPCResult<McpTestConnectionResult>>;
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, import('./project').McpAvailability>>>;
   onMcpAvailabilityChanged: (callback: (id: string, availability: import('./project').McpAvailability) => void) => () => void;
+  /** Local browser profiles for the Playwright connector (found when the app started) */
+  detectBrowserProfiles: () => Promise<IPCResult<import('./browser-profiles').BrowserProfile[]>>;
+  /** Open a terminal that downloads a browser for Playwright */
+  installPlaywrightBrowser: (browser: import('./browser-profiles').DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
+  /** Called with the new list when a started download finished */
+  onBrowserProfilesChanged: (callback: (profiles: import('./browser-profiles').BrowserProfile[]) => void) => () => void;
 
   // Project windows (one project per window)
   /** Project this window was opened for (null for the first window) */

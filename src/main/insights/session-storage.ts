@@ -2,6 +2,20 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, unlink
 import path from 'path';
 import type { InsightsSession, InsightsSessionSummary, ImageAttachment } from '../../shared/types';
 import { InsightsPaths } from './paths';
+import { customMcpServerIds, normalizeMcpConnectorIds } from '../../shared/utils/mcp-connectors';
+import { readSettingsFile } from '../settings-utils';
+import type { AppSettings } from '../../shared/types/settings';
+
+/**
+ * A chat's MCP menu ids saved before the browser connector moved to Playwright (`puppeteer`),
+ * renamed (not an id a custom server has now)
+ */
+function migrateChatConnectorIds(session: InsightsSession, customServerIds?: string[]): void {
+  const ids = session.modelConfig?.mcpConnectors;
+  if (!Array.isArray(ids)) return;
+  const custom = customServerIds ?? customMcpServerIds((readSettingsFile() as Partial<AppSettings> | undefined)?.mcpConnectors);
+  session.modelConfig = { ...session.modelConfig!, mcpConnectors: normalizeMcpConnectorIds(ids, custom) };
+}
 
 /**
  * Session storage manager
@@ -33,6 +47,7 @@ export class SessionStorage {
 
       const content = readFileSync(sessionPath, 'utf-8');
       const session = JSON.parse(content) as InsightsSession;
+      migrateChatConnectorIds(session);
       // Convert date strings back to Date objects
       session.createdAt = new Date(session.createdAt);
       session.updatedAt = new Date(session.updatedAt);
@@ -174,6 +189,7 @@ export class SessionStorage {
         try {
           const content = readFileSync(path.join(sessionsDir, file), 'utf-8');
           const session = JSON.parse(content) as InsightsSession;
+          migrateChatConnectorIds(session);
 
           // Generate title if not present
           let title = session.title;

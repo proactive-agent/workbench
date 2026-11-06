@@ -1,7 +1,7 @@
 import { handleIpc } from '../ipc-registry';
 import { nativeImage } from 'electron';
 import { IPC_CHANNELS, AUTO_BUILD_PATHS, DATA_DIR_NAMES, getSpecsDir } from '../../../shared/constants';
-import type { IPCResult, Task, TaskMetadata } from '../../../shared/types';
+import type { AppSettings, IPCResult, Task, TaskMetadata } from '../../../shared/types';
 import path from 'path';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, readdirSync, Dirent } from 'fs';
 import { projectStore } from '../../project-store';
@@ -15,6 +15,8 @@ import { git } from '../../utils/git-exec';
 import { taskStateManager } from '../../task-state-manager';
 import { buildInitialPlan } from './plan-file-utils';
 import { taskQueue } from '../../services/task-queue';
+import { customMcpServerIds, migrateTaskConnectorFields } from '../../../shared/utils/mcp-connectors';
+import { readSettingsFile } from '../../settings-utils';
 
 
 /**
@@ -474,6 +476,8 @@ export function registerTaskCRUDHandlers(agentManager: AgentManager): void {
           let onDisk: TaskMetadata = {};
           try {
             onDisk = JSON.parse(readFileSync(metadataPath, 'utf-8')) as TaskMetadata;
+            migrateTaskConnectorFields(onDisk as Record<string, unknown>,
+              customMcpServerIds((readSettingsFile() as Partial<AppSettings> | undefined)?.mcpConnectors));
           } catch {
             // Missing or unreadable — start from the cached metadata
           }

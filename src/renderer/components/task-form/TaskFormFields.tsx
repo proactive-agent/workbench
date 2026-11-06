@@ -17,6 +17,7 @@ import { ImagePreviewModal } from './ImagePreviewModal';
 import { cn } from '../../lib/utils';
 import { TaskConnectorRows } from './TaskConnectorRows';
 import type { ImageAttachment } from '../../../shared/types';
+import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 import { AttachmentTile } from './AttachmentTile';
 import { useAttachmentThumbnails } from './useAttachmentThumbnails';
 
@@ -37,6 +38,9 @@ interface TaskFormFieldsProps {
   // MCP connectors for this task (ids); the rows show when a change handler is given
   mcpConnectors?: string[];
   onMcpConnectorsChange?: (value: string[]) => void;
+  /** The Playwright connector's browser profile picked for the task (undefined follows Settings) */
+  playwrightBrowser?: PlaywrightBrowserChoice | null;
+  onPlaywrightBrowserChange?: (choice: PlaywrightBrowserChoice | null) => void;
 
   // Form state
   disabled?: boolean;
@@ -60,6 +64,8 @@ export function TaskFormFields({
   onImagesChange,
   mcpConnectors = [],
   onMcpConnectorsChange,
+  playwrightBrowser,
+  onPlaywrightBrowserChange,
   disabled = false,
   error,
   onError,
@@ -219,6 +225,8 @@ export function TaskFormFields({
             <TaskConnectorRows
               value={mcpConnectors}
               onChange={onMcpConnectorsChange}
+              playwrightBrowser={playwrightBrowser}
+              onPlaywrightBrowserChange={onPlaywrightBrowserChange}
               disabled={disabled}
               idPrefix={prefix}
             />

@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+import { ipcRenderer, webUtils } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 
 // Increase max listeners to accommodate up to 24 terminals (MAX_TERMINALS_LIMIT) with multiple event types
@@ -31,6 +31,12 @@ export interface TerminalAPI {
   createTerminal: (options: TerminalCreateOptions) => Promise<IPCResult>;
   destroyTerminal: (id: string) => Promise<IPCResult>;
   sendTerminalInput: (id: string, data: string) => void;
+  /** The file's path on disk, or '' for a file that has none (an image pasted from the clipboard) */
+  getPathForFile: (file: File) => string;
+  /** Host paths as the agent windows' shell sees them (in WSL `C:\x` becomes `/mnt/c/x`) */
+  toTerminalRuntimePaths: (paths: string[]) => Promise<string[]>;
+  /** Files copied in a file manager that a paste event didn't carry (Linux, WSLg), as the runtime's paths */
+  readClipboardFilePaths: () => Promise<string[]>;
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<IPCResult<{ success: boolean }>>;
   invokeCLIInTerminal: (id: string, cwd?: string) => void;
   resumeTaskSessionInTerminal: (id: string, options: import('../../shared/types').TerminalTaskSessionOptions) => void;
@@ -122,6 +128,14 @@ export const createTerminalAPI = (): TerminalAPI => ({
 
   sendTerminalInput: (id: string, data: string): void =>
     ipcRenderer.send(IPC_CHANNELS.TERMINAL_INPUT, id, data),
+
+  getPathForFile: (file: File): string => webUtils.getPathForFile(file),
+
+  toTerminalRuntimePaths: (paths: string[]): Promise<string[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RUNTIME_PATHS, paths),
+
+  readClipboardFilePaths: (): Promise<string[]> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_CLIPBOARD_FILES),
 
   resizeTerminal: (id: string, cols: number, rows: number): Promise<IPCResult<{ success: boolean }>> =>
     ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_RESIZE, id, cols, rows),

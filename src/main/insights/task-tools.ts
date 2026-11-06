@@ -5,7 +5,8 @@
  * What the user can do with the project's tasks in the UI, as tools for the Claude chat
  * (served over MCP by `task-tools-server.ts`): list and inspect tasks, create and edit them,
  * start, stop, retry and move them between the board's columns, request changes, create and
- * merge their pull requests, archive and delete them.
+ * merge their pull requests, archive and delete them, and message them (through Workbench's
+ * task messaging broker, so a task that is not running gets the message when it next runs).
  *
  * Every tool goes through the same IPC handler as the UI (see `ipc-registry.ts`) and the
  * board's move rules, so the chat can't do anything the board wouldn't allow.
@@ -19,7 +20,7 @@
 
 import { IPC_CHANNELS } from '../../shared/constants';
 import { canMoveTask, getAllowedTaskMoves, getTaskColumn, resolveMaxParallelTasks } from '../../shared/constants/task';
-import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
+import { customMcpServerIds, getDefaultMcpConnectorIds, normalizeMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import type {
   IPCResult,
   Project,
@@ -35,6 +36,8 @@ import type { AppSettings } from '../../shared/types/settings';
 import { invokeIpcHandler } from '../ipc-handlers/ipc-registry';
 import { projectStore } from '../project-store';
 import { readSettingsFile } from '../settings-utils';
+import { resolveClaudeCodeTaskSettings } from '../claude-code/settings';
+import { MAX_MESSAGE_LENGTH, deliverToTask } from '../task-messaging/broker';
 
 export interface TaskToolContext {
   projectId: string;
@@ -250,7 +253,7 @@ export const TASK_TOOLS: TaskTool[] = [
       const settings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
       const metadata: TaskMetadata = {
         sourceType: 'manual',
-        mcpConnectors: Array.isArray(args.connectors) ? (args.connectors as string[]) : getDefaultMcpConnectorIds(settings.mcpConnectors),
+        mcpConnectors: Array.isArray(args.connectors) ? normalizeMcpConnectorIds(args.connectors as string[], customMcpServerIds(settings.mcpConnectors)) : getDefaultMcpConnectorIds(settings.mcpConnectors),
       };
       const baseBranch = text(args.baseBranch) ?? project(context).settings?.mainBranch;
       if (baseBranch) metadata.baseBranch = baseBranch;
@@ -282,7 +285,10 @@ export const TASK_TOOLS: TaskTool[] = [
       const metadata: Partial<TaskMetadata> = {};
       if (text(args.baseBranch)) metadata.baseBranch = text(args.baseBranch);
       if (typeof args.useWorktree === 'boolean') metadata.useWorktree = args.useWorktree;
-      if (Array.isArray(args.connectors)) metadata.mcpConnectors = args.connectors as string[];
+      if (Array.isArray(args.connectors)) {
+        const settings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+        metadata.mcpConnectors = normalizeMcpConnectorIds(args.connectors as string[], customMcpServerIds(settings.mcpConnectors));
+      }
       const updated = await ipc<Task>(IPC_CHANNELS.TASK_UPDATE, task.id, {
         ...(text(args.title) ? { title: text(args.title) } : {}),
         ...(text(args.description) ? { description: text(args.description) } : {}),
@@ -436,6 +442,36 @@ export const TASK_TOOLS: TaskTool[] = [
       if (ids.length === 0) throw new Error('taskIds is required');
       await ipc(IPC_CHANNELS.TASK_UNARCHIVE, context.projectId, ids);
       return { unarchived: ids };
+    },
+  },
+  {
+    name: 'message_task',
+    description:
+      'Send a short message from the user to a task. A running task reads it at its next step; a task between steps, queued or ' +
+      'not started reads it when it next runs. Use it to tell a task something it should take into account, not to change what ' +
+      'it was asked to do (use update_task or request_changes for that). Returns what happened: delivered, queued or not sent (and why).',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        taskId: TASK_ID,
+        message: { type: 'string', description: `The message, up to ${MAX_MESSAGE_LENGTH} characters. Plain text, specific and brief` },
+      },
+      required: ['taskId', 'message'],
+    },
+    mutates: false,
+    run: async (context, args) => {
+      const task = findTask(context, args.taskId);
+      const message = typeof args.message === 'string' ? args.message : '';
+      const settings = (readSettingsFile() ?? {}) as Partial<AppSettings>;
+      if (!resolveClaudeCodeTaskSettings(settings.claudeCodeTasks).taskMessaging) {
+        return { task: task.id, status: 'refused', detail: 'not sent: Task messaging is off in Settings > Agents' };
+      }
+      if (!message.trim()) return { task: task.id, status: 'refused', detail: 'not sent: the message is empty' };
+      if (message.trim().length > MAX_MESSAGE_LENGTH) {
+        return { task: task.id, status: 'refused', detail: `not sent: the message is longer than ${MAX_MESSAGE_LENGTH} characters` };
+      }
+      const outcome = await deliverToTask(context.projectId, task, { kind: 'user' }, message.trim());
+      return { task: task.id, status: outcome.status, detail: outcome.detail };
     },
   },
   {

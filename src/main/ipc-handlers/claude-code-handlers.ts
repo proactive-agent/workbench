@@ -8,7 +8,7 @@
  */
 
 import { ipcMain } from 'electron';
-import { execFileSync, spawn, execFile, type ChildProcess } from 'child_process';
+import { spawn, execFile, type ChildProcess } from 'child_process';
 import { existsSync, lstatSync, readFileSync, promises as fsPromises } from 'fs';
 import { mkdir, rename, unlink } from 'fs/promises';
 import path from 'path';
@@ -589,10 +589,18 @@ async function openWslConsoleWithCommand(command: string): Promise<void> {
  * Supports macOS, Windows, and Linux terminals. When the app runs its tools in WSL, the command
  * (Linux syntax) runs in a WSL console instead.
  *
- * @param env Environment for the terminal on Windows (on macOS and Linux the terminal starts its
- *   own shell environment, so variables go in the command; the same for a WSL console)
+ * @param env Environment for the terminal on Windows and Linux (a terminal may still start its own
+ *   environment, gnome-terminal's server for one, so variables that matter go in the command; on
+ *   macOS and in a WSL console they must)
+ * @param options.windowsBashCommand On Windows, the command for a terminal that runs bash (Git Bash,
+ *   Cygwin, MSYS2) when it differs from the PowerShell one
+ * @throws when no terminal could be opened (on Linux after trying the common terminal emulators)
  */
-export async function openTerminalWithCommand(command: string, env?: NodeJS.ProcessEnv): Promise<void> {
+export async function openTerminalWithCommand(
+  command: string,
+  env?: NodeJS.ProcessEnv,
+  options: { windowsBashCommand?: string } = {}
+): Promise<void> {
   if (isWslRuntime()) {
     await openWslConsoleWithCommand(command);
     return;
@@ -650,18 +658,21 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
           keystroke return
         end tell
       `;
-    } else if (terminalId === 'kitty') {
-      // Kitty - use command line
-      spawn('kitty', ['--', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'alacritty') {
-      // Alacritty - use command line
-      spawn('open', ['-a', 'Alacritty', '--args', '-e', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'wezterm') {
-      // WezTerm - use command line
-      spawn('wezterm', ['start', '--', 'bash', '-c', command], { detached: true, stdio: 'ignore' }).unref();
-      return;
+    } else if (terminalId === 'kitty' || terminalId === 'alacritty' || terminalId === 'wezterm') {
+      // Started from the command line: a missing one (ENOENT, `open -a` of an app that isn't
+      // there) or one that fails at once falls back to Terminal.app
+      const byId: Record<string, LinuxTerminal> = {
+        kitty: { cmd: 'kitty', args: ['--', 'bash', '-c', command] },
+        alacritty: { cmd: 'open', args: ['-a', 'Alacritty', '--args', '-e', 'bash', '-c', command] },
+        wezterm: { cmd: 'wezterm', args: ['start', '--', 'bash', '-c', command] },
+      };
+      try {
+        await spawnLinuxTerminal(byId[terminalId]);
+        return;
+      } catch (error) {
+        console.warn(`[Claude Code] ${terminalId} did not open, using Terminal.app:`, error);
+        script = terminalAppScript(escapedCommand);
+      }
     } else if (terminalId === 'ghostty') {
       // Ghostty
       script = `
@@ -702,16 +713,14 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
       // Default: Terminal.app (handles 'terminal', 'system', or any unknown value)
       // IMPORTANT: do script FIRST, then activate - this prevents opening a blank default window
       // when Terminal.app isn't already running
-      script = `
-        tell application "Terminal"
-          do script "${escapedCommand}"
-          activate
-        end tell
-      `;
+      script = terminalAppScript(escapedCommand);
     }
 
     console.warn('[Claude Code] Running AppleScript...');
-    execFileSync('osascript', ['-e', script], { stdio: 'pipe' });
+    // Async (never block the main process): Terminal may take a while to launch, and macOS may ask
+    // the user to let Workbench control it; the timeout is above AppleScript's own (~120 s), so
+    // osascript is never stopped while that prompt waits
+    await execFileAsync('osascript', ['-e', script], { timeout: OSASCRIPT_TIMEOUT_MS });
 
   } else if (isWindows()) {
     // Windows: Use appropriate terminal
@@ -771,7 +780,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         await spawnWindowsTerminal('wt', ['new-tab', 'powershell', '-NoExit', '-Command', escapedCommand]);
       } else if (terminalId === 'gitbash') {
         // Git Bash - use the passed command (escaped for bash context)
-        const escapedBashCommand = escapeGitBashCommand(command);
+        const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
         const gitBashPaths = [
           'C:\\Program Files\\Git\\git-bash.exe',
           'C:\\Program Files (x86)\\Git\\git-bash.exe',
@@ -864,7 +873,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         const cygwinPath = cygwinPaths.find(p => existsSync(p));
         if (cygwinPath) {
           // mintty with bash, escaping for bash context
-          const escapedBashCommand = escapeGitBashCommand(command);
+          const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
           await spawnWindowsTerminal(cygwinPath, ['-e', '/bin/bash', '-lc', escapedBashCommand]);
         } else {
           console.warn('[Claude Code] Cygwin not found, falling back to PowerShell');
@@ -879,7 +888,7 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
         ];
         const msys2Path = msys2Paths.find(p => existsSync(p));
         if (msys2Path) {
-          const escapedBashCommand = escapeGitBashCommand(command);
+          const escapedBashCommand = escapeGitBashCommand(options.windowsBashCommand ?? command);
           if (msys2Path.endsWith('.cmd')) {
             // Use the shell launcher script
             await spawnWindowsTerminal(msys2Path, ['-mingw64', '-c', escapedBashCommand]);
@@ -914,90 +923,148 @@ export async function openTerminalWithCommand(command: string, env?: NodeJS.Proc
     // If future code needs to pass user input here, that input must be pre-sanitized.
     const bashCommand = `${command}; exec bash`;
 
-    // Try to use preferred terminal if specified
-    if (terminalId === 'gnometerminal') {
-      spawn('gnome-terminal', ['--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'konsole') {
-      spawn('konsole', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'xfce4terminal') {
-      spawn('xfce4-terminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'lxterminal') {
-      spawn('lxterminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'mate-terminal') {
-      spawn('mate-terminal', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'tilix') {
-      spawn('tilix', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'terminator') {
-      spawn('terminator', ['-e', `bash -c "${bashCommand}"`], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'guake') {
-      spawn('guake', ['-e', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'yakuake') {
-      spawn('yakuake', ['-e', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'kitty') {
-      spawn('kitty', ['--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'alacritty') {
-      spawn('alacritty', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'wezterm') {
-      spawn('wezterm', ['start', '--', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'hyper') {
-      spawn('hyper', [], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'tabby') {
-      spawn('tabby', [], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'xterm') {
-      spawn('xterm', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'urxvt') {
-      spawn('urxvt', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'st') {
-      spawn('st', ['-e', 'bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    } else if (terminalId === 'foot') {
-      spawn('foot', ['bash', '-c', bashCommand], { detached: true, stdio: 'ignore' }).unref();
-      return;
-    }
-
-    // Auto-detect (for 'system' or no preference): try common terminal emulators in order
-    const terminals: Array<{ cmd: string; args: string[] }> = [
-      { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand] },
-      { cmd: 'konsole', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'xfce4-terminal', args: ['-e', `bash -c "${bashCommand}"`] },
-      { cmd: 'tilix', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'terminator', args: ['-e', `bash -c "${bashCommand}"`] },
-      { cmd: 'kitty', args: ['--', 'bash', '-c', bashCommand] },
-      { cmd: 'alacritty', args: ['-e', 'bash', '-c', bashCommand] },
-      { cmd: 'xterm', args: ['-e', 'bash', '-c', bashCommand] },
+    const quoted = `bash -c "${bashCommand}"`;
+    // How each terminal runs a command (by settings.preferredTerminal id)
+    const byId: Record<string, LinuxTerminal> = {
+      gnometerminal: { cmd: 'gnome-terminal', args: ['--', 'bash', '-c', bashCommand], exitsWhenOpened: true },
+      konsole: { cmd: 'konsole', args: ['-e', 'bash', '-c', bashCommand] },
+      xfce4terminal: { cmd: 'xfce4-terminal', args: ['-e', quoted] },
+      lxterminal: { cmd: 'lxterminal', args: ['-e', quoted] },
+      'mate-terminal': { cmd: 'mate-terminal', args: ['-e', quoted] },
+      tilix: { cmd: 'tilix', args: ['-e', 'bash', '-c', bashCommand] },
+      terminator: { cmd: 'terminator', args: ['-e', quoted] },
+      guake: { cmd: 'guake', args: ['-e', bashCommand] },
+      yakuake: { cmd: 'yakuake', args: ['-e', bashCommand] },
+      kitty: { cmd: 'kitty', args: ['--', 'bash', '-c', bashCommand] },
+      alacritty: { cmd: 'alacritty', args: ['-e', 'bash', '-c', bashCommand] },
+      wezterm: { cmd: 'wezterm', args: ['start', '--', 'bash', '-c', bashCommand] },
+      xterm: { cmd: 'xterm', args: ['-e', 'bash', '-c', bashCommand] },
+      urxvt: { cmd: 'urxvt', args: ['-e', 'bash', '-c', bashCommand] },
+      st: { cmd: 'st', args: ['-e', 'bash', '-c', bashCommand] },
+      foot: { cmd: 'foot', args: ['bash', '-c', bashCommand] },
+    };
+    // The preferred terminal first, then the common ones (x-terminal-emulator is Debian's and
+    // Ubuntu's default terminal, which takes `-e command args`)
+    // Hyper and Tabby can't be given a command to run, so they aren't used here (opening one with
+    // nothing running in it isn't running the command)
+    const xTerminal = await xTerminalEmulatorKind(env);
+    const candidates: LinuxTerminal[] = [
+      ...(byId[terminalId] ? [byId[terminalId]] : []),
+      byId.gnometerminal,
+      // Old qterminal (1.1 and earlier) runs only the first word after -e, which isn't the command
+      ...(xTerminal === 'qterminal' ? [] : [{
+        cmd: 'x-terminal-emulator',
+        args: ['-e', 'bash', '-c', bashCommand],
+        exitsWhenOpened: xTerminal === 'gnome-terminal',
+      }]),
+      byId.konsole,
+      byId.xfce4terminal,
+      byId['mate-terminal'],
+      byId.tilix,
+      byId.terminator,
+      byId.kitty,
+      byId.alacritty,
+      byId.wezterm,
+      byId.foot,
+      byId.xterm,
     ];
-
-    let opened = false;
-    for (const { cmd, args } of terminals) {
+    const tried = new Set<string>();
+    for (const terminal of candidates) {
+      if (tried.has(terminal.cmd)) continue;
+      tried.add(terminal.cmd);
       try {
-        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
-        opened = true;
-        console.warn('[Claude Code] Opened terminal:', cmd);
-        break;
+        await spawnLinuxTerminal(terminal, env);
+        console.warn('[Claude Code] Opened terminal:', terminal.cmd);
+        return;
       } catch {
+        // Not installed or failed to start: the next one
       }
     }
+    throw new Error('No supported terminal emulator found');
+  }
+}
 
-    if (!opened) {
-      throw new Error('No supported terminal emulator found');
+interface LinuxTerminal {
+  cmd: string;
+  args: string[];
+  /**
+   * A client that hands the window to a server and then exits (gnome-terminal): its exit code
+   * says whether the window opened, and it can wait on D-Bus for a long while first
+   */
+  exitsWhenOpened?: boolean;
+}
+
+/** How long a terminal client that exits once its window opened is waited for */
+const TERMINAL_CLIENT_WAIT_MS = 30_000;
+
+/**
+ * Which terminal Debian's and Ubuntu's x-terminal-emulator is (the alternative it links to:
+ * `gnome-terminal.wrapper`, `qterminal`, ...), or null when it isn't found
+ */
+async function xTerminalEmulatorKind(env?: NodeJS.ProcessEnv): Promise<'gnome-terminal' | 'qterminal' | 'other' | null> {
+  for (const dir of ((env ?? process.env).PATH ?? '').split(path.delimiter).filter(Boolean)) {
+    try {
+      const target = path.basename(await fsPromises.realpath(path.join(dir, 'x-terminal-emulator')));
+      if (target.startsWith('gnome-terminal')) return 'gnome-terminal';
+      if (target.startsWith('qterminal')) return 'qterminal';
+      return 'other';
+    } catch {
+      // Not in this folder
     }
   }
+  return null;
+}
+
+/** How long osascript may run: longer than AppleScript's own ~120 s wait for the Automation prompt */
+const OSASCRIPT_TIMEOUT_MS = 180_000;
+
+/**
+ * Terminal.app running a command (an AppleScript-escaped one). `do script` comes first, then
+ * activate: that keeps a Terminal that isn't running from opening a blank default window too
+ */
+function terminalAppScript(escapedCommand: string): string {
+  return `
+        tell application "Terminal"
+          do script "${escapedCommand}"
+          activate
+        end tell
+      `;
+}
+
+/**
+ * Start a Linux terminal emulator. A missing one fails with ENOENT only after spawn returns, and
+ * one that can't open a window exits with an error, so a terminal that keeps running counts as
+ * open once it ran for `waitMs`. A client such as gnome-terminal is waited for until it exits
+ * (up to TERMINAL_CLIENT_WAIT_MS): it can wait on D-Bus for ~25 s and then fail
+ */
+function spawnLinuxTerminal(terminal: LinuxTerminal, env?: NodeJS.ProcessEnv, waitMs = 500): Promise<void> {
+  if (terminal.exitsWhenOpened) waitMs = TERMINAL_CLIENT_WAIT_MS;
+  return new Promise((resolve, reject) => {
+    let child: ChildProcess;
+    try {
+      child = spawn(terminal.cmd, terminal.args, { detached: true, stdio: 'ignore', env: env ?? process.env });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+      return;
+    }
+    const done = (error?: Error) => {
+      clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+      child.unref();
+      if (error) reject(error);
+      else resolve();
+    };
+    const onError = (error: Error) => done(error);
+    // A terminal stopped by a signal before the wait ends didn't open either
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => done(
+      signal ? new Error(`${terminal.cmd} was stopped by ${signal}`)
+        : code ? new Error(`${terminal.cmd} exited with code ${code}`) : undefined
+    );
+    const timer = setTimeout(() => done(), waitMs);
+    child.once('error', onError);
+    child.once('exit', onExit);
+  });
 }
 
 /**

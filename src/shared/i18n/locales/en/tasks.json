@@ -309,7 +309,9 @@
   "detailHeader": {
     "stuck": "Stuck",
     "incomplete": "Incomplete",
-    "failed": "Failed"
+    "failed": "Failed",
+    "taskBranch": "Task branch",
+    "taskBranchDraft": "Task branch, created when the task starts"
   },
   "claudeRun": {
     "modelEffort": "{{model}} · {{effort}}",

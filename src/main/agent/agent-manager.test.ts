@@ -1,7 +1,7 @@
 /**
  * Tests for AgentManager: wiring of ClaudeTaskRun (Claude Code task runner) to manager events
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import path from 'path';
 import type { Project, Task } from '../../shared/types';
 import type { TaskRunCallbacks, TaskRunConfig, TaskRunOutcome } from '../claude-code/task-runner';
@@ -15,8 +15,29 @@ interface MockRun {
 
 const runs: MockRun[] = [];
 
-// Runs leave out MCP servers that can't start; tests don't start any
-vi.mock('../mcp-availability', () => ({ usableMcpConnectorIds: (ids: string[]) => ids }));
+// Runs leave out MCP servers that can't start; tests don't start any. `leftOut` connectors are
+// left out as if their browser were open
+const connectorMocks = vi.hoisted(() => ({
+  leftOut: new Set<string>(),
+  /** The run's own Playwright browser each call was given (a task's choice) */
+  runBrowsers: [] as unknown[],
+}));
+vi.mock('../mcp-availability', () => ({
+  usableMcpConnectorIds: async (
+    ids: string[],
+    _settings: unknown,
+    onLeftOut?: (id: string, availability: unknown) => void,
+    runBrowser?: unknown
+  ) => {
+    connectorMocks.runBrowsers.push(runBrowser);
+    return ids.filter((id) => {
+      if (!connectorMocks.leftOut.has(id)) return true;
+      onLeftOut?.(id, { state: 'unavailable', browserOpen: true });
+      return false;
+    });
+  },
+  describeLeftOutConnector: (id: string) => `${id} connector left out of this run: the browser is open`,
+}));
 vi.mock('../claude-code/task-runner', () => ({
   ClaudeTaskRun: class {
     private resolve!: (outcome: TaskRunOutcome) => void;
@@ -44,6 +65,21 @@ vi.mock('../worktree', () => ({
 
 vi.mock('../settings-utils', () => ({
   readSettingsFile: vi.fn(() => ({ claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' } })),
+}));
+
+// The profiles still chosen (Settings and other tasks), which a copy's sweep keeps
+vi.mock('../browser-profiles/choices-in-use', () => ({
+  browserChoicesInUse: vi.fn(async (_projectPath: string, settingsChoice: unknown) => ({
+    project: settingsChoice ? [settingsChoice] : [],
+    all: settingsChoice ? [settingsChoice] : [],
+  })),
+}));
+
+// Copies of the Playwright connector's browser profile: a folder per run, nothing on disk
+vi.mock('../browser-profiles/profile-copy', () => ({
+  prepareBrowserProfileCopy: vi.fn(async (_projectPath: string, choice: { id: string }, slot: string) => `/copies/${choice.id}/${slot}`),
+  removeBrowserProfileCopy: vi.fn(async () => undefined),
+  removeStaleBrowserProfileCopies: vi.fn(async () => undefined),
 }));
 
 vi.mock('../graphify', () => ({
@@ -234,6 +270,109 @@ describe('AgentManager', () => {
     } finally {
       pendingResync.value = undefined;
     }
+  });
+
+  it("says in the task's log when a chosen connector is left out of the run", async () => {
+    connectorMocks.leftOut.add('playwright');
+    try {
+      const logs: string[] = [];
+      manager.on('log', (_taskId: string, line: string) => logs.push(line));
+      const task = makeTask({ metadata: { mcpConnectors: ['context7', 'playwright'] } } as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+
+      expect(run.config.connectorIds).toEqual(['context7']);
+      expect(logs).toContain('playwright connector left out of this run: the browser is open\n');
+      // Handed to the run, whose own log writer saves it in task_logs.json
+      expect(run.config.startNotes).toEqual([{ phase: 'planning', line: 'playwright connector left out of this run: the browser is open' }]);
+    } finally {
+      connectorMocks.leftOut.clear();
+    }
+  });
+
+  it('logs a left-out connector under the step the run starts with', async () => {
+    const { loadClaudeRunInfo } = await import('../claude-code/task-runner');
+    // The last run stopped in validation
+    vi.mocked(loadClaudeRunInfo).mockReturnValue({ phases: [{ name: 'validate' }] } as unknown as ReturnType<typeof loadClaudeRunInfo>);
+    connectorMocks.leftOut.add('playwright');
+    const line = 'playwright connector left out of this run: the browser is open';
+    try {
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
+      // A change request begins with coding
+      await manager.startTask(task.id, { project, task, mode: 'revise', feedback: 'Fix it' });
+      expect((await nextRun(1)).config.startNotes).toEqual([{ phase: 'coding', line }]);
+
+      // So does a resync (its merge is logged under coding)
+      pendingResync.value = { ref: 'develop', into: 'develop', via: 'local', merged: [], at: '2026-10-01T00:00:00Z' };
+      const other = makeTask({ id: '002-other', specId: '002-other', status: 'human_review', metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
+      await manager.startTask(other.id, { project, task: other, mode: 'start' });
+      expect((await nextRun(2)).config.startNotes).toEqual([{ phase: 'coding', line }]);
+      pendingResync.value = undefined;
+
+      // A continued start goes on with validation
+      const third = makeTask({ id: '003-third', specId: '003-third', metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
+      await manager.startTask(third.id, { project, task: third, mode: 'start' });
+      expect((await nextRun(3)).config.startNotes).toEqual([{ phase: 'validation', line }]);
+    } finally {
+      pendingResync.value = undefined;
+      connectorMocks.leftOut.clear();
+      vi.mocked(loadClaudeRunInfo).mockReturnValue(null);
+    }
+  });
+
+  describe("the Playwright connector's browser profile", () => {
+    const settingsBrowser = { id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Person 1', executablePath: '/chrome', userDataDir: '/c', profilePath: '/c/Default' };
+    const taskBrowser = { id: 'firefox:work', browser: 'firefox', engine: 'firefox', profileName: 'work', executablePath: '/firefox', userDataDir: '/f', profilePath: '/f/work' };
+
+    beforeEach(async () => {
+      const { readSettingsFile } = await import('../settings-utils');
+      vi.mocked(readSettingsFile).mockReturnValue({
+        claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' },
+        mcpConnectors: { playwrightEnabled: true, playwrightBrowser: settingsBrowser },
+      });
+      connectorMocks.runBrowsers.length = 0;
+    });
+
+    afterEach(async () => {
+      const { readSettingsFile } = await import('../settings-utils');
+      vi.mocked(readSettingsFile).mockReturnValue({ claudeCodeTasks: { triage: 'fixed', fixedModel: 'opus' } });
+    });
+
+    it('follows Settings > Connectors when the task picked none', async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'] } } as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.playwrightBrowser).toEqual(settingsBrowser);
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(settingsBrowser);
+      expect(connectorMocks.runBrowsers).toEqual([undefined]);
+    });
+
+    it("uses the task's own browser for the profile copy and the server", async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'], playwrightBrowser: taskBrowser } } as unknown as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.playwrightBrowser).toEqual(taskBrowser);
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[1]).toEqual(taskBrowser);
+      expect(run.config.browserProfileDir).toMatch(/^\/copies\/firefox:work\//);
+      // Its sweep keeps the Settings profile's copies
+      expect(vi.mocked(prepareBrowserProfileCopy).mock.lastCall?.[3]).toEqual({ project: [settingsBrowser], all: [settingsBrowser] });
+      // Availability looks at the task's browser
+      expect(connectorMocks.runBrowsers).toEqual([taskBrowser]);
+    });
+
+    it("uses Playwright's own Chromium when the task picked it", async () => {
+      const { prepareBrowserProfileCopy } = await import('../browser-profiles/profile-copy');
+      vi.mocked(prepareBrowserProfileCopy).mockClear();
+      const task = makeTask({ metadata: { mcpConnectors: ['playwright'], playwrightBrowser: null } } as unknown as Partial<Task>);
+      await manager.startTask(task.id, { project, task, mode: 'start' });
+      const run = await nextRun(1);
+      expect(run.config.connectorSettings?.playwrightBrowser).toBeUndefined();
+      expect(run.config.browserProfileDir).toBeUndefined();
+      expect(prepareBrowserProfileCopy).not.toHaveBeenCalled();
+      expect(connectorMocks.runBrowsers).toEqual([null]);
+    });
   });
 
   it('runs in the project directory when worktrees are off', async () => {

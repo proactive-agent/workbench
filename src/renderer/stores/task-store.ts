@@ -5,6 +5,7 @@ import { debugLog, debugWarn } from '../../shared/utils/debug-logger';
 import { useProjectStore } from './project-store';
 import { useSettingsStore } from './settings-store';
 import { resolveMaxParallelTasks } from '../../shared/constants/task';
+import { customMcpServerIds, migrateTaskConnectorFields } from '../../shared/utils/mcp-connectors';
 
 /** Maximum log entries stored per task to prevent renderer OOM */
 export const MAX_LOG_ENTRIES = 5000;
@@ -1122,7 +1123,7 @@ const DRAFT_KEY_PREFIX = 'task-creation-draft';
  */
 export type TaskCreationDraft = Pick<
   TaskDraft,
-  'projectId' | 'description' | 'images' | 'mcpConnectors' | 'pushNewBranches' | 'savedAt'
+  'projectId' | 'description' | 'images' | 'mcpConnectors' | 'playwrightBrowser' | 'pushNewBranches' | 'savedAt'
 >;
 
 /**
@@ -1165,11 +1166,17 @@ export function loadDraft(projectId: string): TaskCreationDraft | null {
 
     const raw = JSON.parse(stored) as Record<string, unknown> | null;
     if (!raw || typeof raw !== 'object') return null;
+    // Connector fields saved before the browser connector moved to Playwright
+    migrateTaskConnectorFields(raw, customMcpServerIds(useSettingsStore.getState().settings.mcpConnectors));
     return {
       projectId: typeof raw.projectId === 'string' ? raw.projectId : projectId,
       description: typeof raw.description === 'string' ? raw.description : '',
       images: Array.isArray(raw.images) ? (raw.images as ImageAttachment[]) : [],
       mcpConnectors: Array.isArray(raw.mcpConnectors) ? (raw.mcpConnectors as string[]) : undefined,
+      // null: Playwright's own Chromium was picked; missing: follow Settings > Connectors
+      ...(raw.playwrightBrowser === null || (raw.playwrightBrowser && typeof raw.playwrightBrowser === 'object')
+        ? { playwrightBrowser: raw.playwrightBrowser as TaskCreationDraft['playwrightBrowser'] }
+        : {}),
       pushNewBranches: typeof raw.pushNewBranches === 'boolean' ? raw.pushNewBranches : undefined,
       // Convert savedAt back to Date
       savedAt: new Date(typeof raw.savedAt === 'string' ? raw.savedAt : Date.now())

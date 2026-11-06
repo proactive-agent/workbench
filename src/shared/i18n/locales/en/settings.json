@@ -409,6 +409,43 @@
     "unavailable": "Can't start: {{reason}}",
     "fixHint": "Run this to enable it:",
     "addServer": "Add server",
+    "browserProfile": {
+      "label": "Browser profile",
+      "default": "Playwright's Chromium",
+      "notFound": "{{name}} (no longer found)",
+      "managed": "Playwright's {{browser}}",
+      "download": "Download {{browser}}",
+      "downloadDescription": "Opens a terminal that installs it",
+      "downloadFailed": "Couldn't start the download",
+      "downloading": "Downloading {{browser}} in a terminal",
+      "alreadyDownloading": "Already downloading {{browser}} in a terminal",
+      "browserOpen": "{{browser}} is open",
+      "closeBrowser": "Close {{browser}} once to use Playwright. Workbench then saves a copy of its profile, and runs use that copy while the browser is open. If it has no window, it is still running in the background: quit it from the system tray, or turn off Startup boost (Edge) or Continue running background apps (Chrome) in its settings",
+      "browsers": {
+        "chrome": "Chrome",
+        "edge": "Edge",
+        "brave": "Brave",
+        "chromium": "Chromium",
+        "firefox": "Firefox",
+        "safari": "Safari",
+        "webkit": "WebKit"
+      },
+      "signedOut": "Saved sign-ins don't carry over",
+      "variants": {
+        "snap": "Snap",
+        "flatpak": "Flatpak",
+        "store": "Microsoft Store"
+      },
+      "reasons": {
+        "unsupportedEngine": "Playwright can't drive Safari; use Playwright's WebKit",
+        "executableMissing": "Browser not installed",
+        "windowsBrowserInWsl": "WSL interop is off, so Windows browsers can't start",
+        "needsFirefoxInWsl": "Download Playwright's Firefox to run it in WSL",
+        "sandboxedPackage": "Flatpak browsers can't be used",
+        "notDownloaded": "Not downloaded",
+        "snapNeedsNewerGlibc": "This snap needs a newer glibc than the system has"
+      }
+    },
     "servers": {
       "context7": {
         "name": "Context7",
@@ -418,9 +455,9 @@
         "name": "Electron",
         "description": "Desktop app automation via Chrome DevTools"
       },
-      "puppeteer": {
-        "name": "Puppeteer",
-        "description": "Web browser automation for testing"
+      "playwright": {
+        "name": "Playwright",
+        "description": "Web browser automation for testing: Chromium, Firefox and WebKit"
       }
     },
     "customServers": "Custom servers",
@@ -595,10 +632,27 @@
       "validation": "Validation",
       "validationDescription": "Run the project's checks and a fresh review of the changes before handing a task to you",
       "taskMessaging": "Task messaging",
-      "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or edits the same files",
+      "taskMessagingDescription": "Tasks running at the same time can message each other, and Workbench tells them when another task starts, finishes, is merged or its changes conflict with theirs",
+      "sessionMessages": "Messages from your Claude sessions",
+      "sessionMessagesDescription": "Agent windows, the chat and your terminal can message running tasks, which skip permission checks, so any local Claude session could steer them",
       "fallbackModel": "Fallback model",
       "fallbackModelDescription": "Model Claude Code switches to when the chosen one is overloaded",
       "fallbackNone": "None"
+    },
+    "workflows": {
+      "size": "Workflow size",
+      "sizeDescription": "How many agents a workflow aims for. Large tasks review, and may make, their changes with workflows, which use more of your usage",
+      "sizes": {
+        "off": "Off",
+        "default": "Claude Code default",
+        "small": "Small (under 5 agents)",
+        "medium": "Medium (under 10 agents)",
+        "large": "Large (under 50 agents)",
+        "unrestricted": "Unrestricted"
+      },
+      "concurrency": "Workflow agents at once",
+      "concurrencyDescription": "Most workflow agents each task runs at the same time",
+      "concurrencyDefault": "Claude Code default"
     },
     "agentWindows": {
       "skipPermissions": "Skip permission prompts",

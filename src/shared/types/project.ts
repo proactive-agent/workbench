@@ -103,8 +103,10 @@ export interface McpAvailability {
   missingCommand?: string;
   /** Why it couldn't start */
   message?: string;
-  /** A command that makes it usable (e.g. installing Puppeteer's browser) */
+  /** A command that makes it usable (e.g. installing Playwright's browser) */
   fixCommand?: string;
+  /** Playwright's chosen browser is open: runs can't copy its profile until it is closed */
+  browserOpen?: boolean;
 }
 
 /**

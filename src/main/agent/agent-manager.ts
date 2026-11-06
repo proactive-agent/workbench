@@ -15,9 +15,12 @@ import { isClaudeRunFinished, loadClaudeRunInfo, resetClaudeRunInfo } from '../c
 import { detectClaudeLimitMessage } from '../claude-code/limit';
 import { createOrGetWorktree } from '../worktree';
 import { addToWorktree } from '../live-agent/project-setup';
-import { usableMcpConnectorIds } from '../mcp-availability';
-import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
-import { readSettingsFile } from '../settings-utils';
+import { describeLeftOutConnector, usableMcpConnectorIds } from '../mcp-availability';
+import type { TaskLogPhase } from '../../shared/types/task';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy, removeStaleBrowserProfileCopies } from '../browser-profiles/profile-copy';
+import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
+import { getDefaultMcpConnectorIds, getTaskPlaywrightBrowser } from '../../shared/utils/mcp-connectors';
+import { readSettingsFile, readSettingsFileAsync } from '../settings-utils';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { isSelfImproveEnabled, SELF_IMPROVE_NUDGE } from '../self-improve';
 import { getAugmentedEnvAsync } from '../env-utils';
@@ -28,7 +31,7 @@ import { getOperationRegistry } from '../claude-profile/operation-registry';
 import { getAPIProfileEnv } from '../services/profile';
 import { getSpecsDir } from '../../shared/constants';
 import { getTaskWorktreeBranch } from '../../shared/utils/claude-run';
-import type { AppSettings } from '../../shared/types/settings';
+import type { AppSettings, McpConnectorSettings } from '../../shared/types/settings';
 import { appLog } from '../app-logger';
 import { resolveBaseBranch, resolveDefaultBaseBranch } from '../utils/base-branch';
 import { taskHooks } from '../task-hooks';
@@ -212,6 +215,7 @@ export class AgentManager extends EventEmitter {
     // Stopped while the worktree was being prepared
     if (entry.killed) {
       config.messaging?.dispose();
+      if (config.browserProfileDir) await removeBrowserProfileCopy(config.browserProfileDir);
       resolveDone();
       return;
     }
@@ -264,9 +268,11 @@ export class AgentManager extends EventEmitter {
         const message = error instanceof Error ? error.message : String(error);
         this.handleRunFinished(taskId, entry, { status: 'failed', error: message });
       })
-      .finally(() => {
+      .finally(async () => {
         // The run's Workbench tools stop working with it
         config.messaging?.dispose();
+        // Removed before a restart of the task copies the profile again
+        if (config.browserProfileDir) await removeBrowserProfileCopy(config.browserProfileDir);
         resolveDone();
       });
   }
@@ -505,6 +511,14 @@ export class AgentManager extends EventEmitter {
       resetClaudeRunInfo(specDir);
     }
 
+    // Connectors the run leaves out, for the start of its task log
+    const startNotes: { phase: TaskLogPhase; line: string }[] = [];
+    // The Playwright connector's browser: the task's own choice, else the one in Settings > Connectors
+    const taskBrowser = task.metadata?.playwrightBrowser;
+    const browser = getTaskPlaywrightBrowser(taskBrowser, settings.mcpConnectors);
+    const connectorSettings: McpConnectorSettings | undefined = taskBrowser === undefined
+      ? settings.mcpConnectors
+      : { ...settings.mcpConnectors, playwrightBrowser: browser };
     const config: TaskRunConfig = {
       taskId,
       projectId: project.id,
@@ -518,12 +532,19 @@ export class AgentManager extends EventEmitter {
       description: task.description?.trim() || task.title || task.specId,
       attachments,
       // The task's connectors (or the defaults), without servers that can't start
-      connectorIds: usableMcpConnectorIds(
+      connectorIds: await usableMcpConnectorIds(
         Array.isArray(task.metadata?.mcpConnectors) ? task.metadata.mcpConnectors : getDefaultMcpConnectorIds(settings.mcpConnectors),
-        settings.mcpConnectors
+        settings.mcpConnectors,
+        (id, availability) => startNotes.push(this.noteLeftOutConnector(
+          taskId, options, specDir, describeLeftOutConnector(id, availability, connectorSettings), resync && mode !== 'revise' ? 'resync' : mode)),
+        taskBrowser === undefined ? undefined : browser ?? null
       ),
-      connectorSettings: settings.mcpConnectors,
+      startNotes,
+      connectorSettings,
       settings: taskSettings,
+      // Read again at each step, so switching Task messaging or messages from sessions off reaches a running task
+      readCurrentSettings: async () => resolveClaudeCodeTaskSettings(
+        ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.claudeCodeTasks),
       maxBudgetUsd: project.settings?.maxBudgetUsd,
       changelogPath: project.autoBuildPath ? getTaskChangelogPath(project.path, project.autoBuildPath) : undefined,
       mode,
@@ -538,8 +559,27 @@ export class AgentManager extends EventEmitter {
     };
 
     if (isSelfImproveEnabled(project.settings)) config.selfImprovePrompt = SELF_IMPROVE_NUDGE;
-    // Parallel tasks message each other through Workbench (Settings > Agents)
-    if (taskSettings.taskMessaging) config.messaging = createRunMessaging(project.id, task.specId);
+    // The Playwright connector's browser profile: a fresh copy per run (sign-ins as they are now),
+    // in the run's own slot so no two runs share a profile folder
+    if (browser && config.connectorIds?.includes('playwright')) {
+      try {
+        // A slot per run: a stopped run of the task may still be cleaning up its own copy
+        const slot = `task-${task.specId}-${randomUUID().slice(0, 8)}`;
+        // Copies of profiles still chosen (Settings, other tasks) are kept by its sweep
+        const inUse = await browserChoicesInUse(project.path, settings.mcpConnectors?.playwrightBrowser);
+        config.browserProfileDir = (await prepareBrowserProfileCopy(project.path, browser, slot, inUse)) ?? undefined;
+        // Copies earlier runs of the task left behind (a crash); not awaited, the run doesn't need it.
+        // Live runs' copies are kept, such as a newer launch's after this one was stopped mid-copy
+        void removeStaleBrowserProfileCopies(project.path, browser, `task-${task.specId}-`, slot);
+      } catch (error) {
+        appLog.warn(`[AgentManager] Could not copy the browser profile for ${taskId}:`, error);
+      }
+    }
+    // Parallel tasks message each other through Workbench (Settings > Agents). The link is made
+    // whatever the switch says now: the run reads Task messaging again at each step
+    // (`readCurrentSettings`), so switching it on reaches a running task at its next step. The link
+    // opens nothing until a step uses it
+    config.messaging = createRunMessaging(project.id, task.specId);
 
     if (await isGraphifyEnabled(project.path)) {
       try {
@@ -621,6 +661,29 @@ export class AgentManager extends EventEmitter {
     const next = Math.max((this.sequences.get(key) ?? 0) + 1, Date.now());
     this.sequences.set(key, next);
     return next;
+  }
+
+  /**
+   * A connector the task chose was left out of this run (its browser is open, its server can't
+   * start): shown in the task's live log now, and returned as a start note that the run writes to
+   * task_logs.json with its own log writer (`TaskRunConfig.startNotes`). The note's log step is the
+   * one the run starts with: a change request and a resync begin with coding (the resync's merge is
+   * logged there), a new run with planning (triage), and a continued one with the step it stopped in
+   */
+  private noteLeftOutConnector(
+    taskId: string, options: StartTaskOptions, specDir: string, line: string, start: 'start' | 'revise' | 'resync'
+  ): { phase: TaskLogPhase; line: string } {
+    this.emit('log', taskId, `${line}\n`, options.project.id);
+    let last: string | undefined;
+    try {
+      last = start === 'start' ? loadClaudeRunInfo(specDir)?.phases.at(-1)?.name : undefined;
+    } catch {
+      // No run state yet: a new run
+    }
+    const phase: TaskLogPhase = start !== 'start' ? 'coding'
+      : last === 'validate' ? 'validation'
+        : last === 'implement' || last === 'revise' || last === 'resync' ? 'coding' : 'planning';
+    return { phase, line };
   }
 
   private emitTaskEvent(taskId: string, options: StartTaskOptions, type: string, payload: Record<string, unknown>): void {

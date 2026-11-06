@@ -1,0 +1,167 @@
+/**
+ * Whether the browser chosen for the Playwright connector is open with its profile. Runs copy the
+ * profile, which an open browser keeps locked and half written, so the connector waits until it
+ * is closed (mcp-availability.ts).
+ *
+ * Read from the lock the browser holds, not from the process list: only the chosen profile
+ * counts, never Playwright's own browsers (they run on new profiles). On Linux and macOS the lock is a
+ * link naming the browser's process (Firefox's `lock` -> `127.0.1.1:+<pid>`, Chromium's
+ * `SingletonLock` -> `<host>-<pid>`), checked to be alive since a crash leaves it behind: a
+ * process of another user, or a process that isn't the lock's browser (by its name: /proc on
+ * Linux, `ps` on macOS; a Firefox lock needs a Firefox process, a Chromium lock a Chromium one)
+ * reads as closed. A Chromium lock naming another host still counts when its pid is a live
+ * Chromium browser here, as Chromium's own check does (macOS renames the host on a network
+ * change); otherwise it reads as closed (a shared home folder). On Windows the browser keeps the lock file open
+ * (`parent.lock`, `lockfile`), so it can't be opened. A Chromium browser that keeps running
+ * without windows (Edge's Startup boost, Chrome's "Continue running background apps") holds it
+ * too, and its profile's files with it, so it counts as open: the tip says to quit it from the
+ * system tray or turn that setting off.
+ * macOS Firefox keeps only `.parentlock` (an fcntl lock Node can't test), so it reads as closed.
+ */
+
+import { execFile } from 'child_process';
+import { open, readFile, readlink } from 'fs/promises';
+import { hostname } from 'os';
+import path from 'path';
+import { promisify } from 'util';
+import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
+import { isLinux, isMacOS, isWindows } from '../platform';
+import { isWslUncPath } from '../platform/wsl-paths';
+
+/**
+ * Main process names (Linux `comm` or the macOS executable's name, at most 15 characters) of the
+ * browsers that write each engine's lock. Whole names, so helpers such as `chrome_crashpad`
+ * (Chromium's and Electron's crash handler) and Firefox's content processes never count
+ */
+const BROWSER_PROCESS: Record<'firefox' | 'chromium', RegExp> = {
+  firefox: /^(?:firefox|firefox-bin|firefox-esr|firefox\.real|librewolf|waterfox|floorp|zen)$/i,
+  chromium:
+    /^(?:chrome|google chrome|chromium|chromium-browse|chromium-browser|msedge|microsoft edge|brave|brave browser|vivaldi|vivaldi-bin|opera|yandex_browser|yandex)$/i,
+};
+
+const execFileAsync = promisify(execFile);
+/** How long `ps` may take on macOS */
+const PS_TIMEOUT_MS = 3000;
+
+/**
+ * The process's name: `comm` from /proc on Linux, `ps -o comm=` on macOS (the executable's path,
+ * cut to its file name and to Linux's 15 characters so one check fits both), or null when it can't
+ * be read
+ */
+async function processName(pid: number): Promise<string | null> {
+  if (isLinux()) {
+    try {
+      return (await readFile(`/proc/${pid}/comm`, 'utf-8')).trim();
+    } catch {
+      return null;
+    }
+  }
+  if (isMacOS()) {
+    try {
+      // A system tool, not a detected one: /bin/ps on every macOS, run natively
+      const { stdout } = await execFileAsync('/bin/ps', ['-p', String(pid), '-o', 'comm='], { timeout: PS_TIMEOUT_MS });
+      const name = path.basename(stdout.trim()).slice(0, 15);
+      return name || null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
+ * Whether the browser that wrote a lock still runs as this process. After a crash and a reboot
+ * its id can belong to anything, so a name that isn't a browser's doesn't count (Linux and macOS
+ * read the name), and without a name neither does another user's process (the user's browser runs
+ * as the user).
+ *
+ * The process's start isn't compared with the lock's time: the lock's mtime is wall-clock time,
+ * so a clock step (NTP, a VM resumed) between writing it and now moves it against any start time,
+ * and an open browser would read as closed, letting a run copy a half-written profile. A pid
+ * reused by another browser after a crash reads as open instead, which only makes the connector
+ * wait (the browser fixes its stale lock when it next starts)
+ */
+async function browserRunning(
+  pid: number,
+  executablePath: string,
+  engine: 'firefox' | 'chromium',
+  options: { needName?: boolean } = {}
+): Promise<boolean> {
+  let ours: boolean;
+  try {
+    process.kill(pid, 0);
+    ours = true;
+  } catch (error) {
+    // EPERM: it runs, as another user
+    if ((error as NodeJS.ErrnoException).code !== 'EPERM') return false;
+    ours = false;
+  }
+  const name = await processName(pid);
+  if (name === null) return ours && !options.needName;
+  // The chosen executable's own name first (a browser not in the list), then the engine's browsers
+  const executable = path.basename(executablePath).slice(0, 15);
+  return (executable !== '' && name === executable) || BROWSER_PROCESS[engine].test(name);
+}
+
+/** A Windows lock file the browser holds open */
+async function fileHeld(file: string): Promise<boolean> {
+  try {
+    const handle = await open(file, 'r+');
+    await handle.close();
+    return false;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === 'EBUSY' || code === 'EPERM';
+  }
+}
+
+/** Firefox's lock link: `<ip>:+<pid>`, or `<ip>:<pid>` where it fell back from fcntl locks (NFS) */
+function parseFirefoxLock(target: string): number | undefined {
+  const pid = Number(/:\+?(\d+)$/.exec(target)?.[1]);
+  return pid > 0 ? pid : undefined;
+}
+
+/** Chromium's SingletonLock link: `<host>-<pid>` (the host may contain dashes) */
+function parseChromiumLock(target: string): { host: string; pid: number } | undefined {
+  const match = /^(.*)-(\d+)$/.exec(target);
+  const pid = Number(match?.[2]);
+  return match && pid > 0 ? { host: match[1], pid } : undefined;
+}
+
+async function readLock(link: string): Promise<string | null> {
+  try {
+    return await readlink(link);
+  } catch {
+    // No lock: the browser is closed
+    return null;
+  }
+}
+
+export async function isBrowserProfileInUse(choice: PlaywrightBrowserChoice): Promise<boolean> {
+  // Playwright's own browsers start on a new profile each time
+  if (choice.managed) return false;
+  const firefox = choice.engine === 'firefox';
+  // Firefox locks the profile; Chromium the user data folder, shared by its profiles
+  const dir = firefox ? choice.profilePath : choice.userDataDir;
+  if (isWindows()) {
+    // A WSL browser (stored with its Linux path, or a WSL UNC path): its process can't be seen from
+    // Windows. Other UNC paths are network shares
+    if (dir.startsWith('/') || isWslUncPath(dir)) return false;
+    return fileHeld(path.join(dir, firefox ? 'parent.lock' : 'lockfile'));
+  }
+  if (firefox) {
+    const link = path.join(dir, 'lock');
+    const target = await readLock(link);
+    const pid = target === null ? undefined : parseFirefoxLock(target);
+    return pid !== undefined && browserRunning(pid, choice.executablePath, 'firefox');
+  }
+  const link = path.join(dir, 'SingletonLock');
+  const target = await readLock(link);
+  const lock = target === null ? undefined : parseChromiumLock(target);
+  if (lock === undefined) return false;
+  // Another host's lock: the host was renamed (macOS on a network change) while the browser runs
+  // here, or a shared home folder. Like Chromium's own check, a live Chromium browser with its pid
+  // counts; its name must be readable then, since a pid alone may be anything here
+  const otherHost = lock.host !== hostname();
+  return browserRunning(lock.pid, choice.executablePath, 'chromium', { needName: otherHost });
+}

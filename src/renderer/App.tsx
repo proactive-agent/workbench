@@ -28,6 +28,7 @@ import { AuthFailureModal } from './components/AuthFailureModal';
 import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
+import { useInsightsStore, chatBrowserId } from './stores/insights-store';
 import { useSettingsStore, loadSettings, loadProfiles } from './stores/settings-store';
 import { loadClaudeProfiles } from './stores/claude-profile-store';
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
@@ -38,6 +39,8 @@ import { useGlobalTerminalListeners } from './hooks/useGlobalTerminalListeners';
 import { sanitizeColorTheme } from '../shared/constants';
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from './lib/title-bar';
 import { DevBuildBar } from './components/DevBuildBar';
+import { BrowserDrawer } from './components/browser-drawer/BrowserDrawer';
+import { useBrowserDrawerSync } from './hooks/useBrowserDrawerSync';
 import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
@@ -126,6 +129,10 @@ export function App() {
   // Get tabs and selected project
   const projectTabs = getProjectTabs();
   const selectedProject = projects.find((p) => p.id === (activeProjectId || selectedProjectId));
+  // The browser drawer's sessions; one of this project's that starts opens the drawer
+  useBrowserDrawerSync(selectedProject?.id);
+  // The Claude page's drawer shows the shown chat's own browser
+  const insightsSession = useInsightsStore((state) => state.session);
 
   // Initial load
   useEffect(() => {
@@ -741,6 +748,12 @@ export function App() {
             )}
           </main>
         </div>
+
+        {/* Browser drawer: the Claude chat's own browser, on the Claude page only (opened from
+            the chat's top bar); the browsers keep running while the user is on other pages */}
+        {selectedProject && activeView === 'insights' && (
+          <BrowserDrawer projectId={selectedProject.id} chatId={chatBrowserId(insightsSession)} />
+        )}
 
         {/* Task detail modal */}
         <TaskDetailModal

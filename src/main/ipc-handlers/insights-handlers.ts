@@ -133,10 +133,11 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
     }
   );
 
-  // Stop the reply Claude is writing; what it wrote so far is kept
+  // Stop the reply Claude is writing in a chat; what it wrote so far is kept
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_STOP,
-    (_, projectId: string): boolean => insightsService.stopMessage(projectId)
+    (_, projectId: string, sessionId?: string): boolean =>
+      insightsService.stopMessage(projectId, typeof sessionId === "string" ? sessionId : undefined)
   );
 
   ipcMain.handle(
@@ -468,13 +469,14 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
   });
 
   // Forward status updates to renderer
-  insightsService.on("status", (projectId: string, status: unknown) => {
-    safeSendToRenderer(getMainWindow, IPC_CHANNELS.INSIGHTS_STATUS, projectId, status);
+  // Status and errors name the chat (several chats of a project may be replying)
+  insightsService.on("status", (projectId: string, status: unknown, sessionId?: string) => {
+    safeSendToRenderer(getMainWindow, IPC_CHANNELS.INSIGHTS_STATUS, projectId, status, sessionId);
   });
 
   // Forward errors to renderer
-  insightsService.on("error", (projectId: string, error: string) => {
-    safeSendToRenderer(getMainWindow, IPC_CHANNELS.INSIGHTS_ERROR, projectId, error);
+  insightsService.on("error", (projectId: string, error: string, sessionId?: string) => {
+    safeSendToRenderer(getMainWindow, IPC_CHANNELS.INSIGHTS_ERROR, projectId, error, sessionId);
   });
 
   // Forward SDK rate limit events to renderer

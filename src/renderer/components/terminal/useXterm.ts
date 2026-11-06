@@ -13,7 +13,11 @@ import { debugLog, debugError } from '../../../shared/utils/debug-logger';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { WebGLContextManagerType } from '../../lib/webgl-context-manager';
 import { isTerminalGridDragging } from '../../lib/terminal-grid-drag';
+import { formatPastedPaths, imagePasteKey, readTerminalPaste } from '../../lib/terminal-paste';
 
+
+/** Written after replayed output: closes an OSC 8 link left open and resets the SGR style */
+const REPLAY_END_RESET = '\x1b]8;;\x1b\\\x1b[0m';
 
 interface UseXtermOptions {
   terminalId: string;
@@ -66,6 +70,8 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
   const dimensionsReadyCalledRef = useRef<boolean>(false);
   // Lazily-loaded WebGL context manager — only populated when gpuAcceleration !== 'off'
   const webglManagerRef = useRef<WebGLContextManagerType | null>(null);
+  // Removes the paste listener from the container; called on dispose
+  const removePasteListenerRef = useRef<(() => void) | null>(null);
   const onResizeRef = useRef(onResize);
   const [dimensions, setDimensions] = useState<{ cols: number; rows: number }>({ cols: 80, rows: 24 });
   // The terminal's own background, so the padding around it keeps up with the colors xterm uses
@@ -171,25 +177,56 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       return false; // No selection or nothing to copy
     };
 
-    // Helper function to handle paste from clipboard
+    // Pastes (Ctrl+V and Ctrl+Shift+V below, Cmd+V, the context menu) arrive as the browser's paste
+    // event, which is the only place copied files show up. Caught on the container before xterm's own
+    // listener, which pastes text only: an image or a file copied on its own pasted nothing.
     // Cap paste size to prevent GPU/memory pressure from extremely large clipboard contents.
     const MAX_PASTE_BYTES = 1_048_576; // 1 MB
-    const handlePasteFromClipboard = (): void => {
-      navigator.clipboard.readText()
-        .then((text) => {
-          if (text) {
-            if (text.length > MAX_PASTE_BYTES) {
-              console.warn(`[useXterm] Paste truncated from ${text.length} to ${MAX_PASTE_BYTES} bytes`);
-              xterm.paste(text.slice(0, MAX_PASTE_BYTES));
-            } else {
-              xterm.paste(text);
-            }
-          }
-        })
-        .catch((err) => {
-          console.error('[useXterm] Failed to read clipboard:', err);
-        });
+    const pasteText = (text: string): void => {
+      if (text.length > MAX_PASTE_BYTES) {
+        console.warn(`[useXterm] Paste truncated from ${text.length} to ${MAX_PASTE_BYTES} bytes`);
+        xterm.paste(text.slice(0, MAX_PASTE_BYTES));
+      } else {
+        xterm.paste(text);
+      }
     };
+    const handlePasteEvent = (event: ClipboardEvent): void => {
+      if (!event.clipboardData) return;
+      const api = window.electronAPI;
+      const paste = readTerminalPaste(event.clipboardData, (file) => api.getPathForFile?.(file) ?? '');
+      // On macOS an empty paste already makes Claude Code look for a clipboard image: leave it to xterm
+      if (paste.kind === 'image' && !isWindows && !isLinux) return;
+      // Elsewhere an empty paste is left to xterm too, except on Linux: under WSLg a file copied in
+      // Windows arrives as an empty text item, so the main process reads the clipboard's files
+      if (paste.kind === 'none' && !isLinux) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      if (paste.kind === 'none') {
+        const readFiles = api.readClipboardFilePaths ?? (async () => [] as string[]);
+        readFiles()
+          .catch(() => [] as string[])
+          .then((paths) => {
+            if (isDisposedRef.current) return;
+            // No files either: the empty paste xterm would have sent (Claude Code then looks for an image)
+            pasteText(paths.length > 0 ? formatPastedPaths(paths) : '');
+          });
+      } else if (paste.kind === 'text') {
+        pasteText(paste.text);
+      } else if (paste.kind === 'image') {
+        xterm.input(imagePasteKey(isWindows));
+      } else {
+        const toRuntime = api.toTerminalRuntimePaths ?? (async (paths: string[]) => paths);
+        toRuntime(paste.paths)
+          .catch(() => paste.paths)
+          .then((paths) => {
+            if (!isDisposedRef.current) pasteText(formatPastedPaths(paths));
+          });
+      }
+    };
+    const container = terminalRef.current;
+    removePasteListenerRef.current?.();
+    container.addEventListener('paste', handlePasteEvent, true);
+    removePasteListenerRef.current = () => container.removeEventListener('paste', handlePasteEvent, true);
 
     // Allow certain key combinations to bubble up to window-level handlers
     // This enables global shortcuts like Cmd/Ctrl+1-9 for project switching
@@ -226,8 +263,7 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       // Handle CTRL+SHIFT+V paste (Linux only - alternative to CTRL+V)
       const platformIsLinuxPasteShortcut = event.ctrlKey && event.shiftKey && (event.key === 'V' || event.key === 'v') && event.type === 'keydown';
       if (platformIsLinuxPasteShortcut && isLinux) {
-        event.preventDefault(); // Prevent browser's default paste behavior
-        handlePasteFromClipboard();
+        // No preventDefault: the browser's paste event follows (handlePasteEvent)
         return false; // Prevent xterm from sending literal ^V
       }
 
@@ -246,8 +282,7 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       // NOTE: Only trigger when shiftKey is NOT pressed (Linux CTRL+SHIFT+V handled above)
       const isPasteShortcut = event.ctrlKey && !event.shiftKey && (event.key === 'v' || event.key === 'V') && event.type === 'keydown';
       if (isPasteShortcut && (isWindows || isLinux)) {
-        event.preventDefault(); // Prevent browser's default paste behavior
-        handlePasteFromClipboard();
+        // No preventDefault: the browser's paste event follows (handlePasteEvent)
         return false; // Prevent xterm from sending literal ^V
       }
 
@@ -312,7 +347,11 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
         debugLog(`[useXterm] Skipping buffer replay for Claude-mode terminal on project switch remount: ${terminalId}`);
       } else {
         debugLog(`[useXterm] Replaying buffered output for terminal: ${terminalId}, buffer size: ${bufferedOutput.length} chars`);
-        xterm.write(bufferedOutput);
+        // The saved output is cut wherever it was last saved, which can be inside a link (Claude Code
+        // redraws its status line's PR link all the time) or a styled run: close the link and reset
+        // the style, or everything the resumed session prints would carry them (a link shows as a
+        // dashed underline under all text)
+        xterm.write(bufferedOutput + REPLAY_END_RESET);
         debugLog(`[useXterm] Buffer replay complete and cleared for terminal: ${terminalId}`);
       }
     } else {
@@ -640,6 +679,8 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
       serializeAddonRef.current.dispose();
       serializeAddonRef.current = null;
     }
+    removePasteListenerRef.current?.();
+    removePasteListenerRef.current = null;
     // Note: webLinksAddon is local and will be disposed when xterm.dispose() is called
     if (xtermRef.current) {
       xtermRef.current.dispose();

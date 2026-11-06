@@ -86,6 +86,8 @@ export const IPC_CHANNELS = {
   TERMINAL_CREATE: 'terminal:create',
   TERMINAL_DESTROY: 'terminal:destroy',
   TERMINAL_INPUT: 'terminal:input',
+  TERMINAL_RUNTIME_PATHS: 'terminal:runtimePaths',     // Pasted file paths as the agent windows' shell sees them (WSL: /mnt/c/...)
+  TERMINAL_CLIPBOARD_FILES: 'terminal:clipboardFiles',  // Files copied in a file manager, for a paste that arrived empty (WSLg)
   TERMINAL_RESIZE: 'terminal:resize',
   TERMINAL_INVOKE_CLI: 'terminal:invokeClaude',
   TERMINAL_SET_TITLE: 'terminal:setTitle',  // Renderer -> Main: user renamed terminal
@@ -292,11 +294,30 @@ export const IPC_CHANNELS = {
   LIVE_AGENT_STATUS: 'liveAgent:status',   // main -> renderer: the relay started, stopped or failed
   LIVE_AGENT_MESSAGE: 'liveAgent:message', // main -> renderer: a relay message for one graph
 
+  // Browser drawer (the headless browsers of Claude chats, shown in Workbench)
+  BROWSER_DRAWER_GET_STATE: 'browserDrawer:getState',
+  BROWSER_DRAWER_SUBSCRIBE: 'browserDrawer:subscribe',     // A window's drawer opened: pages are tracked for it
+  BROWSER_DRAWER_UNSUBSCRIBE: 'browserDrawer:unsubscribe', // A window's drawer closed
+  BROWSER_DRAWER_VIEW: 'browserDrawer:view',               // Stream a page (or none) sized to the drawer
+  BROWSER_DRAWER_INPUT: 'browserDrawer:input',             // Mouse, wheel and keys for the viewed page
+  BROWSER_DRAWER_FRAME_DRAWN: 'browserDrawer:frameDrawn',  // The window drew a frame: the next one may come
+  BROWSER_DRAWER_NAVIGATE: 'browserDrawer:navigate',       // Back, forward, reload or an address
+  BROWSER_DRAWER_CLOSE_PAGE: 'browserDrawer:closePage',
+  BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser
+  BROWSER_DRAWER_COLOR_SCHEME: 'browserDrawer:colorScheme', // Workbench's theme, for the chat browsers' pages
+  BROWSER_DRAWER_OPEN_CHAT_BROWSER: 'browserDrawer:openChatBrowser',   // Open a chat's own browser
+  BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser
+  BROWSER_DRAWER_STATE: 'browserDrawer:state',             // main -> renderer: sessions or pages changed
+  BROWSER_DRAWER_FRAME: 'browserDrawer:frame',             // main -> renderer: a frame of the viewed page
+
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check
   MCP_TEST_CONNECTION: 'mcp:testConnection',     // Full MCP protocol test
   MCP_GET_AVAILABILITY: 'mcp:getAvailability',   // Whether connectors' servers can start (checks unknown ones)
   MCP_AVAILABILITY_CHANGED: 'mcp:availabilityChanged', // Event: a connector's availability changed (main -> renderer)
+  MCP_DETECT_BROWSER_PROFILES: 'mcp:detectBrowserProfiles', // Local browser profiles for the Playwright connector
+  MCP_INSTALL_BROWSER: 'mcp:installBrowser',     // Open a terminal that downloads a browser for Playwright
+  MCP_BROWSER_PROFILES_CHANGED: 'mcp:browserProfilesChanged', // Event: a started download finished and the list changed (main -> renderer)
 
 
   // Spell check

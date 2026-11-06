@@ -616,6 +616,14 @@ function isWorkspaceDir(cwd: string, workspace: Workspace): boolean {
   return matches(cwd) || (host !== cwd && matches(host))
 }
 
+/** Whether the workspace is one of its project's task worktrees (`.workbench/worktrees/tasks/<task>`).
+ *  The headless sessions run there are the task's own run, shown in a window that follows or
+ *  resumes the task (a resumed session keeps the headless entrypoint of its first record). */
+function isTaskWorktree(workspace: Workspace): boolean {
+  const tasksDir = path.join(path.dirname(workspace.flowDir), 'worktrees', 'tasks') + path.sep
+  return foldPathCase(workspace.path).startsWith(foldPathCase(tasksDir))
+}
+
 function scanForActiveSessions(workspace: Workspace) {
   // Forget sessions that have stayed closed past the active window; if the
   // agent works in one again, the scan below picks it up again
@@ -670,9 +678,9 @@ function scanForActiveSessions(workspace: Workspace) {
           // been quiet for a moment (until then it waits). A headless run writes its
           // name and queue entries just before the record that says how it was run.
           if ((cwdSearched.get(filePath) ?? 0) < stat.size || Date.now() - stat.mtimeMs < CWDLESS_SESSION_WAIT_MS) continue
-        } else if (!isWorkspaceDir(cwd, workspace) || headlessSessions.has(filePath)) {
+        } else if (!isWorkspaceDir(cwd, workspace) || (headlessSessions.has(filePath) && !isTaskWorktree(workspace))) {
           // Run elsewhere, or a headless run here (a Claude page chat, `claude -p`):
-          // never an agent window's session
+          // never an agent window's session, except a task's run in its worktree
           continue
         }
         if (hasActivitySinceDisposed(filePath)) found.push({ sessionId, filePath, newestMtime })

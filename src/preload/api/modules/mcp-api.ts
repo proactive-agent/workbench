@@ -8,6 +8,7 @@ import { ipcRenderer } from 'electron';
 import { IPC_CHANNELS } from '../../../shared/constants/ipc';
 import type { IPCResult } from '../../../shared/types/common';
 import type { CustomMcpServer, McpAvailability, McpHealthCheckResult, McpTestConnectionResult } from '../../../shared/types/project';
+import type { BrowserProfile, DownloadableBrowser } from '../../../shared/types/browser-profiles';
 
 export interface McpAPI {
   /** Quick health check for a custom MCP server */
@@ -18,6 +19,15 @@ export interface McpAPI {
   getMcpAvailability: (ids: string[]) => Promise<IPCResult<Record<string, McpAvailability>>>;
   /** Called when a connector's availability changes */
   onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => () => void;
+  /** Local browser profiles for the Playwright connector (found when the app started) */
+  detectBrowserProfiles: () => Promise<IPCResult<BrowserProfile[]>>;
+  /**
+   * Open a terminal that downloads a browser for Playwright. `alreadyRunning`: a download of it
+   * started earlier still counts as running, so no terminal was opened
+   */
+  installPlaywrightBrowser: (browser: DownloadableBrowser) => Promise<IPCResult<{ command: string; alreadyRunning?: boolean }>>;
+  /** Called with the new list when a started download finished */
+  onBrowserProfilesChanged: (callback: (profiles: BrowserProfile[]) => void) => () => void;
 }
 
 export function createMcpAPI(): McpAPI {
@@ -30,6 +40,20 @@ export function createMcpAPI(): McpAPI {
 
     getMcpAvailability: (ids: string[]) =>
       ipcRenderer.invoke(IPC_CHANNELS.MCP_GET_AVAILABILITY, ids),
+
+    detectBrowserProfiles: () =>
+      ipcRenderer.invoke(IPC_CHANNELS.MCP_DETECT_BROWSER_PROFILES),
+
+    installPlaywrightBrowser: (browser: DownloadableBrowser) =>
+      ipcRenderer.invoke(IPC_CHANNELS.MCP_INSTALL_BROWSER, browser),
+
+    onBrowserProfilesChanged: (callback: (profiles: BrowserProfile[]) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, profiles: BrowserProfile[]) => callback(profiles);
+      ipcRenderer.on(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, listener);
+      return () => {
+        ipcRenderer.removeListener(IPC_CHANNELS.MCP_BROWSER_PROFILES_CHANGED, listener);
+      };
+    },
 
     onMcpAvailabilityChanged: (callback: (id: string, availability: McpAvailability) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, id: string, availability: McpAvailability) => callback(id, availability);

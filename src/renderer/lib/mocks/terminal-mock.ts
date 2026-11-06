@@ -17,6 +17,12 @@ export const terminalMock = {
     console.warn('[Browser Mock] sendTerminalInput called');
   },
 
+  getPathForFile: () => '',
+
+  toTerminalRuntimePaths: async (paths: string[]) => paths,
+
+  readClipboardFilePaths: async () => [],
+
   resizeTerminal: async () => {
     console.warn('[Browser Mock] resizeTerminal called');
     return { success: true, data: { success: true } };

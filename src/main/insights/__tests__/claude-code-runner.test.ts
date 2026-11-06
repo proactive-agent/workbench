@@ -100,10 +100,13 @@ import {
   INSIGHTS_WEB_TOOLS,
   INSIGHTS_GRAPHIFY_COMMANDS,
   INSIGHTS_TASK_TOOLS_RULE,
+  INSIGHTS_SESSION_MESSAGING_TOOLS,
   INSIGHTS_GITHUB_RULES,
   INSIGHTS_MEMORY_RULE,
   INSIGHTS_GITLAB_RULES,
   resetTaskToolsBridgeForTests,
+  guardChatPlaywright,
+  CHAT_BROWSER_RELAY_ENV,
   supportsSystemPromptSnapshot,
   toClaudeModel,
   type InsightsStreamEvent,
@@ -251,6 +254,41 @@ describe('runInsights', () => {
     expect(systemPrompt).toContain('__TASK_SUGGESTION__');
   });
 
+  it('lets Claude message other running sessions with the task tools when sessions may message tasks', async () => {
+    setRun(conversation);
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    await (await run({ taskTools, sessionMessages: true, taskMessaging: true })).promise;
+    const { args, systemPrompt } = record();
+
+    expect(args[args.indexOf('--tools') + 1].split(',')).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+    expect(args.slice(args.indexOf('--allowedTools') + 1)).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+    expect(systemPrompt).toContain('use SendMessage with a name from ListAgents');
+    expect(systemPrompt).toContain('use message_task');
+  });
+
+  it('offers message_task only while Task messaging is on', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    setRun(conversation);
+    await (await run({ taskTools, taskMessaging: false })).promise;
+    expect(record().systemPrompt).not.toContain('use message_task');
+    expect(record().systemPrompt).toContain('Task messaging is off');
+    setRun(conversation);
+    await (await run({ taskTools, taskMessaging: true })).promise;
+    expect(record().systemPrompt).toContain('use message_task: a running task reads it at its next step');
+  });
+
+  it('keeps ListAgents and SendMessage out without the task tools or with session messages off', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    for (const overrides of [{ sessionMessages: true }, { taskTools, sessionMessages: false }]) {
+      setRun(conversation);
+      await (await run(overrides)).promise;
+      const { args, systemPrompt } = record();
+      for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(args).not.toContain(tool);
+      expect(args[args.indexOf('--tools') + 1]).not.toContain('SendMessage');
+      expect(systemPrompt).not.toContain('ListAgents');
+    }
+  });
+
   it("gives the CLI the chat's MCP servers next to the task tools", async () => {
     setRun(conversation);
     const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
@@ -265,6 +303,24 @@ describe('runInsights', () => {
     expect(allowed).toContain(INSIGHTS_TASK_TOOLS_RULE);
   });
 
+  it("runs the chat's Playwright through the guard, in the turn's own folder, which the chat may read", async () => {
+    setRun(conversation);
+    const playwright = { type: 'stdio' as const, command: 'npx', args: ['-y', '@playwright/mcp@0.0.83', '--browser', 'chromium', '--isolated', '--sandbox'] };
+    await (await run({ mcpServers: { playwright } })).promise;
+    const { args, mcpConfig } = record();
+
+    const guarded = mcpConfig.mcpServers.playwright;
+    const [script, dir, ...server] = guarded.args as string[];
+    expect(guarded).toMatchObject({ type: 'stdio', command: process.execPath, env: { ELECTRON_RUN_AS_NODE: '1' } });
+    expect(script).toMatch(/playwright-guard\.cjs$/);
+    expect(dir).toMatch(/workbench-insights-[^/\\]+[/\\]playwright$/);
+    // The server's own files go to that folder too, linked with paths the chat can read
+    expect(server).toEqual([...['npx', ...playwright.args], '--output-dir', dir, '--file-paths', 'absolute']);
+    expect(args.slice(args.indexOf('--add-dir'), args.indexOf('--add-dir') + 2)).toEqual(['--add-dir', dir]);
+    expect((args as string[]).filter((arg) => arg === '--add-dir')).toHaveLength(1);
+    expect(args[args.indexOf('--disallowedTools') + 1]).toBe('mcp__playwright__browser_run_code_unsafe');
+  });
+
   it("gives the CLI the chat's MCP servers without the task tools", async () => {
     setRun(conversation);
     const context7 = { type: 'stdio' as const, command: 'npx', args: ['-y', '@upstash/context7-mcp@latest'] };
@@ -277,6 +333,9 @@ describe('runInsights', () => {
     expect(args).toContain('mcp__context7');
     expect(args).not.toContain(INSIGHTS_TASK_TOOLS_RULE);
     expect(mcpToolTimeout).toBeNull();
+    // No Playwright: nothing else to read, nothing to leave out
+    expect(args).not.toContain('--add-dir');
+    expect(args).not.toContain('--disallowedTools');
   });
 
   it("lets Claude use gh's and glab's read-only commands, and no other command, when their buttons are on", async () => {
@@ -561,6 +620,34 @@ describe('runInsights', () => {
       setRun(conversation);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig).toEqual({ mcpServers: { 'workbench': mcpServer } });
+    });
+
+    it("gives the chat browser's guard the Windows relay under NAT networking, and no relay with mirrored networking", async () => {
+      const playwright = {
+        type: 'stdio' as const,
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1'],
+        env: { WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp', WORKBENCH_CHAT_BROWSER_TOKEN: 'secret' },
+      };
+      const turnDir = mkdtempSync(join(tmpdir(), 'guard-relay-test-'));
+      try {
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const nat = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { command: string; env: Record<string, string> };
+        // Run by the distribution's node; the relay is Workbench's executable (its Linux path) with a Windows-side script
+        expect(nat.command).toBe('node');
+        const relay = JSON.parse(nat.env[CHAT_BROWSER_RELAY_ENV]);
+        expect(relay.command).toBe(`/runtime${process.execPath.replace(/\\/g, '/')}`);
+        expect(relay.script).toBe(join(turnDir, 'task-tools-bridge.cjs'));
+        expect(readFileSync(relay.script, 'utf-8')).toContain('WORKBENCH_TASK_TOOLS_TOKEN');
+        expect(nat.env.WORKBENCH_CHAT_BROWSER_TOKEN).toBe('secret');
+
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const mirrored = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
+        expect(mirrored.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(mirrored.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
+      } finally {
+        rmSync(turnDir, { recursive: true, force: true });
+      }
     });
 
     it("reports a missing Claude Code CLI when the distribution has none", async () => {

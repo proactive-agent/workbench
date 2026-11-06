@@ -91,6 +91,12 @@ export interface InsightsPromptOptions {
   mcpServers?: string[];
   /** Self-improve is on: Claude may save project memories, and only those */
   memory?: boolean;
+  /** ListAgents and SendMessage, to reach other running Claude Code sessions (with the task tools) */
+  sessionMessaging?: boolean;
+  /** Task messaging is on: message_task delivers (with the task tools) */
+  taskMessaging?: boolean;
+  /** Playwright works in the chat's own browser, which the user sees and uses in the browser drawer */
+  sharedBrowser?: boolean;
 }
 
 /** The suggestion line's format, as Claude must write it */
@@ -139,6 +145,9 @@ function toolsPrompt(options: InsightsPromptOptions): string {
     ...(servers.length > 0
       ? [`- MCP servers the user turned on for this chat: ${servers.join(', ')} (tools named mcp__<server>__<tool>). Use them when they fit the question.`]
       : []),
+    ...(options.sharedBrowser && servers.includes('playwright')
+      ? ["- Playwright works in this chat's own browser, which the user watches and uses too, in Workbench's browser drawer. It stays open between messages with its tabs and sign-ins, and the user may have opened a page or signed in for you: look at its tabs (browser_tabs) before navigating away, and leave it open. When a step needs the user (a sign-in, a multi-factor code, a captcha), ask them to do it in the drawer and tell you when they are done."]
+      : []),
     '- WebSearch and WebFetch for the web: documentation, release notes, issues and anything else outside the project.',
     "- Files attached to the current message are part of it. Earlier messages note [User previously attached N file(s)]: those files aren't visible any more, so ask for them again when you need them.",
   ].join('\n');
@@ -153,6 +162,7 @@ You can manage the project's tasks with the Workbench task tools (mcp__workbench
 - Act on what the user asks for, and tell them what you did (with the task ids). Look tasks up with list_tasks or get_task instead of guessing ids or states.
 - Delete tasks, retry them (it discards their changes) or merge pull requests only when the user asked for exactly that. When moving a task with a worktree to Done, ask whether to keep or delete the worktree.
 - When a tool fails, explain why instead of trying something else the user didn't ask for.
+${options.taskMessaging ? '- To tell a task something it should take into account while it works, use message_task: a running task reads it at its next step, any other task when it next runs.' : '- Task messaging is off in Settings > Agents, so message_task can\'t reach tasks: to change what a task does, use update_task or request_changes.'}${options.sessionMessaging ? ' To reach another running Claude Code session, such as one of the user\'s agent windows, use SendMessage with a name from ListAgents (tasks are the wb-… sessions, but use message_task for them). Messages are plain text, and replies can\'t reach this chat.' : ''}
 - When you notice something worth doing that the user did not ask for (a bug you came across, a feature, a docs update, a refactor), don't create it. Suggest it instead so the user decides.
 
 ${SUGGESTING_TASKS}`;
