@@ -107,7 +107,7 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(chrome())).toBe(true);
   });
 
-  describe.skipIf(process.platform !== 'linux' || !existsSync('/bin/sleep'))('on Linux, with processes named like browsers', () => {
+  describe.skipIf(process.platform !== 'linux' || !existsSync('/bin/sleep'))('on Linux, with processes named like browsers', { timeout: 20_000 }, () => {
     const children: ChildProcess[] = [];
     /** A process whose name (comm) is `name`: sleep started through a link with that name */
     async function processNamed(name: string): Promise<number> {
@@ -115,13 +115,14 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
       await symlink('/bin/sleep', link);
       const child = spawn(link, ['30'], { stdio: 'ignore' });
       children.push(child);
-      // Until exec has replaced the forked node's name
-      for (let i = 0; i < 100; i++) {
+      // Until exec has replaced the forked node's name (slow on a busy CI runner: a second wasn't
+      // always enough), failing here rather than in the assertion that needs it
+      for (let i = 0; i < 1000; i++) {
         const comm = await readFile(`/proc/${child.pid}/comm`, 'utf-8').catch(() => '');
-        if (comm.trim() === name.slice(0, 15)) break;
+        if (comm.trim() === name.slice(0, 15)) return child.pid!;
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      return child.pid!;
+      throw new Error(`process ${child.pid} never ran as ${name}`);
     }
     afterEach(() => {
       for (const child of children.splice(0)) child.kill();
