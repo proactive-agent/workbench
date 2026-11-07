@@ -435,6 +435,13 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
   leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
   It attaches to the chat's own browser (see Chat browsers above); in WSL with interop off each turn launches its own.
+- **Clawd button** (`InsightsModelConfig.agentMode`) — the chat's turns get what an agent window has instead: no
+  `--tools` or `--strict-mcp-config` (every tool, the user's own MCP servers too) and the agent windows' permissions
+  (`--dangerously-skip-permissions` when Settings skips them, else `--permission-mode auto`, since a headless turn can't
+  ask). Off again, the same session continues read-only. With it on, the composer's `/` menu lists Claude Code's slash
+  commands and skills (`insights-slash-commands.ts`; asked once per project with the control protocol's `initialize`
+  request, `insights/chat-commands.ts`, no model call). A chat with a session also shows a Clawd button under the browser
+  button that opens its session in an agent window (`claude --resume` on its account, `openProjectSession`).
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,

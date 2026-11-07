@@ -64,7 +64,9 @@ import {
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
+import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
+import { useSlashCommandMenu } from './insights-slash-commands';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -102,6 +104,8 @@ export function Insights({ projectId }: InsightsProps) {
   const isLoadingSessions = useInsightsStore((state) => state.isLoadingSessions);
 
   const [inputValue, setInputValue] = useState('');
+  // Where the caret is in the composer (the `/` menu follows it)
+  const [caret, setCaret] = useState(0);
   const [creatingTask, setCreatingTask] = useState<Set<string>>(new Set());
   const [taskCreated, setTaskCreated] = useState<Set<string>>(new Set());
   const [showSidebar, setShowSidebar] = useState(true);
@@ -173,6 +177,19 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
+
+  // The composer's `/` menu: Claude Code's slash commands and skills, with the Clawd button on
+  const slashMenu = useSlashCommandMenu({
+    projectId,
+    enabled: effectiveModelConfig?.agentMode === true,
+    value: inputValue,
+    caret,
+    onInsert: (value, nextCaret) => {
+      setInputValue(value);
+      setCaret(nextCaret);
+      requestAnimationFrame(() => textareaRef.current?.setSelectionRange(nextCaret, nextCaret));
+    },
+  });
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
   const replyingIds = replyingSessionIds({ session, status, backgroundRuns });
@@ -303,6 +320,8 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // The open `/` menu takes the arrows, Enter, Tab and Escape
+    if (slashMenu.handleKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
@@ -574,6 +593,16 @@ export function Insights({ projectId }: InsightsProps) {
           'transition-shadow duration-150 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--input)]'
         )}
       >
+        {slashMenu.open && (
+          <InsightsSlashMenu
+            items={slashMenu.items}
+            activeIndex={slashMenu.activeIndex}
+            loading={slashMenu.loading}
+            error={slashMenu.error}
+            onSelect={slashMenu.select}
+            onHover={slashMenu.setActiveIndex}
+          />
+        )}
         {/* Image preview strip */}
         {pendingImages.length > 0 && (
           <div className="flex flex-wrap items-center gap-3 px-4 pt-4">
@@ -616,7 +645,11 @@ export function Insights({ projectId }: InsightsProps) {
           ref={textareaRef}
           rows={1}
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           placeholder={isEmpty ? t('insights.placeholder') : t('insights.replyPlaceholder')}

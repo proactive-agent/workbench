@@ -84,6 +84,7 @@ export const insightsMock = {
     success: false,
     error: 'Not available in browser mock'
   }),
+  listInsightsCommands: async (_projectId: string) => ({ success: true, data: [] }),
   updateInsightsModelConfig: async (_projectId: string, _sessionId: string, _modelConfig: unknown) => {
     console.warn('[Browser Mock] updateInsightsModelConfig called');
     return { success: true };

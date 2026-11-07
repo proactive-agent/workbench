@@ -212,6 +212,7 @@ export const IPC_CHANNELS = {
   INSIGHTS_RENAME_SESSION: 'insights:renameSession',
   INSIGHTS_UPDATE_MODEL_CONFIG: 'insights:updateModelConfig',
   INSIGHTS_GET_ATTACHMENT: 'insights:getAttachment',
+  INSIGHTS_LIST_COMMANDS: 'insights:listCommands',  // Claude Code's slash commands and skills in a project
 
   // Insights events (main -> renderer)
   INSIGHTS_STREAM_CHUNK: 'insights:streamChunk',

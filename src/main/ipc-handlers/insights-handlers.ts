@@ -12,6 +12,7 @@ import type {
   InsightsSession,
   InsightsSessionSummary,
   InsightsModelConfig,
+  ChatSlashCommand,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -19,6 +20,7 @@ import type {
 import { projectStore } from "../project-store";
 import { insightsService } from "../insights-service";
 import { safeSendToRenderer } from "./utils";
+import { listChatCommands } from "../insights/chat-commands";
 import type { ThinkingLevel } from "../../shared/types/settings";
 
 /** Default model for Insights turns (Claude Code model alias) */
@@ -425,6 +427,22 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
       }
       const dataUrl = insightsService.readAttachment(project.path, relativePath, mimeType);
       return dataUrl ? { success: true, data: dataUrl } : { success: false, error: "Attachment not found" };
+    }
+  );
+
+  // Claude Code's slash commands and skills in the project (the chat's `/` menu)
+  ipcMain.handle(
+    IPC_CHANNELS.INSIGHTS_LIST_COMMANDS,
+    async (_, projectId: string): Promise<IPCResult<ChatSlashCommand[]>> => {
+      const project = projectStore.getProject(projectId);
+      if (!project) {
+        return { success: false, error: "Project not found" };
+      }
+      try {
+        return { success: true, data: await listChatCommands(project.path, project.settings?.claudeProfileId) };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : "Failed to list Claude Code's commands" };
+      }
     }
   );
 

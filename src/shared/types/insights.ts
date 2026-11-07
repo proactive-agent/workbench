@@ -38,6 +38,13 @@ export interface InsightsModelConfig {
   playwrightBrowser?: PlaywrightBrowserChoice | null;
 }
 
+/** A slash command or skill Claude Code offers in the project (the chat's `/` menu) */
+export interface ChatSlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
 type InsightsChatRole = 'user' | 'assistant';
 
 // Tool usage record for showing what tools the AI used

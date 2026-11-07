@@ -5,6 +5,7 @@ import type {
   InsightsChatStatus,
   InsightsStreamChunk,
   InsightsModelConfig,
+  ChatSlashCommand,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -40,6 +41,7 @@ export interface InsightsAPI {
   renameInsightsSession: (projectId: string, sessionId: string, newTitle: string) => Promise<IPCResult>;
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig) => Promise<IPCResult>;
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
+  listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
 
   // Event Listeners
   onInsightsStreamChunk: (
@@ -119,6 +121,9 @@ export const createInsightsAPI = (): InsightsAPI => ({
 
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string): Promise<IPCResult<string>> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_GET_ATTACHMENT, projectId, relativePath, mimeType),
+
+  listInsightsCommands: (projectId: string): Promise<IPCResult<ChatSlashCommand[]>> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_LIST_COMMANDS, projectId),
 
   // Event Listeners
   onInsightsStreamChunk: (

@@ -244,6 +244,11 @@
       "replying": "Wait for the reply to finish",
       "noRoom": "This project has no room for another agent window"
     },
+    "slashCommands": {
+      "label": "Slash commands and skills",
+      "loading": "Loading commands...",
+      "failed": "Couldn't list Claude Code's commands: {{error}}"
+    },
     "cliNotFound": "{{name}} CLI not detected",
     "kanbanTools": {
       "label": "Kanban",

@@ -91,7 +91,8 @@ import type {
   InsightsSessionSummary,
   InsightsChatStatus,
   InsightsStreamChunk,
-  InsightsModelConfig
+  InsightsModelConfig,
+  ChatSlashCommand
 } from './insights';
 import type { APIProfile, ProfilesFile, TestConnectionResult, DiscoverModelsResult } from './profile';
 
@@ -422,6 +423,8 @@ export interface ElectronAPI {
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig) => Promise<IPCResult>;
   /** Full-size image stored for an Insights message, as a data URL */
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
+  /** Claude Code's slash commands and skills in the project (the chat's `/` menu with the Clawd button) */
+  listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
 
   // Insights event listeners
   onInsightsStreamChunk: (
