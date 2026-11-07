@@ -5,8 +5,8 @@
  * Supports all profile fields including optional model name mappings.
  *
  * Features:
- * - Required fields: Name, Base URL, API Key
- * - Optional model fields: Default, Haiku, Sonnet, Opus
+ * - Required fields: Name, Base URL, API Key (optional for http://localhost, any port), Default model
+ * - Haiku, Sonnet and Opus models follow the default model until set to another one
  * - Form validation with error display
  * - Save button triggers store action (create or update)
  * - Close button cancels without saving
@@ -33,6 +33,7 @@ import { ModelSearchableSelect } from './ModelSearchableSelect';
 import { isValidUrl, isValidApiKey } from '../../lib/profile-utils';
 import type { APIProfile, ProfileFormData, } from '@shared/types/profile';
 import { maskApiKey } from '../../lib/profile-utils';
+import { isApiKeyOptional } from '../../../shared/utils/api-profile-key';
 import { API_PROVIDER_PRESETS } from '../../../shared/constants';
 
 interface ProfileEditDialogProps {
@@ -78,6 +79,10 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
   const [nameError, setNameError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [keyError, setKeyError] = useState<string | null>(null);
+  const [modelError, setModelError] = useState<string | null>(null);
+
+  // A local endpoint (http://localhost, any port) may run without an API key
+  const keyOptional = isApiKeyOptional(baseUrl);
 
   // AbortController ref for test connection cleanup
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -137,6 +142,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
       setNameError(null);
       setUrlError(null);
       setKeyError(null);
+      setModelError(null);
     } else {
       // Clear test result display when dialog closes
       setShowTestResult(false);
@@ -176,19 +182,32 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
       setUrlError(null);
     }
 
-    // API Key validation (only in create mode or when changing key in edit mode)
+    // API Key validation (only in create mode or when changing key in edit mode); a local
+    // endpoint takes any key or none
     if (!isEditMode || isChangingApiKey) {
       if (!apiKey.trim()) {
-        setKeyError(t('settings:apiProfiles.validation.apiKeyRequired'));
-        isValid = false;
-      } else if (!isValidApiKey(apiKey)) {
+        setKeyError(keyOptional ? null : t('settings:apiProfiles.validation.apiKeyRequired'));
+        if (!keyOptional) isValid = false;
+      } else if (!keyOptional && !isValidApiKey(apiKey)) {
         setKeyError(t('settings:apiProfiles.validation.apiKeyInvalid'));
         isValid = false;
       } else {
         setKeyError(null);
       }
+    } else if (!profile?.apiKey && !keyOptional) {
+      // A profile saved without a key that no longer points at a local endpoint
+      setKeyError(t('settings:apiProfiles.validation.apiKeyRequired'));
+      isValid = false;
     } else {
       setKeyError(null);
+    }
+
+    // Default model validation
+    if (!defaultModel.trim()) {
+      setModelError(t('settings:apiProfiles.validation.defaultModelRequired'));
+      isValid = false;
+    } else {
+      setModelError(null);
     }
 
     return isValid;
@@ -206,7 +225,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
       setUrlError(t('settings:apiProfiles.validation.baseUrlRequired'));
       return;
     }
-    if (!apiKeyForTest.trim()) {
+    if (!apiKeyForTest.trim() && !keyOptional) {
       setKeyError(t('settings:apiProfiles.validation.apiKeyRequired'));
       return;
     }
@@ -222,12 +241,25 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
     if (!name.trim() || !baseUrl.trim()) {
       return false;
     }
+    // A local endpoint may run without a key
+    if (keyOptional) return true;
     // In create mode or when changing key, need apiKey
     if (!isEditMode || isChangingApiKey) {
       return apiKey.trim().length > 0;
     }
-    // In edit mode without changing key, existing profile has apiKey
-    return true;
+    // In edit mode without changing key, the existing profile's key
+    return !!profile?.apiKey;
+  };
+
+  // Haiku, Sonnet and Opus follow the default model while empty or still set to it
+  const changeDefaultModel = (value: string) => {
+    const previous = defaultModel;
+    const follow = (current: string) => (!current.trim() || current === previous ? value : current);
+    setHaikuModel(follow);
+    setSonnetModel(follow);
+    setOpusModel(follow);
+    setDefaultModel(value);
+    if (value.trim()) setModelError(null);
   };
 
   // Handle save
@@ -244,15 +276,12 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
         baseUrl: baseUrl.trim(),
         // Only update API key if user is changing it
         ...(isChangingApiKey && { apiKey: apiKey.trim() }),
-        // Update models if provided
-        ...(defaultModel || haikuModel || sonnetModel || opusModel ? {
-          models: {
-            ...(defaultModel && { default: defaultModel.trim() }),
-            ...(haikuModel && { haiku: haikuModel.trim() }),
-            ...(sonnetModel && { sonnet: sonnetModel.trim() }),
-            ...(opusModel && { opus: opusModel.trim() })
-          }
-        } : { models: undefined })
+        models: {
+          default: defaultModel.trim(),
+          ...(haikuModel.trim() && { haiku: haikuModel.trim() }),
+          ...(sonnetModel.trim() && { sonnet: sonnetModel.trim() }),
+          ...(opusModel.trim() && { opus: opusModel.trim() })
+        }
       };
       const success = await updateProfile(updatedProfile);
       if (success) {
@@ -264,17 +293,14 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
       const profileData: ProfileFormData = {
         name: name.trim(),
         baseUrl: baseUrl.trim(),
-        apiKey: apiKey.trim()
+        apiKey: apiKey.trim(),
+        models: {
+          default: defaultModel.trim(),
+          ...(haikuModel.trim() && { haiku: haikuModel.trim() }),
+          ...(sonnetModel.trim() && { sonnet: sonnetModel.trim() }),
+          ...(opusModel.trim() && { opus: opusModel.trim() })
+        }
       };
-
-      // Add optional models if provided
-      if (defaultModel || haikuModel || sonnetModel || opusModel) {
-        profileData.models = {};
-        if (defaultModel) profileData.models.default = defaultModel.trim();
-        if (haikuModel) profileData.models.haiku = haikuModel.trim();
-        if (sonnetModel) profileData.models.sonnet = sonnetModel.trim();
-        if (opusModel) profileData.models.opus = opusModel.trim();
-      }
 
       const success = await saveProfile(profileData);
       if (success) {
@@ -365,17 +391,19 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
               </p>
             </div>
 
-            {/* API Key field (required for create, masked in edit mode) */}
+            {/* API Key field (required for create unless the endpoint is local, masked in edit mode) */}
             <div className="space-y-2">
               <Label htmlFor="profile-key">
-                {t('settings:apiProfiles.fields.apiKey')} <span className="text-destructive">*</span>
+                {t('settings:apiProfiles.fields.apiKey')}{' '}
+                {!keyOptional && <span className="text-destructive">*</span>}
               </Label>
               {isEditMode && !isChangingApiKey && profile ? (
                 // Edit mode: show masked API key
                 <div className="flex items-center gap-2">
                   <Input
                     id="profile-key"
-                    value={maskApiKey(profile.apiKey)}
+                    value={profile.apiKey ? maskApiKey(profile.apiKey) : ''}
+                    placeholder={t('settings:apiProfiles.placeholders.apiKeyOptional')}
                     disabled
                     className="flex-1"
                   />
@@ -394,7 +422,11 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                   <Input
                     id="profile-key"
                     type="password"
-                    placeholder={t('settings:apiProfiles.placeholders.apiKey')}
+                    placeholder={
+                      keyOptional
+                        ? t('settings:apiProfiles.placeholders.apiKeyOptional')
+                        : t('settings:apiProfiles.placeholders.apiKey')
+                    }
                     value={apiKey}
                     onChange={(e) => setApiKey(e.target.value)}
                     className={keyError ? 'border-destructive' : ''}
@@ -453,7 +485,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
             </div>
           )}
 
-          {/* Optional model mappings */}
+          {/* Model mappings: the default model is required, the others follow it */}
           <div className="space-y-3 pt-4 border-t border-settings-divider">
             <div className="space-y-1">
               <h3 className="text-sm font-medium text-foreground">{t('settings:apiProfiles.models.title')}</h3>
@@ -465,15 +497,17 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor="model-default">
-                  {t('settings:apiProfiles.models.defaultLabel')}
+                  {t('settings:apiProfiles.models.defaultLabel')} <span className="text-destructive">*</span>
                 </Label>
                 <ModelSearchableSelect
                   value={defaultModel}
-                  onChange={setDefaultModel}
+                  id="model-default"
+                  onChange={changeDefaultModel}
                   placeholder={t('settings:apiProfiles.models.defaultPlaceholder')}
                   baseUrl={baseUrl}
                   apiKey={isEditMode && !isChangingApiKey && profile ? profile.apiKey : apiKey}
                 />
+                {modelError && <p className="text-sm text-destructive">{modelError}</p>}
               </div>
 
               <div className="space-y-2">
@@ -482,6 +516,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                 </Label>
                 <ModelSearchableSelect
                   value={haikuModel}
+                  id="model-haiku"
                   onChange={setHaikuModel}
                   placeholder={t('settings:apiProfiles.models.haikuPlaceholder')}
                   baseUrl={baseUrl}
@@ -495,6 +530,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                 </Label>
                 <ModelSearchableSelect
                   value={sonnetModel}
+                  id="model-sonnet"
                   onChange={setSonnetModel}
                   placeholder={t('settings:apiProfiles.models.sonnetPlaceholder')}
                   baseUrl={baseUrl}
@@ -508,6 +544,7 @@ export function ProfileEditDialog({ open, onOpenChange, onSaved, profile }: Prof
                 </Label>
                 <ModelSearchableSelect
                   value={opusModel}
+                  id="model-opus"
                   onChange={setOpusModel}
                   placeholder={t('settings:apiProfiles.models.opusPlaceholder')}
                   baseUrl={baseUrl}

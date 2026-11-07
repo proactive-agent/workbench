@@ -12,6 +12,7 @@
 
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
+import { isApiKeyOptional } from '../../shared/utils/api-profile-key';
 import type { IPCResult } from '../../shared/types';
 import type { APIProfile, ProfileFormData, ProfilesFile, TestConnectionResult, DiscoverModelsResult } from '@shared/types/profile';
 import {
@@ -204,7 +205,7 @@ export function registerProfileHandlers(): void {
           };
         }
 
-        if (!apiKey || apiKey.trim() === '') {
+        if ((!apiKey || apiKey.trim() === '') && !isApiKeyOptional(baseUrl)) {
           clearTimeout(timeoutId);
           activeTestConnections.delete(requestId);
           return {
@@ -290,7 +291,7 @@ export function registerProfileHandlers(): void {
           };
         }
 
-        if (!apiKey || apiKey.trim() === '') {
+        if ((!apiKey || apiKey.trim() === '') && !isApiKeyOptional(baseUrl)) {
           clearTimeout(timeoutId);
           activeDiscoverModelsRequests.delete(requestId);
           return {

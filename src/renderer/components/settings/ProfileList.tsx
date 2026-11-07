@@ -117,7 +117,7 @@ export function ProfileList({ onProfileSaved }: ProfileListProps) {
               <span className="block truncate" title={profile.baseUrl}>
                 {[
                   getHostFromUrl(profile.baseUrl),
-                  maskApiKey(profile.apiKey),
+                  profile.apiKey ? maskApiKey(profile.apiKey) : null,
                   customModels.length > 0
                     ? t('settings:apiProfiles.customModels', { models: customModels.join(', ') })
                     : null

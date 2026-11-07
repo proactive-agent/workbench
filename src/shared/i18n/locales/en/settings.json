@@ -78,7 +78,8 @@
       "name": "My Custom API",
       "preset": "Choose a provider preset",
       "baseUrl": "https://api.anthropic.com",
-      "apiKey": "sk-ant-..."
+      "apiKey": "sk-ant-...",
+      "apiKeyOptional": "Optional for localhost"
     },
     "hints": {
       "preset": "Presets fill the base URL; you still need to paste your API key.",
@@ -89,7 +90,8 @@
       "baseUrlRequired": "Base URL is required",
       "baseUrlInvalid": "Invalid URL format (must be http:// or https://)",
       "apiKeyRequired": "API Key is required",
-      "apiKeyInvalid": "Invalid API Key format"
+      "apiKeyInvalid": "Invalid API Key format",
+      "defaultModelRequired": "Default model is required"
     },
     "actions": {
       "save": "Save profile",
@@ -105,8 +107,8 @@
       "failure": "Connection failed"
     },
     "models": {
-      "title": "Model name mappings (optional)",
-      "description": "Select models from your API provider. Leave blank to use defaults.",
+      "title": "Model name mappings",
+      "description": "Select models from your API provider. Haiku, Sonnet and Opus use the default model unless you pick another one.",
       "defaultLabel": "Default model",
       "haikuLabel": "Haiku model",
       "sonnetLabel": "Sonnet model",

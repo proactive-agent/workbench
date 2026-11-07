@@ -337,6 +337,7 @@ describe('ProfileEditDialog - Validation', () => {
     name: 'Test',
     baseUrl: 'https://api.example.com',
     apiKey: 'sk-ant-test123',
+    models: { default: 'claude-sonnet-4-6' },
     createdAt: Date.now(),
     updatedAt: Date.now()
   };
@@ -696,5 +697,74 @@ describe('ProfileEditDialog - Test Connection Feature', () => {
         expect.any(AbortSignal)
       );
     });
+  });
+});
+
+describe('ProfileEditDialog - Local endpoints and default model', () => {
+  const mockSaveProfile = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSaveProfile.mockResolvedValue(true);
+    (useSettingsStore as unknown as ReturnType<typeof vi.fn>).mockReturnValue({
+      saveProfile: mockSaveProfile,
+      discoverModels: vi.fn().mockResolvedValue(null),
+      profilesLoading: false,
+      profilesError: null
+    });
+  });
+
+  const fill = (baseUrl: string, apiKey = '') => {
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Local' } });
+    fireEvent.change(screen.getByLabelText(/base url/i), { target: { value: baseUrl } });
+    if (apiKey) fireEvent.change(screen.getByLabelText(/api key/i), { target: { value: apiKey } });
+  };
+
+  it('saves a localhost profile (any port) without an API key', async () => {
+    render(<ProfileEditDialog open={true} onOpenChange={vi.fn()} />);
+    fill('http://localhost:11434');
+    fireEvent.change(screen.getByLabelText(/default model/i), { target: { value: 'qwen3' } });
+    fireEvent.click(screen.getByText(/save profile/i));
+
+    await waitFor(() => {
+      expect(mockSaveProfile).toHaveBeenCalledWith(expect.objectContaining({
+        baseUrl: 'http://localhost:11434',
+        apiKey: ''
+      }));
+    });
+  });
+
+  it('still requires an API key for other endpoints', async () => {
+    render(<ProfileEditDialog open={true} onOpenChange={vi.fn()} />);
+    fill('https://api.example.com');
+    fireEvent.change(screen.getByLabelText(/default model/i), { target: { value: 'claude-sonnet-4-6' } });
+    fireEvent.click(screen.getByText(/save profile/i));
+
+    expect(await screen.findByText('API Key is required')).toBeInTheDocument();
+    expect(mockSaveProfile).not.toHaveBeenCalled();
+  });
+
+  it('requires the default model', async () => {
+    render(<ProfileEditDialog open={true} onOpenChange={vi.fn()} />);
+    fill('http://localhost:8080');
+    fireEvent.click(screen.getByText(/save profile/i));
+
+    expect(await screen.findByText('Default model is required')).toBeInTheDocument();
+    expect(mockSaveProfile).not.toHaveBeenCalled();
+  });
+
+  it('fills Haiku, Sonnet and Opus with the default model until they are changed', () => {
+    render(<ProfileEditDialog open={true} onOpenChange={vi.fn()} />);
+    const defaultInput = screen.getByLabelText(/default model/i);
+    fireEvent.change(defaultInput, { target: { value: 'glm-4.6' } });
+    expect(screen.getByLabelText(/haiku model/i)).toHaveValue('glm-4.6');
+    expect(screen.getByLabelText(/sonnet model/i)).toHaveValue('glm-4.6');
+    expect(screen.getByLabelText(/opus model/i)).toHaveValue('glm-4.6');
+
+    fireEvent.change(screen.getByLabelText(/haiku model/i), { target: { value: 'glm-4.5-air' } });
+    fireEvent.change(defaultInput, { target: { value: 'glm-5' } });
+    expect(screen.getByLabelText(/haiku model/i)).toHaveValue('glm-4.5-air');
+    expect(screen.getByLabelText(/sonnet model/i)).toHaveValue('glm-5');
+    expect(screen.getByLabelText(/opus model/i)).toHaveValue('glm-5');
   });
 });
