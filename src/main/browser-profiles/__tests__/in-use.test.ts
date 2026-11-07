@@ -107,15 +107,17 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(chrome())).toBe(true);
   });
 
-  describe.skipIf(process.platform !== 'linux' || !existsSync('/bin/sleep'))('on Linux, with processes named like browsers', { timeout: 20_000 }, () => {
+  describe.skipIf(process.platform !== 'linux')('on Linux, with processes named like browsers', { timeout: 20_000 }, () => {
     const children: ChildProcess[] = [];
-    /** A process whose name (comm) is `name`: sleep started through a link with that name */
+    /**
+     * A process whose name (comm) is `name`: Node waiting, started through a link with that name.
+     * Not /bin/sleep: Rust coreutils (Ubuntu 26.04, the CI runner) is one binary that picks its
+     * tool by the name it runs as, so it never ran as a browser's name
+     */
     async function processNamed(name: string): Promise<number> {
       const link = path.join(dir, name);
-      await symlink('/bin/sleep', link);
-      // Run as `sleep` (argv[0]) while the process is named after the link: Rust coreutils (Ubuntu
-      // 25.10+) is one binary that picks its tool by argv[0], and exits at once as `chrome`
-      const child = spawn(link, ['30'], { stdio: 'ignore', argv0: 'sleep' });
+      await symlink(process.execPath, link);
+      const child = spawn(link, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
       children.push(child);
       // Until exec has replaced the forked node's name, failing here rather than in the assertion
       // that needs it
