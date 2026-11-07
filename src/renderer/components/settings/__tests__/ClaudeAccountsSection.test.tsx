@@ -7,13 +7,21 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ClaudeProfile, ProfileUsageSummary } from '../../../../shared/types';
 import { ClaudeAccountsSection } from '../ClaudeAccountsSection';
 import { useClaudeAccounts } from '../hooks/useClaudeAccounts';
+import { useClaudeProfileStore } from '../../../stores/claude-profile-store';
+import { useSettingsStore } from '../../../stores/settings-store';
 
 vi.mock('../hooks/useClaudeAccounts', () => ({ useClaudeAccounts: vi.fn() }));
-vi.mock('../DetectedAccountDialog', () => ({ DetectedAccountDialog: () => null }));
+const dialogProps = vi.hoisted(() => ({ current: null as null | { deleteBlockedReason?: string } }));
+vi.mock('../DetectedAccountDialog', () => ({
+  DetectedAccountDialog: (props: { deleteBlockedReason?: string }) => {
+    dialogProps.current = props;
+    return null;
+  },
+}));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
@@ -79,5 +87,39 @@ describe('ClaudeAccountsSection', () => {
     expect(screen.queryByText(/new@example\.com · Session/)).not.toBeInTheDocument();
     // No summary at all: just the email
     expect(screen.getByText('me@work.example')).toBeInTheDocument();
+  });
+
+  it('marks the window\'s account in use while no API profile is in use', () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    renderWith([]);
+
+    expect(screen.getAllByText('claudeAccounts.inUse')).toHaveLength(1);
+  });
+
+  it('marks no Claude account in use while an API profile is in use', () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: 'api-profile' });
+    renderWith([]);
+
+    expect(screen.queryByText('claudeAccounts.inUse')).not.toBeInTheDocument();
+    useSettingsStore.setState({ activeProfileId: null });
+  });
+
+  it('blocks deleting the account in use, not another one', async () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    renderWith([]);
+
+    // Details of an account, from its row's menu (rows in order: personal, work, new)
+    const openDetails = async (row: number) => {
+      fireEvent.pointerDown(screen.getAllByLabelText('claudeAccounts.menu')[row], { button: 0, ctrlKey: false });
+      fireEvent.click(await screen.findByText('claudeAccounts.details'));
+    };
+
+    await openDetails(0);
+    expect(dialogProps.current?.deleteBlockedReason).toBe('claudeAccounts.dialog.deleteInUse');
+    await openDetails(1);
+    expect(dialogProps.current?.deleteBlockedReason).toBeUndefined();
   });
 });

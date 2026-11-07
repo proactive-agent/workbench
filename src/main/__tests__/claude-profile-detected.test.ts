@@ -1,6 +1,6 @@
 /**
  * Accounts found in Claude Code's configuration, synced on every start:
- * - each setup becomes an account (usable, not removable, renamable)
+ * - each setup becomes an account (usable, renamable; deleted on purpose unless it's in use)
  * - accounts added the old way leave the list once a setup is detected
  * - a later start updates its values and keeps its name; a setup that's gone drops its account
  * - a cloud provider setup counts as signed in (Claude Code authenticates it)
@@ -97,5 +97,31 @@ describe('accounts found in Claude Code configuration', () => {
     // With no setup left, the default account comes back until a sign-in adds one
     expect(profiles.some((profile) => profile.detected)).toBe(false);
     expect(profiles.map((profile) => profile.name)).toEqual(['Primary']);
+  });
+
+  it('deletes an account only when it is not the one in use nor the only one, and moves references off it', async () => {
+    const workDir = join(root, 'home', '.claude-work');
+    const awsDir = join(root, 'home', '.claude-aws');
+    mkdirSync(workDir, { recursive: true });
+    mkdirSync(awsDir, { recursive: true });
+    setupsRef.setups = [bedrock(workDir, 'us-east-1'), bedrock(awsDir, 'eu-west-1')];
+
+    const manager = await start();
+    const [work, aws] = manager.getSettings().profiles;
+    expect(manager.setActiveProfile(aws.id)).toBe(true);
+
+    // The account in use can't be deleted
+    expect(manager.detectedAccountDeletionBlocker(aws.id)).toMatch(/in use/);
+    expect(manager.detectedAccountDeletionBlocker(work.id)).toBeNull();
+
+    // Its files gone (account-deletion.ts), it leaves the accounts
+    setupsRef.setups = [bedrock(awsDir, 'eu-west-1')];
+    manager.removeDetectedAccount(work.id);
+    expect(manager.getSettings().profiles.map((profile) => profile.id)).toEqual([aws.id]);
+    expect(manager.getSettings().activeProfileId).toBe(aws.id);
+    expect(manager.redetectAccounts().profiles.map((profile) => profile.id)).toEqual([aws.id]);
+
+    // The only account left can't be deleted
+    expect(manager.detectedAccountDeletionBlocker(aws.id)).not.toBeNull();
   });
 });

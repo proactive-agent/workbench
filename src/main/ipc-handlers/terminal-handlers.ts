@@ -12,6 +12,7 @@ import { keepOpenProjectsOnAccount, projectAccount } from '../project-account';
 import { readSettingsFileAsync } from '../settings-utils';
 import { appLog } from '../app-logger';
 import { createProfileDirectory } from '../claude-profile/profile-utils';
+import { deleteClaudeCodeAccountFiles } from '../claude-profile/account-deletion';
 import { isValidConfigDir } from '../utils/config-path-validator';
 import { getToolInfoAsync } from '../cli-tool-manager';
 import { isDefaultClaudeConfigDir } from '../claude-profile/config-dir-paths';
@@ -28,7 +29,7 @@ import { readClipboardFilePaths } from '../terminal/clipboard-files';
 export function registerTerminalHandlers(
   terminalManager: TerminalManager,
   getMainWindow: () => BrowserWindow | null,
-  agentManager?: Pick<AgentManager, 'isRunning' | 'getRunSession'>
+  agentManager?: Pick<AgentManager, 'isRunning' | 'getRunSession' | 'getRunningTasksByProfile'>
 ): void {
 
   // ============================================
@@ -281,8 +282,23 @@ export function registerTerminalHandlers(
     async (_, profileId: string): Promise<IPCResult> => {
       try {
         const profileManager = getClaudeProfileManager();
-        if (profileManager.getProfile(profileId)?.detected) {
-          return { success: false, error: "This account comes from Claude Code's configuration and can't be removed" };
+        // An account from Claude Code's configuration: signed out and its configuration removed
+        // (account-deletion.ts), then dropped from the accounts and from projects that chose it
+        const profile = profileManager.getProfile(profileId);
+        if (profile?.detected) {
+          const blocker = profileManager.detectedAccountDeletionBlocker(profileId);
+          if (blocker) return { success: false, error: blocker };
+          if (agentManager?.getRunningTasksByProfile().byProfile[profileId]?.length) {
+            return { success: false, error: "Tasks are running on this account; it can't be deleted until they stop" };
+          }
+          await deleteClaudeCodeAccountFiles(profile);
+          profileManager.removeDetectedAccount(profileId);
+          for (const project of projectStore.getProjects()) {
+            if (project.settings?.claudeProfileId === profileId) {
+              projectStore.updateProjectSettings(project.id, { claudeProfileId: undefined });
+            }
+          }
+          return { success: true };
         }
         const success = profileManager.deleteProfile(profileId);
         if (!success) {

@@ -664,14 +664,22 @@
     "add": "Add Claude account",
     "addButton": "Add",
     "addDescription": "Opens a terminal with claude auth login",
-    "addDescriptionMore": "Tasks switch to the next account when the one in use hits a limit",
     "dialog": {
       "name": "Account name",
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "deleteOnly": "The only Claude account can't be deleted",
+      "deleteInUse": "The account in use can't be deleted",
+      "deleteOutside": "Set up by environment variables or managed settings; remove them there",
+      "deleteTitle": "Delete account?",
+      "deleteDescription": "Are you sure you want to delete \"{{name}}\"? It is signed out and its Claude Code configuration ({{dir}}) is removed. This action cannot be undone.",
+      "deleteDescriptionDefault": "Are you sure you want to delete \"{{name}}\"? It is signed out and its sign-in settings are removed from Claude Code's configuration. Your other Claude Code settings, skills and history stay. This action cannot be undone."
     },
     "toast": {
       "renameFailed": "Couldn't rename the account",
+      "deleteFailed": "Couldn't delete the account",
       "switchFailed": "Couldn't switch accounts"
     },
     "providers": {

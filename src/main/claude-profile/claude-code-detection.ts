@@ -79,6 +79,15 @@ const SETUP_SETTINGS = ['apiKeyHelper', 'awsAuthRefresh', 'awsCredentialExport',
 
 const SECRET = /(KEY|TOKEN|SECRET|HEADERS)/;
 
+/**
+ * The settings (`env` variables and top-level keys) of a config dir's settings.json that set up
+ * how it reaches Claude: everything above except model choices, which are the user's preferences
+ */
+export const SETUP_CREDENTIAL_SETTINGS = {
+  env: SETUP_VARIABLES.filter((name) => !/MODEL$/.test(name)) as string[],
+  settings: SETUP_SETTINGS.filter((key) => key !== 'model') as string[],
+};
+
 export interface DetectedSetup extends DetectedClaudeCodeAccount {
   /** Absolute config dir */
   configDir: string;
@@ -230,6 +239,8 @@ export function readClaudeCodeSetup(configDir: string, options: DetectionOptions
   // Where the credentials are defined: the sign-in's credentials file (or its macOS Keychain
   // entry), or the file (or environment) that configures the provider
   let credentials: string;
+  const decidingSource = decidingKey ? effective.get(decidingKey)?.source : undefined;
+  const definedOutside = provider !== 'subscription' && decidingSource !== user;
   if (provider === 'subscription') {
     const file = pathApi().join(configDir, '.credentials.json');
     credentials = existsSync(file) || !isMacOS()
@@ -247,6 +258,7 @@ export function readClaudeCodeSetup(configDir: string, options: DetectionOptions
     credentials,
     ...(provider === 'subscription' || signedIn ? { email, organization: str(account?.organizationName), plan } : {}),
     values,
+    ...(definedOutside ? { definedOutside } : {}),
   };
 }
 

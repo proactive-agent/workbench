@@ -1,8 +1,9 @@
 /**
  * Claude accounts (Accounts page): the Claude Code setups found in its own configuration (see
  * claude-code-detection). Each project window has its own account in use (saved for its project);
- * with automatic switching on, tasks move to the next account when it hits a limit. Each row shows the account's email and usage (or its
- * provider); its menu switches to it, signs it in again and shows its details. Adding an account
+ * while an API profile is in use, that profile is the one in use and no account is marked. Each row
+ * shows the account's email and usage (or its provider); its menu switches to it (leaving an API
+ * profile in use), signs it in again and shows its details (where it can be removed). Adding an account
  * (or signing one in again) runs Claude Code's own sign-in (`claude auth login`) in the user's
  * terminal; the accounts are then detected again until the sign-in shows up.
  */
@@ -16,6 +17,7 @@ import { SettingsRow } from './SettingsRow';
 import { DetectedAccountDialog } from './DetectedAccountDialog';
 import { useClaudeAccounts } from './hooks/useClaudeAccounts';
 import { switchClaudeAccount, useWindowClaudeAccountId } from '../../hooks/useWindowClaudeAccount';
+import { useSettingsStore } from '../../stores/settings-store';
 import type { ClaudeProfile } from '../../../shared/types';
 
 /** How often (and how long) the accounts are detected again while a sign-in runs in a terminal */
@@ -24,9 +26,12 @@ const LOGIN_WATCH_MAX_TRIES = 200;
 
 export function ClaudeAccountsSection() {
   const { t } = useTranslation('settings');
-  const { profiles: allProfiles, usage, reload } = useClaudeAccounts();
+  const { profiles: allProfiles, activeProfileId, usage, reload } = useClaudeAccounts();
   // The account this window's project runs on
   const accountId = useWindowClaudeAccountId();
+  // An API profile in use takes over from the Claude accounts: it alone is marked in use
+  const apiProfileInUse = useSettingsStore((state) => state.activeProfileId);
+  const setActiveApiProfile = useSettingsStore((state) => state.setActiveProfile);
   // Only Claude Code's own setups are accounts
   const profiles = allProfiles.filter((profile) => profile.detected);
 
@@ -45,10 +50,13 @@ export function ClaudeAccountsSection() {
     setRowError(null);
     try {
       // Saved for this window's project; other windows keep their own account
-      const result = await switchClaudeAccount(profile.id);
+      const result = profile.id === accountId ? { success: true } as const : await switchClaudeAccount(profile.id);
       if (!result.success) {
         const title = t('claudeAccounts.toast.switchFailed');
         setRowError({ id: profile.id, message: result.error ? `${title}: ${result.error}` : title });
+      } else if (apiProfileInUse && !(await setActiveApiProfile(null))) {
+        // Back from the API profile to Claude accounts
+        setRowError({ id: profile.id, message: t('claudeAccounts.toast.switchFailed') });
       }
       await reload();
     } finally {
@@ -106,6 +114,15 @@ export function ClaudeAccountsSection() {
     };
   }, [login, reload, t]);
 
+  // Why an account can't be deleted: the account in use (this window's or the app's), the only
+  // one, or one set up from outside its config dir (it would be listed again)
+  const deleteBlockedReason = (profile: ClaudeProfile): string | undefined => {
+    if (profile.id === accountId || profile.id === activeProfileId) return t('claudeAccounts.dialog.deleteInUse');
+    if (profiles.length <= 1) return t('claudeAccounts.dialog.deleteOnly');
+    if (profile.detected?.isDefaultDir && profile.detected.definedOutside) return t('claudeAccounts.dialog.deleteOutside');
+    return undefined;
+  };
+
   const describe = (profile: ClaudeProfile): string => {
     // A setup on a cloud provider, an API key or a gateway: what it reaches Claude through
     const detected = profile.detected;
@@ -139,7 +156,7 @@ export function ClaudeAccountsSection() {
   return (
     <>
       {profiles.map((profile) => {
-        const isActive = profile.id === accountId;
+        const isActive = !apiProfileInUse && profile.id === accountId;
         const isBusy = busyId === profile.id;
         return (
           <SettingsRow
@@ -197,7 +214,7 @@ export function ClaudeAccountsSection() {
             <span role={addStatus.error ? 'alert' : undefined} className={addStatus.error ? 'text-destructive' : undefined}>
               {addStatus.message}
             </span>
-          ) : profiles.length > 1 ? t('claudeAccounts.addDescriptionMore') : t('claudeAccounts.addDescription')
+          ) : t('claudeAccounts.addDescription')
         }
       >
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void startLogin()}>
@@ -211,6 +228,7 @@ export function ClaudeAccountsSection() {
         profile={details.profile}
         onOpenChange={(open) => setDetails((current) => ({ ...current, open }))}
         onSaved={() => void reload()}
+        deleteBlockedReason={details.profile ? deleteBlockedReason(details.profile) : undefined}
       />
     </>
   );

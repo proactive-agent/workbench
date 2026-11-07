@@ -254,6 +254,11 @@ export interface DetectedClaudeCodeAccount {
   plan?: string;
   /** Settings and variables that configure it (effective first) */
   values: DetectedClaudeCodeValue[];
+  /**
+   * Its provider is set up from outside the config dir (environment variables or managed
+   * settings), so cleaning the dir's own files doesn't remove it
+   */
+  definedOutside?: boolean;
 }
 
 /**

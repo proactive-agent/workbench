@@ -533,14 +533,17 @@ overlays use `AgentLoader` (`ui/agent-loader.tsx`, the live agent node bouncing)
 **IPC** — Handlers in `src/main/ipc-handlers/` (by domain), safe APIs exposed in `src/preload/`, renderer calls
 `window.electronAPI.*`.
 
-**Agent management** (`src/main/agent/`) — `agent-manager.ts` (starts, stops and restarts Claude Code task runs and
-relays their events), `agent-state.ts` (profile/session assignment for account swapping).
+**Agent management** (`src/main/agent/`) — `agent-manager.ts` (starts and stops Claude Code task runs and
+relays their events), `agent-state.ts` (the profile and session of each running task).
 
 **Claude profiles** (`src/main/claude-profile/`) — `credential-utils.ts` (OS keychain), `token-refresh.ts` (OAuth
-refresh), `usage-monitor.ts` (usage and rate limits), `profile-scorer.ts` (profile selection). On every start,
+refresh), `usage-monitor.ts` (usage and rate limits). On every start,
 `claude-code-detection.ts` finds Claude Code's own setups (`~/.claude`, `CLAUDE_CONFIG_DIR`, `~/.claude-*`: subscription
 sign-in, cloud provider, API key or gateway, from managed settings, the dir's `settings.json` and the environment) and
-lists them as accounts (`ClaudeProfile.detected`): usable and renamable, never removed. Claude Code's default `~/.claude`
+lists them as accounts (`ClaudeProfile.detected`): usable and renamable. Deleting one (its Details dialog; never the account in use, the only one, or one with running
+tasks) signs it out with `claude auth logout` and removes its config dir, or for the default `~/.claude` only the
+settings that set up how it reaches Claude (`claude-profile/account-deletion.ts`); projects that chose it lose the
+reference. Claude Code's default `~/.claude`
 runs without `CLAUDE_CONFIG_DIR`, keeps its sign-in in `~/.claude.json` and its plain keychain entry
 (`config-dir-paths.ts`).
 
