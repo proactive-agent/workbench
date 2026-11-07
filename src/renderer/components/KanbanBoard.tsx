@@ -251,7 +251,7 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
   const emptyState = getEmptyStateContent(status, t);
 
   return (
-    <div className="kanban-compact relative flex min-w-[250px] flex-1 basis-0">
+    <div className="kanban-compact relative flex min-w-[180px] flex-1 basis-0">
       <div
         ref={setNodeRef}
         className={cn(
@@ -347,7 +347,8 @@ const DroppableColumn = memo(function DroppableColumn({ status, tasks, onTaskCli
 
       {/* Task list */}
       <div className="flex-1 min-h-0">
-        <ScrollArea className="h-full px-3 pb-3 pt-2">
+        {/* Cards sit as far from the column's sides as from its header */}
+        <ScrollArea className="h-full px-2 pb-3 pt-2">
           <SortableContext
             items={taskIds}
             strategy={verticalListSortingStrategy}
@@ -767,7 +768,7 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
   return (
     <div className="flex h-full flex-col">
       {/* Kanban header: the last board action's failure, then refresh */}
-      <div className="flex items-center justify-end gap-4 px-6 pt-2">
+      <div className="flex items-center justify-end gap-4 px-3 pt-2">
           {boardError && (
             <p role="alert" className="mr-auto min-w-0 truncate text-sm text-destructive" title={boardError}>
               {boardError}
@@ -796,7 +797,8 @@ export function KanbanBoard({ tasks, onTaskClick, onNewTaskClick, onRefresh, isR
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
       >
-        <div className="flex flex-1 gap-4 overflow-x-auto p-6 pt-2">
+        {/* The Agents page's spacing: 12px from the page's edges, 8px between columns */}
+        <div className="flex flex-1 gap-2 overflow-x-auto p-3 pt-2">
           {TASK_STATUS_COLUMNS.map((status) => (
             <DroppableColumn
               key={status}
