@@ -347,6 +347,9 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
           console.error('Failed to sync worktree config after PTY creation:', error);
         }
         pendingWorktreeConfigRef.current = null;
+      } else if (created?.pendingTaskSession && created.title) {
+        // A session of the project's own folder (a Claude chat's): titled after it
+        window.electronAPI.setTerminalTitle(id, created.title);
       }
       // "New agent" terminals (and agents moved to another worktree) start Claude Code as soon as
       // the shell is ready; the store holds the current cwd (the worktree path after a switch).

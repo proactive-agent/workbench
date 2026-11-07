@@ -239,6 +239,11 @@
       "off": "Let Claude work like an agent window: change files, run commands and use slash commands and skills",
       "on": "Claude works like an agent window: it can change files, run commands and use slash commands and skills"
     },
+    "agentWindow": {
+      "open": "Open agent",
+      "replying": "Wait for the reply to finish",
+      "noRoom": "This project has no room for another agent window"
+    },
     "cliNotFound": "{{name}} CLI not detected",
     "kanbanTools": {
       "label": "Kanban",

@@ -64,6 +64,7 @@ import {
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
+import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -777,7 +778,11 @@ export function Insights({ projectId }: InsightsProps) {
               <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
             </Tooltip>
           </div>
-          <BrowserDrawerButton projectId={projectId} />
+          {/* The browser drawer's button, and under it the chat's session in an agent window */}
+          <div className="flex flex-col items-end gap-3">
+            <BrowserDrawerButton projectId={projectId} />
+            <InsightsAgentWindowButton projectId={projectId} session={session} replying={isLoading} />
+          </div>
         </div>
 
         {isEmpty ? (

@@ -286,6 +286,13 @@ interface TerminalState {
    * show the Agents page. Returns null when the project has no room for another window.
    */
   openTaskSession: (request: TaskSessionRequest) => Terminal | null;
+  /**
+   * Open a Claude Code session that ran in the project's own folder (a Claude chat's) in a new
+   * agent window: it resumes the session on the account it ran on and is titled `title`. Also
+   * asks the app to show the Agents page. Returns null when the project has no room for another
+   * window.
+   */
+  openProjectSession: (request: { projectPath: string; title: string; sessionId: string; profileId?: string }) => Terminal | null;
 
   // Selectors
   getTerminal: (id: string) => Terminal | undefined;
@@ -717,6 +724,20 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         associatedTaskId: request.taskId,
         worktreeConfig: buildTaskWorktreeConfig(request, terminal.id),
         pendingTaskSession: buildPendingTaskSession(request)
+      });
+    }
+    set((state) => ({
+      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
+    }));
+    return terminal ? get().getTerminal(terminal.id) ?? null : null;
+  },
+
+  openProjectSession: (request) => {
+    const terminal = get().addTerminal(request.projectPath, request.projectPath, { launchCLI: true });
+    if (terminal) {
+      get().updateTerminal(terminal.id, {
+        title: request.title,
+        pendingTaskSession: { sessionId: request.sessionId, profileId: request.profileId }
       });
     }
     set((state) => ({
