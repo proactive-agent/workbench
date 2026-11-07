@@ -30,6 +30,11 @@ for (const envPath of possibleEnvPaths) {
   }
 }
 
+// Started from a Workbench terminal (agent window): that window's account token, which it injects
+// for its own Claude Code, isn't this app's setup. Left in, account detection read it as an
+// environment-wide OAuth token overriding every account's sign-in.
+if (process.env.WORKBENCH_TERMINAL_ID) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
 import { app, BrowserWindow, ipcMain, shell, nativeImage, session, screen, Menu, MenuItem, type Rectangle } from 'electron';
 import { join } from 'path';
 import { writeFileSync, rmSync, cpSync } from 'fs';
