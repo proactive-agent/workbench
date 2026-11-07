@@ -139,22 +139,20 @@ export function ProfileList({ onProfileSaved }: ProfileListProps) {
               >
                 <Pencil className="h-4 w-4" strokeWidth={1.75} />
               </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setDeleteConfirmProfile(profile)}
-                disabled={isActive}
-                className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                data-testid={`profile-delete-button-${profile.id}`}
-                title={
-                  isActive
-                    ? t('settings:apiProfiles.tooltips.deleteActive')
-                    : t('settings:apiProfiles.tooltips.deleteInactive')
-                }
-                aria-label={t('settings:apiProfiles.deleteAriaLabel', { name: profile.name })}
-              >
-                <Trash2 className="h-4 w-4" strokeWidth={1.75} />
-              </Button>
+              {/* The profile in use can't be deleted: no button, like Claude accounts */}
+              {!isActive && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setDeleteConfirmProfile(profile)}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  data-testid={`profile-delete-button-${profile.id}`}
+                  title={t('settings:apiProfiles.tooltips.deleteInactive')}
+                  aria-label={t('settings:apiProfiles.deleteAriaLabel', { name: profile.name })}
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                </Button>
+              )}
             </div>
             {isActive ? (
               <Button

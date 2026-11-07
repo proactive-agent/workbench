@@ -540,7 +540,7 @@ relays their events), `agent-state.ts` (the profile and session of each running 
 refresh), `usage-monitor.ts` (usage and rate limits). On every start,
 `claude-code-detection.ts` finds Claude Code's own setups (`~/.claude`, `CLAUDE_CONFIG_DIR`, `~/.claude-*`: subscription
 sign-in, cloud provider, API key or gateway, from managed settings, the dir's `settings.json` and the environment) and
-lists them as accounts (`ClaudeProfile.detected`): usable and renamable. Deleting one (its Details dialog; never the account in use, the only one, or one with running
+lists them as accounts (`ClaudeProfile.detected`): usable and renamable. Deleting one (the trash button in its row, shown for accounts not in use; never one with running
 tasks) signs it out with `claude auth logout` and removes its config dir, or for the default `~/.claude` only the
 settings that set up how it reaches Claude (`claude-profile/account-deletion.ts`); projects that chose it lose the
 reference. Claude Code's default `~/.claude`

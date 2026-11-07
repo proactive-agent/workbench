@@ -3,14 +3,24 @@
  * claude-code-detection). Each project window has its own account in use (saved for its project);
  * while an API profile is in use, that profile is the one in use and no account is marked. Each row
  * shows the account's email and usage (or its provider); its menu switches to it (leaving an API
- * profile in use), signs it in again and shows its details (where it can be removed). Adding an account
+ * profile in use), signs it in again and shows its details; accounts not in use can be deleted from their row. Adding an account
  * (or signing one in again) runs Claude Code's own sign-in (`claude auth login`) in the user's
  * terminal; the accounts are then detected again until the sign-in shows up.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Info, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
-import { Button } from '../ui/button';
+import { Check, Info, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Button, buttonVariants } from '../ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '../ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import { SettingsRow } from './SettingsRow';
@@ -44,6 +54,29 @@ export function ClaudeAccountsSection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // The last failed action on an account, shown in its row instead of the description
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  // The account whose deletion waits for confirmation
+  const [deleteTarget, setDeleteTarget] = useState<ClaudeProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const result = await window.electronAPI.deleteClaudeProfile(deleteTarget.id);
+      if (!result.success) {
+        setDeleteError(result.error || t('claudeAccounts.toast.deleteFailed'));
+        return;
+      }
+      setDeleteTarget(null);
+      await reload();
+    } catch {
+      setDeleteError(t('claudeAccounts.toast.deleteFailed'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleUse = async (profile: ClaudeProfile) => {
     setBusyId(profile.id);
@@ -114,14 +147,13 @@ export function ClaudeAccountsSection() {
     };
   }, [login, reload, t]);
 
-  // Why an account can't be deleted: the account in use (this window's or the app's), the only
-  // one, or one set up from outside its config dir (it would be listed again)
-  const deleteBlockedReason = (profile: ClaudeProfile): string | undefined => {
-    if (profile.id === accountId || profile.id === activeProfileId) return t('claudeAccounts.dialog.deleteInUse');
-    if (profiles.length <= 1) return t('claudeAccounts.dialog.deleteOnly');
-    if (profile.detected?.isDefaultDir && profile.detected.definedOutside) return t('claudeAccounts.dialog.deleteOutside');
-    return undefined;
-  };
+  // Only accounts that can be deleted show the delete button (on hover, like API profiles): not the
+  // account in use (this window's or the app's), nor one set up from outside its config dir, which
+  // would be listed again
+  const canDelete = (profile: ClaudeProfile) =>
+    profile.id !== accountId
+    && profile.id !== activeProfileId
+    && !(profile.detected?.isDefaultDir && profile.detected.definedOutside);
 
   const describe = (profile: ClaudeProfile): string => {
     // A setup on a cloud provider, an API key or a gateway: what it reaches Claude through
@@ -161,6 +193,7 @@ export function ClaudeAccountsSection() {
         return (
           <SettingsRow
             key={profile.id}
+            className="group"
             label={
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="truncate">{profile.name}</span>
@@ -175,6 +208,24 @@ export function ClaudeAccountsSection() {
               )
             }
           >
+            {canDelete(profile) && (
+              <div className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(profile);
+                  }}
+                  disabled={isBusy}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  title={t('claudeAccounts.dialog.delete')}
+                  aria-label={t('claudeAccounts.deleteAriaLabel', { name: profile.name })}
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                </Button>
+              </div>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -228,8 +279,43 @@ export function ClaudeAccountsSection() {
         profile={details.profile}
         onOpenChange={(open) => setDetails((current) => ({ ...current, open }))}
         onSaved={() => void reload()}
-        deleteBlockedReason={details.profile ? deleteBlockedReason(details.profile) : undefined}
       />
+
+      {/* Confirm before the account is signed out and its configuration removed */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (isDeleting || open) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('claudeAccounts.dialog.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.detected?.isDefaultDir
+                ? t('claudeAccounts.dialog.deleteDescriptionDefault', { name: deleteTarget.name })
+                : t('claudeAccounts.dialog.deleteDescription', { name: deleteTarget?.name ?? '', dir: deleteTarget?.configDir ?? '' })}
+            </AlertDialogDescription>
+            {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>{t('claudeAccounts.dialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Stay open until the delete finishes, so a failure can be shown here
+                e.preventDefault();
+                void handleDelete();
+              }}
+              disabled={isDeleting}
+              className={buttonVariants({ variant: 'destructive', size: 'sm' })}
+            >
+              {isDeleting ? t('claudeAccounts.dialog.deleting') : t('claudeAccounts.dialog.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

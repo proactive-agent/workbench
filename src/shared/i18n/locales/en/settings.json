@@ -136,7 +136,6 @@
     },
     "tooltips": {
       "edit": "Edit profile",
-      "deleteActive": "Switch back to Claude accounts before deleting",
       "deleteInactive": "Delete profile"
     },
     "deleteAriaLabel": "Delete profile {{name}}",
@@ -657,6 +656,7 @@
     "signInAgain": "Sign in again",
     "details": "Details",
     "menu": "Actions for {{name}}",
+    "deleteAriaLabel": "Delete {{name}}",
     "notSignedIn": "Not signed in",
     "needsSignIn": "Needs to sign in again",
     "rateLimited": "Rate limited",
@@ -670,9 +670,6 @@
       "cancel": "Cancel",
       "delete": "Delete",
       "deleting": "Deleting...",
-      "deleteOnly": "The only Claude account can't be deleted",
-      "deleteInUse": "The account in use can't be deleted",
-      "deleteOutside": "Set up by environment variables or managed settings; remove them there",
       "deleteTitle": "Delete account?",
       "deleteDescription": "Are you sure you want to delete \"{{name}}\"? It is signed out and its Claude Code configuration ({{dir}}) is removed. This action cannot be undone.",
       "deleteDescriptionDefault": "Are you sure you want to delete \"{{name}}\"? It is signed out and its sign-in settings are removed from Claude Code's configuration. Your other Claude Code settings, skills and history stay. This action cannot be undone."

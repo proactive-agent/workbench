@@ -15,13 +15,7 @@ import { useClaudeProfileStore } from '../../../stores/claude-profile-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 
 vi.mock('../hooks/useClaudeAccounts', () => ({ useClaudeAccounts: vi.fn() }));
-const dialogProps = vi.hoisted(() => ({ current: null as null | { deleteBlockedReason?: string } }));
-vi.mock('../DetectedAccountDialog', () => ({
-  DetectedAccountDialog: (props: { deleteBlockedReason?: string }) => {
-    dialogProps.current = props;
-    return null;
-  },
-}));
+vi.mock('../DetectedAccountDialog', () => ({ DetectedAccountDialog: () => null }));
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, params?: Record<string, unknown>) =>
@@ -106,20 +100,16 @@ describe('ClaudeAccountsSection', () => {
     useSettingsStore.setState({ activeProfileId: null });
   });
 
-  it('blocks deleting the account in use, not another one', async () => {
+  it('offers deleting only the accounts not in use, after a confirmation', async () => {
     useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
     useSettingsStore.setState({ activeProfileId: null });
     renderWith([]);
 
-    // Details of an account, from its row's menu (rows in order: personal, work, new)
-    const openDetails = async (row: number) => {
-      fireEvent.pointerDown(screen.getAllByLabelText('claudeAccounts.menu')[row], { button: 0, ctrlKey: false });
-      fireEvent.click(await screen.findByText('claudeAccounts.details'));
-    };
+    // Rows: personal (in use), work, new
+    const deleteButtons = screen.getAllByLabelText('claudeAccounts.deleteAriaLabel');
+    expect(deleteButtons).toHaveLength(2);
 
-    await openDetails(0);
-    expect(dialogProps.current?.deleteBlockedReason).toBe('claudeAccounts.dialog.deleteInUse');
-    await openDetails(1);
-    expect(dialogProps.current?.deleteBlockedReason).toBeUndefined();
+    fireEvent.click(deleteButtons[0]);
+    expect(await screen.findByText('claudeAccounts.dialog.deleteTitle')).toBeInTheDocument();
   });
 });
