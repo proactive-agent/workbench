@@ -439,8 +439,9 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   `--tools` or `--strict-mcp-config` (every tool, the user's own MCP servers too) and the agent windows' permissions
   (`--dangerously-skip-permissions` when Settings skips them, else `--permission-mode auto`, since a headless turn can't
   ask). Off again, the same session continues read-only. With it on, the composer's `/` menu lists Claude Code's slash
-  commands and skills (`insights-slash-commands.ts`; asked once per project with the control protocol's `initialize`
-  request, `insights/chat-commands.ts`, no model call). A chat with a session also shows a Clawd button under the browser
+  commands and skills, minus built-ins that don't fit a chat (`/clear`, `/model`...) (`insights-slash-commands.ts`; asked per project and account with the
+  control protocol's `initialize` request, without MCP servers or a model call, again when the button is switched on,
+  `insights/chat-commands.ts`). A local command's output (`/compact`) is its reply and keeps the session. A chat with a session also shows a Clawd button under the browser
   button that opens its session in an agent window (`claude --resume` on its account, `openProjectSession`).
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools

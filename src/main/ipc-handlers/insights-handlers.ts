@@ -13,6 +13,7 @@ import type {
   InsightsSessionSummary,
   InsightsModelConfig,
   ChatSlashCommand,
+  ChatCommandsError,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -20,7 +21,8 @@ import type {
 import { projectStore } from "../project-store";
 import { insightsService } from "../insights-service";
 import { safeSendToRenderer } from "./utils";
-import { listChatCommands } from "../insights/chat-commands";
+import { ChatCommandsListError, listChatCommands } from "../insights/chat-commands";
+import { appLog } from "../app-logger";
 import type { ThinkingLevel } from "../../shared/types/settings";
 
 /** Default model for Insights turns (Claude Code model alias) */
@@ -434,14 +436,16 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
   ipcMain.handle(
     IPC_CHANNELS.INSIGHTS_LIST_COMMANDS,
     async (_, projectId: string): Promise<IPCResult<ChatSlashCommand[]>> => {
+      // The error is a ChatCommandsError code, which the renderer words
       const project = projectStore.getProject(projectId);
       if (!project) {
-        return { success: false, error: "Project not found" };
+        return { success: false, error: "projectNotFound" satisfies ChatCommandsError };
       }
       try {
         return { success: true, data: await listChatCommands(project.path, project.settings?.claudeProfileId) };
       } catch (error) {
-        return { success: false, error: error instanceof Error ? error.message : "Failed to list Claude Code's commands" };
+        if (!(error instanceof ChatCommandsListError)) appLog.warn("[Insights] Listing Claude Code's commands failed:", error);
+        return { success: false, error: error instanceof ChatCommandsListError ? error.code : ("failed" satisfies ChatCommandsError) };
       }
     }
   );

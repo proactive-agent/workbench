@@ -33,6 +33,9 @@ describe('filterSlashCommands', () => {
 describe('insertSlashCommand', () => {
   it('replaces the token with the command and a space, the caret after it', () => {
     expect(insertSlashCommand('/gra', { start: 0, query: 'gra' }, 4, 'graphify')).toEqual({ value: '/graphify ', caret: 10 });
-    expect(insertSlashCommand('run /gr now', { start: 4, query: 'gr' }, 7, 'graphify')).toEqual({ value: 'run /graphify now', caret: 14 });
+  });
+
+  it('keeps a command picked further in where it was typed', () => {
+    expect(insertSlashCommand('please use /code-re skill', { start: 11, query: 'code-re' }, 19, 'code-review')).toEqual({ value: 'please use /code-review skill', caret: 24 });
   });
 });

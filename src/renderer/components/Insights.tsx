@@ -67,6 +67,7 @@ import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
 import { useSlashCommandMenu } from './insights-slash-commands';
+import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -117,6 +118,8 @@ export function Insights({ projectId }: InsightsProps) {
   const setPendingImages = useInsightsStore((state) => state.setPendingImages);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // The composer's box: the `/` menu is placed at it
+  const composerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
 
@@ -179,8 +182,13 @@ export function Insights({ projectId }: InsightsProps) {
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
   // The composer's `/` menu: Claude Code's slash commands and skills, with the Clawd button on
+  // The account the chat's turns run on (an API profile in use, else the project's Claude
+  // account): the commands depend on it
+  const claudeAccountId = useWindowClaudeAccountId();
+  const apiProfileId = useSettingsStore((state) => state.activeProfileId);
   const slashMenu = useSlashCommandMenu({
     projectId,
+    accountKey: apiProfileId ? `api:${apiProfileId}` : claudeAccountId,
     enabled: effectiveModelConfig?.agentMode === true,
     value: inputValue,
     caret,
@@ -587,6 +595,7 @@ export function Insights({ projectId }: InsightsProps) {
   const composer = (
     <div className="space-y-2">
       <div
+        ref={composerRef}
         className={cn(
           'relative rounded-(--radius-composer) bg-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.075),0_0_0_1px_var(--input)]',
@@ -595,6 +604,7 @@ export function Insights({ projectId }: InsightsProps) {
       >
         {slashMenu.open && (
           <InsightsSlashMenu
+            anchorRef={composerRef}
             items={slashMenu.items}
             activeIndex={slashMenu.activeIndex}
             loading={slashMenu.loading}
@@ -1094,6 +1104,10 @@ function MessageBubble({
   return (
     <div className="group space-y-3" onMouseEnter={() => setNow(Date.now())}>
       {content && <MarkdownContent>{content}</MarkdownContent>}
+      {/* A slash command that ran without output (a local one such as /compact) */}
+      {!content && !message.stopped && !message.toolsUsed?.length && (
+        <p className="text-[0.9375rem] text-muted-foreground">{t('insights.slashCommands.noOutput')}</p>
+      )}
       {/* A stopped reply says so, under what it had written by then */}
       {message.stopped && (
         <p className="text-[0.9375rem] text-muted-foreground">{t('insights.stoppedByUser')}</p>

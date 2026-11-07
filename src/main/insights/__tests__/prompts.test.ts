@@ -15,6 +15,14 @@ describe('buildConversationPrompt', () => {
   });
 });
 
+describe('buildConversationPrompt with a slash command', () => {
+  it('keeps the command at the start, where Claude Code runs it, with the conversation after it', () => {
+    const prompt = buildConversationPrompt('/review the auth module', [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Hello' }]);
+    expect(prompt.startsWith('/review the auth module\n\n')).toBe(true);
+    expect(prompt).toContain('User: Hi');
+  });
+});
+
 describe('extractToolInput', () => {
   it('describes common tool arguments', () => {
     expect(extractToolInput({ command: 'graphify query auth' })).toBe('graphify query auth');

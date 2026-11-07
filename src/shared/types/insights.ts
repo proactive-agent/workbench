@@ -45,6 +45,13 @@ export interface ChatSlashCommand {
   argumentHint?: string;
 }
 
+/**
+ * Why the chat's `/` menu couldn't list the commands (the error of `listInsightsCommands`; the
+ * renderer words each one): the project is gone, Claude Code didn't answer in time, answered
+ * without a list, or failed to start
+ */
+export type ChatCommandsError = 'projectNotFound' | 'timeout' | 'notListed' | 'failed';
+
 type InsightsChatRole = 'user' | 'assistant';
 
 // Tool usage record for showing what tools the AI used

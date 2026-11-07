@@ -1,11 +1,16 @@
 /**
  * The chat composer's `/` menu (with the Clawd button on): Claude Code's slash commands and skills
  * in the project, listed when the caret follows a `/` that starts the input or a word, filtered
- * by what was typed after it, as in Claude Code's own prompt. The commands are asked once per
- * project (main: insights/chat-commands.ts) and kept for the app's session.
+ * by what was typed after it, as in Claude Code's own prompt. A picked command takes the token's
+ * place in the message.
+ *
+ * The commands (main: insights/chat-commands.ts) are kept per project and account, since the
+ * account's config dir holds the user's skills and plugins. They are asked when first needed and
+ * again each time the Clawd button is switched on (new skills or plugins show up then), keeping
+ * the list on screen meanwhile; a failed request is retried when the menu opens again.
  */
-import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from 'react';
-import type { ChatSlashCommand } from '../../shared/types';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import type { ChatCommandsError, ChatSlashCommand } from '../../shared/types';
 
 /** The `/` token the caret is in: where it starts and what follows the slash */
 export interface SlashToken {
@@ -34,35 +39,49 @@ export function filterSlashCommands(commands: ChatSlashCommand[], query: string)
 /** The input with the token replaced by the command (and a space), and the caret after it */
 export function insertSlashCommand(value: string, token: SlashToken, caret: number, name: string): { value: string; caret: number } {
   const inserted = `/${name} `;
-  const rest = value.slice(caret).replace(/^\S*/, '');
-  return { value: value.slice(0, token.start) + inserted + rest.replace(/^ /, ''), caret: token.start + inserted.length };
+  const rest = value.slice(caret).replace(/^\S*/, '').replace(/^ /, '');
+  return { value: value.slice(0, token.start) + inserted + rest, caret: token.start + inserted.length };
 }
 
-type CommandsState = { status: 'loading' } | { status: 'ready'; commands: ChatSlashCommand[] } | { status: 'error'; error: string };
+type CommandsState =
+  | { status: 'loading'; commands?: ChatSlashCommand[] }
+  | { status: 'ready'; commands: ChatSlashCommand[] }
+  | { status: 'error'; error: ChatCommandsError };
 
-/** Each project's commands, asked once per app session */
-const commandsByProject = new Map<string, CommandsState>();
+/** The commands of each project and account (`projectId`, account key) */
+const commandsByKey = new Map<string, CommandsState>();
 const pending = new Map<string, Promise<CommandsState>>();
 
-function loadCommands(projectId: string): Promise<CommandsState> {
-  const existing = pending.get(projectId);
+const CHAT_COMMANDS_ERRORS: readonly ChatCommandsError[] = ['projectNotFound', 'timeout', 'notListed', 'failed'];
+
+function loadCommands(key: string, projectId: string): Promise<CommandsState> {
+  const existing = pending.get(key);
   if (existing) return existing;
   const request = window.electronAPI.listInsightsCommands(projectId)
-    .then((result): CommandsState => result.success && result.data
-      ? { status: 'ready', commands: result.data }
-      : { status: 'error', error: result.error ?? '' })
-    .catch((error: unknown): CommandsState => ({ status: 'error', error: error instanceof Error ? error.message : String(error) }))
+    .then((result): CommandsState => {
+      if (result.success && result.data) return { status: 'ready', commands: result.data };
+      const code = CHAT_COMMANDS_ERRORS.find((known) => known === result.error) ?? 'failed';
+      return { status: 'error', error: code };
+    })
+    .catch((): CommandsState => ({ status: 'error', error: 'failed' }))
     .then((state) => {
-      commandsByProject.set(projectId, state);
-      pending.delete(projectId);
-      return state;
+      // A failed refresh keeps the list it had
+      const previous = commandsByKey.get(key);
+      const next = state.status === 'error' && previous?.status === 'loading' && previous.commands
+        ? { status: 'ready' as const, commands: previous.commands }
+        : state;
+      commandsByKey.set(key, next);
+      pending.delete(key);
+      return next;
     });
-  pending.set(projectId, request);
+  pending.set(key, request);
   return request;
 }
 
 interface SlashMenuOptions {
   projectId: string;
+  /** The account the chat's turns run on (the commands depend on its config dir) */
+  accountKey: string;
   /** The Clawd button is on: the menu works only then */
   enabled: boolean;
   value: string;
@@ -72,8 +91,9 @@ interface SlashMenuOptions {
 }
 
 /** The `/` menu's state and keyboard handling for the composer */
-export function useSlashCommandMenu({ projectId, enabled, value, caret, onInsert }: SlashMenuOptions) {
-  const [commands, setCommands] = useState<CommandsState | undefined>(() => commandsByProject.get(projectId));
+export function useSlashCommandMenu({ projectId, accountKey, enabled, value, caret, onInsert }: SlashMenuOptions) {
+  const key = `${projectId}\n${accountKey}`;
+  const [commands, setCommands] = useState<CommandsState | undefined>(() => commandsByKey.get(key));
   const [activeIndex, setActiveIndex] = useState(0);
   // The token the user closed the menu on (Escape): it stays closed until another one starts
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
@@ -81,23 +101,41 @@ export function useSlashCommandMenu({ projectId, enabled, value, caret, onInsert
   const token = enabled ? slashTokenAt(value, caret) : null;
   const open = !!token && token.start !== dismissedAt;
 
-  // Asked once the menu is first needed (stored for the app's session afterwards; asked again
-  // only after a failure)
-  useEffect(() => {
-    setCommands(commandsByProject.get(projectId));
-    if (!enabled || commandsByProject.get(projectId)?.status === 'ready') return;
-    let cancelled = false;
-    void loadCommands(projectId).then((state) => {
-      if (!cancelled) setCommands(state);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [projectId, enabled]);
+  const keyRef = useRef(key);
+  keyRef.current = key;
 
+  const load = (refresh: boolean) => {
+    const current = commandsByKey.get(key);
+    if (!refresh && current && current.status !== 'error') return;
+    // Loading again keeps the list on screen
+    const keep = current?.status === 'ready' ? current.commands : current?.status === 'loading' ? current.commands : undefined;
+    if (!pending.has(key)) commandsByKey.set(key, { status: 'loading', commands: keep });
+    setCommands(commandsByKey.get(key));
+    void loadCommands(key, projectId).then((state) => {
+      if (keyRef.current === key) setCommands(state);
+    });
+  };
+
+  // Switching the Clawd button on asks again (new skills and plugins show up); another project or
+  // account shows its own list, asked when it has none
+  const wasEnabled = useRef(enabled);
+  useEffect(() => {
+    const switchedOn = enabled && !wasEnabled.current;
+    wasEnabled.current = enabled;
+    setCommands(commandsByKey.get(key));
+    if (enabled) load(switchedOn);
+    // `load` reads the current key, which is a dependency
+  }, [key, enabled]);
+
+  // A failed list is asked again when the menu opens
+  useEffect(() => {
+    if (open && commands?.status === 'error') load(false);
+  }, [open, token?.start]);
+
+  const listed = commands?.status === 'ready' || commands?.status === 'loading' ? commands.commands : undefined;
   const items = useMemo(
-    () => (open && commands?.status === 'ready' ? filterSlashCommands(commands.commands, token.query) : []),
-    [open, commands, token?.query]
+    () => (open && listed ? filterSlashCommands(listed, token.query) : []),
+    [open, listed, token?.query]
   );
 
   // A new query starts at the top
@@ -107,15 +145,16 @@ export function useSlashCommandMenu({ projectId, enabled, value, caret, onInsert
     if (dismissedAt !== null && token?.start !== dismissedAt) setDismissedAt(null);
   }, [token?.start, dismissedAt]);
 
-  const select = useCallback((command: ChatSlashCommand) => {
+  const select = (command: ChatSlashCommand) => {
     if (!token) return;
     const next = insertSlashCommand(value, token, caret, command.name);
     onInsert(next.value, next.caret);
-  }, [token, value, caret, onInsert]);
+  };
 
   /** Keys the open menu takes (arrows, Enter or Tab to pick, Escape to close); true when handled */
   const handleKeyDown = (e: KeyboardEvent): boolean => {
-    if (!open || !token) return false;
+    // Keys of an input method (IME) composing text are its own
+    if (!open || !token || e.nativeEvent.isComposing) return false;
     if (e.key === 'Escape') {
       e.preventDefault();
       setDismissedAt(token.start);
@@ -128,22 +167,31 @@ export function useSlashCommandMenu({ projectId, enabled, value, caret, onInsert
       setActiveIndex((index) => (index + step + items.length) % items.length);
       return true;
     }
-    if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Tab') {
+    const active = items[Math.min(activeIndex, items.length - 1)];
+    // Enter on a command typed out in full sends it, as in Claude Code's prompt
+    if (e.key === 'Enter' && !e.shiftKey && active.name.toLowerCase() !== token.query.toLowerCase()) {
       e.preventDefault();
-      select(items[Math.min(activeIndex, items.length - 1)]);
+      select(active);
+      return true;
+    }
+    if (e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault();
+      select(active);
       return true;
     }
     return false;
   };
 
-  // Shown while open: the matches, or the list's state while it loads or when it failed
-  const visible = open && (items.length > 0 || commands === undefined || commands.status !== 'ready');
+  const loading = !commands || commands.status === 'loading';
+  // Shown while open: the matches, or the list's state while it loads (with nothing to show yet)
+  // or when it failed
+  const visible = open && (items.length > 0 || (loading && !listed) || commands?.status === 'error');
   return {
     open: visible,
     items,
     activeIndex: Math.min(activeIndex, Math.max(items.length - 1, 0)),
     setActiveIndex,
-    loading: !commands || commands.status === 'loading',
+    loading,
     error: commands?.status === 'error' ? commands.error : null,
     select,
     handleKeyDown,

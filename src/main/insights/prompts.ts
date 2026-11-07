@@ -17,12 +17,18 @@ export interface InsightsMessage {
 
 export type { TaskSuggestion } from '../../shared/utils/task-suggestions';
 
-/** Fold the conversation history into a single prompt (each turn is a fresh run) */
+/**
+ * Fold the conversation history into a single prompt (each turn is a fresh run). A slash command
+ * stays at the start, where Claude Code runs it, with the conversation after it as context
+ */
 export function buildConversationPrompt(message: string, history: InsightsMessage[] = []): string {
   if (history.length === 0) return message;
   const conversationContext = history
     .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
     .join('\n\n');
+  if (message.trimStart().startsWith('/')) {
+    return `${message.trim()}\n\nThe conversation so far, for context:\n${conversationContext}`;
+  }
   return `Previous conversation:\n${conversationContext}\n\nCurrent question: ${message}`;
 }
 

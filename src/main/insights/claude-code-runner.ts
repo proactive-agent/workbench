@@ -329,6 +329,24 @@ interface StreamState {
   sessionId?: string;
   /** The turn's last assistant message, where a later fork can cut the session */
   lastAssistantUuid?: string;
+  /**
+   * The last message the turn wrote to its session (a slash command's output, a compact boundary):
+   * the session's point after a turn with no assistant message
+   */
+  lastUuid?: string;
+  /** What a local slash command printed (`/compact`'s "Compacted"), its reply when no text came */
+  localOutput?: string;
+}
+
+/** A local slash command's output, from the user message Claude Code records it in */
+function localCommandOutput(content: unknown): string | undefined {
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? (content as Array<{ type?: string; text?: string }>).map((block) => (block.type === 'text' ? block.text ?? '' : '')).join('')
+      : '';
+  const match = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
+  return match ? match[1].trim() : undefined;
 }
 
 function createStreamState(): StreamState {
@@ -343,6 +361,9 @@ function handleInsightsEvent(
 ): void {
   const raw = event as Record<string, unknown>;
   if (typeof raw.session_id === 'string' && (raw.type === 'system' || raw.type === 'result')) state.sessionId = raw.session_id;
+  if (typeof raw.uuid === 'string' && (raw.type === 'assistant' || raw.type === 'user' || raw.subtype === 'compact_boundary')) {
+    state.lastUuid = raw.uuid;
+  }
   switch (raw.type) {
     case 'assistant': {
       if (typeof raw.uuid === 'string') state.lastAssistantUuid = raw.uuid;
@@ -389,6 +410,8 @@ function handleInsightsEvent(
     }
     case 'user': {
       const content = (raw.message as { content?: unknown } | undefined)?.content;
+      const output = localCommandOutput(content);
+      if (output !== undefined) state.localOutput = output;
       if (Array.isArray(content)) {
         for (const block of content as Array<{ type?: string; tool_use_id?: string }>) {
           if (block.type === 'tool_result') {
@@ -663,18 +686,23 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       throw new Error(outcome.stderr.trim() || `Claude Code exited with code ${outcome.exitCode}`);
     }
 
-    const text = state.text.trim() ? state.text : (state.result?.text ?? '');
-    if (!text.trim()) {
+    // A local slash command (`/compact`) has no assistant message: its output (or nothing) is the reply
+    const slashCommand = message.trimStart().startsWith('/');
+    const text = state.text.trim() ? state.text : (state.result?.text || state.localOutput || '');
+    if (!text.trim() && !slashCommand) {
       throw new Error(EMPTY_RESPONSE_ERROR);
     }
+    // Where the session is now: the reply's last assistant message, else (a local command) the
+    // last message the turn wrote
+    const cutAt = state.lastAssistantUuid ?? (slashCommand ? state.lastUuid : undefined);
 
     // Suggestion lines become cards: the reply keeps the rest
     return {
       text: stripTaskSuggestions(text),
       taskSuggestions: extractTaskSuggestions(text),
       toolCalls: state.toolCalls,
-      claudeRef: state.sessionId && state.lastAssistantUuid
-        ? { sessionId: state.sessionId, messageUuid: state.lastAssistantUuid, profileId }
+      claudeRef: state.sessionId && cutAt
+        ? { sessionId: state.sessionId, messageUuid: cutAt, profileId }
         : undefined,
     };
   } catch (error) {

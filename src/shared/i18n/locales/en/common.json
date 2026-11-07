@@ -247,7 +247,13 @@
     "slashCommands": {
       "label": "Slash commands and skills",
       "loading": "Loading commands...",
-      "failed": "Couldn't list Claude Code's commands: {{error}}"
+      "noOutput": "The command ran without output",
+      "errors": {
+        "projectNotFound": "Couldn't list Claude Code's commands: the project isn't open",
+        "timeout": "Claude Code didn't list its commands in time. Type / again to retry",
+        "notListed": "This Claude Code version doesn't list its commands",
+        "failed": "Couldn't list Claude Code's commands. Type / again to retry"
+      }
     },
     "cliNotFound": "{{name}} CLI not detected",
     "kanbanTools": {

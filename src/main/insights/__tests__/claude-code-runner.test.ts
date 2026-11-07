@@ -372,6 +372,29 @@ describe('runInsights', () => {
     expect(systemPrompt).not.toContain('glab');
   });
 
+  it('takes a local slash command\'s output as the reply and keeps its session (no assistant message)', async () => {
+    setRun([
+      { type: 'system', subtype: 'init', session_id: 'sess-1', tools: [] },
+      { type: 'system', subtype: 'compact_boundary', session_id: 'sess-1', uuid: 'boundary-1' },
+      { type: 'user', uuid: 'stdout-1', message: { content: '<local-command-stdout>Compacted </local-command-stdout>' } },
+      { type: 'result', subtype: 'success', is_error: false, result: '', session_id: 'sess-1' },
+    ]);
+    const result = await (await run({ message: '/compact' })).promise;
+    expect(result.text).toBe('Compacted');
+    expect(result.claudeRef).toEqual({ sessionId: 'sess-1', messageUuid: 'stdout-1', profileId: 'main' });
+  });
+
+  it('accepts a slash command that printed nothing; other empty replies are still an error', async () => {
+    const quiet = [
+      { type: 'system', subtype: 'init', session_id: 'sess-1', tools: [] },
+      { type: 'result', subtype: 'success', is_error: false, result: '', session_id: 'sess-1' },
+    ];
+    setRun(quiet);
+    await expect((await run({ message: '/reload-plugins' })).promise).resolves.toMatchObject({ text: '' });
+    setRun(quiet);
+    await expect((await run()).promise).rejects.toThrow('empty response');
+  });
+
   it('gives a turn with the Clawd button what an agent window has: every tool, the user\'s MCP servers, auto mode', async () => {
     setRun(conversation);
     await (await run({ agentMode: { skipPermissions: false }, cliTools: { github: true } })).promise;
