@@ -97,6 +97,8 @@ export interface InsightsPromptOptions {
   taskMessaging?: boolean;
   /** Playwright works in the chat's own browser, which the user sees and uses in the browser drawer */
   sharedBrowser?: boolean;
+  /** The Clawd button: every tool, like an agent window (changing files and running commands) */
+  agentMode?: boolean;
 }
 
 /** The suggestion line's format, as Claude must write it */
@@ -136,12 +138,20 @@ function toolsPrompt(options: InsightsPromptOptions): string {
     ...(options.cliTools?.gitlab ? ['the `glab` commands listed below'] : []),
   ];
   const servers = options.mcpServers ?? [];
+  const files = options.agentMode
+    ? [
+      "- Claude Code's full tool set, like the user's agent windows: you can change the project's files and run any shell command, as well as their own MCP servers, slash commands and skills. The user turned this on with the Clawd button and may turn it off again; earlier turns may have been read-only.",
+      "- You work in the project's own folder, not in a task's worktree: your changes land in the checkout the user works in. Make the changes the user asks for and nothing more, and say what you changed. For larger work that should run on its own and be reviewed, suggest or create a task instead.",
+    ]
+    : [
+      `- Read, Glob and Grep for the project's files. You can't change them${options.memory ? ' (except your project memory, below)' : ''}: code changes are made by tasks.`,
+      commands.length > 0
+        ? `- Bash, only for ${commands.join(' and ')}. Every other shell command is denied.`
+        : '- No shell commands.',
+    ];
   return [
     '## What you can use',
-    `- Read, Glob and Grep for the project's files. You can't change them${options.memory ? ' (except your project memory, below)' : ''}: code changes are made by tasks.`,
-    commands.length > 0
-      ? `- Bash, only for ${commands.join(' and ')}. Every other shell command is denied.`
-      : '- No shell commands.',
+    ...files,
     ...(servers.length > 0
       ? [`- MCP servers the user turned on for this chat: ${servers.join(', ')} (tools named mcp__<server>__<tool>). Use them when they fit the question.`]
       : []),
@@ -183,7 +193,7 @@ Your replies appear as Markdown in a narrow chat panel. Lead with the answer, ke
 
 ${toolsPrompt(options)}
 
-${tasksPrompt(options)}${cliToolsPrompt(options.cliTools ?? {})}${options.memory ? `\n\n${SELF_IMPROVE_NUDGE}` : ''}`;
+${tasksPrompt(options)}${options.agentMode ? '' : cliToolsPrompt(options.cliTools ?? {})}${options.memory ? `\n\n${SELF_IMPROVE_NUDGE}` : ''}`;
 }
 
 /** Brief description of a tool call's arguments for UI display */

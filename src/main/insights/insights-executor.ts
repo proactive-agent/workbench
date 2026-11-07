@@ -280,6 +280,10 @@ export class InsightsExecutor extends EventEmitter {
           // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
           // for other running sessions
           ...(await messagingSwitches()),
+          // The Clawd button: what an agent window has, with its permission setting
+          ...(modelConfig?.agentMode
+            ? { agentMode: { skipPermissions: (await readSettingsFileAsync())?.dangerouslySkipPermissions === true } }
+            : {}),
         },
         (event) => {
           switch (event.type) {

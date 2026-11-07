@@ -87,3 +87,13 @@ describe('buildSystemPrompt', () => {
     expect(buildSystemPrompt()).not.toContain('## Project memory');
   });
 });
+
+describe('buildSystemPrompt with the Clawd button', () => {
+  it('says Claude can change files in the project folder, without the read-only rules', () => {
+    const prompt = buildSystemPrompt({ agentMode: true, cliTools: { github: true } });
+    expect(prompt).toContain("Claude Code's full tool set");
+    expect(prompt).toContain("not in a task's worktree");
+    expect(prompt).not.toContain("You can't change them");
+    expect(prompt).not.toContain('Only these commands are allowed');
+  });
+});

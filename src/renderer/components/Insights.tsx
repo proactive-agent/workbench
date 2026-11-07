@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Loader2,
@@ -29,7 +29,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn, formatLongRelativeTime } from '../lib/utils';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
-import { GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/app-icons';
+import { ClawdIcon, GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/app-icons';
 import { BUILTIN_CONNECTOR_META } from './settings/connector-meta';
 import {
   useInsightsStore,
@@ -463,6 +463,32 @@ export function Insights({ projectId }: InsightsProps) {
   };
   const githubButton = cliToggle('githubTools', 'gh', GitHubIcon, t('insights.githubTools'));
   const gitlabButton = cliToggle('gitlabTools', 'glab', GitLabIcon, t('insights.gitlabTools'));
+  // Clawd button: the conversation's turns get what an agent window has (changing files, any
+  // command, the user's MCP servers, slash commands and skills); off again, the same session
+  // continues read-only
+  const agentMode = effectiveModelConfig?.agentMode === true;
+  const clawdButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => void handleModelConfigChange({ ...baseModelConfig, agentMode: !agentMode })}
+          disabled={isLoading}
+          aria-pressed={agentMode}
+          aria-label={t('insights.agentMode.label')}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-40',
+            agentMode
+              ? 'bg-primary/15 text-primary hover:bg-primary/20'
+              : 'text-muted-foreground hover:bg-nav-hover hover:text-foreground'
+          )}
+        >
+          <ClawdIcon className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">{t(agentMode ? 'insights.agentMode.on' : 'insights.agentMode.off')}</TooltipContent>
+    </Tooltip>
+  );
   const kanbanButton = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -608,7 +634,7 @@ export function Insights({ projectId }: InsightsProps) {
         {isEmpty ? (
           /* Toolbar (new chat): attach on the left; the model and send on the right */
           <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
-            <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{kanbanButton}</div>
+            <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
             <div className="flex min-w-0 items-center gap-1.5">
               {modelSelector}
               {/* Send button only appears once there is something to send; it turns into stop while Claude works */}
@@ -846,7 +872,7 @@ export function Insights({ projectId }: InsightsProps) {
                 {composer}
                 {/* Under the field: attach, disclaimer, model */}
                 <div className="mt-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
-                  <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{kanbanButton}</div>
+                  <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
                   <span className="truncate text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
                   <div className="flex justify-end">{modelSelector}</div>
                 </div>
@@ -1122,6 +1148,37 @@ const mcpToolIcon = (toolName: string): React.ElementType | null => {
   return BUILTIN_CONNECTOR_META.find(({ id }) => id === server.toLowerCase())?.icon ?? McpIcon;
 };
 
+/** Tools a read-only turn has too (without the Clawd button) */
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ListAgents', 'SendMessage', 'CodebaseGraph']);
+
+/**
+ * The MCP servers Workbench gives the chat itself: its task tools, the built-in connectors and the
+ * custom ones (named as buildMcpConfig names them). Any other server is the user's own, which only
+ * a Clawd turn loads
+ */
+const useWorkbenchMcpServers = (): Set<string> => {
+  const customServers = useSettingsStore((state) => state.settings.mcpConnectors?.customServers);
+  return useMemo(() => new Set([
+    'workbench',
+    ...BUILTIN_CONNECTOR_META.map(({ id }) => id),
+    ...(customServers ?? []).map((server) => (server.name || server.id).replace(/[^A-Za-z0-9_-]/g, '_')),
+  ]), [customServers]);
+};
+
+/**
+ * Whether only a turn with the Clawd button could make this call: changing files (other than the
+ * project memory), shell commands besides the gh, glab and graphify ones, the user's own MCP
+ * servers and every tool a read-only turn doesn't have (subagents, skills, ...)
+ */
+const isClawdTool = (toolName: string, input: string | undefined, workbenchServers: Set<string>): boolean => {
+  const server = /^mcp__(.+?)__/.exec(toolName)?.[1];
+  if (server) return !workbenchServers.has(server) && !workbenchServers.has(server.toLowerCase());
+  if (READ_ONLY_TOOLS.has(toolName) || cliCall(toolName, input)) return false;
+  // Saving a project memory (self-improve) is allowed read-only
+  if ((toolName === 'Write' || toolName === 'Edit') && input?.replace(/\\/g, '/').includes('.workbench/compeng/')) return false;
+  return true;
+};
+
 const getToolIcon = (toolName: string) => {
   if (taskToolName(toolName)) return KanbanIcon;
   const mcpIcon = mcpToolIcon(toolName);
@@ -1294,6 +1351,7 @@ function RegenerateMessageButton({ onClick }: { onClick: () => void }) {
 function ToolUsageHistory({ tools, actions, trailing }: ToolUsageHistoryProps) {
   const { t } = useTranslation('common');
   const [expanded, setExpanded] = useState(false);
+  const workbenchServers = useWorkbenchMcpServers();
 
   if (tools.length === 0) return null;
 
@@ -1317,8 +1375,9 @@ function ToolUsageHistory({ tools, actions, trailing }: ToolUsageHistoryProps) {
         <div className="mt-2 space-y-1 rounded-xl border border-border p-3">
           {tools.map((tool, index) => {
             // gh, glab and graphify calls show as GitHub, GitLab and Graphify, like the task tools show as Kanban steps
+            // Calls only the Clawd button allows show Clawd
             const cli = cliCall(tool.name, tool.input);
-            const Icon = cli?.icon ?? getToolIcon(tool.name);
+            const Icon = isClawdTool(tool.name, tool.input, workbenchServers) ? ClawdIcon : cli?.icon ?? getToolIcon(tool.name);
             const taskTool = taskToolName(tool.name);
             const label = cli?.label
               ?? (taskTool ? t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) : tool.name);
@@ -1353,6 +1412,7 @@ interface ToolIndicatorProps {
 
 function ToolIndicator({ name, input }: ToolIndicatorProps) {
   const { t } = useTranslation('common');
+  const workbenchServers = useWorkbenchMcpServers();
 
   // Get friendly name and icon for each tool
   const getToolInfo = (toolName: string) => {
@@ -1377,7 +1437,9 @@ function ToolIndicator({ name, input }: ToolIndicatorProps) {
     }
   };
 
-  const { icon: Icon, label } = cliCall(name, input) ?? getToolInfo(name);
+  const info = cliCall(name, input) ?? getToolInfo(name);
+  // Calls only the Clawd button allows show Clawd
+  const { icon: Icon, label } = isClawdTool(name, input, workbenchServers) ? { ...info, icon: ClawdIcon } : info;
 
   return (
     <span className="flex min-w-0 items-center gap-2" title={input}>

@@ -372,6 +372,37 @@ describe('runInsights', () => {
     expect(systemPrompt).not.toContain('glab');
   });
 
+  it('gives a turn with the Clawd button what an agent window has: every tool, the user\'s MCP servers, auto mode', async () => {
+    setRun(conversation);
+    await (await run({ agentMode: { skipPermissions: false }, cliTools: { github: true } })).promise;
+    const { args, systemPrompt } = record();
+    expect(args).not.toContain('--tools');
+    expect(args).not.toContain('--strict-mcp-config');
+    expect(args).not.toContain('--dangerously-skip-permissions');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+    expect(systemPrompt).toContain("Claude Code's full tool set");
+    // No read-only command list: Bash isn't limited
+    expect(systemPrompt).not.toContain('Only these commands are allowed');
+  });
+
+  it('skips permissions in a Clawd turn when agent windows skip them', async () => {
+    setRun(conversation);
+    await (await run({ agentMode: { skipPermissions: true } })).promise;
+    const { args } = record();
+    expect(args).toContain('--dangerously-skip-permissions');
+    expect(args).not.toContain('--permission-mode');
+  });
+
+  it('resumes the same session read-only once the Clawd button is off again', async () => {
+    setRun(conversation);
+    await (await run({ session: { mode: 'resume', sessionId: 'chat-session', profileId: 'main' } })).promise;
+    const { args, systemPrompt } = record();
+    expect(args[args.indexOf('--resume') + 1]).toBe('chat-session');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+    expect(args).toContain('--tools');
+    expect(systemPrompt).not.toContain("Claude Code's full tool set");
+  });
+
   it('lets Claude write only its project memory when self-improve is on', async () => {
     setRun(conversation);
     await (await run({ memory: true })).promise;

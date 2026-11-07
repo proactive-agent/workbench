@@ -111,6 +111,20 @@ export function KanbanIcon(props: IconProps) {
   );
 }
 
+/**
+ * Clawd, the crab from Claude Code's welcome screen, drawn from its block glyphs (` ▐▛███▜▌`,
+ * `▝▜█████▛▘`, `  ▘▘ ▝▝`): each quadrant one unit wide and two tall, on a 16-unit grid, so at
+ * 16px every edge falls on a whole pixel (smaller sizes soften its one-unit legs and eyes). Eyes
+ * are left open; filled with `currentColor`
+ */
+export function ClawdIcon({ strokeWidth: _strokeWidth, ...props }: IconProps) {
+  return (
+    <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true" focusable="false" {...props}>
+      <path d="M2 3h12v2H2z M2 5h2v2H2z M5 5h6v2H5z M12 5h2v2h-2z M0 7h16v2H0z M2 9h12v2H2z M3 11h1v2H3z M5 11h1v2H5z M10 11h1v2h-1z M12 11h1v2h-1z" />
+    </svg>
+  );
+}
+
 /** Open folder — the active project / Projects page */
 export function ProjectIcon(props: IconProps) {
   // The artwork only spans ~812 of the 1024 units; zoom the view onto it so it reads the same

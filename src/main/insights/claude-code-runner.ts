@@ -6,12 +6,15 @@
  * (`claude -p --output-format stream-json --include-partial-messages`), so text streams
  * into the chat as it is written.
  *
- * The CLI can't change the project's files: only Read/Glob/Grep, WebFetch/WebSearch (plus Bash limited to graphify's
+ * By default the CLI can't change the project's files: only Read/Glob/Grep, WebFetch/WebSearch (plus Bash limited to graphify's
  * read-only searches when the project's memory graph is on, and to read-only `gh` / `glab`
  * commands when the GitHub / GitLab buttons are on) are available, and the MCP servers are
  * Workbench's task tools (`task-tools-server.ts`), so Claude can manage the project's tasks, and
  * the ones chosen for the chat. Anything else is denied without prompting
- * (`--permission-mode dontAsk`). Each chat is a Claude Code session (see InsightsSessionPlan). Credentials come from the best available Claude profile or the active API profile
+ * (`--permission-mode dontAsk`). With the Clawd button on (`agentMode`) a turn gets what an agent
+ * window has instead: every tool, the user's own MCP servers besides the chat's, and the agent
+ * windows' permissions (skipped when Settings skips them, else Claude Code's auto mode, since a
+ * headless turn can't ask). Each chat is a Claude Code session (see InsightsSessionPlan). Credentials come from the best available Claude profile or the active API profile
  * (`resolveClaudeEnv`).
  */
 
@@ -97,6 +100,11 @@ export interface InsightsRunConfig {
   taskMessaging?: boolean;
   /** Playwright attaches to the chat's own browser (shared with the user in the browser drawer) */
   sharedBrowser?: boolean;
+  /**
+   * The Clawd button: the turn gets what an agent window has (see buildInsightsArgs).
+   * `skipPermissions`: agent windows skip permission prompts (Settings)
+   */
+  agentMode?: { skipPermissions: boolean };
 }
 
 /**
@@ -238,7 +246,11 @@ export function sessionArgs(plan: InsightsSessionPlan, newSessionId: string, tit
  * CLI arguments for a headless turn that can't change the project's files.
  * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot).
  * `sessionMessaging`: ListAgents and SendMessage, to reach other running sessions (agent windows,
- * tasks); they never change the project's files
+ * tasks); they never change the project's files.
+ * `agentMode` (the Clawd button): what an agent window has instead. Every tool (no `--tools`), the
+ * user's own MCP servers too (no `--strict-mcp-config`), and the agent windows' permissions:
+ * skipped when Settings skips them, else Claude Code's auto mode (a classifier reviews each action),
+ * since a headless turn can't ask. The chat's allowed rules still pre-approve its MCP servers
  */
 export function buildInsightsArgs(
   model: string,
@@ -251,6 +263,7 @@ export function buildInsightsArgs(
   session: string[] = [],
   systemPromptSnapshot = false,
   sessionMessaging = false,
+  agentMode?: { skipPermissions: boolean },
 ): string[] {
   const cliRules = [
     ...(cliTools.github ? INSIGHTS_GITHUB_RULES : []),
@@ -282,13 +295,14 @@ export function buildInsightsArgs(
     '--include-partial-messages',
     '--model', model,
     '--effort', effort,
-    '--tools', tools.join(','),
+    ...(agentMode ? [] : ['--tools', tools.join(',')]),
     '--allowedTools', ...allowed,
     // Also left out by the Playwright guard: Node.js code in the server, which could write anywhere
     ...(mcp?.servers.includes('playwright') ? ['--disallowedTools', 'mcp__playwright__browser_run_code_unsafe'] : []),
     ...(mcp?.readDirs ?? []).flatMap((dir) => ['--add-dir', dir]),
-    '--permission-mode', 'dontAsk',
-    '--strict-mcp-config',
+    ...(!agentMode
+      ? ['--permission-mode', 'dontAsk', '--strict-mcp-config']
+      : agentMode.skipPermissions ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'auto']),
     ...(mcp ? ['--mcp-config', mcp.configFile] : []),
     ...session,
     '--append-system-prompt-file', systemPromptFile,
@@ -579,6 +593,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       sessionMessaging,
       taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
       sharedBrowser: config.sharedBrowser,
+      agentMode: !!config.agentMode,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');
@@ -601,6 +616,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
           sessionArgs(turnPlan, randomUUID(), config.title),
           supportsSystemPromptSnapshot(cliVersion),
           sessionMessaging,
+          config.agentMode,
         ),
         cwd: projectDir,
         env,

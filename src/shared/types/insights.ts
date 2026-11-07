@@ -26,6 +26,12 @@ export interface InsightsModelConfig {
   /** The GitLab button: Claude can use the GitLab CLI (glab) in this conversation */
   gitlabTools?: boolean;
   /**
+   * The Clawd button: the conversation's turns get what an agent window has (every tool, changing
+   * the project's files, the user's own MCP servers, slash commands and skills). Turning it off
+   * keeps the same Claude Code session; later turns are read-only again
+   */
+  agentMode?: boolean;
+  /**
    * The browser the chat's Playwright opens (picked in the browser drawer; null: Playwright's own
    * Chromium); unset = the one in Settings > Connectors
    */

@@ -234,6 +234,11 @@
     },
     "githubTools": "GitHub",
     "gitlabTools": "GitLab",
+    "agentMode": {
+      "label": "Claude Code",
+      "off": "Let Claude work like an agent window: change files, run commands and use slash commands and skills",
+      "on": "Claude works like an agent window: it can change files, run commands and use slash commands and skills"
+    },
     "cliNotFound": "{{name}} CLI not detected",
     "kanbanTools": {
       "label": "Kanban",
