@@ -15,7 +15,7 @@ import Anthropic, {
 
 import { loadProfilesFile, generateProfileId, atomicModifyProfiles } from './profile-manager';
 import type { APIProfile, TestConnectionResult, ModelInfo, DiscoverModelsResult } from '@shared/types/profile';
-import { apiKeyToSend, isApiKeyOptional } from '@shared/utils/api-profile-key';
+import { apiKeyToSend, isApiKeyOptional } from '../../../shared/utils/api-profile-key';
 
 /**
  * Input type for creating a profile (without id, createdAt, updatedAt)
