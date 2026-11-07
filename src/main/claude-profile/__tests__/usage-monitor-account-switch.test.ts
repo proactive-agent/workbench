@@ -22,7 +22,6 @@ const state = vi.hoisted(() => ({
 
 vi.mock('../../claude-profile-manager', () => {
   const manager = {
-    getAutoSwitchSettings: () => ({ enabled: false, proactiveSwapEnabled: false, usageCheckInterval: 60_000 }),
     getSettings: () => ({ profiles: state.profiles, activeProfileId: state.activeProfileId }),
     getActiveProfile: () => state.profiles.find((p) => p.id === state.activeProfileId),
     getProfile: (id: string) => state.profiles.find((p) => p.id === id),
@@ -56,9 +55,6 @@ vi.mock('../../services/profile/profile-manager', () => ({
   loadProfilesFile: async () => ({ profiles: [], activeProfileId: null, version: 1 }),
 }));
 vi.mock('../rate-limit-manager', () => ({ isProfileRateLimited: () => ({ limited: false }) }));
-vi.mock('../operation-registry', () => ({
-  getOperationRegistry: () => ({ getSummary: () => ({ totalRunning: 0, byProfile: {}, byType: {} }) }),
-}));
 vi.mock('../../settings-utils', () => ({
   readSettingsFileAsync: vi.fn(async () => undefined),
   readSettingsFile: vi.fn(() => undefined),
@@ -77,7 +73,7 @@ function newMonitor(): UsageMonitor {
 }
 
 function checkNowAndWait(monitor: UsageMonitor): Promise<void> {
-  return (monitor as unknown as { checkUsageAndSwap: () => Promise<void> }).checkUsageAndSwap();
+  return (monitor as unknown as { checkUsage: () => Promise<void> }).checkUsage();
 }
 
 describe('UsageMonitor account switch', () => {
@@ -150,7 +146,7 @@ describe('UsageMonitor account switch', () => {
       updates.length = 0;
       lists.length = 0;
 
-      // Like Settings > Accounts or an automatic swap
+      // Like Settings > Accounts or an agent window's account menu
       const { getClaudeProfileManager } = await import('../../claude-profile-manager');
       getClaudeProfileManager().setActiveProfile('claude-code-2');
 

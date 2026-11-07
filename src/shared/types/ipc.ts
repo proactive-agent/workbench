@@ -81,7 +81,6 @@ import type {
 import type {
   ClaudeProfileSettings,
   ClaudeProfile,
-  ClaudeAutoSwitchSettings,
   ClaudeUsageSnapshot,
   AllProfilesUsage
 } from './agent';
@@ -310,21 +309,15 @@ export interface ElectronAPI {
   cancelClaudeAuthLogin: (profileId: string) => Promise<IPCResult>;
   /** Listen for OAuth subprocess progress events */
   onClaudeAuthLoginProgress: (callback: (data: { status: string; message?: string }) => void) => () => void;
-  /** Get auto-switch settings */
-  getAutoSwitchSettings: () => Promise<IPCResult<ClaudeAutoSwitchSettings>>;
-  /** Update auto-switch settings */
-  updateAutoSwitchSettings: (settings: Partial<ClaudeAutoSwitchSettings>) => Promise<IPCResult>;
   /** Request usage fetch from a terminal (sends /usage command) */
   fetchClaudeUsage: (terminalId: string) => Promise<IPCResult>;
-  /** Get the best available profile (for manual switching) */
-  getBestAvailableProfile: (excludeProfileId?: string) => Promise<IPCResult<ClaudeProfile | null>>;
   /** Listen for SDK/CLI rate limit events (non-terminal) */
   /** Listen for auth failure events (401 errors requiring re-authentication) */
   onAuthFailure: (callback: (info: AuthFailureInfo) => void) => () => void;
   /** Retry a rate-limited operation with a different profile */
   retryWithProfile: (request: RetryWithProfileRequest) => Promise<IPCResult>;
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   /** Request current usage snapshot */
   requestUsageUpdate: () => Promise<IPCResult<ClaudeUsageSnapshot | null>>;
   /** Request all profiles usage immediately (for startup/refresh)
@@ -334,13 +327,6 @@ export interface ElectronAPI {
   /** Listen for usage data updates */
   /** Usage of the account in use; null right after switching to an account whose usage isn't known yet */
   onUsageUpdated: (callback: (usage: ClaudeUsageSnapshot | null) => void) => () => void;
-  /** Listen for proactive swap notifications */
-  onProactiveSwapNotification: (callback: (notification: {
-    fromProfile: { id: string; name: string };
-    toProfile: { id: string; name: string };
-    reason: string;
-    usageSnapshot: ClaudeUsageSnapshot;
-  }) => void) => () => void;
   /** Listen for all profiles usage updates (for multi-profile display) */
   onAllProfilesUsageUpdated?: (callback: (allProfilesUsage: AllProfilesUsage) => void) => () => void;
 
@@ -572,9 +558,6 @@ export interface ElectronAPI {
   refreshWslAvailability: () => Promise<IPCResult<import('./settings').ShellRuntimeStatus>>;
   /** Restart the app (applies a changed shell setting) */
   relaunchApp: () => Promise<IPCResult>;
-
-  // Queue Routing API (rate limit recovery)
-  queue: import('../../preload/api/queue-api').QueueAPI;
 }
 
 /** Platform information exposed via contextBridge for platform-specific behavior */

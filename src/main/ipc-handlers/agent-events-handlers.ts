@@ -11,7 +11,6 @@ import type { ClaudeRunInfo } from "../../shared/types/claude-code";
 import { XSTATE_SETTLED_STATES, XSTATE_ACTIVE_STATES, XSTATE_TO_PHASE, mapStateToLegacy } from "../../shared/state-machines";
 import { AgentManager } from "../agent";
 import type { ProcessType, ExecutionProgressData, AgentAuthFailure } from "../agent";
-import type { TaskEventPayload } from "../agent/task-event-schema";
 import type { TaskRunSubtask } from "../claude-code/task-runner";
 import { titleGenerator } from "../title-generator";
 import { fileWatcher } from "../file-watcher";
@@ -68,57 +67,6 @@ function findFallbackTimerKey(taskId: string, projectId?: string): string | unde
     );
   }
   return undefined;
-}
-
-/**
- * Before holding a rate-limited task until its reset time, try switching to another
- * Claude profile. The restarted run continues from its saved state (claude_run.json).
- *
- * Only applies when the run used a Claude profile (`event.profileId`, set by AgentManager);
- * runs on an API profile have no other account to switch to.
- *
- * @returns true if the task was restarted on another profile (no hold needed)
- */
-function tryAutoSwapBeforeHold(
-  agentManager: AgentManager,
-  taskId: string,
-  event: TaskEventPayload,
-  getMainWindow: () => BrowserWindow | null
-): boolean {
-  const limitedProfileId = typeof event.profileId === "string" ? event.profileId : undefined;
-  if (!limitedProfileId) {
-    return false;
-  }
-  const profileManager = getClaudeProfileManager();
-  const autoSwitch = profileManager.getAutoSwitchSettings();
-  if (!autoSwitch.enabled || !autoSwitch.autoSwitchOnRateLimit) {
-    return false;
-  }
-  const bestProfile = profileManager.getBestAvailableProfile(limitedProfileId);
-  if (!bestProfile) {
-    return false;
-  }
-  console.warn(`[agent-events-handlers] Rate limit for ${taskId}: switching profile ${limitedProfileId} -> ${bestProfile.id} instead of holding`);
-  // A task id is only unique inside its project, so the restart names the project the event came
-  // from: without it a task of the same name in another project could be the one restarted
-  if (!agentManager.restartTask(taskId, bestProfile.id, event.projectId)) {
-    return false;
-  }
-  const rateLimitInfo: SDKRateLimitInfo = {
-    source: "task",
-    projectId: event.projectId,
-    taskId,
-    resetTime: typeof event.resetAt === "string" ? event.resetAt : undefined,
-    profileId: limitedProfileId,
-    profileName: profileManager.getProfile(limitedProfileId)?.name,
-    detectedAt: new Date(),
-    originalError: typeof event.message === "string" ? event.message : undefined,
-    wasAutoSwapped: true,
-    swappedToProfile: { id: bestProfile.id, name: bestProfile.name },
-    swapReason: "reactive",
-  };
-  safeSendToRenderer(getMainWindow, IPC_CHANNELS.CLAUDE_SDK_RATE_LIMIT, rateLimitInfo);
-  return true;
 }
 
 /**
@@ -300,13 +248,10 @@ export function registerAgenteventsHandlers(
       phase: task.executionProgress?.phase
     });
 
-    // Provider limit hit with a known reset time: prefer switching accounts; otherwise
-    // persist the hold (and notify the renderer) BEFORE XState moves the task to the
-    // queue, so queue auto-promotion sees the hold and skips this task.
+    // Provider limit hit with a known reset time: persist the hold (and notify the renderer)
+    // BEFORE XState moves the task to the queue, so queue auto-promotion sees the hold and skips
+    // this task. The task stays on its account and resumes there after the reset.
     if (event.type === "RATE_LIMIT_HOLD") {
-      if (tryAutoSwapBeforeHold(agentManager, taskId, event, getMainWindow)) {
-        return;
-      }
       const hold = parseRateLimitHold({ ...event, pausedAt: event.timestamp });
       if (hold) {
         applyRateLimitHold(project, task, hold, getMainWindow);

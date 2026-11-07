@@ -141,10 +141,7 @@ export const IPC_CHANNELS = {
   CLAUDE_AUTH_LOGIN_SUBPROCESS: 'claude:authLoginSubprocess',  // Run `claude auth login` as subprocess
   CLAUDE_AUTH_LOGIN_PROGRESS: 'claude:authLoginProgress',      // Main → Renderer progress events
   CLAUDE_AUTH_LOGIN_CANCEL: 'claude:authLoginCancel',          // Stop a running `claude auth login`
-  CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS: 'claude:autoSwitchSettings',
-  CLAUDE_PROFILE_UPDATE_AUTO_SWITCH: 'claude:updateAutoSwitch',
   CLAUDE_PROFILE_FETCH_USAGE: 'claude:fetchUsage',
-  CLAUDE_PROFILE_GET_BEST_PROFILE: 'claude:getBestProfile',
 
   // SDK/CLI rate limit event (for non-terminal Claude invocations)
   CLAUDE_SDK_RATE_LIMIT: 'claude:sdkRateLimit',
@@ -153,12 +150,11 @@ export const IPC_CHANNELS = {
   // Retry a rate-limited operation with a different profile
   CLAUDE_RETRY_WITH_PROFILE: 'claude:retryWithProfile',
 
-  // Usage monitoring (proactive account switching)
+  // Usage monitoring
   USAGE_UPDATED: 'claude:usageUpdated',  // Event: usage data updated (main -> renderer)
   USAGE_REQUEST: 'claude:usageRequest',  // Request current usage snapshot
   ALL_PROFILES_USAGE_REQUEST: 'claude:allProfilesUsageRequest',  // Request all profiles usage immediately
   ALL_PROFILES_USAGE_UPDATED: 'claude:allProfilesUsageUpdated',  // Event: all profiles usage data (main -> renderer)
-  PROACTIVE_SWAP_NOTIFICATION: 'claude:proactiveSwapNotification',  // Event: proactive swap occurred
 
   // Settings
   SETTINGS_GET: 'settings:get',
@@ -321,18 +317,5 @@ export const IPC_CHANNELS = {
 
 
   // Spell check
-  SPELLCHECK_SET_LANGUAGES: 'spellcheck:setLanguages',  // Set spell check language (syncs with i18n)
-
-  // Queue routing (rate limit recovery)
-  QUEUE_GET_RUNNING_TASKS_BY_PROFILE: 'queue:getRunningTasksByProfile',
-  QUEUE_GET_BEST_PROFILE_FOR_TASK: 'queue:getBestProfileForTask',
-  QUEUE_GET_BEST_UNIFIED_ACCOUNT: 'queue:getBestUnifiedAccount', // Unified OAuth + API account selection
-  QUEUE_ASSIGN_PROFILE_TO_TASK: 'queue:assignProfileToTask',
-  QUEUE_UPDATE_TASK_SESSION: 'queue:updateTaskSession',
-  QUEUE_GET_TASK_SESSION: 'queue:getTaskSession',
-
-  // Queue routing events (main -> renderer)
-  QUEUE_PROFILE_SWAPPED: 'queue:profileSwapped',      // Task switched to different profile
-  QUEUE_SESSION_CAPTURED: 'queue:sessionCaptured',    // Session ID captured from running task
-  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles' // All profiles unavailable
+  SPELLCHECK_SET_LANGUAGES: 'spellcheck:setLanguages'  // Set spell check language (syncs with i18n)
 } as const;

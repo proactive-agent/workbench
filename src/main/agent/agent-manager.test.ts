@@ -106,11 +106,6 @@ vi.mock('../claude-profile-manager', () => ({
   getClaudeProfileManager: () => profileManager,
 }));
 
-const registry = { registerOperation: vi.fn(), unregisterOperation: vi.fn() };
-vi.mock('../claude-profile/operation-registry', () => ({
-  getOperationRegistry: () => registry,
-}));
-
 vi.mock('../services/profile', () => ({
   getAPIProfileEnv: vi.fn(async () => ({})),
 }));
@@ -253,9 +248,7 @@ describe('AgentManager', () => {
     expect(run.config.settings.fixedModel).toBe('opus');
     expect(run.config.mode).toBe('start');
     expect(manager.isRunning('001-add-login')).toBe(true);
-    expect(registry.registerOperation).toHaveBeenCalledWith(
-      'task:project-1:001-add-login', 'task-execution', 'profile-a', 'Account A', expect.any(Function), expect.anything()
-    );
+    expect(manager.getTaskProfileAssignment('001-add-login', 'project-1')).toMatchObject({ profileId: 'profile-a' });
   });
 
   it('applies a pending local merge on start only to a task without a pull request', async () => {
@@ -552,33 +545,7 @@ describe('AgentManager', () => {
     expect(manager.isRunning('001-add-login', 'project-2')).toBe(false);
   });
 
-  it('restarts the run of the project it is told, not a same-named task in another', async () => {
-    const other = { ...project, id: 'project-2', path: '/other' } as unknown as Project;
-
-    await manager.startTask('001-add-login', { project, task: makeTask(), mode: 'start' });
-    const first = await nextRun(1);
-    await manager.startTask('001-add-login', {
-      project: other,
-      task: makeTask({ projectId: 'project-2' }),
-      mode: 'start',
-    });
-    const second = await nextRun(2);
-
-    expect(manager.restartTask('001-add-login', 'profile-b', 'project-2')).toBe(true);
-
-    expect(second.stop).toHaveBeenCalled();
-    expect(first.stop).not.toHaveBeenCalled();
-    const restarted = await nextRun(3);
-    expect(restarted.config.projectId).toBe('project-2');
-    expect(restarted.config.profileId).toBe('profile-b');
-  });
-
-  /**
-   * The operation registry keys its operations by the id it is handed, so a bare task id would
-   * let the second project's run replace the first's registration - and the first run to end
-   * would then unregister whichever entry was left behind.
-   */
-  it('registers the same task id in two projects as two operations', async () => {
+  it('tracks the same task id in two projects as two runs on the account', async () => {
     const other = { ...project, id: 'project-2', path: '/other' } as unknown as Project;
 
     await manager.startTask('001-add-login', { project, task: makeTask(), mode: 'start' });
@@ -590,18 +557,14 @@ describe('AgentManager', () => {
     });
     await nextRun(2);
 
-    const ids = registry.registerOperation.mock.calls.map((call) => call[0]);
-    expect(ids).toEqual(['task:project-1:001-add-login', 'task:project-2:001-add-login']);
-
     // Both runs are on the same account, and the queue sees two of them rather than one
     expect(manager.getRunningTasksByProfile()).toEqual({
       byProfile: { 'profile-a': ['001-add-login', '001-add-login'] },
       totalRunning: 2,
     });
 
-    // And stopping one takes only its own registration with it
+    // And stopping one takes only its own run with it
     manager.killTask('001-add-login', 'project-2');
-    expect(registry.unregisterOperation.mock.calls).toEqual([['task:project-2:001-add-login']]);
     expect(manager.getRunningTasksByProfile().totalRunning).toBe(1);
   });
 
@@ -635,35 +598,6 @@ describe('AgentManager', () => {
     expect(first.stop).toHaveBeenCalled();
   });
 
-  it('restarts the right project\'s run when the swap comes through the operation registry', async () => {
-    // A rate limit swaps the run through the callback registered with the operation registry, and
-    // that callback has to name its project: with the same 001 running in two projects, the task
-    // id alone would let the swap stop and restart the other project's run
-    const other = { ...project, id: 'project-2', path: '/other' } as unknown as Project;
-
-    await manager.startTask('001-add-login', { project, task: makeTask(), mode: 'start' });
-    const first = await nextRun(1);
-    await manager.startTask('001-add-login', {
-      project: other,
-      task: makeTask({ projectId: 'project-2' }),
-      mode: 'start',
-    });
-    const second = await nextRun(2);
-
-    // The registration of the second project's run, told apart by the project path it carries
-    const registration = registry.registerOperation.mock.calls.find(
-      (call) => (call[5] as { metadata?: { projectPath?: string } } | undefined)?.metadata?.projectPath === '/other'
-    );
-    const swap = registration?.[4] as (profileId: string) => boolean;
-    expect(swap('profile-b')).toBe(true);
-
-    expect(second.stop).toHaveBeenCalled();
-    expect(first.stop).not.toHaveBeenCalled();
-    const restarted = await nextRun(3);
-    expect(restarted.config.projectId).toBe('project-2');
-    expect(restarted.config.profileId).toBe('profile-b');
-  });
-
   it('records a rate limit on the profile the run used and tags the event with it', async () => {
     const taskEvents: Array<Record<string, unknown>> = [];
     manager.on('task-event', (_taskId: string, event: Record<string, unknown>) => taskEvents.push(event));
@@ -678,29 +612,6 @@ describe('AgentManager', () => {
 
     expect(profileManager.recordRateLimitEvent).toHaveBeenCalledWith('profile-a', '8:30pm (Asia/Yerevan)');
     expect(taskEvents[0]).toMatchObject({ type: 'RATE_LIMIT_HOLD', profileId: 'profile-a', phase: 'coding' });
-  });
-
-  it('restarts a run on another profile once the previous run settled', async () => {
-    await manager.startTask('001-add-login', { project, task: makeTask(), mode: 'start' });
-    const first = await nextRun(1);
-
-    expect(manager.restartTask('001-add-login', 'profile-b')).toBe(true);
-    expect(first.stop).toHaveBeenCalled();
-    expect(profileManager.setActiveProfile).toHaveBeenCalledWith('profile-b');
-
-    const second = await nextRun(2);
-    expect(second.config.profileId).toBe('profile-b');
-    expect(manager.isRunning('001-add-login')).toBe(true);
-  });
-
-  it('gives up restarting after repeated swaps', async () => {
-    await manager.startTask('001-add-login', { project, task: makeTask(), mode: 'start' });
-    await nextRun(1);
-    expect(manager.restartTask('001-add-login', 'profile-b')).toBe(true);
-    await nextRun(2);
-    expect(manager.restartTask('001-add-login', 'profile-c')).toBe(true);
-    await nextRun(3);
-    expect(manager.restartTask('001-add-login', 'profile-d')).toBe(false);
   });
 
   it('reports a failed start when the worktree cannot be created', async () => {

@@ -7,7 +7,6 @@
  * - usage-parser: Usage data parsing and reset time calculations
  * - rate-limit-manager: Rate limit event tracking
  * - profile-storage: Disk persistence
- * - profile-scorer: Profile availability scoring and auto-switch logic
  * - profile-utils: Helper utilities
  */
 
@@ -19,11 +18,8 @@ import type {
   ClaudeProfile,
   ClaudeProfileSettings,
   ClaudeUsageData,
-  ClaudeRateLimitEvent,
-  ClaudeAutoSwitchSettings,
-  APIProfile
+  ClaudeRateLimitEvent
 } from '../shared/types';
-import type { UnifiedAccount } from '../shared/types/unified-account';
 
 // Module imports
 import { encryptToken, decryptToken } from './claude-profile/token-encryption';
@@ -38,17 +34,9 @@ import {
 import {
   loadProfileStoreAsync,
   saveProfileStore,
-  ProfileStoreData,
-  DEFAULT_AUTO_SWITCH_SETTINGS
+  ProfileStoreData
 } from './claude-profile/profile-storage';
-import {
-  getBestAvailableProfile,
-  shouldProactivelySwitch as shouldProactivelySwitchImpl,
-  getProfilesSortedByAvailability as getProfilesSortedByAvailabilityImpl,
-  getBestAvailableUnifiedAccount
-} from './claude-profile/profile-scorer';
 import { getCredentialsFromKeychain, getKeychainServiceName, normalizeWindowsPath, updateProfileSubscriptionMetadata } from './claude-profile/credential-utils';
-import { loadProfilesFile } from './services/profile/profile-manager';
 import {
   getClaudeProfilesDir,
   generateProfileId as generateProfileIdImpl,
@@ -119,7 +107,7 @@ export class ClaudeProfileManager {
   private initialized: boolean = false;
   /** Set once the store for this session's runtime (native or WSL) is chosen; nothing is saved before */
   private storeReady: boolean = false;
-  /** Called whenever the account in use changes, from any caller (Settings, swaps, terminals) */
+  /** Called whenever the account in use changes, from any caller (Settings, terminals) */
   private activeProfileListeners = new Set<(profileId: string, previousProfileId: string) => void>();
 
   constructor() {
@@ -614,8 +602,7 @@ export class ClaudeProfileManager {
     return {
       version: 3,
       profiles: [defaultProfile],
-      activeProfileId: sanitizedName,
-      autoSwitch: DEFAULT_AUTO_SWITCH_SETTINGS
+      activeProfileId: sanitizedName
     };
   }
 
@@ -641,27 +628,8 @@ export class ClaudeProfileManager {
 
     return {
       profiles: profilesWithAuth,
-      activeProfileId: this.data.activeProfileId,
-      autoSwitch: this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS
+      activeProfileId: this.data.activeProfileId
     };
-  }
-
-  /**
-   * Get auto-switch settings
-   */
-  getAutoSwitchSettings(): ClaudeAutoSwitchSettings {
-    return this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS;
-  }
-
-  /**
-   * Update auto-switch settings
-   */
-  updateAutoSwitchSettings(settings: Partial<ClaudeAutoSwitchSettings>): void {
-    this.data.autoSwitch = {
-      ...(this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS),
-      ...settings
-    };
-    this.save();
   }
 
   /**
@@ -1109,82 +1077,6 @@ export class ClaudeProfileManager {
   }
 
   /**
-   * Get the best profile to switch to based on availability and usage
-   * Returns null if no good alternative is available
-   *
-   * Selection logic:
-   * 1. Filters by availability (authenticated, not rate-limited, below thresholds)
-   * 2. Returns the available profile with the most headroom (lowest usage)
-   * 3. Falls back to "least bad" option if no profile meets all criteria
-   */
-  getBestAvailableProfile(excludeProfileId?: string): ClaudeProfile | null {
-    const settings = this.getAutoSwitchSettings();
-    return getBestAvailableProfile(this.data.profiles, settings, excludeProfileId);
-  }
-
-  /**
-   * Load API profiles from profiles.json with error handling
-   * Shared helper to avoid duplication across methods
-   */
-  private async loadProfilesFileSafe(): Promise<{ profiles: APIProfile[]; activeProfileId?: string }> {
-    try {
-      const file = await loadProfilesFile();
-      return { profiles: file.profiles, activeProfileId: file.activeProfileId ?? undefined };
-    } catch (error) {
-      console.error('[ClaudeProfileManager] Failed to load profiles file:', error);
-      return { profiles: [] };
-    }
-  }
-
-  /**
-   * Load API profiles from profiles.json
-   * Used by the unified account selection to consider API profiles as fallback
-   */
-  async loadAPIProfiles(): Promise<APIProfile[]> {
-    const { profiles } = await this.loadProfilesFileSafe();
-    return profiles;
-  }
-
-  /**
-   * Get the best available unified account from both OAuth and API profiles
-   * This enables cross-type account switching when OAuth profiles are exhausted
-   *
-   * @param excludeAccountId - Unified account ID to exclude (e.g., 'oauth-profile1')
-   * @returns The best available UnifiedAccount, or null if none available
-   */
-  async getBestAvailableUnifiedAccount(excludeAccountId?: string): Promise<UnifiedAccount | null> {
-    const settings = this.getAutoSwitchSettings();
-    const activeOAuthId = this.data.activeProfileId;
-
-    // Load API profiles and active API profile ID from profiles.json
-    const { profiles: apiProfiles, activeProfileId: activeAPIId } = await this.loadProfilesFileSafe();
-
-    return getBestAvailableUnifiedAccount(
-      this.data.profiles,
-      apiProfiles,
-      settings,
-      {
-        excludeAccountId,
-        activeOAuthId,
-        activeAPIId
-      }
-    );
-  }
-
-  /**
-   * Determine if we should proactively switch profiles based on current usage
-   */
-  shouldProactivelySwitch(profileId: string): { shouldSwitch: boolean; reason?: string; suggestedProfile?: ClaudeProfile } {
-    const profile = this.getProfile(profileId);
-    if (!profile) {
-      return { shouldSwitch: false };
-    }
-
-    const settings = this.getAutoSwitchSettings();
-    return shouldProactivelySwitchImpl(profile, this.data.profiles, settings);
-  }
-
-  /**
    * Generate a unique ID for a new profile
    */
   generateProfileId(name: string): string {
@@ -1320,13 +1212,6 @@ export class ClaudeProfileManager {
       clearRateLimitEventsImpl(profile);
       this.save();
     }
-  }
-
-  /**
-   * Get profiles sorted by availability (best first)
-   */
-  getProfilesSortedByAvailability(): ClaudeProfile[] {
-    return getProfilesSortedByAvailabilityImpl(this.data.profiles);
   }
 
   /**

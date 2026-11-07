@@ -12,13 +12,6 @@ import { hasHardcodedText } from '../../shared/utils/format-time';
 // Mock getClaudeProfileManager
 vi.mock('../claude-profile-manager', () => ({
   getClaudeProfileManager: vi.fn(() => ({
-    getAutoSwitchSettings: vi.fn(() => ({
-      enabled: true,
-      proactiveSwapEnabled: true,
-      usageCheckInterval: 30000,
-      sessionThreshold: 80,
-      weeklyThreshold: 80
-    })),
     getActiveProfile: vi.fn(() => ({
       id: 'test-profile-1',
       name: 'Test Profile',
@@ -31,10 +24,6 @@ vi.mock('../claude-profile-manager', () => ({
       baseUrl: 'https://api.anthropic.com',
       oauthToken: 'mock-oauth-token'
     })),
-    getProfilesSortedByAvailability: vi.fn(() => [
-      { id: 'profile-2', name: 'Profile 2' },
-      { id: 'profile-3', name: 'Profile 3' }
-    ]),
     setActiveProfile: vi.fn(),
     hasValidAuth: vi.fn(() => true),
     getProfileToken: vi.fn(() => 'mock-decrypted-token')
@@ -170,7 +159,7 @@ describe('usage-monitor', () => {
       expect(monitor1).toBe(monitor2);
     });
 
-    it('should start monitoring when settings allow', () => {
+    it('should start monitoring', () => {
       const monitor = getUsageMonitor();
       monitor.start();
 
@@ -254,29 +243,6 @@ describe('usage-monitor', () => {
 
       monitor.off('usage-updated', usageHandler);
       expect(monitor.listenerCount('usage-updated')).toBe(0);
-    });
-  });
-
-  describe('UsageMonitor error handling', () => {
-    it('should emit event when swap fails', () => {
-      const monitor = getUsageMonitor();
-      const swapFailedHandler = vi.fn();
-
-      monitor.on('proactive-swap-failed', swapFailedHandler);
-
-      // Manually trigger the swap logic by calling the private method through a test scenario
-      // Since we can't directly call private methods, we'll verify the event system works
-      monitor.emit('proactive-swap-failed', {
-        reason: 'no_alternative',
-        currentProfile: 'test-profile'
-      });
-
-      expect(swapFailedHandler).toHaveBeenCalledWith({
-        reason: 'no_alternative',
-        currentProfile: 'test-profile'
-      });
-
-      monitor.off('proactive-swap-failed', swapFailedHandler);
     });
   });
 
@@ -904,25 +870,17 @@ describe('usage-monitor', () => {
 
       // Mock to return null for active profile
       mockGetManager.mockReturnValueOnce({
-        getAutoSwitchSettings: vi.fn(() => ({
-          enabled: true,
-          proactiveSwapEnabled: true,
-          usageCheckInterval: 30000,
-          sessionThreshold: 80,
-          weeklyThreshold: 80
-        })),
         getActiveProfile: vi.fn(() => null), // Return null
         getProfile: vi.fn(() => null),
-        getProfilesSortedByAvailability: vi.fn(() => []),
         setActiveProfile: vi.fn(),
         getProfileToken: vi.fn(() => null)
       } as any);
 
       const monitor = getUsageMonitor();
 
-      // Call checkUsageAndSwap directly to test null profile handling
+      // Call checkUsage directly to test null profile handling
       // Should complete without throwing an error
-      await expect(monitor['checkUsageAndSwap']()).resolves.toBeUndefined();
+      await expect(monitor['checkUsage']()).resolves.toBeUndefined();
     });
 
     it('should handle profile with missing required fields', async () => {
@@ -1049,10 +1007,10 @@ describe('usage-monitor', () => {
       const monitor = getUsageMonitor();
 
       // Start first check (it will take some time)
-      const firstCheck = monitor['checkUsageAndSwap']();
+      const firstCheck = monitor['checkUsage']();
 
       // Try to start second check immediately (should be ignored)
-      const secondCheck = monitor['checkUsageAndSwap']();
+      const secondCheck = monitor['checkUsage']();
 
       // Both should resolve
       await firstCheck;
@@ -1064,89 +1022,6 @@ describe('usage-monitor', () => {
   });
 
   describe('backward compatibility', () => {
-
-    describe('Settings backward compatibility', () => {
-      it('should handle settings with missing optional fields', async () => {
-        // Get the mocked getClaudeProfileManager function
-        const { getClaudeProfileManager } = await import('../claude-profile-manager');
-        const mockGetManager = vi.mocked(getClaudeProfileManager);
-
-        // Mock settings with missing optional fields
-        mockGetManager.mockReturnValueOnce({
-          getAutoSwitchSettings: vi.fn(() => ({
-            enabled: true,
-            proactiveSwapEnabled: true
-            // Missing: usageCheckInterval, sessionThreshold, weeklyThreshold
-          })),
-          getActiveProfile: vi.fn(() => ({
-            id: 'test-profile-1',
-            name: 'Test Profile',
-            baseUrl: 'https://api.anthropic.com',
-            oauthToken: 'mock-oauth-token'
-          })),
-          getProfile: vi.fn(() => ({
-            id: 'test-profile-1',
-            name: 'Test Profile',
-            baseUrl: 'https://api.anthropic.com',
-            oauthToken: 'mock-oauth-token'
-          })),
-          getProfilesSortedByAvailability: vi.fn(() => []),
-          setActiveProfile: vi.fn(),
-          getProfileToken: vi.fn(() => 'mock-decrypted-token')
-        } as any);
-
-        const monitor = getUsageMonitor();
-
-        // Should start with default values for missing fields
-        monitor.start();
-
-        // Should have started monitoring
-        expect(monitor['intervalId']).not.toBeNull();
-
-        monitor.stop();
-      });
-
-      it('should use default thresholds when not specified in settings', async () => {
-        // Get the mocked getClaudeProfileManager function
-        const { getClaudeProfileManager } = await import('../claude-profile-manager');
-        const mockGetManager = vi.mocked(getClaudeProfileManager);
-
-        // Mock settings without thresholds
-        mockGetManager.mockReturnValueOnce({
-          getAutoSwitchSettings: vi.fn(() => ({
-            enabled: true,
-            proactiveSwapEnabled: true,
-            usageCheckInterval: 30000
-            // Missing: sessionThreshold, weeklyThreshold
-          })),
-          getActiveProfile: vi.fn(() => ({
-            id: 'test-profile-1',
-            name: 'Test Profile',
-            baseUrl: 'https://api.anthropic.com',
-            oauthToken: 'mock-oauth-token'
-          })),
-          getProfile: vi.fn(() => ({
-            id: 'test-profile-1',
-            name: 'Test Profile',
-            baseUrl: 'https://api.anthropic.com',
-            oauthToken: 'mock-oauth-token'
-          })),
-          getProfilesSortedByAvailability: vi.fn(() => []),
-          setActiveProfile: vi.fn(),
-          getProfileToken: vi.fn(() => 'mock-decrypted-token')
-        } as any);
-
-        const monitor = getUsageMonitor();
-
-        // Should not crash when checking thresholds
-        monitor.start();
-
-        // Should have started successfully
-        expect(monitor['intervalId']).not.toBeNull();
-
-        monitor.stop();
-      });
-    });
 
     describe('Anthropic response format backward compatibility', () => {
       it('should handle legacy Anthropic response format', () => {
@@ -1617,7 +1492,7 @@ describe('usage-monitor', () => {
 
       const monitor = getUsageMonitor();
 
-      // Pre-determined active profile (simulating profile at time of checkUsageAndSwap)
+      // Pre-determined active profile (simulating profile at time of checkUsage)
       const predeterminedProfile = {
         isAPIProfile: true,
         profileId: 'api-profile-1',

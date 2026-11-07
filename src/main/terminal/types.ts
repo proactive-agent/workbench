@@ -51,9 +51,6 @@ export interface RateLimitEvent {
   resetTime: string;
   detectedAt: string;
   profileId: string;
-  suggestedProfileId?: string;
-  suggestedProfileName?: string;
-  autoSwitchEnabled: boolean;
 }
 
 /**

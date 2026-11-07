@@ -1,8 +1,8 @@
 /**
- * Usage Monitor - Proactive usage monitoring and account switching
+ * Usage Monitor - Claude account usage monitoring
  *
- * Monitors Claude account usage at configured intervals and automatically
- * switches to alternative accounts before hitting rate limits.
+ * Fetches the usage of the account in use (and the other accounts, less often) for the usage
+ * badge and the accounts list. It never switches accounts.
  *
  * Uses hybrid approach:
  * 1. Primary: Direct OAuth API (https://api.anthropic.com/api/oauth/usage)
@@ -19,7 +19,6 @@ import { detectProvider as sharedDetectProvider, type ApiProvider } from '../../
 import { getCredentialsFromKeychain, clearKeychainCache } from './credential-utils';
 import { reactiveTokenRefresh, ensureValidToken } from './token-refresh';
 import { isProfileRateLimited } from './rate-limit-manager';
-import { getOperationRegistry } from './operation-registry';
 import { usesClaudeSubscription } from './profile-utils';
 import { appLog } from '../app-logger';
 
@@ -219,10 +218,6 @@ export class UsageMonitor extends EventEmitter {
   private apiFailureTimestamps: Map<string, number> = new Map();
   private static API_FAILURE_COOLDOWN_MS = 2 * 60 * 1000; // 2 minutes cooldown before API retry
 
-  // Swap loop protection: track profiles that recently failed auth
-  private authFailedProfiles: Map<string, number> = new Map(); // profileId -> timestamp
-  private static AUTH_FAILURE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes cooldown
-
   // Track profiles that need re-authentication (invalid refresh token)
   // These profiles have permanent auth failures that require manual re-auth
   private needsReauthProfiles: Set<string> = new Set();
@@ -231,6 +226,7 @@ export class UsageMonitor extends EventEmitter {
   // Map<profileId, { usage: ProfileUsageSummary, fetchedAt: number }>
   private allProfilesUsageCache: Map<string, { usage: ProfileUsageSummary; fetchedAt: number }> = new Map();
   private static PROFILE_USAGE_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes cache for inactive profiles
+  private static USAGE_CHECK_INTERVAL_MS = 60 * 1000; // 60 seconds for active profile polling
 
   // Request coalescing: track in-flight getAllProfilesUsage() promise to avoid parallel duplicate fetches
   private allProfilesUsageInflight: Promise<AllProfilesUsage | null> | null = null;
@@ -286,7 +282,6 @@ export class UsageMonitor extends EventEmitter {
    * Start monitoring usage at configured interval
    *
    * Note: Usage monitoring always runs to display the usage badge.
-   * Proactive account swapping only occurs if enabled in settings.
    *
    * Update interval: 60 seconds (60000ms) for active profile; inactive profiles every 5 minutes (adaptive: 60s when usage is high)
    */
@@ -297,22 +292,21 @@ export class UsageMonitor extends EventEmitter {
     }
 
     const profileManager = getClaudeProfileManager();
-    const settings = profileManager.getAutoSwitchSettings();
-    const interval = settings.usageCheckInterval || 60000; // 60 seconds for active profile polling
+    const interval = UsageMonitor.USAGE_CHECK_INTERVAL_MS;
 
     this.debugLog('[UsageMonitor] Starting with interval: ' + interval + ' ms (60-second updates for active profile usage stats)');
 
-    // Every way of switching accounts (Settings, swaps, terminals) goes through the profile manager
+    // Every way of switching accounts (Settings, terminals) goes through the profile manager
     this.unsubscribeActiveProfile = profileManager.onActiveProfileChanged?.((profileId) => {
       this.handleActiveProfileChanged(profileId);
     }) ?? null;
 
     // Check immediately
-    this.checkUsageAndSwap();
+    this.checkUsage();
 
     // Then check periodically
     this.intervalId = setInterval(() => {
-      this.checkUsageAndSwap();
+      this.checkUsage();
     }, interval);
   }
 
@@ -332,8 +326,7 @@ export class UsageMonitor extends EventEmitter {
   /**
    * The account in use changed: show the new account's stored usage right away (or nothing, so
    * the badge waits for it, when it was never fetched) instead of the previous account's, then
-   * fetch its usage in the background. The swap check is skipped for that refresh, so two
-   * accounts over their limits don't swap back and forth; the regular interval does that.
+   * fetch its usage in the background.
    */
   handleActiveProfileChanged(profileId: string): void {
     this.activeProfileGeneration++;
@@ -351,13 +344,13 @@ export class UsageMonitor extends EventEmitter {
     this.refreshUsage();
   }
 
-  /** Fetch the active account's usage now without the swap check (queued behind a running check) */
+  /** Fetch the active account's usage now (queued behind a running check) */
   private refreshUsage(): void {
     if (this.isChecking) {
       this.recheckPending = true;
       return;
     }
-    this.checkUsageAndSwap({ allowSwap: false }).catch(error => {
+    this.checkUsage().catch(error => {
       appLog.error('[UsageMonitor] Usage refresh failed:', error);
     });
   }
@@ -456,33 +449,12 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Clear a profile from the auth-failed list.
-   * Called after successful re-authentication to allow the profile to be used again.
-   *
-   * @param profileId - Profile identifier to clear from failed list
-   */
-  clearAuthFailedProfile(profileId: string): void {
-    const wasInFailedList = this.authFailedProfiles.has(profileId);
-    const wasNeedsReauth = this.needsReauthProfiles.has(profileId);
-    this.authFailedProfiles.delete(profileId);
-    this.needsReauthProfiles.delete(profileId);
-    this.clearProfileUsageCache(profileId);
-
-    if (wasInFailedList || wasNeedsReauth) {
-      this.debugLog('[UsageMonitor] Cleared auth failure status for profile: ' + profileId, {
-        wasInFailedList,
-        wasNeedsReauth
-      });
-    }
-  }
-
-  /**
    * Trigger an immediate usage check.
    * Called after re-authentication to give the user immediate feedback.
    */
   checkNow(): void {
     this.debugLog('[UsageMonitor] Immediate check triggered');
-    this.checkUsageAndSwap().catch(error => {
+    this.checkUsage().catch(error => {
       console.error('[UsageMonitor] Immediate check failed:', error);
     });
   }
@@ -570,14 +542,7 @@ export class UsageMonitor extends EventEmitter {
     const profilesToFetch: ProfileToFetch[] = [];
     const profileResults: (ProfileUsageSummary | null)[] = new Array(settings.profiles.length).fill(null);
 
-    // Adaptive cache TTL: when active profile usage is high, refresh inactive profiles more
-    // frequently (every 60s instead of 5min) because we may need to swap soon
-    const activeUsageHigh = this.currentUsage
-      ? (this.currentUsage.sessionPercent > 80 || this.currentUsage.weeklyPercent > 90)
-      : false;
-    const effectiveCacheTtl = activeUsageHigh
-      ? 60 * 1000 // 60s when usage is high (swap-ready mode)
-      : UsageMonitor.PROFILE_USAGE_CACHE_TTL_MS; // 5 min normally
+    const effectiveCacheTtl = UsageMonitor.PROFILE_USAGE_CACHE_TTL_MS;
 
     for (let i = 0; i < settings.profiles.length; i++) {
       const profile = settings.profiles[i];
@@ -1036,14 +1001,12 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Check usage and trigger swap if thresholds exceeded
+   * Fetch the account in use's usage (and the accounts list) and emit it for the UI
    *
-   * Refactored to use helper methods for better maintainability:
    * - determineActiveProfile(): Detects API vs OAuth profile
-   * - checkThresholdsExceeded(): Evaluates usage against thresholds
-   * - handleAuthFailure(): Manages auth failure recovery
+   * - handleAuthFailure(): Manages auth failure recovery (token refresh)
    */
-  private async checkUsageAndSwap({ allowSwap = true }: { allowSwap?: boolean } = {}): Promise<void> {
+  private async checkUsage(): Promise<void> {
     if (this.isChecking) {
       return; // Prevent concurrent checks
     }
@@ -1086,7 +1049,7 @@ export class UsageMonitor extends EventEmitter {
       const profileManager = getClaudeProfileManager();
       profileManager.updateProfileUsageFromAPI(profileId, usage.sessionPercent, usage.weeklyPercent);
 
-      // Step 3: Emit usage update for UI (always emit, regardless of proactive swap settings)
+      // Step 3: Emit usage update for UI
       this.emit('usage-updated', usage);
 
       // Step 3.5: Emit all profiles usage for multi-profile display
@@ -1102,51 +1065,8 @@ export class UsageMonitor extends EventEmitter {
           console.warn(`[UsageMonitor] Usage: ${summary}`);
         }
       }
-
-      // Step 4: Check thresholds and perform proactive swap (OAuth profiles only)
-      if (!allowSwap) return;
-      if (!isAPIProfile) {
-        const profileManager = getClaudeProfileManager();
-        const settings = profileManager.getAutoSwitchSettings();
-
-        if (!settings.enabled || !settings.proactiveSwapEnabled) {
-          this.traceLog('[UsageMonitor:TRACE] Proactive swap disabled, skipping threshold check');
-          return;
-        }
-
-        const thresholds = this.checkThresholdsExceeded(usage, settings);
-
-        if (thresholds.anyExceeded) {
-          this.traceLog('[UsageMonitor:TRACE] Threshold exceeded', {
-            sessionPercent: usage.sessionPercent,
-            weekPercent: usage.weeklyPercent,
-            activeProfile: profileId,
-            hasCredential: !!activeProfile.credential
-          });
-
-          this.debugLog('[UsageMonitor] Threshold exceeded:', {
-            sessionPercent: usage.sessionPercent,
-            sessionThreshold: settings.sessionThreshold ?? 95,
-            weeklyPercent: usage.weeklyPercent,
-            weeklyThreshold: settings.weeklyThreshold ?? 99
-          });
-
-          // Attempt proactive swap
-          await this.performProactiveSwap(
-            profileId,
-            thresholds.sessionExceeded ? 'session' : 'weekly'
-          );
-        } else {
-          this.traceLog('[UsageMonitor:TRACE] Usage OK', {
-            sessionPercent: usage.sessionPercent,
-            weekPercent: usage.weeklyPercent
-          });
-        }
-      } else {
-        this.traceLog('[UsageMonitor:TRACE] Skipping proactive swap for API profile (only supported for OAuth profiles)');
-      }
     } catch (error) {
-      // Step 5: Handle auth failures
+      // Step 4: Handle auth failures
       if (isHttpError(error) && (error.statusCode === 401 || error.statusCode === 403)) {
         if (profileId) {
           await this.handleAuthFailure(profileId, isAPIProfile);
@@ -1306,29 +1226,8 @@ export class UsageMonitor extends EventEmitter {
   }
 
   /**
-   * Check if thresholds are exceeded for proactive swapping
-   *
-   * @param usage - Current usage snapshot
-   * @param settings - Auto-switch settings
-   * @returns Object indicating which thresholds are exceeded
-   */
-  private checkThresholdsExceeded(
-    usage: ClaudeUsageSnapshot,
-    settings: { sessionThreshold?: number; weeklyThreshold?: number }
-  ): { sessionExceeded: boolean; weeklyExceeded: boolean; anyExceeded: boolean } {
-    const sessionExceeded = usage.sessionPercent >= (settings.sessionThreshold ?? 95);
-    const weeklyExceeded = usage.weeklyPercent >= (settings.weeklyThreshold ?? 99);
-
-    return {
-      sessionExceeded,
-      weeklyExceeded,
-      anyExceeded: sessionExceeded || weeklyExceeded
-    };
-  }
-
-  /**
-   * Handle auth failure by attempting token refresh, then marking profile as failed
-   * and attempting proactive swap if refresh fails.
+   * Handle auth failure by attempting token refresh (the account stays in use; one whose
+   * refresh token is invalid is marked as needing re-authentication).
    *
    * @param profileId - Profile that failed auth
    * @param isAPIProfile - Whether this is an API profile (token refresh only for OAuth)
@@ -1383,39 +1282,6 @@ export class UsageMonitor extends EventEmitter {
         this.debugLog('[UsageMonitor] Auth failure - clearing keychain cache for profile: ' + profileId);
         clearKeychainCache(profile.configDir);
       }
-    }
-
-    // Mark this profile as auth-failed to prevent swap loops
-    // This MUST happen before the early return to prevent infinite loops
-    this.authFailedProfiles.set(profileId, Date.now());
-    this.debugLog('[UsageMonitor] Auth failure detected, marked profile as failed: ' + profileId);
-
-    // Clean up expired entries from the failed profiles map
-    const now = Date.now();
-    this.authFailedProfiles.forEach((timestamp, failedProfileId) => {
-      if (now - timestamp > UsageMonitor.AUTH_FAILURE_COOLDOWN_MS) {
-        this.authFailedProfiles.delete(failedProfileId);
-      }
-    });
-
-    const settings = profileManager.getAutoSwitchSettings();
-
-    // Proactive swap is only supported for OAuth profiles, not API profiles
-    if (isAPIProfile || !settings.enabled || !settings.proactiveSwapEnabled) {
-      this.debugLog('[UsageMonitor] Auth failure detected but proactive swap is disabled or using API profile, skipping swap');
-      return;
-    }
-
-    try {
-      const excludeProfiles = Array.from(this.authFailedProfiles.keys());
-      this.debugLog('[UsageMonitor] Attempting proactive swap (excluding failed profiles):', excludeProfiles);
-      await this.performProactiveSwap(
-        profileId,
-        'session', // Treat auth failure as session limit for immediate swap
-        excludeProfiles
-      );
-    } catch (swapError) {
-      console.error('[UsageMonitor] Failed to perform auth-failure swap:', swapError);
     }
   }
 
@@ -1819,7 +1685,7 @@ export class UsageMonitor extends EventEmitter {
 
       return normalizedUsage;
     } catch (error: any) {
-      // Re-throw auth failures to be handled by checkUsageAndSwap
+      // Re-throw auth failures to be handled by checkUsage
       // This includes both status code auth failures (401/403) and body-detected failures
       if (error?.message?.includes('Auth Failure') || error?.statusCode === 401 || error?.statusCode === 403) {
         throw error;
@@ -2147,178 +2013,6 @@ export class UsageMonitor extends EventEmitter {
     // CLI-based usage fetching is intentionally not implemented.
     // The API method handles all cases; this fallback path is expected when API is rate-limited or unavailable.
     return null;
-  }
-
-  /**
-   * Perform proactive profile swap
-   * @param currentProfileId - The profile to switch from
-   * @param limitType - The type of limit that triggered the swap
-   * @param additionalExclusions - Additional profile IDs to exclude (e.g., auth-failed profiles)
-   */
-  private async performProactiveSwap(
-    currentProfileId: string,
-    limitType: 'session' | 'weekly',
-    additionalExclusions: string[] = []
-  ): Promise<void> {
-    const profileManager = getClaudeProfileManager();
-    const excludeIds = new Set([currentProfileId, ...additionalExclusions]);
-
-    // Build unified list of available accounts
-    type UnifiedSwapTarget = {
-      id: string;
-      name: string;
-      type: 'oauth' | 'api';
-    };
-
-    const unifiedAccounts: UnifiedSwapTarget[] = [];
-
-    // Add OAuth profiles (sorted by availability)
-    const oauthProfiles = profileManager.getProfilesSortedByAvailability();
-    for (const profile of oauthProfiles) {
-      // Never swap to an account without credentials (e.g. a sign-in that never finished)
-      if (!excludeIds.has(profile.id) && profileManager.hasValidAuth(profile.id)) {
-        unifiedAccounts.push({
-          id: profile.id,
-          name: profile.name,
-          type: 'oauth'
-        });
-      }
-    }
-
-    // Add API profiles (always considered available since they have unlimited usage)
-    try {
-      const profilesFile = await loadProfilesFile();
-      for (const apiProfile of profilesFile.profiles) {
-        if (!excludeIds.has(apiProfile.id) && apiProfile.apiKey) {
-          unifiedAccounts.push({
-            id: apiProfile.id,
-            name: apiProfile.name,
-            type: 'api'
-          });
-        }
-      }
-    } catch (error) {
-      this.debugLog('[UsageMonitor] Failed to load API profiles for swap:', error);
-    }
-
-    if (unifiedAccounts.length === 0) {
-      this.debugLog('[UsageMonitor] No alternative profile for proactive swap (excluded:', Array.from(excludeIds));
-      this.emit('proactive-swap-failed', {
-        reason: additionalExclusions.length > 0 ? 'all_alternatives_failed_auth' : 'no_alternative',
-        currentProfile: currentProfileId,
-        excludedProfiles: Array.from(excludeIds)
-      });
-      return;
-    }
-
-    // Claude accounts (already sorted by availability) come before API profiles
-    const bestAccount = unifiedAccounts.find((account) => account.type === 'oauth') ?? unifiedAccounts[0];
-
-    this.debugLog('[UsageMonitor] Proactive swap:', {
-      from: currentProfileId,
-      to: bestAccount.id,
-      toType: bestAccount.type,
-      reason: limitType
-    });
-
-    // Clear cache for the profile that's becoming inactive
-    // This ensures the next fetch gets fresh data instead of stale cached values
-    this.clearProfileUsageCache(currentProfileId);
-
-    // Switch to the new profile
-    // Note: bestAccount.id is already the raw profile ID (not unified format)
-    const rawProfileId = bestAccount.id;
-
-    if (bestAccount.type === 'oauth') {
-      // Switch OAuth profile via profile manager
-      profileManager.setActiveProfile(rawProfileId);
-    } else {
-      // Switch API profile via profile-manager service
-      try {
-        const { setActiveAPIProfile } = await import('../services/profile/profile-manager');
-        await setActiveAPIProfile(rawProfileId);
-      } catch (error) {
-        console.error('[UsageMonitor] Failed to set active API profile:', error);
-        return;
-      }
-    }
-
-    // Get the "from" profile name
-    let fromProfileName: string | undefined;
-    const fromOAuthProfile = profileManager.getProfile(currentProfileId);
-    if (fromOAuthProfile) {
-      fromProfileName = fromOAuthProfile.name;
-    } else {
-      // It might be an API profile
-      try {
-        const profilesFile = await loadProfilesFile();
-        const fromAPIProfile = profilesFile.profiles.find(p => p.id === currentProfileId);
-        if (fromAPIProfile) {
-          fromProfileName = fromAPIProfile.name;
-        }
-      } catch {
-        // Ignore
-      }
-    }
-
-    // Emit swap event
-    this.emit('proactive-swap-completed', {
-      fromProfile: { id: currentProfileId, name: fromProfileName },
-      toProfile: { id: bestAccount.id, name: bestAccount.name },
-      limitType,
-      timestamp: new Date()
-    });
-
-    // Notify UI
-    this.emit('show-swap-notification', {
-      fromProfile: fromProfileName,
-      toProfile: bestAccount.name,
-      reason: 'proactive',
-      limitType
-    });
-
-    // PROACTIVE OPERATION RESTART: Stop and restart all running Claude SDK operations with new profile credentials
-    // This includes autonomous tasks, MR reviews, insights, etc.
-    // Claude Agent SDK sessions maintain state independently of auth tokens, so no progress is lost
-    const operationRegistry = getOperationRegistry();
-    const operationSummary = operationRegistry.getSummary();
-    const operationIdsOnOldProfile = operationSummary.byProfile[currentProfileId] || [];
-
-    // Always log running operations info for debugging
-    console.log('[UsageMonitor] PROACTIVE-SWAP: Checking running operations:', {
-      oldProfileId: currentProfileId,
-      newProfileId: bestAccount.id,
-      totalRunning: operationSummary.totalRunning,
-      byProfile: operationSummary.byProfile,
-      byType: operationSummary.byType,
-      operationIdsOnOldProfile: operationIdsOnOldProfile
-    });
-
-    if (operationIdsOnOldProfile.length > 0) {
-      console.log('[UsageMonitor] PROACTIVE-SWAP: Found', operationIdsOnOldProfile.length, 'operations to restart:', operationIdsOnOldProfile);
-
-      // Restart all operations on the old profile with the new profile
-      const restartedCount = await operationRegistry.restartOperationsOnProfile(
-        currentProfileId,
-        bestAccount.id,
-        bestAccount.name
-      );
-
-      // Emit event for tracking/logging
-      this.emit('proactive-operations-restarted', {
-        fromProfile: { id: currentProfileId, name: fromProfileName },
-        toProfile: { id: bestAccount.id, name: bestAccount.name },
-        operationIds: operationIdsOnOldProfile,
-        restartedCount,
-        limitType,
-        timestamp: new Date()
-      });
-    } else {
-      console.log('[UsageMonitor] PROACTIVE-SWAP: No operations running on old profile', currentProfileId, '- swap complete without restart');
-    }
-
-    // Note: Don't immediately check new profile - let normal interval handle it
-    // This prevents cascading swaps if multiple profiles are near limits
   }
 }
 

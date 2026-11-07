@@ -1269,8 +1269,8 @@ no notes came with the request, so review the change against the task with fresh
   }, tempDir: string | undefined): Promise<PhaseResult> {
     const { messaging } = this;
     const { settings } = this.config;
-    // Stay on the profile that holds the session transcript, unless the caller switched profiles
-    // (rate-limit swap); then the transcript is copied to the new profile below
+    // Stay on the profile that holds the session transcript, unless the caller names another one
+    // (the project's account was changed); then the transcript is copied to the new profile below
     const { command, env, profileId } = await resolveClaudeEnv({
       profileId: this.config.profileId ?? (params.resume ? this.info.profileId : undefined),
       extraEnv: {

@@ -352,21 +352,6 @@
   "accounts": {
     "title": "Accounts",
     "description": "Manage Claude accounts and API endpoints",
-    "autoSwitching": {
-      "description": "Switch to another Claude account before or when the one in use hits a limit",
-      "enableAutoSwitching": "Enable automatic switching",
-      "masterSwitch": "Master switch for all auto-swap features",
-      "proactiveMonitoring": "Proactive monitoring",
-      "proactiveDescription": "Check usage regularly and swap before hitting limits",
-      "sessionThreshold": "Session usage threshold",
-      "sessionThresholdDescription": "Switch when session usage reaches this level (recommended: 95%)",
-      "weeklyThreshold": "Weekly usage threshold",
-      "weeklyThresholdDescription": "Switch when weekly usage reaches this level (recommended: 99%)",
-      "reactiveRecovery": "Reactive recovery",
-      "reactiveDescription": "Auto-swap when unexpected rate limit is hit",
-      "autoSwitchOnAuthFailure": "Auto-switch on auth failure",
-      "autoSwitchOnAuthFailureDescription": "Automatically switch to another authenticated account when authentication fails"
-    },
     "metrics": {
       "title": "Metrics",
       "tasks_one": "{{count}} task",

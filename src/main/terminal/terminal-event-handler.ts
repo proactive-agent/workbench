@@ -71,8 +71,7 @@ export function handleTerminalData(
  */
 export function createEventCallbacks(
   getWindow: WindowGetter,
-  lastNotifiedRateLimitReset: Map<string, string>,
-  switchProfileCallback: (terminalId: string, profileId: string) => Promise<void>
+  lastNotifiedRateLimitReset: Map<string, string>
 ): EventHandlerCallbacks {
   return {
     onRateLimit: (terminal, data) => {
@@ -80,8 +79,7 @@ export function createEventCallbacks(
         terminal,
         data,
         lastNotifiedRateLimitReset,
-        getWindow,
-        switchProfileCallback
+        getWindow
       );
     },
     onOAuthToken: (terminal, data) => {

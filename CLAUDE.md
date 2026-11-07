@@ -42,7 +42,8 @@ reviews, requests changes (same session continues) or merges.
 - **Isolated Workspaces** — Git worktree isolation for every build; AI-powered semantic merge
 - **Authentication** — Claude subscription accounts (each a `CLAUDE_CONFIG_DIR`) or API profiles with any
   Anthropic-compatible endpoint
-- **Multi-Account Swapping** — When one Claude account hits a rate limit, switch to an available one automatically
+- **Multiple accounts** — Each project runs on the Claude account chosen for it; work never moves to another account by
+  itself: a rate-limited account's tasks wait for its reset and resume on it
 - **Cross-Platform** — Windows, macOS, and Linux with in-app updates (Settings > Updates)
 
 ## Critical Rules
@@ -208,8 +209,9 @@ workbench/
     task list (TaskCreate/TaskUpdate, enabled with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`) is mirrored as the task's subtasks.
 - **One-shot calls** (`run-text.ts`, `runClaudeText`) — `claude -p --output-format json --no-session-persistence`, tools
   off unless asked, optional `--json-schema`.
-- **Process + env** (`process.ts`, `env.ts`) — async spawn, stream-json parsing (`stream-types.ts`), best available
-  Claude profile (rate-limit aware) or the active API profile.
+- **Process + env** (`process.ts`, `env.ts`) — async spawn, stream-json parsing (`stream-types.ts`), the run's Claude
+  profile (the project's account, else the account in use; never another one because of limits, only instead of an
+  account that is removed or signed out) or the active API profile.
 - **Session costs** (`project-sessions.ts`, `session-spending.ts`, `session-pricing.ts`) — a project's other Claude
   Code sessions (agent windows, Claude chat, `claude` in a terminal), found by the directory they ran in, and what they
   cost per day from their transcripts (Metrics, `src/main/project-metrics.ts`).

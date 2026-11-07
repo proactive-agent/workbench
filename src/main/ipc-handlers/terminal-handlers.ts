@@ -445,46 +445,6 @@ export function registerTerminalHandlers(
   // The new authentication flow (CLAUDE_PROFILE_AUTHENTICATE) doesn't require
   // manual code submission - the user completes OAuth directly in the browser.
 
-  // Get auto-switch settings
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS,
-    async (): Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        const settings = profileManager.getAutoSwitchSettings();
-        return { success: true, data: settings };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to get auto-switch settings'
-        };
-      }
-    }
-  );
-
-  // Update auto-switch settings
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_UPDATE_AUTO_SWITCH,
-    async (_, settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>): Promise<IPCResult> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        profileManager.updateAutoSwitchSettings(settings);
-
-        // Restart usage monitor with new settings
-        const monitor = getUsageMonitor();
-        monitor.stop();
-        monitor.start();
-
-        return { success: true };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to update auto-switch settings'
-        };
-      }
-    }
-  );
-
   // Fetch usage by sending /usage command to terminal
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_PROFILE_FETCH_USAGE,
@@ -497,23 +457,6 @@ export function registerTerminalHandlers(
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to fetch usage'
-        };
-      }
-    }
-  );
-
-  // Get best available profile
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_GET_BEST_PROFILE,
-    async (_, excludeProfileId?: string): Promise<IPCResult<ClaudeProfile | null>> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        const bestProfile = profileManager.getBestAvailableProfile(excludeProfileId);
-        return { success: true, data: bestProfile };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to get best profile'
         };
       }
     }
@@ -722,10 +665,5 @@ export function initializeUsageMonitorForwarding(getWindow: () => BrowserWindow 
   // Forward all profiles usage updates to renderer (for multi-profile display)
   monitor.on('all-profiles-usage-updated', (allProfilesUsage: AllProfilesUsage) => {
     safeSendToRenderer(getWindow, IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, allProfilesUsage);
-  });
-
-  // Forward proactive swap notifications to renderer
-  monitor.on('show-swap-notification', (notification: unknown) => {
-    safeSendToRenderer(getWindow, IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, notification);
   });
 }

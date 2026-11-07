@@ -31,7 +31,7 @@ vi.mock('../../platform/shell-runtime', () => ({
 vi.mock('../../services/profile', () => ({ getAPIProfileEnv: async () => ({}) }));
 vi.mock('../../rate-limit-detector', () => ({
   getUsableProfileEnv: () => profileEnvRef.env,
-  getBestAvailableProfileEnv: () => ({ env: profileEnvRef.env, profileId: 'p', profileName: 'P' }),
+  getRunnableProfileEnv: () => ({ env: profileEnvRef.env, profileId: 'p', profileName: 'P' }),
   isDetectedClaudeCodeProfile: () => profileEnvRef.detected,
 }));
 

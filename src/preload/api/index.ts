@@ -13,7 +13,6 @@ import { LiveAgentAPI, createLiveAgentAPI } from './modules/live-agent-api';
 import { McpAPI, createMcpAPI } from './modules/mcp-api';
 import { BrowserDrawerAPI, createBrowserDrawerAPI } from './modules/browser-drawer-api';
 import { ProfileAPI, createProfileAPI } from './profile-api';
-import { QueueAPI, createQueueAPI } from './queue-api';
 import { WindowAPI, createWindowAPI } from './modules/window-api';
 import { ShellRuntimeAPI, createShellRuntimeAPI } from './modules/shell-runtime-api';
 
@@ -34,10 +33,7 @@ export interface ElectronAPI extends
   BrowserDrawerAPI,
   ProfileAPI,
   WindowAPI,
-  ShellRuntimeAPI {
-  /** Queue routing API for rate limit recovery */
-  queue: QueueAPI;
-}
+  ShellRuntimeAPI {}
 
 export const createElectronAPI = (): ElectronAPI => ({
   ...createProjectAPI(),
@@ -55,8 +51,7 @@ export const createElectronAPI = (): ElectronAPI => ({
   ...createBrowserDrawerAPI(),
   ...createProfileAPI(),
   ...createWindowAPI(),
-  ...createShellRuntimeAPI(),
-  queue: createQueueAPI()  // Queue routing for rate limit recovery
+  ...createShellRuntimeAPI()
 });
 
 // Export individual API creators for potential use in tests or specialized contexts

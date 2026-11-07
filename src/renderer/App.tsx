@@ -25,7 +25,6 @@ import { Insights } from './components/Insights';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ProjectsPage } from './components/ProjectsPage';
 import { AuthFailureModal } from './components/AuthFailureModal';
-import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
 import { useInsightsStore, chatBrowserId } from './stores/insights-store';
@@ -680,7 +679,6 @@ export function App() {
   return (
     <ViewStateProvider>
       <TooltipProvider>
-        <ProactiveSwapListener />
       <div className="flex h-screen bg-background">
         {/* Sidebar */}
         <Sidebar

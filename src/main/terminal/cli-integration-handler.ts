@@ -1057,14 +1057,14 @@ export function finalizeClaudeInvoke(
 }
 
 /**
- * Handle rate limit detection and profile switching
+ * Handle rate limit detection: the window's account is marked rate limited until its reset
+ * (the window stays on that account)
  */
 export function handleRateLimit(
   terminal: TerminalProcess,
   data: string,
   lastNotifiedRateLimitReset: Map<string, string>,
-  getWindow: WindowGetter,
-  switchProfileCallback: (terminalId: string, profileId: string) => Promise<void>
+  getWindow: WindowGetter
 ): void {
   if (!OutputParser.extractRateLimitReset(data)) {
     return;
@@ -1099,27 +1099,12 @@ export function handleRateLimit(
     console.error('[ClaudeIntegration] Failed to record rate limit event:', err);
   }
 
-  const autoSwitchSettings = profileManager.getAutoSwitchSettings();
-  const bestProfile = profileManager.getBestAvailableProfile(currentProfileId);
-
   safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_RATE_LIMIT, {
     terminalId: terminal.id,
     resetTime,
     detectedAt: new Date().toISOString(),
-    profileId: currentProfileId,
-    suggestedProfileId: bestProfile?.id,
-    suggestedProfileName: bestProfile?.name,
-    autoSwitchEnabled: autoSwitchSettings.autoSwitchOnRateLimit
+    profileId: currentProfileId
   } as RateLimitEvent);
-
-  if (autoSwitchSettings.enabled && autoSwitchSettings.autoSwitchOnRateLimit && bestProfile) {
-    console.warn('[ClaudeIntegration] Auto-switching to profile:', bestProfile.name);
-    switchProfileCallback(terminal.id, bestProfile.id).then(_result => {
-      console.warn('[ClaudeIntegration] Auto-switch completed');
-    }).catch(err => {
-      console.error('[ClaudeIntegration] Auto-switch failed:', err);
-    });
-  }
 }
 
 /**

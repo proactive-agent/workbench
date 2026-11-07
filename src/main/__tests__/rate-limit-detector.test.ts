@@ -17,7 +17,6 @@ vi.mock('../claude-profile-manager', () => ({
       name: 'Test Profile',
       isDefault: true
     })),
-    getBestAvailableProfile: vi.fn(() => null),
     recordRateLimitEvent: vi.fn()
   }))
 }));

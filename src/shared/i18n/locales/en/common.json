@@ -109,12 +109,6 @@
     "notFound": "Not found",
     "unauthorized": "Unauthorized"
   },
-  "notification": {
-    "accountSwitched": "Account Switched",
-    "swapFrom": "Switched from",
-    "swapTo": "to",
-    "swapReason": "({{reason}} swap)"
-  },
   "insights": {
     "suggestedTask": "Suggested Task",
     "creating": "Creating...",

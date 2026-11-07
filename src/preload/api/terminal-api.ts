@@ -11,20 +11,11 @@ import type {
   TerminalCreateOptions,
   ClaudeProfile,
   ClaudeProfileSettings,
-  ClaudeUsageSnapshot,
   CreateTerminalWorktreeRequest,
   TerminalWorktreeConfig,
   TerminalWorktreeResult,
   OtherWorktreeInfo,
 } from '../../shared/types';
-
-/** Type for proactive swap notification events */
-interface ProactiveSwapNotification {
-  fromProfile: { id: string; name: string };
-  toProfile: { id: string; name: string };
-  reason: string;
-  usageSnapshot: ClaudeUsageSnapshot;
-}
 
 export interface TerminalAPI {
   // Terminal Operations
@@ -103,19 +94,15 @@ export interface TerminalAPI {
   claudeAuthLoginSubprocess: (profileId: string) => Promise<IPCResult<{ authenticated: boolean; email?: string }>>;
   cancelClaudeAuthLogin: (profileId: string) => Promise<IPCResult>;
   onClaudeAuthLoginProgress: (callback: (data: { status: string; message?: string }) => void) => () => void;
-  getAutoSwitchSettings: () => Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>>;
-  updateAutoSwitchSettings: (settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>) => Promise<IPCResult>;
   fetchClaudeUsage: (terminalId: string) => Promise<IPCResult>;
-  getBestAvailableProfile: (excludeProfileId?: string) => Promise<IPCResult<import('../../shared/types').ClaudeProfile | null>>;
   onAuthFailure: (callback: (info: import('../../shared/types').AuthFailureInfo) => void) => () => void;
   retryWithProfile: (request: import('../../shared/types').RetryWithProfileRequest) => Promise<IPCResult>;
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   requestUsageUpdate: () => Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>>;
   requestAllProfilesUsage: (forceRefresh?: boolean) => Promise<IPCResult<import('../../shared/types').AllProfilesUsage | null>>;
   onUsageUpdated: (callback: (usage: import('../../shared/types').ClaudeUsageSnapshot | null) => void) => () => void;
   onAllProfilesUsageUpdated: (callback: (allProfilesUsage: import('../../shared/types').AllProfilesUsage) => void) => () => void;
-  onProactiveSwapNotification: (callback: (notification: ProactiveSwapNotification) => void) => () => void;
 }
 
 export const createTerminalAPI = (): TerminalAPI => ({
@@ -417,17 +404,8 @@ export const createTerminalAPI = (): TerminalAPI => ({
     };
   },
 
-  getAutoSwitchSettings: (): Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS),
-
-  updateAutoSwitchSettings: (settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>): Promise<IPCResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_UPDATE_AUTO_SWITCH, settings),
-
   fetchClaudeUsage: (terminalId: string): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_FETCH_USAGE, terminalId),
-
-  getBestAvailableProfile: (excludeProfileId?: string): Promise<IPCResult<import('../../shared/types').ClaudeProfile | null>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_GET_BEST_PROFILE, excludeProfileId),
 
   onAuthFailure: (
     callback: (info: import('../../shared/types').AuthFailureInfo) => void
@@ -447,7 +425,7 @@ export const createTerminalAPI = (): TerminalAPI => ({
   retryWithProfile: (request: import('../../shared/types').RetryWithProfileRequest): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_RETRY_WITH_PROFILE, request),
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   requestUsageUpdate: (): Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>> =>
     ipcRenderer.invoke(IPC_CHANNELS.USAGE_REQUEST),
 
@@ -481,18 +459,6 @@ export const createTerminalAPI = (): TerminalAPI => ({
     ipcRenderer.on(IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, handler);
-    };
-  },
-
-  onProactiveSwapNotification: (
-    callback: (notification: ProactiveSwapNotification) => void
-  ): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, notification: ProactiveSwapNotification): void => {
-      callback(notification);
-    };
-    ipcRenderer.on(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, handler);
-    return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, handler);
     };
   }
 });

@@ -37,34 +37,14 @@ export const claudeProfileMock = {
 
   setClaudeProfileToken: async () => ({ success: true }),
 
-  getAutoSwitchSettings: async () => ({
-    success: true,
-    data: {
-      enabled: false,
-      proactiveSwapEnabled: false,
-      sessionThreshold: 95,
-      weeklyThreshold: 99,
-      autoSwitchOnRateLimit: false,
-      autoSwitchOnAuthFailure: false,
-      usageCheckInterval: 30000
-    }
-  }),
-
-  updateAutoSwitchSettings: async () => ({ success: true }),
-
   fetchClaudeUsage: async () => ({ success: true }),
-
-  getBestAvailableProfile: async () => ({
-    success: true,
-    data: null
-  }),
 
 
   onAuthFailure: () => () => {},
 
   retryWithProfile: async () => ({ success: true }),
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   requestUsageUpdate: async () => ({
     success: true,
     data: null
@@ -78,8 +58,6 @@ export const claudeProfileMock = {
   onUsageUpdated: () => () => {},
 
   onAllProfilesUsageUpdated: () => () => {},
-
-  onProactiveSwapNotification: () => () => {},
 
   // Returns terminal config for embedded authentication
   authenticateClaudeProfile: async (profileId: string) => ({

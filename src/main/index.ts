@@ -813,8 +813,8 @@ app.whenReady().then(async () => {
   });
 
   // Initialize Claude profile manager, then start usage monitor
-  // We do this sequentially to ensure profile data (including auto-switch settings)
-  // is loaded BEFORE the usage monitor attempts to read settings.
+  // We do this sequentially to ensure profile data
+  // is loaded BEFORE the usage monitor attempts to read it.
   // This prevents the "UsageMonitor disabled" error due to race condition.
   // Forwarding is registered once, here: the monitor's events go to every window either way
   initializeUsageMonitorForwarding(() => getFocusedWindow());

@@ -37,10 +37,7 @@ export class TerminalManager {
     // Create event callbacks with bound context
     this.eventCallbacks = TerminalEventHandler.createEventCallbacks(
       this.getWindow,
-      this.lastNotifiedRateLimitReset,
-      async (terminalId, profileId) => {
-        await this.switchClaudeProfile(terminalId, profileId);
-      }
+      this.lastNotifiedRateLimitReset
     );
 
     // Periodically save session data. The period is shared with the store, which reads the trail
