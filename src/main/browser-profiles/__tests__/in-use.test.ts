@@ -113,10 +113,12 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     async function processNamed(name: string): Promise<number> {
       const link = path.join(dir, name);
       await symlink('/bin/sleep', link);
-      const child = spawn(link, ['30'], { stdio: 'ignore' });
+      // Run as `sleep` (argv[0]) while the process is named after the link: Rust coreutils (Ubuntu
+      // 25.10+) is one binary that picks its tool by argv[0], and exits at once as `chrome`
+      const child = spawn(link, ['30'], { stdio: 'ignore', argv0: 'sleep' });
       children.push(child);
-      // Until exec has replaced the forked node's name (slow on a busy CI runner: a second wasn't
-      // always enough), failing here rather than in the assertion that needs it
+      // Until exec has replaced the forked node's name, failing here rather than in the assertion
+      // that needs it
       for (let i = 0; i < 1000; i++) {
         const comm = await readFile(`/proc/${child.pid}/comm`, 'utf-8').catch(() => '');
         if (comm.trim() === name.slice(0, 15)) return child.pid!;
