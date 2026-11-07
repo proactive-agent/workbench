@@ -3,7 +3,7 @@
  * follows, and a picked command replaces the token.
  */
 import { describe, it, expect } from 'vitest';
-import { filterSlashCommands, insertSlashCommand, slashTokenAt } from '../insights-slash-commands';
+import { filterSlashCommands, insertSlashCommand, slashTokenAt, splitSlashCommands } from '../insights-slash-commands';
 
 describe('slashTokenAt', () => {
   it('finds a slash at the start or after a space, up to the caret', () => {
@@ -37,5 +37,25 @@ describe('insertSlashCommand', () => {
 
   it('keeps a command picked further in where it was typed', () => {
     expect(insertSlashCommand('please use /code-re skill', { start: 11, query: 'code-re' }, 19, 'code-review')).toEqual({ value: 'please use /code-review skill', caret: 24 });
+  });
+});
+
+describe('splitSlashCommands', () => {
+  const names = new Set(['code-review', 'compact']);
+
+  it('marks only listed commands that start the input or a word', () => {
+    expect(splitSlashCommands('please use /code-review skill', names)).toEqual([
+      { text: 'please use ', command: false },
+      { text: '/code-review', command: true },
+      { text: ' skill', command: false },
+    ]);
+    expect(splitSlashCommands('/compact', names)).toEqual([{ text: '/compact', command: true }]);
+  });
+
+  it('leaves unlisted names, paths and partial names plain', () => {
+    expect(splitSlashCommands('see /usr/bin and /unknown or /code-rev', names)).toEqual([
+      { text: 'see /usr/bin and /unknown or /code-rev', command: false },
+    ]);
+    expect(splitSlashCommands('a/compact', names)).toEqual([{ text: 'a/compact', command: false }]);
   });
 });

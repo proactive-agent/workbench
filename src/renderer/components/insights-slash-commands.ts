@@ -36,6 +36,32 @@ export function filterSlashCommands(commands: ChatSlashCommand[], query: string)
   return [...starts, ...contains];
 }
 
+/** A run of the input's text, and whether it is a listed slash command (shown in the primary color) */
+export interface SlashTextPart {
+  text: string;
+  command: boolean;
+}
+
+/**
+ * The input split around the slash commands it names: a `/name` starting the input or a word and
+ * ending at a space or the end, whose name is in `names` (the menu's commands, so a path or any
+ * other word starting with `/` isn't one)
+ */
+export function splitSlashCommands(value: string, names: ReadonlySet<string>): SlashTextPart[] {
+  const parts: SlashTextPart[] = [];
+  let last = 0;
+  for (const match of value.matchAll(/(^|\s)\/([^\s/]+)(?=\s|$)/g)) {
+    if (!names.has(match[2])) continue;
+    const start = match.index + match[1].length;
+    if (start > last) parts.push({ text: value.slice(last, start), command: false });
+    const end = start + match[2].length + 1;
+    parts.push({ text: value.slice(start, end), command: true });
+    last = end;
+  }
+  if (last < value.length) parts.push({ text: value.slice(last), command: false });
+  return parts;
+}
+
 /** The input with the token replaced by the command (and a space), and the caret after it */
 export function insertSlashCommand(value: string, token: SlashToken, caret: number, name: string): { value: string; caret: number } {
   const inserted = `/${name} `;
@@ -133,6 +159,8 @@ export function useSlashCommandMenu({ projectId, accountKey, enabled, value, car
   }, [open, token?.start]);
 
   const listed = commands?.status === 'ready' || commands?.status === 'loading' ? commands.commands : undefined;
+  // The names the composer colors in its text (with the Clawd button on)
+  const names = useMemo(() => new Set(enabled && listed ? listed.map((command) => command.name) : []), [enabled, listed]);
   const items = useMemo(
     () => (open && listed ? filterSlashCommands(listed, token.query) : []),
     [open, listed, token?.query]
@@ -195,5 +223,6 @@ export function useSlashCommandMenu({ projectId, accountKey, enabled, value, car
     error: commands?.status === 'error' ? commands.error : null,
     select,
     handleKeyDown,
+    names,
   };
 }

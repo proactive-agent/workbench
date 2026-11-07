@@ -66,7 +66,7 @@ import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
-import { useSlashCommandMenu } from './insights-slash-commands';
+import { splitSlashCommands, useSlashCommandMenu } from './insights-slash-commands';
 import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
@@ -419,6 +419,12 @@ export function Insights({ projectId }: InsightsProps) {
         : hour < 18 ? 'insights.greeting.afternoon'
           : 'insights.greeting.evening';
 
+  // The composer's text split around the listed slash commands it names (colored with the Clawd
+  // button on)
+  const inputParts = useMemo(() => splitSlashCommands(inputValue, slashMenu.names), [inputValue, slashMenu.names]);
+  const commandHighlight = inputParts.some((part) => part.command);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+
   // Auto-grow the composer textarea with its content (capped by max-h-96)
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -426,6 +432,15 @@ export function Insights({ projectId }: InsightsProps) {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 384)}px`;
   }, [inputValue, isEmpty]);
+
+  // The copy behind the field leaves out the field's scrollbar and follows its scroll
+  useLayoutEffect(() => {
+    const field = textareaRef.current;
+    const copy = highlightRef.current;
+    if (!field || !copy) return;
+    copy.style.right = `${field.offsetWidth - field.clientWidth}px`;
+    copy.scrollTop = field.scrollTop;
+  });
 
   // The composer moves between the empty-state and conversation layouts; keep focus on it
   useEffect(() => {
@@ -651,6 +666,28 @@ export function Insights({ projectId }: InsightsProps) {
           </div>
         )}
 
+        {/* The listed slash commands in the text show in the primary color: the text is drawn by a
+            copy behind the field (same box, wrapping and scroll), and the field's own text is
+            transparent while it holds one */}
+        <div className="relative">
+        {commandHighlight && (
+          <div
+            ref={highlightRef}
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 overflow-hidden whitespace-pre-wrap break-words',
+              isEmpty ? 'px-4 pt-4 pb-1' : 'py-3 pl-4 pr-12',
+              'text-[0.9375rem] leading-relaxed text-foreground',
+              isLoading && 'opacity-60'
+            )}
+          >
+            {inputParts.map((part, index) => (
+              part.command ? <span key={index} className="text-primary">{part.text}</span> : part.text
+            ))}
+            {/* A last empty line takes its room, as in the field */}
+            {inputValue.endsWith('\n') && ' '}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={1}
@@ -662,18 +699,24 @@ export function Insights({ projectId }: InsightsProps) {
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
+          onScroll={(e) => {
+            if (highlightRef.current) highlightRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
           placeholder={isEmpty ? t('insights.placeholder') : t('insights.replyPlaceholder')}
           aria-label={t('insights.placeholder')}
           spellCheck
           lang={i18n.language}
           className={cn(
-            'block max-h-96 w-full resize-none overflow-y-auto border-0 bg-transparent',
+            'relative block max-h-96 w-full resize-none overflow-y-auto border-0 bg-transparent',
             isEmpty ? 'min-h-[3rem] px-4 pt-4 pb-1' : 'min-h-[3rem] py-3 pl-4 pr-12',
             'text-[0.9375rem] leading-relaxed text-foreground placeholder:text-(--field-placeholder)',
-            'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60'
+            'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+            // The copy behind shows the text; a light selection lets it show through
+            commandHighlight && 'text-transparent caret-foreground selection:bg-primary/25'
           )}
           disabled={isLoading}
         />
+        </div>
 
         {isEmpty ? (
           /* Toolbar (new chat): attach on the left; the model and send on the right */
