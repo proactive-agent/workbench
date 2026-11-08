@@ -16,7 +16,11 @@ vi.mock('../insights/insights-executor', async () => {
   class FakeExecutor extends EventEmitter {
     cancelSession() { return false; }
     isSessionActive(_projectId: string, chatId?: string) { return !!chatId && replying.has(chatId); }
-    execute(...args: unknown[]) { return execute(...args); }
+    async execute(...args: unknown[]) {
+      const turn = args[6] as { beforeRun?: () => Promise<unknown> } | undefined;
+      await turn?.beforeRun?.();
+      return execute(...args);
+    }
   }
   return { InsightsExecutor: FakeExecutor };
 });
@@ -24,7 +28,7 @@ vi.mock('../insights/config', () => ({ InsightsConfig: class { configure() {} } 
 const ensureWindow = vi.fn(async () => true);
 vi.mock('../session-messaging/agent-windows', () => ({ ensureAgentWindowRunning: (...args: unknown[]) => ensureWindow(...(args as [])) }));
 
-import { insightsService as service } from '../insights-service';
+import { insightsService as service, planClaudeSession } from '../insights-service';
 import { getChatSource } from '../session-messaging/directory';
 
 let projectDir: string;
@@ -138,28 +142,104 @@ describe('messages to a chat', () => {
     await expect(service.receiveMessage(pid, projectDir, chatId, from, 'ping 7')).resolves.toEqual({ status: 'started' });
   });
 
-  it('keeps the limit for messages that waited for a reply, and leaves them waiting after a stop', async () => {
+  it('keeps the limit for messages that waited for a reply', async () => {
     const chatId = await chatWithOneReply();
     replying.add(chatId);
     for (let n = 1; n <= 7; n++) {
       await expect(service.receiveMessage(pid, projectDir, chatId, from, `burst ${n}`)).resolves.toEqual({ status: 'queued' });
     }
-    // A reply the user stops: nothing waiting starts
     replying.delete(chatId);
+    // A reply that ends: the waiting ones are answered one after another, five at most
+    execute.mockResolvedValueOnce({ fullResponse: 'to the user', toolsUsed: [] });
+    for (let n = 1; n <= 5; n++) execute.mockResolvedValueOnce({ fullResponse: `answer ${n}`, toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'again');
+    for (let n = 0; n < 20; n++) await flush();
+    expect(execute).toHaveBeenCalledTimes(2 + 5);
+    const contents = service.loadSession(pid, projectDir)!.messages.map((m) => m.content);
+    // The last two are shown without a reply
+    expect(contents.slice(-2)).toEqual(['burst 6', 'burst 7']);
+  });
+
+  it('shows the messages that waited without answering them after a stop, and passes them on with the next message', async () => {
+    const chatId = await chatWithOneReply();
+    replying.add(chatId);
+    await service.receiveMessage(pid, projectDir, chatId, from, 'burst 1');
+    await service.receiveMessage(pid, projectDir, chatId, from, 'burst 2');
+    replying.delete(chatId);
+    // A reply the user stops: the waiting messages show, and nothing starts
     execute.mockResolvedValueOnce({ fullResponse: '', toolsUsed: [], stopped: true });
     await service.sendMessage(pid, projectDir, 'question');
     await flush();
     expect(execute).toHaveBeenCalledTimes(2);
+    let messages = service.loadSession(pid, projectDir)!.messages;
+    expect(messages.slice(-2).map((m) => [m.role, m.content, m.from?.name])).toEqual([
+      ['user', 'burst 1', 'agent-1a2b3c4d'],
+      ['user', 'burst 2', 'agent-1a2b3c4d'],
+    ]);
 
-    // A reply that ends: the waiting ones are answered one after another, five at most
-    for (let n = 1; n <= 5; n++) execute.mockResolvedValueOnce({ fullResponse: `answer ${n}`, toolsUsed: [] });
-    execute.mockResolvedValueOnce({ fullResponse: 'to the user', toolsUsed: [] });
-    await service.sendMessage(pid, projectDir, 'again');
-    for (let n = 0; n < 20; n++) await flush();
-    expect(execute).toHaveBeenCalledTimes(3 + 5);
-    const contents = service.loadSession(pid, projectDir)!.messages.map((m) => m.content);
-    // The last two are shown without a reply
-    expect(contents.slice(-2)).toEqual(['burst 6', 'burst 7']);
+    // The user's next message resumes the session from the last finished reply and brings them
+    execute.mockResolvedValueOnce({ fullResponse: 'All three', toolsUsed: [], claudeRef: { sessionId: 's', messageUuid: 'u2' } });
+    await service.sendMessage(pid, projectDir, 'and now?');
+    // (The stopped reply left no session to resume, so they come in the history of a new one)
+    const [, , message, history, , , turn] = execute.mock.calls.at(-1)!;
+    const seen = `${JSON.stringify(history)}\n${message}`;
+    expect(seen).toContain('burst 1');
+    expect(seen).toContain('burst 2');
+    expect(message.endsWith('and now?')).toBe(true);
+    messages = service.loadSession(pid, projectDir)!.messages;
+    expect(messages.at(-1)).toMatchObject({ role: 'assistant', content: 'All three' });
+    expect(turn.chatSessionId).toBe(chatId);
+  });
+
+  it('answers other sessions read-only, even with the Clawd button on', async () => {
+    execute.mockResolvedValueOnce({ fullResponse: 'Hello', toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'hi', { agentMode: true } as never);
+    const chatId = service.loadSession(pid, projectDir)!.id;
+    execute.mockResolvedValueOnce({ fullResponse: 'Got it', toolsUsed: [] });
+    await service.receiveMessage(pid, projectDir, chatId, from, 'run this');
+    await flush();
+    const [, , , , config, , turn] = execute.mock.calls.at(-1)!;
+    expect(config.agentMode).toBe(false);
+    // It answers an agent window, so it may message one back
+    expect(turn.reachesAgentWindow).toBe(true);
+  });
+
+  it('opens the agent window inside the turn, so a stop or a newer message sees the chat replying', async () => {
+    const to = { kind: 'agent' as const, name: 'agent-1a2b3c4d', title: 'Agent 1' };
+    execute.mockResolvedValueOnce({ fullResponse: 'Sent it', toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'say hello', undefined, undefined, to);
+    const [, , , , , , turn] = execute.mock.calls.at(-1)!;
+    expect(typeof turn.beforeRun).toBe('function');
+    expect(turn.reachesAgentWindow).toBe(true);
+  });
+
+  it('resumes the session past messages held without a reply, and passes them on', async () => {
+    execute.mockResolvedValueOnce({ fullResponse: 'Hello', toolsUsed: [], claudeRef: { sessionId: 's', messageUuid: 'r0' } });
+    await service.sendMessage(pid, projectDir, 'hi');
+    const chatId = service.loadSession(pid, projectDir)!.id;
+    for (let n = 1; n <= 5; n++) {
+      execute.mockResolvedValueOnce({ fullResponse: `answer ${n}`, toolsUsed: [], claudeRef: { sessionId: 's', messageUuid: `r${n}` } });
+      await service.receiveMessage(pid, projectDir, chatId, from, `ping ${n}`);
+      await flush();
+    }
+    await expect(service.receiveMessage(pid, projectDir, chatId, from, 'ping 6')).resolves.toMatchObject({ status: 'held' });
+
+    execute.mockResolvedValueOnce({ fullResponse: 'ok', toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'what did it say?');
+    const [, , message, , , , turn] = execute.mock.calls.at(-1)!;
+    expect(turn.session).toEqual({ mode: 'resume', sessionId: 's', profileId: undefined });
+    expect(message).toContain('ping 6');
+    expect(message.endsWith('what did it say?')).toBe(true);
+  });
+
+  it('plans from the reply before the messages no reply answered', () => {
+    const ref = { sessionId: 's', messageUuid: 'r1' };
+    const message = (role: 'user' | 'assistant', extra = {}) => ({ id: role, role, content: role, timestamp: new Date(), ...extra });
+    const session = {
+      id: 'session-1', title: 't', createdAt: new Date(), updatedAt: new Date(), claudeHead: ref,
+      messages: [message('user'), message('assistant', { claudeRef: ref }), message('user'), message('user')],
+    };
+    expect(planClaudeSession(session as never)).toEqual({ mode: 'resume', sessionId: 's', profileId: undefined });
   });
 
   it('refuses a chat that is not there', async () => {
@@ -190,7 +270,9 @@ describe('an agent window opened as a chat', () => {
     expect(session.messages[1].toolsUsed?.map((tool) => tool.name)).toEqual(['Read']);
     expect(session.claudeHead).toEqual({ sessionId: 'win-session', messageUuid: 'a2', profileId: 'main' });
 
-    // Opened again later: the same chat, with what was said in the window since
+    // Opened again later (archived meanwhile): the same chat, back in the history, with what
+    // was said in the window since
+    service.archiveSession(pid, projectDir, chatId!);
     writeFileSync(transcript, [
       line({ type: 'user', uuid: 'u1', parentUuid: null, message: { content: 'Fix the login bug' } }),
       line({ type: 'assistant', uuid: 'a2', parentUuid: 'u1', message: { content: [{ type: 'text', text: 'Fixed it.' }] } }),
@@ -202,6 +284,20 @@ describe('an agent window opened as a chat', () => {
       'Fix the login bug', 'Looking.\n\nFixed it.', 'Now add a test', 'Added.',
     ]);
     expect(service.loadSession(pid, projectDir)!.claudeHead?.messageUuid).toBe('a3');
+    expect(service.listSessions(projectDir).map((summary) => summary.id)).toContain(chatId);
+  });
+
+  it('leaves out the summary a /compact writes and the note of an interrupted request', async () => {
+    const transcript = join(projectDir, 'compacted.jsonl');
+    writeFileSync(transcript, [
+      line({ type: 'user', uuid: 'u1', parentUuid: null, message: { content: 'Fix the bug' } }),
+      line({ type: 'assistant', uuid: 'a1', parentUuid: 'u1', message: { content: [{ type: 'text', text: 'Done.' }] } }),
+      line({ type: 'user', uuid: 's1', parentUuid: 'a1', isCompactSummary: true, message: { content: 'This session is being continued from a previous conversation...' } }),
+      line({ type: 'user', uuid: 'u2', parentUuid: 's1', message: { content: 'Add a test' } }),
+      line({ type: 'user', uuid: 'i1', parentUuid: 'u2', message: { content: [{ type: 'text', text: '[Request interrupted by user]' }] } }),
+    ].join('\n'));
+    await service.openSessionAsChat(pid, projectDir, { sessionId: 'compacted', transcriptPath: transcript });
+    expect(service.loadSession(pid, projectDir)!.messages.map((m) => m.content)).toEqual(['Fix the bug', 'Done.', 'Add a test']);
   });
 
   it('opens a new chat when the one opened before went on in another session, keeping what it said', async () => {

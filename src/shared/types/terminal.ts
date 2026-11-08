@@ -36,6 +36,8 @@ export interface AgentWindowOpenRequest {
   sessionId: string;
   /** The account the session ran on (unset: Claude Code's default dir) */
   configDir?: string;
+  /** The folder the session ran in when it isn't the project's (a worktree), and still there */
+  cwd?: string;
 }
 
 /** An agent window found by its name (agent-…), open or closed */

@@ -21,7 +21,7 @@ import { isWslRuntime, toRuntimePath } from '../platform/shell-runtime';
 import { safeSendToRenderer } from './utils';
 import { openTerminalWithCommand } from './claude-code-handlers';
 import { readClipboardFilePaths } from '../terminal/clipboard-files';
-import { stopReceiving } from '../session-messaging/receiving';
+import { acceptsWindowInput, stopReceiving } from '../session-messaging/receiving';
 import { findAgentWindow } from '../session-messaging/agent-windows';
 import { parseSessionName } from '../../shared/utils/session-names';
 
@@ -64,6 +64,9 @@ export function registerTerminalHandlers(
   ipcMain.on(
     IPC_CHANNELS.TERMINAL_INPUT,
     (_, id: string, data: string) => {
+      // A window answering a chat's message ignores the user's keys (Take over gives it back);
+      // the app's own writes don't come this way
+      if (!acceptsWindowInput(id, data)) return;
       terminalManager.write(id, data);
     }
   );

@@ -4,7 +4,8 @@
  *
  * The transcript keeps every branch a rewind or an edit left behind, so only the conversation that
  * leads to its last message counts (followed back by `parentUuid`). Subagents' lines (sidechains),
- * meta lines and local command output are left out; the prompts the user typed and Claude's
+ * meta lines, local command output, the summary a /compact leaves and Claude Code's notes of an
+ * interrupted request are left out; the prompts the user typed and Claude's
  * replies stay, each run of Claude's lines one reply with the tools it used. The chat resumes the
  * session from the last reply, on the account the window ran it on.
  */
@@ -20,6 +21,8 @@ interface TranscriptLine {
   logicalParentUuid?: string | null;
   isMeta?: boolean;
   isSidechain?: boolean;
+  /** The conversation summary a /compact writes as a user line */
+  isCompactSummary?: boolean;
   timestamp?: string;
   message?: { content?: unknown };
 }
@@ -53,6 +56,8 @@ function userText(content: unknown): string | null {
       : '';
   if (!text.trim()) return null;
   if (/<local-command-stdout>|<local-command-stderr>|^Caveat:/.test(text)) return null;
+  // Claude Code's note of a request the user interrupted (Esc), not something they typed
+  if (/^\[Request interrupted by user/.test(text.trim())) return null;
   // A slash command the user ran: as they typed it
   const command = /<command-name>([^<]*)<\/command-name>/.exec(text)?.[1];
   if (command) {
@@ -102,7 +107,7 @@ export async function readTranscriptAsChat(
   };
 
   for (const line of activeBranch(lines)) {
-    if (line.isMeta) continue;
+    if (line.isMeta || line.isCompactSummary) continue;
     const timestamp = line.timestamp ? new Date(line.timestamp) : new Date();
     if (line.type === 'user') {
       const text = userText(line.message?.content);

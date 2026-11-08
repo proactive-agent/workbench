@@ -1617,7 +1617,9 @@ function ToolIndicator({ name, input }: ToolIndicatorProps) {
   const getToolInfo = (toolName: string) => {
     const taskTool = taskToolName(toolName);
     if (taskTool) return { icon: workbenchToolIcon(taskTool), label: t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) };
-    if (MESSAGING_TOOLS.has(toolName)) return { icon: MessagesIcon, label: toolName };
+    // Claude Code's own messaging tools (Workbench's are task tools above)
+    if (toolName === 'SendMessage') return { icon: MessagesIcon, label: t('insights.tools.sendMessage') };
+    if (toolName === 'ListAgents') return { icon: MessagesIcon, label: t('insights.tools.listAgents') };
     switch (toolName) {
       case 'Read':
         return { icon: FileText, label: t('insights.tools.readingFile') };

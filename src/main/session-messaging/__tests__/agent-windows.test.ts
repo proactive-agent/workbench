@@ -14,6 +14,8 @@ vi.mock('../directory', () => ({
   findWindow: (id: string) => windows.value.find((terminal) => terminal.id === id),
 }));
 vi.mock('../live-sessions', () => ({ windowLiveSession: async (terminal: TerminalProcess) => live.value.get(terminal.id) }));
+const accepts = vi.hoisted(() => ({ value: true }));
+vi.mock('../window-tools', () => ({ windowAcceptsMessages: async () => accepts.value }));
 
 import { ensureAgentWindowRunning, findAgentWindow, setAgentWindowOpener, windowMessaged } from '../agent-windows';
 import { isReceiving, setReceivingHooks, stopReceiving } from '../receiving';
@@ -64,6 +66,37 @@ describe('agent windows by name', () => {
     setAgentWindowOpener(opener);
     expect(await ensureAgentWindowRunning('/project', 'agent-ffffffff')).toBe(false);
     expect(opener).not.toHaveBeenCalled();
+  });
+
+  it('resumes the session in an open window that is back at its shell', async () => {
+    vi.useFakeTimers();
+    const shell = { id: terminalId, isCLIMode: false } as TerminalProcess;
+    windows.value = [shell];
+    const opener = vi.fn(() => {
+      shell.isCLIMode = true;
+      live.value.set(terminalId, { name: 'workbench-d7' });
+    });
+    setAgentWindowOpener(opener);
+    const running = ensureAgentWindowRunning('/project', 'agent-1a19c850');
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await running).toBe(true);
+    expect(opener).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+
+    // Running Claude Code already: nothing to open
+    opener.mockClear();
+    expect(await ensureAgentWindowRunning('/project', 'agent-1a19c850')).toBe(true);
+    expect(opener).not.toHaveBeenCalled();
+  });
+
+  it('leaves a window that asks before taking messages to the user', async () => {
+    setReceivingHooks({ notify: () => {}, isBusy: () => false });
+    windows.value = [{ id: terminalId } as TerminalProcess];
+    live.value.set(terminalId, { name: 'workbench-d7' });
+    accepts.value = false;
+    await windowMessaged('/project', 'workbench-d7', { kind: 'chat', name: 'chat-abc' });
+    expect(isReceiving(terminalId)).toBe(false);
+    accepts.value = true;
   });
 
   it('makes the window a SendMessage reaches read-only', async () => {

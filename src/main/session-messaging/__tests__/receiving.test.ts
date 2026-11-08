@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { isReceiving, receivingBusyChanged, setReceivingHooks, startReceiving, stopReceiving } from '../receiving';
+import { acceptsWindowInput, isReceiving, receivingBusyChanged, setReceivingHooks, startReceiving, stopReceiving } from '../receiving';
 
 const from = { kind: 'chat' as const, name: 'chat-abc', title: 'Release notes' };
 const notify = vi.fn();
@@ -66,6 +66,18 @@ describe('agent window answering a message', () => {
     await vi.advanceTimersByTimeAsync(4000);
     await vi.advanceTimersByTimeAsync(3000);
     expect(isReceiving('window-1')).toBe(false);
+  });
+
+  it("ignores the user's keys while read-only, but lets the terminal's own replies through", () => {
+    expect(acceptsWindowInput('window-1', 'x')).toBe(true);
+    startReceiving('window-1', from);
+    expect(acceptsWindowInput('window-1', 'x')).toBe(false);
+    expect(acceptsWindowInput('window-1', '\r')).toBe(false);
+    expect(acceptsWindowInput('window-1', '\x1b[<0;10;5M')).toBe(false);
+    // Focus, cursor position, device attributes, OSC colors
+    for (const reply of ['\x1b[I', '\x1b[O', '\x1b[12;40R', '\x1b[?1;2c', '\x1b]11;rgb:1a1a/1a1a/1a1a\x1b\\']) {
+      expect(acceptsWindowInput('window-1', reply)).toBe(true);
+    }
   });
 
   it('is given back at once when taken over', () => {

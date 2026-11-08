@@ -60,6 +60,23 @@ describe('InsightsExecutor stop', () => {
     expect(executor.isSessionActive('p1')).toBe(false);
   });
 
+  it('counts as replying while the agent window opens, and Stop ends the wait without a turn', async () => {
+    const executor = new InsightsExecutor();
+    const phases: string[] = [];
+    executor.on('status', (_id, status) => phases.push(status.phase));
+    const opening = new Promise(() => undefined);
+
+    const run = executor.execute('p1', '/project', 'hi', [], undefined, undefined, { chatSessionId: 'c1', beforeRun: () => opening });
+    await vi.waitFor(() => expect(executor.isSessionActive('p1', 'c1')).toBe(true));
+    expect(executor.cancelSession('p1', 'c1')).toBe(true);
+    const result = await run;
+
+    expect(result.stopped).toBe(true);
+    expect(runInsights).not.toHaveBeenCalled();
+    expect(phases.at(-1)).toBe('complete');
+    expect(executor.isSessionActive('p1', 'c1')).toBe(false);
+  });
+
   it('reports nothing to stop when no reply is running', () => {
     expect(new InsightsExecutor().cancelSession('p1')).toBe(false);
   });

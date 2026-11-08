@@ -3,9 +3,11 @@
  * id>`) outlives the window: `.workbench/agent-sessions.json` keeps the sessions each window
  * started, so a name pasted after its window closed still stands for that window's last session.
  * Messaging a closed window opens it again in the background (the same id, so the same name,
- * resuming its session), and the message waits until its Claude Code is running, which is when
- * `list_sessions` gives the name SendMessage reaches it by.
+ * resuming its session in the folder it ran in), and the message waits until its Claude Code is
+ * running, which is when `list_sessions` gives the name SendMessage reaches it by. An open window
+ * back at its shell resumes its session the same way.
  */
+import { access } from 'fs/promises';
 import { agentSessionName } from '../../shared/utils/session-names';
 import type { AgentWindowMatch, AgentWindowOpenRequest, SessionMessageOrigin } from '../../shared/types';
 import { noteWindowSession, readAgentSessions, type AgentSessionRecord } from '../agent-session-store';
@@ -15,6 +17,7 @@ import { toRuntimePath } from '../platform/shell-runtime';
 import { projectWindows, findWindow } from './directory';
 import { windowLiveSession } from './live-sessions';
 import { startReceiving } from './receiving';
+import { windowAcceptsMessages } from './window-tools';
 
 /** How long a window opened for a message may take to run Claude Code */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -33,10 +36,16 @@ async function recordedSession(projectPath: string, name: string): Promise<Agent
   return sessions.filter((session) => session.terminalId && agentSessionName(session.terminalId) === name).pop();
 }
 
-/** The name `/resume` shows for a recorded session */
+/** The folder a recorded session ran in, when it isn't the project's (a worktree) and is still there */
+async function recordedCwd(projectPath: string, session: AgentSessionRecord): Promise<string | undefined> {
+  if (!session.cwd || session.cwd === projectPath) return undefined;
+  return access(session.cwd).then(() => session.cwd, () => undefined);
+}
+
+/** The name `/resume` shows for a recorded session (its transcript is named after its folder) */
 async function recordedTitle(projectPath: string, session: AgentSessionRecord): Promise<string | undefined> {
   const dir = sessionSearchDirs(session.configDir)[0];
-  return dir ? readSessionName(dir, toRuntimePath(projectPath), session.sessionId) : undefined;
+  return dir ? readSessionName(dir, toRuntimePath(session.cwd || projectPath), session.sessionId) : undefined;
 }
 
 /** An agent window of the project by name, open or closed: its id and title; null when none had it */
@@ -53,12 +62,12 @@ const opening = new Map<string, Promise<boolean>>();
 
 /**
  * Have the window a name stands for running Claude Code: a closed one is opened again on its last
- * session. Resolves whether its Claude Code runs (false when no window had the name, or it didn't
- * start in time)
+ * session, an open one back at its shell resumes it. Resolves whether its Claude Code runs (false
+ * when no window had the name, or it didn't start in time)
  */
 export function ensureAgentWindowRunning(projectPath: string, name: string): Promise<boolean> {
   const open = projectWindows(projectPath).find((terminal) => agentSessionName(terminal.id) === name);
-  if (open) return Promise.resolve(true);
+  if (open?.isCLIMode) return Promise.resolve(true);
   const pending = opening.get(name);
   if (pending) return pending;
   const run = (async () => {
@@ -73,6 +82,7 @@ export function ensureAgentWindowRunning(projectPath: string, name: string): Pro
       title: await recordedTitle(projectPath, session),
       sessionId: session.sessionId,
       configDir: session.configDir,
+      cwd: await recordedCwd(projectPath, session),
     });
     const deadline = Date.now() + OPEN_TIMEOUT_MS;
     while (Date.now() < deadline) {
@@ -92,10 +102,9 @@ export function ensureAgentWindowRunning(projectPath: string, name: string): Pro
  * `list_sessions` gives as `sendMessageTo`), or undefined
  */
 export async function windowBySendMessageName(projectPath: string, sendMessageTo: string): Promise<string | undefined> {
-  for (const terminal of projectWindows(projectPath)) {
-    if ((await windowLiveSession(terminal))?.name === sendMessageTo) return terminal.id;
-  }
-  return undefined;
+  const windows = projectWindows(projectPath);
+  const names = await Promise.all(windows.map((terminal) => windowLiveSession(terminal).then((live) => live?.name)));
+  return windows[names.indexOf(sendMessageTo)]?.id;
 }
 
 /**
@@ -104,5 +113,6 @@ export async function windowBySendMessageName(projectPath: string, sendMessageTo
  */
 export async function windowMessaged(projectPath: string, sendMessageTo: string, from: SessionMessageOrigin): Promise<void> {
   const terminalId = await windowBySendMessageName(projectPath, sendMessageTo.trim());
-  if (terminalId) startReceiving(terminalId, from);
+  // A window that holds such messages for approval stays the user's: they answer the prompt
+  if (terminalId && (await windowAcceptsMessages(terminalId))) startReceiving(terminalId, from);
 }

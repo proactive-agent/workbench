@@ -101,6 +101,11 @@ function openWindowTools(terminal: Pick<TerminalProcess, 'id' | 'projectPath'>):
   });
 }
 
+/** Whether the window's Claude Code takes messages from the user's other sessions without asking */
+export async function windowAcceptsMessages(terminalId: string): Promise<boolean> {
+  return (await opened.get(terminalId)?.catch(() => undefined))?.acceptMessages === true;
+}
+
 /** The window closed: its token stops working, its file goes and it no longer answers a message */
 export function closeWindowTools(terminalId: string): void {
   stopReceiving(terminalId);

@@ -97,9 +97,21 @@ async function loadSessions(file: string): Promise<AgentSessionRecord[] | null> 
   }
 }
 
+/**
+ * Reads kept for a moment: looking up several windows reads the same file for each. A write
+ * through this module drops its file's
+ */
+const READ_CACHE_MS = 2000;
+const reads = new Map<string, { at: number; sessions: Promise<AgentSessionRecord[]> }>();
+
 /** The sessions this project's agent windows started, oldest first */
-export async function readAgentSessions(projectPath: string): Promise<AgentSessionRecord[]> {
-  return (await loadSessions(storePath(projectPath))) ?? [];
+export function readAgentSessions(projectPath: string): Promise<AgentSessionRecord[]> {
+  const file = storePath(projectPath);
+  const cached = reads.get(file);
+  if (cached && Date.now() - cached.at < READ_CACHE_MS) return cached.sessions;
+  const sessions = loadSessions(file).then((loaded) => loaded ?? []);
+  reads.set(file, { at: Date.now(), sessions });
+  return sessions;
 }
 
 /**
@@ -111,6 +123,7 @@ async function updateSessions(
   change: (sessions: AgentSessionRecord[]) => AgentSessionRecord[]
 ): Promise<void> {
   const file = storePath(projectPath);
+  reads.delete(file);
   const write = (writes.get(file) ?? Promise.resolve()).then(async () => {
     // `.workbench` marks a project as initialized, so this never creates it
     if (!(await isDirectory(path.dirname(file)))) return;
@@ -123,6 +136,7 @@ async function updateSessions(
     const temp = `${file}.tmp`;
     await fsp.writeFile(temp, JSON.stringify(data, null, 2), 'utf-8');
     await fsp.rename(temp, file);
+    reads.delete(file);
   });
   writes.set(file, write.catch(() => undefined));
   await write;

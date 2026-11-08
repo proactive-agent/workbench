@@ -54,6 +54,17 @@ export interface InsightsTurnOptions {
   title?: string;
   /** The chat's conversation, sent with each stream chunk so only that chat shows the reply */
   chatSessionId?: string;
+  /**
+   * Done before Claude Code starts, while the turn already counts as the chat's reply (Stop, a
+   * newer message and messages from other sessions see it): opening the agent window the message
+   * goes to. Stop ends the wait at once
+   */
+  beforeRun?: () => Promise<unknown>;
+  /**
+   * The turn reaches an agent window: the user's message goes to one, or answers one. A read-only
+   * turn gets Claude Code's ListAgents and SendMessage only then (or with the Kanban button)
+   */
+  reachesAgentWindow?: boolean;
 }
 
 /** The chat whose turn runs: its browser is the chat's own (chat-browsers.ts) */
@@ -248,6 +259,18 @@ export class InsightsExecutor extends EventEmitter {
     let chatBrowserSession: TaskToolsSession | undefined;
 
     try {
+      if (turn.beforeRun) {
+        // (Stop may already have come while the turn was being set up)
+        const stopped = controller.signal.aborted
+          ? Promise.resolve()
+          : new Promise((resolve) => controller.signal.addEventListener('abort', resolve, { once: true }));
+        await Promise.race([turn.beforeRun().catch(() => undefined), stopped]);
+        if (controller.signal.aborted) {
+          const abort = new Error('Stopped before the turn started');
+          abort.name = 'AbortError';
+          throw abort;
+        }
+      }
       const projectSettings = projectStore.getProject(projectId)?.settings;
       // The project's memory graph, searchable from the chat when the project uses Graphify
       const graphify = (await isGraphifyEnabled(projectPath))
@@ -289,8 +312,11 @@ export class InsightsExecutor extends EventEmitter {
           mcpServers: mcp.mcpServers,
           sharedBrowser: !!mcp.chatBrowserSession,
           // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
-          // for other running sessions
+          // for other running sessions: a read-only turn gets those only with the Kanban button
+          // or when it reaches an agent window, so a page it reads can't steer it into messaging one
           ...switches,
+          sessionMessages: switches.sessionMessages
+            && (kanbanTools || modelConfig?.agentMode === true || turn.reachesAgentWindow === true),
           // The Clawd button: what an agent window has, with its permission setting
           ...(modelConfig?.agentMode
             ? { agentMode: { skipPermissions: (await readSettingsFileAsync())?.dangerouslySkipPermissions === true } }

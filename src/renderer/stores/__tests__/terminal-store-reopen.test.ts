@@ -30,10 +30,33 @@ describe('opening an agent window again for a message', () => {
     expect(useTerminalStore.getState().agentsViewRequest).toBeNull();
   });
 
-  it('starts a window restored at startup in the background instead of adding another', () => {
+  it('opens a window whose session ran in a worktree in that worktree', () => {
+    const worktree = `${PROJECT}/.workbench/worktrees/tasks/001-fix`;
+    const terminal = useTerminalStore.getState().reopenAgentWindow({ ...request, cwd: worktree });
+    expect(terminal).toMatchObject({ cwd: worktree, projectPath: PROJECT });
+  });
+
+  it('starts a window restored at startup in the background on the session, instead of adding another', () => {
     useTerminalStore.getState().addTerminal(PROJECT, PROJECT, { id: request.terminalId });
+    useTerminalStore.getState().updateTerminal(request.terminalId, { pendingCLIResume: true });
     const terminal = useTerminalStore.getState().reopenAgentWindow(request);
     expect(useTerminalStore.getState().terminals).toHaveLength(1);
-    expect(terminal?.openedInBackground).toBe(true);
+    expect(terminal).toMatchObject({
+      openedInBackground: true,
+      launchCLIOnCreate: true,
+      pendingCLIResume: false,
+      pendingTaskSession: { sessionId: 'session-a' },
+    });
+  });
+
+  it('resumes the session in a window back at its shell', () => {
+    const resume = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { resumeTaskSessionInTerminal: resume } });
+    useTerminalStore.getState().addTerminal(PROJECT, PROJECT, { id: request.terminalId });
+    useTerminalStore.getState().updateTerminal(request.terminalId, { status: 'running', isCLIMode: false });
+    const terminal = useTerminalStore.getState().reopenAgentWindow(request);
+    expect(resume).toHaveBeenCalledWith(request.terminalId, { sessionId: 'session-a', configDir: undefined, cwd: PROJECT });
+    expect(terminal?.isCLIMode).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

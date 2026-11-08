@@ -14,15 +14,17 @@ vi.mock('fs/promises', () => ({
   },
 }));
 vi.mock('../../cli-tool-manager', () => ({ getToolInfoAsync: async () => ({ found: true, path: '/bin/claude' }) }));
-vi.mock('../../platform/runtime-exec', () => ({ runTool: async () => ({ stdout: JSON.stringify(listed.value) }) }));
+const runTool = vi.hoisted(() => vi.fn());
+vi.mock('../../platform/runtime-exec', () => ({ runTool }));
 vi.mock('../../platform/shell-runtime', () => ({ isWslRuntime: () => false }));
 vi.mock('../../platform', () => ({ isLinux: () => true, isMacOS: () => false }));
-vi.mock('../../agent-session-store', () => ({ lastAgentSession: async () => ({ sessionId: 'session-a' }) }));
+vi.mock('../../terminal/cli-integration-handler', () => ({
+  windowSessionAccount: async () => ({ own: { sessionId: 'session-a' }, configDir: undefined }),
+}));
 vi.mock('../../platform/claude-home', () => ({ expandClaudeHome: (dir: string) => dir }));
 vi.mock('../../claude-profile/config-dir-paths', () => ({ withClaudeConfigDir: (env: NodeJS.ProcessEnv) => env }));
-vi.mock('../../claude-profile-manager', () => ({ getClaudeProfileManager: () => ({ getActiveProfile: () => undefined }) }));
 
-import { resetLiveSessionsCache, windowLiveSession } from '../live-sessions';
+import { liveClaudeSessions, resetLiveSessionsCache, windowLiveSession } from '../live-sessions';
 
 const terminal = { id: 'window-1', isCLIMode: true, projectPath: '/project', pty: { pid: 100 } } as unknown as TerminalProcess;
 
@@ -30,6 +32,21 @@ describe('windowLiveSession', () => {
   beforeEach(() => {
     resetLiveSessionsCache();
     parents.clear();
+    runTool.mockReset();
+    runTool.mockImplementation(async () => ({ stdout: JSON.stringify(listed.value) }));
+  });
+
+  it('shares a listing still running, however long it takes', async () => {
+    let finish: (value: unknown) => void = () => {};
+    runTool.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    vi.useFakeTimers();
+    const first = liveClaudeSessions();
+    await vi.advanceTimersByTimeAsync(10_000);
+    const second = liveClaudeSessions();
+    finish({ stdout: '[]' });
+    await Promise.all([first, second]);
+    vi.useRealTimers();
+    expect(runTool).toHaveBeenCalledTimes(1);
   });
 
   it('takes the only process running the recorded session', async () => {

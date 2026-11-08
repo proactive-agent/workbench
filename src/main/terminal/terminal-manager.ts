@@ -25,7 +25,7 @@ import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { SESSION_SAVE_INTERVAL_MS } from '../terminal-session-store';
 import { setWindowSource } from '../session-messaging/directory';
 import { closeWindowTools } from '../session-messaging/window-tools';
-import { isReceiving, setReceivingHooks } from '../session-messaging/receiving';
+import { setReceivingHooks } from '../session-messaging/receiving';
 import { setAgentWindowOpener } from '../session-messaging/agent-windows';
 import { windowLiveSession } from '../session-messaging/live-sessions';
 
@@ -143,8 +143,6 @@ export class TerminalManager {
   write(id: string, data: string): void {
     debugLog('[TerminalManager:write] Writing to terminal:', id, 'data length:', data.length);
     const terminal = this.terminals.get(id);
-    // Answering a message from a chat: read-only until it is answered or taken over
-    if (isReceiving(id)) return;
     if (terminal?.follower) {
       // Following a running task's session: the follower handles the keys (Enter, Ctrl+C)
       terminal.follower.handleInput(data);

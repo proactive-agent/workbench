@@ -764,19 +764,33 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   reopenAgentWindow: (request) => {
+    const session = { sessionId: request.sessionId, configDir: request.configDir };
     const existing = get().terminals.find((t) => t.id === request.terminalId);
     if (existing) {
-      // Restored at startup but not started yet (a window starts once the Agents page shows it):
-      // start it now, in the background
-      if (!existing.openedInBackground) get().updateTerminal(existing.id, { openedInBackground: true });
+      if (existing.status === 'idle') {
+        // Restored at startup but not started yet (a window starts once the Agents page shows
+        // it): it starts now, in the background, and resumes the session
+        get().updateTerminal(existing.id, {
+          openedInBackground: true,
+          launchCLIOnCreate: true,
+          pendingTaskSession: session,
+          pendingCLIResume: false,
+        });
+      } else if (!existing.isCLIMode) {
+        // Running its shell (Claude Code exited): the session resumes in it
+        get().setCLIMode(existing.id, true);
+        window.electronAPI.resumeTaskSessionInTerminal(existing.id, { ...session, cwd: request.cwd ?? existing.cwd });
+      }
       return get().getTerminal(existing.id) ?? existing;
     }
-    const terminal = get().addTerminal(request.projectPath, request.projectPath, { launchCLI: true, id: request.terminalId });
+    // In the folder the session ran in (a worktree), else the project's
+    const cwd = request.cwd ?? request.projectPath;
+    const terminal = get().addTerminal(cwd, request.projectPath, { launchCLI: true, id: request.terminalId });
     if (terminal) {
       get().updateTerminal(terminal.id, {
         title: request.title || 'Claude',
         openedInBackground: true,
-        pendingTaskSession: { sessionId: request.sessionId, configDir: request.configDir },
+        pendingTaskSession: session,
       });
     }
     return terminal ? get().getTerminal(terminal.id) ?? null : null;

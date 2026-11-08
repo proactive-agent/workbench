@@ -147,7 +147,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const openedInBackground = terminal?.openedInBackground === true;
   useEffect(() => {
     if (!openedInBackground || readyDimensions) return;
-    const timer = setTimeout(() => setReadyDimensions((current) => current ?? BACKGROUND_DIMENSIONS), BACKGROUND_WAIT_MS);
+    const timer = setTimeout(() => {
+      // xterm takes the size too: the PTY is resized to xterm's once it is created
+      const xterm = xtermRef.current;
+      if (xterm && xterm.cols < BACKGROUND_DIMENSIONS.cols) xterm.resize(BACKGROUND_DIMENSIONS.cols, BACKGROUND_DIMENSIONS.rows);
+      setReadyDimensions((current) => current ?? BACKGROUND_DIMENSIONS);
+    }, BACKGROUND_WAIT_MS);
     return () => clearTimeout(timer);
   }, [openedInBackground, readyDimensions]);
 

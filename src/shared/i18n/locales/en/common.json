@@ -165,7 +165,9 @@
     "copyMessage": "Copy",
     "copied": "Copied",
     "tools": {
-      "readingFile": "Reading file",
+      "sendMessage": "Sending a message",
+        "listAgents": "Listing running sessions",
+        "readingFile": "Reading file",
       "searchingFiles": "Searching files",
       "searchingCode": "Searching code",
       "searchingGraph": "Searching the code graph",

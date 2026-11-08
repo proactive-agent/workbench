@@ -12,11 +12,10 @@ import { getToolInfoAsync } from '../cli-tool-manager';
 import { runTool } from '../platform/runtime-exec';
 import { isWslRuntime } from '../platform/shell-runtime';
 import { isLinux, isMacOS } from '../platform';
-import { lastAgentSession } from '../agent-session-store';
 import type { TerminalProcess } from '../terminal/types';
 import { expandClaudeHome } from '../platform/claude-home';
 import { withClaudeConfigDir } from '../claude-profile/config-dir-paths';
-import { getClaudeProfileManager } from '../claude-profile-manager';
+import { windowSessionAccount } from '../terminal/cli-integration-handler';
 
 const execFileAsync = promisify(execFile);
 
@@ -30,9 +29,12 @@ export interface LiveClaudeSession {
   status?: string;
 }
 
-/** How long one listing is reused (several windows are looked up for one tool call) */
+/**
+ * How long one listing is reused once it came back (several windows are looked up for one tool
+ * call); a listing still running is shared, however long it takes (WSL starts slowly)
+ */
 const CACHE_MS = 3000;
-const cache = new Map<string, { at: number; sessions: Promise<LiveClaudeSession[]> }>();
+const cache = new Map<string, { at: number; done: boolean; sessions: Promise<LiveClaudeSession[]> }>();
 
 /**
  * The running Claude Code sessions on this machine (in WSL mode, in the distribution), as the
@@ -41,7 +43,7 @@ const cache = new Map<string, { at: number; sessions: Promise<LiveClaudeSession[
 export function liveClaudeSessions(configDir?: string): Promise<LiveClaudeSession[]> {
   const key = configDir ?? '';
   const cached = cache.get(key);
-  if (cached && Date.now() - cached.at < CACHE_MS) return cached.sessions;
+  if (cached && (!cached.done || Date.now() - cached.at < CACHE_MS)) return cached.sessions;
   const sessions = (async () => {
     const claude = await getToolInfoAsync('claude');
     if (!claude.found || !claude.path) return [];
@@ -56,24 +58,30 @@ export function liveClaudeSessions(configDir?: string): Promise<LiveClaudeSessio
     const parsed = JSON.parse(String(stdout)) as unknown;
     return Array.isArray(parsed) ? (parsed as LiveClaudeSession[]) : [];
   })().catch(() => [] as LiveClaudeSession[]);
-  cache.set(key, { at: Date.now(), sessions });
+  const entry = { at: Date.now(), done: false, sessions };
+  cache.set(key, entry);
+  void sessions.then(() => {
+    entry.at = Date.now();
+    entry.done = true;
+  });
   return sessions;
 }
 
-/** The config dir of the account a window runs on: its recorded session's, else its profile's */
-function windowConfigDir(terminal: TerminalProcess, recordedConfigDir: string | undefined): string | undefined {
-  if (recordedConfigDir) return recordedConfigDir;
-  try {
-    const manager = getClaudeProfileManager();
-    const profile = terminal.claudeProfileId ? manager.getProfile(terminal.claudeProfileId) : manager.getActiveProfile();
-    return profile?.configDir;
-  } catch {
-    return undefined;
-  }
-}
+/** Parents looked up lately: a listing walks the same processes for every window */
+const PARENT_CACHE_MS = 5000;
+const parents = new Map<number, { at: number; ppid: Promise<number | null> }>();
 
 /** A process's parent: /proc on Linux, `ps` on macOS */
-async function parentPid(pid: number): Promise<number | null> {
+function parentPid(pid: number): Promise<number | null> {
+  const cached = parents.get(pid);
+  if (cached && Date.now() - cached.at < PARENT_CACHE_MS) return cached.ppid;
+  const ppid = readParentPid(pid);
+  parents.set(pid, { at: Date.now(), ppid });
+  if (parents.size > 500) parents.delete(parents.keys().next().value!);
+  return ppid;
+}
+
+async function readParentPid(pid: number): Promise<number | null> {
   try {
     if (isLinux()) {
       const stat = await readFile(`/proc/${pid}/stat`, 'utf-8');
@@ -105,10 +113,11 @@ async function runsUnder(pid: number, ancestor: number): Promise<boolean> {
 /** The live Claude Code session of an agent window, or undefined when none is found */
 export async function windowLiveSession(terminal: TerminalProcess): Promise<LiveClaudeSession | undefined> {
   if (!terminal.isCLIMode) return undefined;
-  const own = terminal.projectPath ? await lastAgentSession(terminal.projectPath, terminal.id).catch(() => undefined) : undefined;
+  // The account the window resumes its session on (the recorded session's, the default dir
+  // included, else the project's or the one in use), as the window itself would
+  const { own, configDir } = await windowSessionAccount(terminal).catch(() => ({ own: undefined, configDir: undefined }));
   const recorded = own?.sessionId;
-  // Listed as the window's account sees its sessions
-  const sessions = (await liveClaudeSessions(windowConfigDir(terminal, own?.configDir))).filter((session) => session.kind !== 'background');
+  const sessions = (await liveClaudeSessions(configDir)).filter((session) => session.kind !== 'background');
   const byId = recorded ? sessions.filter((session) => session.sessionId === recorded) : [];
   if (byId.length === 1) return byId[0];
   // The process tree is only readable natively (in WSL the window's process is wsl.exe)
@@ -128,4 +137,5 @@ export async function windowLiveSession(terminal: TerminalProcess): Promise<Live
  */
 export function resetLiveSessionsCache(): void {
   cache.clear();
+  parents.clear();
 }

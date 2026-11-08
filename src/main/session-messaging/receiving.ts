@@ -50,9 +50,24 @@ export function setReceivingHooks(hooks: {
   sessionStatus = hooks.status ?? (async () => undefined);
 }
 
-/** Whether the window is answering a message (its keys are ignored) */
+/**
+ * Whether the window is answering a message (its keys are ignored)
+ * @internal
+ */
 export function isReceiving(terminalId: string): boolean {
   return receiving.has(terminalId);
+}
+
+/**
+ * What xterm sends on its own, answering the program in the window: focus in and out, cursor
+ * position and device attribute reports, OSC and DCS replies. These still go through while the
+ * window is read-only; Claude Code may be waiting for one
+ */
+const TERMINAL_REPLY = /^(?:\x1b\[[IO]|\x1b\[\d+;\d+R|\x1b\[[?>=]?[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
+
+/** Whether input the window's xterm sent goes to its program: always, except the user's while read-only */
+export function acceptsWindowInput(terminalId: string, data: string): boolean {
+  return !receiving.has(terminalId) || TERMINAL_REPLY.test(data);
 }
 
 function setTimer(terminalId: string, entry: Receiving, ms: number): void {
