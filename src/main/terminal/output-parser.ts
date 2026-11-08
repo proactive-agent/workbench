@@ -171,6 +171,14 @@ const CLAUDE_IDLE_PATTERNS = [
   /\n>\s*$/,                        // "> " at end after newline
   /^\s*>\s+$/m,                     // "> " with possible whitespace
 ];
+/** Claude Code's footer while it works */
+const CLAUDE_FOOTER_BUSY = /esc to interrupt/;
+/**
+ * Claude Code waiting for input: its footer without "esc to interrupt", or the line a finished turn
+ * ends with ("✻ Crunched for 3s · done 12:55 PM"; the footer isn't always drawn again then)
+ */
+const CLAUDE_FOOTER_IDLE = /\(shift\+tab to cycle\)|\? for shortcuts|· done \d{1,2}:\d{2}/;
+
 /**
  * Check if output indicates Claude is busy (processing)
  */
@@ -190,6 +198,12 @@ export function isClaudeIdleOutput(data: string): boolean {
  * Returns: 'busy' | 'idle' | null (no change detected)
  */
 export function detectClaudeBusyState(data: string): 'busy' | 'idle' | null {
+  // Claude Code's footer says which it is: "esc to interrupt" while it works, the permission mode's
+  // "(shift+tab to cycle)" (or "? for shortcuts") alone, or a finished turn's "· done 12:55 PM",
+  // once it waits for input. Its prompt is `❯`
+  // and its logo is made of blocks, so the patterns below can't tell on their own
+  if (CLAUDE_FOOTER_BUSY.test(data)) return 'busy';
+  if (CLAUDE_FOOTER_IDLE.test(data)) return 'idle';
   // Check for busy indicators FIRST - they're more definitive
   // Progress bars and "Loading..." mean Claude is definitely working,
   // even if there's a ">" prompt visible elsewhere in the output
