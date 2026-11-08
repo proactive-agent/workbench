@@ -90,7 +90,8 @@ interface InsightsState {
   setDraftModelConfig: (config: InsightsModelConfig | undefined) => void;
   requestNewChat: () => void;
   setComposerText: (text: string | ((current: string) => string)) => void;
-  setChatHistoryOpen: (open: boolean) => void;
+  /** Show or hide the chat history; `byUser` false (the browser drawer made room): not remembered */
+  setChatHistoryOpen: (open: boolean, byUser?: boolean) => void;
   /**
    * Show another chat (null: the New chat page). A reply the shown chat is writing goes on in the
    * background; the chat shown next comes back with its own reply in flight, if it has one
@@ -126,17 +127,19 @@ function readChatHistoryOpen(): boolean {
   }
 }
 
-let lastChats: Record<string, string> | null = null;
+/**
+ * Each project's last chat, read afresh every time: the app's windows share the storage, and each
+ * writes only its own project's entry
+ */
+let lastChatsFallback: Record<string, string> = {};
 
 function readLastChats(): Record<string, string> {
-  if (lastChats) return lastChats;
   try {
     const parsed = JSON.parse(localStorage.getItem(LAST_CHATS_KEY) ?? '{}') as unknown;
-    lastChats = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
   } catch {
-    lastChats = {};
+    return lastChatsFallback;
   }
-  return lastChats;
 }
 
 /** The chat a project's Claude page showed last (undefined: the New chat page) */
@@ -149,7 +152,7 @@ function rememberChat(projectId: string, chatId: string | null): void {
   const chats = { ...readLastChats() };
   if (chatId) chats[projectId] = chatId;
   else delete chats[projectId];
-  lastChats = chats;
+  lastChatsFallback = chats;
   try {
     localStorage.setItem(LAST_CHATS_KEY, JSON.stringify(chats));
   } catch {
@@ -284,8 +287,10 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   setComposerText: (text) =>
     set((state) => ({ composerText: typeof text === 'function' ? text(state.composerText) : text })),
 
-  setChatHistoryOpen: (chatHistoryOpen) => {
+  setChatHistoryOpen: (chatHistoryOpen, byUser = true) => {
     set({ chatHistoryOpen });
+    // The drawer's own closing is undone by the drawer, not kept as the user's choice
+    if (!byUser) return;
     try {
       localStorage.setItem(CHAT_HISTORY_KEY, chatHistoryOpen ? '1' : '0');
     } catch {
@@ -662,14 +667,19 @@ export async function openInsightsPage(projectId: string, includeArchived?: bool
     return;
   }
   if (last) {
-    await loadInsightsSessions(projectId, includeArchived);
-    const result = await window.electronAPI.switchInsightsSession(projectId, last);
+    const [, result] = await Promise.all([
+      loadInsightsSessions(projectId, includeArchived),
+      window.electronAPI.switchInsightsSession(projectId, last),
+    ]);
     if (result.success && result.data) {
       useInsightsStore.getState().showSession(result.data);
       return;
     }
+    // Gone (deleted): a new chat, the history just listed
+    await newSession(projectId, { listChats: false });
+    return;
   }
-  // No chat to go back to (none yet, or it was deleted)
+  // No chat to go back to yet
   await newSession(projectId);
 }
 
@@ -690,14 +700,14 @@ export async function openWindowAsChat(projectId: string, terminalId: string): P
   return null;
 }
 
-export async function newSession(projectId: string): Promise<void> {
+export async function newSession(projectId: string, options: { listChats?: boolean } = {}): Promise<void> {
   // The conversation is created when the first message is sent
   const result = await window.electronAPI.newInsightsSession(projectId);
   if (result.success) {
     // A fresh conversation starts clean; a reply the previous chat is writing goes on in it
     useInsightsStore.getState().showSession(null);
-    // Reload sessions list
-    await loadInsightsSessions(projectId);
+    // Reload sessions list (unless the caller just did)
+    if (options.listChats !== false) await loadInsightsSessions(projectId);
   }
 }
 

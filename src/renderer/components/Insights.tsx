@@ -180,7 +180,7 @@ export function Insights({ projectId }: InsightsProps) {
     if (grew && width < CHAT_MIN_WIDTH) {
       if (showSidebar) {
         historyClosedByDrawerRef.current = true;
-        setShowSidebar(false);
+        setShowSidebar(false, false);
         width += CHAT_HISTORY_WIDTH;
       }
       if (width < CHAT_MIN_WIDTH && !appSidebarSaved && !appSidebarCollapsedByDrawer) setAppSidebarCollapsedByDrawer(true);
@@ -194,7 +194,7 @@ export function Insights({ projectId }: InsightsProps) {
     }
     if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
       historyClosedByDrawerRef.current = false;
-      setShowSidebar(true);
+      setShowSidebar(true, false);
     }
     // The drawer's changes only: not the sidebars', so the user's toggles stay as they are
   }, [drawerOpen, drawerWidth]);

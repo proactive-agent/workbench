@@ -249,6 +249,33 @@ describe('Insights mock conversations', () => {
     expect(electronAPI.switchInsightsSession).not.toHaveBeenCalled();
   });
 
+  it("keeps another window's project entry when it remembers its own last chat", async () => {
+    // Another window (project B) remembered its chat after this store read the storage
+    const stored = JSON.parse(localStorage.getItem('workbench.claude.lastChats') ?? '{}');
+    localStorage.setItem('workbench.claude.lastChats', JSON.stringify({ ...stored, 'project-b': 'session-b' }));
+    await store.switchSession('project-a', 'session-9');
+    expect(JSON.parse(localStorage.getItem('workbench.claude.lastChats')!)).toEqual({ 'project-a': 'session-9', 'project-b': 'session-b' });
+  });
+
+  it("remembers the user's own showing or hiding of the history, not the drawer's", () => {
+    state().setChatHistoryOpen(false, false);
+    expect(state().chatHistoryOpen).toBe(false);
+    expect(localStorage.getItem('workbench.claude.historyOpen')).toBeNull();
+    state().setChatHistoryOpen(false);
+    expect(localStorage.getItem('workbench.claude.historyOpen')).toBe('0');
+  });
+
+  it('lists the history once when the last chat is gone', async () => {
+    await store.switchSession('project-a', 'session-7');
+    vi.resetModules();
+    store = await import('../insights-store');
+    vi.clearAllMocks();
+    electronAPI.switchInsightsSession.mockResolvedValueOnce({ success: false } as never);
+    await store.openInsightsPage('project-a');
+    expect(electronAPI.newInsightsSession).toHaveBeenCalledTimes(1);
+    expect(electronAPI.listInsightsSessions).toHaveBeenCalledTimes(1);
+  });
+
   it('asks the page for a new chat (the sidebar item on its own page)', () => {
     const before = state().newChatRequest;
     state().requestNewChat();
