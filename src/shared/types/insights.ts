@@ -52,6 +52,19 @@ export interface ChatSlashCommand {
  */
 export type ChatCommandsError = 'projectNotFound' | 'timeout' | 'notListed' | 'failed';
 
+/** Why an agent window couldn't be opened as a chat (the error of `openWindowAsChat`) */
+export type OpenWindowAsChatError = 'projectNotFound' | 'windowNotFound' | 'noSession' | 'failed';
+
+/**
+ * Where a chat message from another of the user's sessions came from (a chat or an agent window
+ * of the project, by its stable name: shared/utils/session-names.ts)
+ */
+export interface SessionMessageOrigin {
+  kind: 'chat' | 'agent';
+  name: string;
+  title?: string;
+}
+
 type InsightsChatRole = 'user' | 'assistant';
 
 // Tool usage record for showing what tools the AI used
@@ -80,6 +93,13 @@ export interface InsightsChatMessage {
   stopped?: boolean;
   /** Where this reply ends in Claude Code's session (assistant messages only) */
   claudeRef?: ClaudeSessionRef;
+  /** A message another chat or agent window sent (user messages only): not typed by the user */
+  from?: SessionMessageOrigin;
+  /**
+   * The chat or agent window the user sent this message to (a session name pasted into the
+   * composer; user messages only): Claude delivers it there
+   */
+  to?: SessionMessageOrigin;
 }
 
 /**
@@ -105,6 +125,8 @@ export interface InsightsSession {
    * edit or regenerate) forks it there
    */
   claudeHead?: ClaudeSessionRef;
+  /** The agent window session this chat was opened from ("Open as chat"), kept to open it again */
+  fromSessionId?: string;
   createdAt: Date;
   updatedAt: Date;
   archivedAt?: Date;
@@ -120,6 +142,8 @@ export interface InsightsSessionSummary {
   createdAt: Date;
   updatedAt: Date;
   archivedAt?: Date;
+  /** The agent window session the chat was opened from (InsightsSession.fromSessionId) */
+  fromSessionId?: string;
 }
 
 export interface InsightsChatStatus {

@@ -78,7 +78,20 @@
   },
   "header": {
     "agent": "Agent",
-    "terminal": "Terminal"
+    "terminal": "Terminal",
+    "copyName": "Copy session name",
+    "copiedName": "Copied {{name}}",
+    "openAsChat": "Open as chat",
+    "openAsChatBusy": "Wait for Claude to finish",
+    "receiving": "Answering {{title}} · read-only",
+    "receivingTitle": "This window is answering a message from the chat {{title}} ({{name}}). Your keys are ignored until it's done",
+    "takeOver": "Take over",
+    "openAsChatErrors": {
+      "projectNotFound": "This window's project isn't open",
+      "windowNotFound": "This window is gone",
+      "noSession": "This window has no Claude Code conversation yet",
+      "failed": "Couldn't open this window as a chat"
+    }
   },
   "liveAgent": {
     "graphLabel": "Live agent graph",

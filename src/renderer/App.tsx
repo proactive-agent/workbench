@@ -27,7 +27,7 @@ import { ProjectsPage } from './components/ProjectsPage';
 import { AuthFailureModal } from './components/AuthFailureModal';
 import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
-import { useInsightsStore, chatBrowserId } from './stores/insights-store';
+import { useInsightsStore, chatBrowserId, switchSession as switchInsightsSession } from './stores/insights-store';
 import { useSettingsStore, loadSettings, loadProfiles } from './stores/settings-store';
 import { loadClaudeProfiles } from './stores/claude-profile-store';
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
@@ -590,6 +590,39 @@ export function App() {
     }
     setActiveView('terminals');
   }, [agentsViewRequest, projects, activeProjectId, selectedProjectId, handleSelectProject]);
+
+  // An agent window opened as a chat: show the Claude page of its project, on that chat (the page
+  // opens on the requested chat; one already shown switches to it here)
+  const openChatRequest = useInsightsStore((state) => state.openChatRequest);
+  const handledOpenChatSeqRef = useRef(0);
+  useEffect(() => {
+    if (!openChatRequest || openChatRequest.seq === handledOpenChatSeqRef.current) return;
+    handledOpenChatSeqRef.current = openChatRequest.seq;
+    if (openChatRequest.projectId !== (activeProjectId || selectedProjectId)) {
+      handleSelectProject(openChatRequest.projectId);
+    }
+    if (activeView === 'insights' && openChatRequest.projectId === (activeProjectId || selectedProjectId)) {
+      useInsightsStore.setState({ openChatRequest: null });
+      void switchInsightsSession(openChatRequest.projectId, openChatRequest.chatId);
+      return;
+    }
+    setActiveView('insights');
+  }, [openChatRequest, activeView, activeProjectId, selectedProjectId, handleSelectProject]);
+
+  // A chat messages a closed agent window: it opens again (in the background); a window answering
+  // a chat's message is read-only, shown in its header
+  useEffect(() => {
+    const stopOpen = window.electronAPI.onAgentWindowOpenRequest((request) => {
+      useTerminalStore.getState().reopenAgentWindow(request);
+    });
+    const stopReceiving = window.electronAPI.onTerminalReceivingMessage((id, from) => {
+      useTerminalStore.getState().setReceivingFrom(id, from);
+    });
+    return () => {
+      stopOpen();
+      stopReceiving();
+    };
+  }, []);
 
   const handleProjectTabClose = (projectId: string) => {
     // Show confirmation dialog before removing the project

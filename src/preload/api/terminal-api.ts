@@ -15,6 +15,9 @@ import type {
   TerminalWorktreeConfig,
   TerminalWorktreeResult,
   OtherWorktreeInfo,
+  AgentWindowMatch,
+  AgentWindowOpenRequest,
+  SessionMessageOrigin,
 } from '../../shared/types';
 
 export interface TerminalAPI {
@@ -74,6 +77,14 @@ export interface TerminalAPI {
   ) => () => void;
   submitOAuthCode: (terminalId: string, code: string) => Promise<IPCResult>;
   onTerminalClaudeBusy: (callback: (id: string, isBusy: boolean) => void) => () => void;
+  /** An agent window answers a chat's message (read-only), or no longer does (null) */
+  onTerminalReceivingMessage: (callback: (id: string, from: SessionMessageOrigin | null) => void) => () => void;
+  /** Give a window answering a message back to the user */
+  takeOverTerminal: (id: string) => void;
+  /** An agent window of the project by its name (agent-…), open or closed */
+  findAgentWindow: (projectPath: string, name: string) => Promise<AgentWindowMatch | null>;
+  /** A chat messages a closed agent window: open it again */
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void) => () => void;
   onTerminalClaudeExit: (callback: (id: string) => void) => () => void;
   onTerminalPendingResume: (callback: (id: string) => void) => () => void;
 
@@ -313,6 +324,29 @@ export const createTerminalAPI = (): TerminalAPI => ({
     ipcRenderer.on(IPC_CHANNELS.TERMINAL_CLAUDE_BUSY, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_CLAUDE_BUSY, handler);
+    };
+  },
+
+  onTerminalReceivingMessage: (
+    callback: (id: string, from: SessionMessageOrigin | null) => void
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string, from: SessionMessageOrigin | null): void => callback(id, from);
+    ipcRenderer.on(IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, handler);
+    };
+  },
+
+  takeOverTerminal: (id: string): void => ipcRenderer.send(IPC_CHANNELS.TERMINAL_TAKE_OVER, id),
+
+  findAgentWindow: (projectPath: string, name: string): Promise<AgentWindowMatch | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_FIND_AGENT_WINDOW, projectPath, name),
+
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: AgentWindowOpenRequest): void => callback(request);
+    ipcRenderer.on(IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, handler);
     };
   },
 

@@ -77,6 +77,8 @@ import type {
   TerminalWorktreeResult,
   OtherWorktreeInfo,
   ClaudeSessionItem,
+  AgentWindowMatch,
+  AgentWindowOpenRequest,
 } from './terminal';
 import type {
   ClaudeProfileSettings,
@@ -92,7 +94,8 @@ import type {
   InsightsChatStatus,
   InsightsStreamChunk,
   InsightsModelConfig,
-  ChatSlashCommand
+  ChatSlashCommand,
+  SessionMessageOrigin
 } from './insights';
 import type { APIProfile, ProfilesFile, TestConnectionResult, DiscoverModelsResult } from './profile';
 
@@ -272,6 +275,14 @@ export interface ElectronAPI {
   }) => void) => () => void;
   /** Listen for Claude busy state changes (for visual indicator: red=busy, green=idle) */
   onTerminalClaudeBusy: (callback: (id: string, isBusy: boolean) => void) => () => void;
+  /** An agent window answers a chat's message (read-only), or no longer does (null) */
+  onTerminalReceivingMessage: (callback: (id: string, from: SessionMessageOrigin | null) => void) => () => void;
+  /** Give a window answering a message back to the user */
+  takeOverTerminal: (id: string) => void;
+  /** An agent window of the project by its name (agent-…), open or closed */
+  findAgentWindow: (projectPath: string, name: string) => Promise<AgentWindowMatch | null>;
+  /** A chat messages a closed agent window: open it again */
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void) => () => void;
   /** Listen for Claude exit (user closed Claude within terminal, returned to shell) */
   onTerminalClaudeExit: (callback: (id: string) => void) => () => void;
   /** Listen for pending Claude resume notifications (resumed once the window is shown) */
@@ -400,7 +411,7 @@ export interface ElectronAPI {
 
   // Insights operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
-  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
+  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[], to?: SessionMessageOrigin) => void;
   stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
@@ -425,6 +436,8 @@ export interface ElectronAPI {
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
   /** Claude Code's slash commands and skills in the project (the chat's `/` menu with the Clawd button) */
   listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
+  /** Open an agent window's Claude Code session as a chat of the project; the chat's id (error: OpenWindowAsChatError) */
+  openWindowAsChat: (projectId: string, terminalId: string) => Promise<IPCResult<string>>;
 
   // Insights event listeners
   onInsightsStreamChunk: (

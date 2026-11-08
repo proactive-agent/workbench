@@ -122,6 +122,10 @@ export const IPC_CHANNELS = {
   TERMINAL_AUTH_CREATED: 'terminal:authCreated',  // Auth terminal created for OAuth flow
   TERMINAL_OAUTH_CODE_NEEDED: 'terminal:oauthCodeNeeded',  // Request user to paste OAuth code from browser
   TERMINAL_OAUTH_CODE_SUBMIT: 'terminal:oauthCodeSubmit',  // User submitted OAuth code to send to terminal
+  TERMINAL_RECEIVING_MESSAGE: 'terminal:receivingMessage',  // An agent window answers a chat's message (read-only), or no longer does
+  TERMINAL_TAKE_OVER: 'terminal:takeOver',  // Give a window answering a message back to the user
+  TERMINAL_FIND_AGENT_WINDOW: 'terminal:findAgentWindow',  // An agent window by its name (agent-…), open or closed
+  AGENT_WINDOW_OPEN_REQUEST: 'terminal:agentWindowOpenRequest',  // Open a closed agent window again (a chat messages it)
   TERMINAL_CLAUDE_BUSY: 'terminal:claudeBusy',  // Claude Code busy state (for visual indicator)
   TERMINAL_CLAUDE_EXIT: 'terminal:claudeExit',  // Claude Code exited (returned to shell)
 
@@ -213,6 +217,7 @@ export const IPC_CHANNELS = {
   INSIGHTS_UPDATE_MODEL_CONFIG: 'insights:updateModelConfig',
   INSIGHTS_GET_ATTACHMENT: 'insights:getAttachment',
   INSIGHTS_LIST_COMMANDS: 'insights:listCommands',  // Claude Code's slash commands and skills in a project
+  INSIGHTS_OPEN_WINDOW_AS_CHAT: 'insights:openWindowAsChat',  // An agent window's Claude Code session as a chat
 
   // Insights events (main -> renderer)
   INSIGHTS_STREAM_CHUNK: 'insights:streamChunk',

@@ -29,7 +29,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn, formatLongRelativeTime } from '../lib/utils';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
-import { ClawdIcon, GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/app-icons';
+import { ClawdIcon, GitHubIcon, GitLabIcon, GraphIcon, InsightsIcon, KanbanIcon, McpIcon, MessagesIcon } from './icons/app-icons';
 import { BUILTIN_CONNECTOR_META } from './settings/connector-meta';
 import {
   useInsightsStore,
@@ -66,8 +66,12 @@ import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
+import { InsightsChatNameButton } from './InsightsChatNameButton';
 import { splitSlashCommands, useSlashCommandMenu } from './insights-slash-commands';
 import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
+import { closedAgentWindow, mayNameClosedAgent, sessionTargetNow, windowSessionTitle, type SessionTarget } from '../lib/session-targets';
+import { useProjectStore } from '../stores/project-store';
+import { chatSessionName } from '../../shared/utils/session-names';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -107,6 +111,10 @@ export function Insights({ projectId }: InsightsProps) {
   const [inputValue, setInputValue] = useState('');
   // Where the caret is in the composer (the `/` menu follows it)
   const [caret, setCaret] = useState(0);
+  // The chat or agent window the next message goes to: a session name pasted into the composer,
+  // shown as an attachment (one at a time: the latest paste wins)
+  const [sendTo, setSendTo] = useState<SessionTarget | null>(null);
+  const projectPath = useProjectStore((state) => state.projects.find((project) => project.id === projectId)?.path);
   const [creatingTask, setCreatingTask] = useState<Set<string>>(new Set());
   const [taskCreated, setTaskCreated] = useState<Set<string>>(new Set());
   const [showSidebar, setShowSidebar] = useState(true);
@@ -296,6 +304,9 @@ export function Insights({ projectId }: InsightsProps) {
     loadInsightsSessions(projectId, showArchived);
   }, [showArchived]);
 
+  // Another chat starts without a recipient
+  useEffect(() => setSendTo(null), [session?.id]);
+
   // Opening a chat from the history shows its latest messages
   useLayoutEffect(() => {
     stickToBottomRef.current = true;
@@ -320,7 +331,9 @@ export function Insights({ projectId }: InsightsProps) {
     if ((!message && !hasImages) || isLoading) return;
 
     setInputValue('');
-    sendMessage(projectId, message, effectiveModelConfig, hasImages ? pendingImages : undefined);
+    const to = sendTo ? { kind: sendTo.kind, name: sendTo.name, ...(sendTo.title ? { title: sendTo.title } : {}) } : undefined;
+    sendMessage(projectId, message, effectiveModelConfig, hasImages ? pendingImages : undefined, to);
+    setSendTo(null);
     setPendingImages([]);
     setImageError(null);
     stickToBottomRef.current = true; // Follow the reply to a message just sent
@@ -628,9 +641,34 @@ export function Insights({ projectId }: InsightsProps) {
             onHover={slashMenu.setActiveIndex}
           />
         )}
-        {/* Image preview strip */}
-        {pendingImages.length > 0 && (
+        {/* Attachments: the message's recipient (a pasted session name), then files */}
+        {(pendingImages.length > 0 || sendTo) && (
           <div className="flex flex-wrap items-center gap-3 px-4 pt-4">
+            {sendTo && (
+              <div className="group relative" title={sendTo.name}>
+                <div
+                  className="flex h-14 max-w-64 items-center gap-2.5 overflow-hidden rounded-lg border border-border bg-muted px-3"
+                  aria-label={t(sendTo.kind === 'chat' ? 'insights.sendTo.chat' : 'insights.sendTo.agent', { title: sendTo.title || sendTo.name })}
+                >
+                  {sendTo.kind === 'chat'
+                    ? <InsightsIcon className="h-5 w-5 shrink-0 text-primary" />
+                    : <ClawdIcon className="h-5 w-5 shrink-0 text-primary" />}
+                  <div className="min-w-0">
+                    <div className="truncate text-xs text-foreground">{sendTo.title || sendTo.name}</div>
+                    <div className="truncate font-mono text-[0.6875rem] text-muted-foreground">{sendTo.name}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSendTo(null)}
+                  className="absolute right-0 top-0 flex h-4 w-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-foreground opacity-0 shadow-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                  title={t('insights.sendTo.remove')}
+                  aria-label={t('insights.sendTo.remove')}
+                >
+                  <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
             {pendingImages.map((image) => (
               <div key={image.id} className="group relative" title={image.filename}>
                 {image.thumbnail ? (
@@ -660,9 +698,11 @@ export function Insights({ projectId }: InsightsProps) {
                 </button>
               </div>
             ))}
-            <span className="text-xs text-muted-foreground">
-              {t('insights.attachments.count', { count: pendingImages.length })}
-            </span>
+            {pendingImages.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {t('insights.attachments.count', { count: pendingImages.length })}
+              </span>
+            )}
           </div>
         )}
 
@@ -698,7 +738,35 @@ export function Insights({ projectId }: InsightsProps) {
           }}
           onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
+          onPaste={(e) => {
+            // A chat or agent window's name: the message's recipient, not text
+            const text = e.clipboardData?.files?.length ? '' : e.clipboardData?.getData('text/plain') ?? '';
+            const selfName = session ? chatSessionName(session.id) : null;
+            const target = text ? sessionTargetNow(text, projectPath, selfName) : null;
+            // A closed agent window's name: asked of the app, pasted as text when no window had it
+            if (!target && text && mayNameClosedAgent(text, projectPath, selfName)) {
+              e.preventDefault();
+              const start = e.currentTarget.selectionStart ?? inputValue.length;
+              const end = e.currentTarget.selectionEnd ?? start;
+              void closedAgentWindow(text, projectPath, selfName).then((closed) => {
+                if (closed) setSendTo(closed);
+                else setInputValue((value) => value.slice(0, start) + text + value.slice(end));
+              });
+              return;
+            }
+            if (target) {
+              e.preventDefault();
+              setSendTo(target);
+              // An agent window is shown by its session's name once read (its title is just "Claude")
+              if (target.kind === 'agent' && projectPath) {
+                void windowSessionTitle(projectPath, target.name).then((title) => {
+                  if (title) setSendTo((current) => (current?.name === target.name ? { ...current, title } : current));
+                });
+              }
+              return;
+            }
+            void handlePaste(e);
+          }}
           onScroll={(e) => {
             if (highlightRef.current) highlightRef.current.scrollTop = e.currentTarget.scrollTop;
           }}
@@ -868,6 +936,7 @@ export function Insights({ projectId }: InsightsProps) {
           <div className="flex flex-col items-end gap-3">
             <BrowserDrawerButton projectId={projectId} />
             <InsightsAgentWindowButton projectId={projectId} session={session} replying={isLoading} />
+            <InsightsChatNameButton session={session} />
           </div>
         </div>
 
@@ -1103,6 +1172,30 @@ function MessageBubble({
           />
         ) : (
           <>
+            {/* A message another chat or agent window sent: who sent it, over the message */}
+            {message.from && (
+              <span className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted-foreground">
+                {message.from.kind === 'chat' ? <InsightsIcon className="h-3 w-3 shrink-0" /> : <ClawdIcon className="h-3 w-3 shrink-0" />}
+                <span className="truncate">
+                  {t(message.from.kind === 'chat' ? 'insights.incoming.fromChat' : 'insights.incoming.fromAgent', {
+                    title: message.from.title || message.from.name,
+                    name: message.from.name,
+                  })}
+                </span>
+              </span>
+            )}
+            {/* A message the user sent to another chat or agent window: where it goes */}
+            {message.to && (
+              <span className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted-foreground">
+                {message.to.kind === 'chat' ? <InsightsIcon className="h-3 w-3 shrink-0" /> : <ClawdIcon className="h-3 w-3 shrink-0" />}
+                <span className="truncate">
+                  {t(message.to.kind === 'chat' ? 'insights.outgoing.toChat' : 'insights.outgoing.toAgent', {
+                    title: message.to.title || message.to.name,
+                    name: message.to.name,
+                  })}
+                </span>
+              </span>
+            )}
             {message.content && (
               <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-4 py-2.5 text-[0.9375rem] [.dark_&]:bg-[#202020] leading-relaxed text-foreground">
                 {message.content}
@@ -1223,6 +1316,15 @@ const TASK_TOOL_PREFIX = 'mcp__workbench__';
 const taskToolName = (toolName: string): string | null =>
   toolName.startsWith(TASK_TOOL_PREFIX) ? toolName.slice(TASK_TOOL_PREFIX.length) : null;
 
+/**
+ * Messaging other sessions: Workbench's tools (list_sessions, message_chat, message_task) and
+ * Claude Code's own (ListAgents, SendMessage)
+ */
+const MESSAGING_TOOLS = new Set(['list_sessions', 'message_chat', 'message_task', 'ListAgents', 'SendMessage']);
+
+/** The icon of a Workbench tool: messaging, else a task tool (Kanban) */
+const workbenchToolIcon = (tool: string): React.ElementType => (MESSAGING_TOOLS.has(tool) ? MessagesIcon : KanbanIcon);
+
 /** A Bash call of the GitHub, GitLab or Graphify CLI: its icon and name (the command is shown as is) */
 const cliCall = (toolName: string, input?: string): { icon: React.ElementType; label: string } | null => {
   if (toolName !== 'Bash' || !input) return null;
@@ -1275,7 +1377,9 @@ const isClawdTool = (toolName: string, input: string | undefined, workbenchServe
 };
 
 const getToolIcon = (toolName: string) => {
-  if (taskToolName(toolName)) return KanbanIcon;
+  const taskTool = taskToolName(toolName);
+  if (taskTool) return workbenchToolIcon(taskTool);
+  if (MESSAGING_TOOLS.has(toolName)) return MessagesIcon;
   const mcpIcon = mcpToolIcon(toolName);
   if (mcpIcon) return mcpIcon;
   switch (toolName) {
@@ -1469,7 +1573,7 @@ function ToolUsageHistory({ tools, actions, trailing }: ToolUsageHistoryProps) {
       {expanded && (
         <div className="mt-2 space-y-1 rounded-xl border border-border p-3">
           {tools.map((tool, index) => {
-            // gh, glab and graphify calls show as GitHub, GitLab and Graphify, like the task tools show as Kanban steps
+            // gh, glab and graphify calls show as GitHub, GitLab and Graphify, like the task tools show as Kanban steps and the messaging tools as messages
             // Calls only the Clawd button allows show Clawd
             const cli = cliCall(tool.name, tool.input);
             const Icon = isClawdTool(tool.name, tool.input, workbenchServers) ? ClawdIcon : cli?.icon ?? getToolIcon(tool.name);
@@ -1512,7 +1616,8 @@ function ToolIndicator({ name, input }: ToolIndicatorProps) {
   // Get friendly name and icon for each tool
   const getToolInfo = (toolName: string) => {
     const taskTool = taskToolName(toolName);
-    if (taskTool) return { icon: KanbanIcon, label: t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) };
+    if (taskTool) return { icon: workbenchToolIcon(taskTool), label: t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) };
+    if (MESSAGING_TOOLS.has(toolName)) return { icon: MessagesIcon, label: toolName };
     switch (toolName) {
       case 'Read':
         return { icon: FileText, label: t('insights.tools.readingFile') };

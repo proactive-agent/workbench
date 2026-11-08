@@ -257,6 +257,33 @@ user's other sessions (`--settings {"crossSessionInbound":"accept"}`): agent win
 SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
 Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync/`), also while messaging is off.
 
+### Chats and agent windows messaging each other
+
+With Task messaging and Messages from your Claude sessions on, a project's Claude chats and agent windows message each
+other by stable names (`shared/utils/session-names.ts`: `chat-<id timestamp in base 36>`, `agent-<first 8 of the
+terminal id>`), which a copy button gives on the chat's top bar and the window's header. Both get Workbench's
+`list_sessions` and `message_chat` tools (`src/main/session-messaging/tools.ts`): chat turns in their Workbench tools
+(with or without the Kanban button), agent windows through `--mcp-config` (a file with a token per window, in a temp
+folder of its own removed when the window closes, `window-tools.ts`) with the tools pre-approved and their name in `--append-system-prompt`. A chat runs
+only while it replies, so `message_chat` is delivered by Workbench (`InsightsService.receiveMessage`): the message shows
+in the chat marked with its sender (`InsightsChatMessage.from`), reaches Claude framed as another session's, and the chat
+replies on its own (after the reply it is writing). An agent window is a live Claude Code session, so messages to it go
+through Claude Code's own SendMessage: `list_sessions` gives each window's `sendMessageTo` name (`live-sessions.ts`, from
+`claude agents --json`, matched by the window's recorded session or the process under its shell). An agent window's
+header also opens its session as a chat ("Open as chat", `session-import.ts`): the transcript's active branch becomes the
+chat's messages and the chat resumes the session (opened again, the same chat shows what was said since). A name pasted into a chat's
+composer (a chat or agent window of the project, `renderer/lib/session-targets.ts`) becomes the message's recipient, shown
+as an attachment (the latest paste wins): the message keeps it (`InsightsChatMessage.to`) and reaches Claude framed to be
+delivered there. Pasted into an agent window it is typed as `[Chat #<hash>]` / `[Agent #<hash>]` (`useXterm.ts`), which
+the window's system prompt explains. A chat auto-replies to at most 5 messages from other sessions in a row; further ones
+wait for the user. A closed window's name still counts (`agent-sessions.json` keeps the sessions each window started,
+`session-messaging/agent-windows.ts`): a chat message to it opens the window again in the background under the same id,
+resuming its last session, and the chat's turn waits until its Claude Code runs. Windows accept messages from the user's
+other sessions (`crossSessionInbound: "accept"` in the window's own `--settings` file, which also names the theme, unless
+the user's settings refuse or hold them). A window a chat's turn sends a message to (its SendMessage, seen in the
+turn's stream) is read-only until it has answered (`session-messaging/receiving.ts`: busy, then idle, from its output
+and `claude agents`), with a Take over button in its header.
+
 ### MCP Connectors
 
 Settings > Connectors (`settings.mcpConnectors`, `McpConnectorSettings`) holds the defaults: Context7, Electron and
@@ -388,7 +415,8 @@ the user closes its last tab, its chat is deleted, its browser goes away (its re
 app quits.
 
 **Crash leftovers** — Workbench's folders in the system temp folder (`temp-folders.ts`: `workbench-task-`,
-`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`) are made with an
+`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`,
+`workbench-window-tools-`) are made with an
 owner file naming the Workbench process (`folder-owner.ts`, the same one profile copies have), and a task phase's or chat
 turn's also names its Claude Code process. At startup (`removeCrashLeftovers()` in `index.ts`, in the background),
 `browser-drawer/chat-browser-restore.ts` looks at the chat browsers a crash left: each holder folder keeps a record

@@ -277,16 +277,33 @@ describe('runInsights', () => {
     expect(record().systemPrompt).toContain('use message_task: a running task reads it at its next step');
   });
 
-  it('keeps ListAgents and SendMessage out without the task tools or with session messages off', async () => {
+  it('keeps ListAgents and SendMessage out with session messages off, and gives them without the task tools', async () => {
     const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
-    for (const overrides of [{ sessionMessages: true }, { taskTools, sessionMessages: false }]) {
-      setRun(conversation);
-      await (await run(overrides)).promise;
-      const { args, systemPrompt } = record();
-      for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(args).not.toContain(tool);
-      expect(args[args.indexOf('--tools') + 1]).not.toContain('SendMessage');
-      expect(systemPrompt).not.toContain('ListAgents');
-    }
+    setRun(conversation);
+    await (await run({ taskTools, sessionMessages: false })).promise;
+    const off = record();
+    for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(off.args).not.toContain(tool);
+    expect(off.args[off.args.indexOf('--tools') + 1]).not.toContain('SendMessage');
+    expect(off.systemPrompt).not.toContain('ListAgents');
+
+    setRun(conversation);
+    await (await run({ sessionMessages: true })).promise;
+    const on = record();
+    expect(on.args[on.args.indexOf('--tools') + 1].split(',')).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+  });
+
+  it('tells a chat with the messaging tools its name and how to reach the other chats and windows', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    setRun(conversation);
+    await (await run({ taskTools, kanbanTools: false, chatName: 'chat-abc123', sessionMessages: true })).promise;
+    const { args, systemPrompt } = record();
+    expect(systemPrompt).toContain('This chat is named chat-abc123');
+    expect(systemPrompt).toContain('message_chat');
+    expect(systemPrompt).toContain('sendMessageTo');
+    expect(systemPrompt).toContain('[Message from');
+    // The Workbench tools hold only the messaging tools: no Kanban section
+    expect(systemPrompt).not.toContain('Workbench task tools');
+    expect(args.slice(args.indexOf('--allowedTools') + 1)).toContain(INSIGHTS_TASK_TOOLS_RULE);
   });
 
   it("gives the CLI the chat's MCP servers next to the task tools", async () => {

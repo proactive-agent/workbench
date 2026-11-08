@@ -60,6 +60,11 @@ function isAppDark(): boolean {
   return true;
 }
 
+/** The Claude Code theme matching the app's */
+export function claudeTheme(): ClaudeTheme {
+  return isAppDark() ? 'dark' : 'light';
+}
+
 /**
  * The ` --settings <file>` flag giving Claude Code the theme that matches the app's, or an empty
  * string when the file isn't there (the session then keeps the user's own theme). Quoted for the

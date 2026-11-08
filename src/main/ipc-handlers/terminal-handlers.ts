@@ -21,6 +21,9 @@ import { isWslRuntime, toRuntimePath } from '../platform/shell-runtime';
 import { safeSendToRenderer } from './utils';
 import { openTerminalWithCommand } from './claude-code-handlers';
 import { readClipboardFilePaths } from '../terminal/clipboard-files';
+import { stopReceiving } from '../session-messaging/receiving';
+import { findAgentWindow } from '../session-messaging/agent-windows';
+import { parseSessionName } from '../../shared/utils/session-names';
 
 
 /**
@@ -62,6 +65,20 @@ export function registerTerminalHandlers(
     IPC_CHANNELS.TERMINAL_INPUT,
     (_, id: string, data: string) => {
       terminalManager.write(id, data);
+    }
+  );
+
+  ipcMain.on(IPC_CHANNELS.TERMINAL_TAKE_OVER, (_, id: string) => {
+    if (typeof id === 'string') stopReceiving(id);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_FIND_AGENT_WINDOW,
+    async (_, projectPath: unknown, name: unknown) => {
+      if (typeof projectPath !== 'string' || typeof name !== 'string') return null;
+      const parsed = parseSessionName(name);
+      if (parsed?.kind !== 'agent' || !projectStore.getProjects().some((project) => project.path === projectPath)) return null;
+      return findAgentWindow(projectPath, parsed.name).catch(() => null);
     }
   );
 

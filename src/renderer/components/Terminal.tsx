@@ -30,6 +30,13 @@ const LiveAgentGraph = lazy(() => import('./live-agent/LiveAgentGraph'));
 const MIN_COLS = 10;
 const MIN_ROWS = 3;
 
+/**
+ * A window opened while the Agents page is hidden (a chat messaged a closed window) can't be
+ * measured, so after a moment it starts at this size and fits the page once shown
+ */
+const BACKGROUND_DIMENSIONS = { cols: 120, rows: 36 };
+const BACKGROUND_WAIT_MS = 1000;
+
 // Platform detection for platform-specific timing
 // Windows ConPTY is slower than Unix PTY, so we need longer grace periods
 const platformIsWindows = checkIsWindows();
@@ -137,6 +144,12 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
 
   // Track when xterm dimensions are ready for PTY creation
   const [readyDimensions, setReadyDimensions] = useState<{ cols: number; rows: number } | null>(null);
+  const openedInBackground = terminal?.openedInBackground === true;
+  useEffect(() => {
+    if (!openedInBackground || readyDimensions) return;
+    const timer = setTimeout(() => setReadyDimensions((current) => current ?? BACKGROUND_DIMENSIONS), BACKGROUND_WAIT_MS);
+    return () => clearTimeout(timer);
+  }, [openedInBackground, readyDimensions]);
 
   /**
    * Helper function to resize PTY with proper dimension tracking and race condition prevention.

@@ -8,6 +8,7 @@ import * as ClaudeIntegration from './cli-integration-handler';
 import type { TerminalProcess, WindowGetter } from './types';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
+import { receivingBusyChanged, stopReceiving } from '../session-messaging/receiving';
 
 /**
  * Event handler callbacks
@@ -22,6 +23,11 @@ export interface EventHandlerCallbacks {
 
 // Track the last known busy state per terminal to avoid duplicate events
 const lastBusyState = new Map<string, boolean>();
+
+/** Whether the window's Claude Code was last seen working */
+export function isClaudeBusyNow(terminalId: string): boolean {
+  return lastBusyState.get(terminalId) === true;
+}
 
 /**
  * Handle terminal data output
@@ -90,8 +96,10 @@ export function createEventCallbacks(
     },
     onClaudeBusyChange: (terminal, isBusy) => {
       safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_CLAUDE_BUSY, terminal.id, isBusy);
+      receivingBusyChanged(terminal.id, isBusy);
     },
     onClaudeExit: (terminal) => {
+      stopReceiving(terminal.id);
       ClaudeIntegration.handleClaudeExit(terminal, getWindow);
     }
   };

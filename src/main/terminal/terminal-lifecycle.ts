@@ -3,6 +3,7 @@
  * Handles terminal creation, restoration, and destruction operations
  */
 
+import { closeWindowTools } from '../session-messaging/window-tools';
 import * as os from 'os';
 import { existsSync } from 'fs';
 import type { TerminalCreateOptions } from '../../shared/types';
@@ -413,5 +414,7 @@ export function handleTerminalExit(
 ): void {
   if (terminals.get(terminal.id) !== terminal) return;
   SessionHandler.removePersistedSession(terminal);
+  // The shell ended on its own (exit): the window's Workbench tools go with it
+  closeWindowTools(terminal.id);
 }
 

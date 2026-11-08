@@ -6,6 +6,7 @@ import type {
   InsightsStreamChunk,
   InsightsModelConfig,
   ChatSlashCommand,
+  SessionMessageOrigin,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -19,7 +20,7 @@ import { createIpcListener, invokeIpc, sendIpc, IpcListenerCleanup } from './ipc
 export interface InsightsAPI {
   // Operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
-  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
+  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[], to?: SessionMessageOrigin) => void;
   stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
@@ -42,6 +43,7 @@ export interface InsightsAPI {
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig) => Promise<IPCResult>;
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
   listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
+  openWindowAsChat: (projectId: string, terminalId: string) => Promise<IPCResult<string>>;
 
   // Event Listeners
   onInsightsStreamChunk: (
@@ -66,8 +68,8 @@ export const createInsightsAPI = (): InsightsAPI => ({
   getInsightsSession: (projectId: string): Promise<IPCResult<InsightsSession | null>> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_GET_SESSION, projectId),
 
-  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]): void =>
-    sendIpc(IPC_CHANNELS.INSIGHTS_SEND_MESSAGE, projectId, message, modelConfig, images),
+  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[], to?: SessionMessageOrigin): void =>
+    sendIpc(IPC_CHANNELS.INSIGHTS_SEND_MESSAGE, projectId, message, modelConfig, images, to),
 
   stopInsightsMessage: (projectId: string, sessionId?: string): Promise<boolean> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_STOP, projectId, sessionId),
@@ -124,6 +126,9 @@ export const createInsightsAPI = (): InsightsAPI => ({
 
   listInsightsCommands: (projectId: string): Promise<IPCResult<ChatSlashCommand[]>> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_LIST_COMMANDS, projectId),
+
+  openWindowAsChat: (projectId: string, terminalId: string): Promise<IPCResult<string>> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_OPEN_WINDOW_AS_CHAT, projectId, terminalId),
 
   // Event Listeners
   onInsightsStreamChunk: (

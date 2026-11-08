@@ -79,8 +79,15 @@ export interface InsightsRunConfig {
   graphify?: GraphifyAgentContext;
   /** The project's Claude account (Settings > Project); unset = the account in use */
   profileId?: string;
-  /** MCP server entry of the turn's task tools session */
+  /** MCP server entry of the turn's Workbench tools (task tools and/or messaging tools) */
   taskTools?: TaskToolsMcpServer;
+  /** The Workbench tools include the task tools (the Kanban button); unset: they do */
+  kanbanTools?: boolean;
+  /**
+   * The chat's stable name, when its Workbench tools include messaging the project's other chats
+   * and agent windows (session-messaging/tools.ts)
+   */
+  chatName?: string;
   /** MCP servers chosen for the chat (the MCP button), by server name */
   mcpServers?: ClaudeMcpConfig['mcpServers'];
   /** Git hosting CLIs turned on for the chat (the GitHub and GitLab buttons) */
@@ -92,8 +99,8 @@ export interface InsightsRunConfig {
   /** The chat's title, shown in Claude Code's session list for a new session */
   title?: string;
   /**
-   * The user's sessions may message running tasks (Settings > Agents): with the task tools on,
-   * the chat also gets Claude Code's ListAgents and SendMessage for other running sessions
+   * The user's sessions may message each other (Settings > Agents): the chat gets Claude Code's
+   * ListAgents and SendMessage for other running sessions (agent windows, tasks)
    */
   sessionMessages?: boolean;
   /** Task messaging is on (Settings > Agents): the prompt tells the chat about message_task */
@@ -555,8 +562,12 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     }
     const taskToolsRoute = getTaskToolsRoute();
     const offeredTaskTools = taskToolsRoute === 'off' ? undefined : config.taskTools;
-    // Messaging other running sessions comes with the task tools (the Kanban button)
-    const sessionMessaging = !!offeredTaskTools && config.sessionMessages === true;
+    // Messaging other running sessions (agent windows, tasks) with Claude Code's own tools
+    const sessionMessaging = config.sessionMessages === true;
+    // The Workbench tools hold the task tools unless told otherwise, and the messaging tools when
+    // the chat has a name to send them under
+    const kanban = !!offeredTaskTools && config.kanbanTools !== false;
+    const chatName = offeredTaskTools ? config.chatName : undefined;
 
     // A resumed or forked session runs on the account that holds its transcript; when the
     // project's account is set to another one, or that account can't be used, a new session starts
@@ -608,13 +619,14 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     // length or shell quoting limits)
     const systemPromptFile = join(tempDir, 'system-prompt.md');
     const basePrompt = buildSystemPrompt({
-      taskTools: !!offeredTaskTools,
+      taskTools: kanban,
+      chatName,
       cliTools: config.cliTools,
       graphify: !!graphify,
       mcpServers: Object.keys(chatServers),
       memory: config.memory,
       sessionMessaging,
-      taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
+      taskMessaging: kanban && config.taskMessaging === true,
       sharedBrowser: config.sharedBrowser,
       agentMode: !!config.agentMode,
     });

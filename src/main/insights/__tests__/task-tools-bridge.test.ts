@@ -13,7 +13,7 @@ vi.mock('../task-tools', () => ({
   runTaskTool: async (_context: unknown, name: string, args: Record<string, unknown>) => ({ ran: name, args }),
 }));
 
-import { closeTaskToolsServer, openTaskToolsSession } from '../task-tools-server';
+import { closeTaskToolsServer, openChatToolsSession } from '../task-tools-server';
 import { TASK_TOOLS_BRIDGE_TOKEN_ENV, TASK_TOOLS_BRIDGE_URL_ENV, toBridgeServer } from '../task-tools-mcp';
 
 const BRIDGE = join(__dirname, '..', 'task-tools-bridge.cjs');
@@ -39,7 +39,7 @@ afterAll(() => closeTaskToolsServer());
 
 describe('task tools bridge', () => {
   it('relays requests and responses between stdio and the task tools server', async () => {
-    const session = await openTaskToolsSession({ projectId: 'p1', onTasksChanged: () => undefined });
+    const session = await openChatToolsSession({ tasks: { projectId: 'p1', onTasksChanged: () => undefined } });
     const entry = toBridgeServer(session.mcpServer, '/mnt/c/Workbench.exe', 'C:\\temp\\task-tools-bridge.cjs');
     const { messages, code } = await runBridge(bridgeEnv(entry.env.WORKBENCH_TASK_TOOLS_URL, entry.env.WORKBENCH_TASK_TOOLS_TOKEN), [
       { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
@@ -59,7 +59,7 @@ describe('task tools bridge', () => {
   });
 
   it('answers requests with an error when the token is not accepted', async () => {
-    const session = await openTaskToolsSession({ projectId: 'p1', onTasksChanged: () => undefined });
+    const session = await openChatToolsSession({ tasks: { projectId: 'p1', onTasksChanged: () => undefined } });
     session.close();
     const { url } = session.mcpServer;
     const { messages } = await runBridge(bridgeEnv(url, 'wrong'), [{ jsonrpc: '2.0', id: 7, method: 'ping' }]);

@@ -13,7 +13,8 @@ import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector'
 import { CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
-import { openMcpToolsSession, openTaskToolsSession, type TaskToolsSession } from './task-tools-server';
+import { openChatToolsSession, openMcpToolsSession, type TaskToolsSession } from './task-tools-server';
+import { chatSessionName } from '../../shared/utils/session-names';
 import { buildMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { getWslInfo } from '../platform/shell-runtime';
@@ -30,6 +31,7 @@ import { isSelfImproveEnabled } from '../self-improve/setting';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
 import type { AppSettings } from '../../shared/types';
 import { resolveClaudeCodeTaskSettings } from '../claude-code/settings';
+import { windowMessaged } from '../session-messaging/agent-windows';
 
 /**
  * Message processor result
@@ -227,12 +229,19 @@ export class InsightsExecutor extends EventEmitter {
         content: m.content,
       }));
 
-    // With the Kanban button on, Claude can manage the project's tasks; the board reloads when a
-    // tool changes them
-    const taskTools = modelConfig?.kanbanTools
-      ? await openTaskToolsSession({
-        projectId,
-        onTasksChanged: () => this.emit('tasks-changed', projectId),
+    // With the Kanban button on, Claude can manage the project's tasks (the board reloads when a
+    // tool changes them); with messaging on (Settings > Agents), it can message the project's other
+    // chats and agent windows, addressed by their stable names
+    const chatName = turn.chatSessionId ? chatSessionName(turn.chatSessionId) : null;
+    const switches = await messagingSwitches();
+    const messaging = chatName && switches.sessionMessages
+      ? { projectId, projectPath, self: () => ({ kind: 'chat' as const, name: chatName, title: turn.title }) }
+      : undefined;
+    const kanbanTools = modelConfig?.kanbanTools === true;
+    const taskTools = kanbanTools || messaging
+      ? await openChatToolsSession({
+        tasks: kanbanTools ? { projectId, onTasksChanged: () => this.emit('tasks-changed', projectId) } : undefined,
+        messaging,
       }).catch(() => undefined)
       : undefined;
     let browserProfileDir: string | undefined;
@@ -268,6 +277,8 @@ export class InsightsExecutor extends EventEmitter {
           graphify,
           profileId: projectSettings?.claudeProfileId,
           taskTools: taskTools?.mcpServer,
+          kanbanTools,
+          ...(messaging && chatName ? { chatName } : {}),
           // gh and glab with the GitHub and GitLab buttons, when they are installed
           // Project memories can be saved when the project's self-improve switch is on
           memory: isSelfImproveEnabled(projectSettings),
@@ -279,7 +290,7 @@ export class InsightsExecutor extends EventEmitter {
           sharedBrowser: !!mcp.chatBrowserSession,
           // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
           // for other running sessions
-          ...(await messagingSwitches()),
+          ...switches,
           // The Clawd button: what an agent window has, with its permission setting
           ...(modelConfig?.agentMode
             ? { agentMode: { skipPermissions: (await readSettingsFileAsync())?.dangerouslySkipPermissions === true } }
@@ -297,6 +308,10 @@ export class InsightsExecutor extends EventEmitter {
               break;
             }
             case 'tool-start': {
+              // A message to an agent window: the window is read-only until it has answered
+              if (event.name === 'SendMessage' && messaging && event.input) {
+                void windowMessaged(projectPath, event.input, messaging.self()).catch(() => undefined);
+              }
               toolsUsed.push({
                 name: event.name,
                 input: event.input,

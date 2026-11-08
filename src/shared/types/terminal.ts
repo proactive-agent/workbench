@@ -25,6 +25,27 @@ export interface TerminalCreateOptions {
 }
 
 /**
+ * Open a closed agent window again, under its own id (so its name, `agent-…`, stays the same),
+ * resuming the last session it started: a chat messages it (main: session-messaging/agent-windows.ts)
+ */
+export interface AgentWindowOpenRequest {
+  projectPath: string;
+  terminalId: string;
+  /** The session's name, as `/resume` shows it */
+  title?: string;
+  sessionId: string;
+  /** The account the session ran on (unset: Claude Code's default dir) */
+  configDir?: string;
+}
+
+/** An agent window found by its name (agent-…), open or closed */
+export interface AgentWindowMatch {
+  terminalId: string;
+  title?: string;
+  open: boolean;
+}
+
+/**
  * Persisted terminal session data for restoring sessions on app restart
  */
 export interface TerminalSession {

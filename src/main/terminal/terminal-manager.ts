@@ -23,6 +23,11 @@ import { safeSendToRenderer } from '../ipc-handlers/utils';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { SESSION_SAVE_INTERVAL_MS } from '../terminal-session-store';
+import { setWindowSource } from '../session-messaging/directory';
+import { closeWindowTools } from '../session-messaging/window-tools';
+import { isReceiving, setReceivingHooks } from '../session-messaging/receiving';
+import { setAgentWindowOpener } from '../session-messaging/agent-windows';
+import { windowLiveSession } from '../session-messaging/live-sessions';
 
 export class TerminalManager {
   private terminals: Map<string, TerminalProcess> = new Map();
@@ -33,6 +38,19 @@ export class TerminalManager {
 
   constructor(getWindow: WindowGetter) {
     this.getWindow = getWindow;
+
+    // The project's chats and agent windows message each other: the windows are these terminals
+    setWindowSource(() => [...this.terminals.values()]);
+    // A closed window a chat messages opens again; a window answering a message is read-only
+    setAgentWindowOpener((request) => safeSendToRenderer(this.getWindow, IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, request));
+    setReceivingHooks({
+      notify: (terminalId, from) => safeSendToRenderer(this.getWindow, IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, terminalId, from),
+      isBusy: (terminalId) => TerminalEventHandler.isClaudeBusyNow(terminalId),
+      status: async (terminalId) => {
+        const terminal = this.terminals.get(terminalId);
+        return terminal ? (await windowLiveSession(terminal))?.status : undefined;
+      },
+    });
 
     // Create event callbacks with bound context
     this.eventCallbacks = TerminalEventHandler.createEventCallbacks(
@@ -100,6 +118,7 @@ export class TerminalManager {
       this.terminals,
       (terminalId) => {
         this.lastNotifiedRateLimitReset.delete(terminalId);
+        closeWindowTools(terminalId);
       }
     );
   }
@@ -108,7 +127,10 @@ export class TerminalManager {
    * Kill all terminal processes
    */
   async killAll(): Promise<void> {
-    for (const id of this.terminals.keys()) this.stopFollowing(id);
+    for (const id of this.terminals.keys()) {
+      this.stopFollowing(id);
+      closeWindowTools(id);
+    }
     this.saveTimer = await TerminalLifecycle.destroyAllTerminals(
       this.terminals,
       this.saveTimer
@@ -121,6 +143,8 @@ export class TerminalManager {
   write(id: string, data: string): void {
     debugLog('[TerminalManager:write] Writing to terminal:', id, 'data length:', data.length);
     const terminal = this.terminals.get(id);
+    // Answering a message from a chat: read-only until it is answered or taken over
+    if (isReceiving(id)) return;
     if (terminal?.follower) {
       // Following a running task's session: the follower handles the keys (Enter, Ctrl+C)
       terminal.follower.handleInput(data);

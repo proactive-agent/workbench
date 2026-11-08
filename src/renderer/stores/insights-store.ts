@@ -10,7 +10,8 @@ import type {
   InsightsModelConfig,
   TaskMetadata,
   Task,
-  ImageAttachment
+  ImageAttachment,
+  SessionMessageOrigin
 } from '../../shared/types';
 import { DEFAULT_AGENT_PROFILES } from '../../shared/constants';
 import { NEW_CHAT_BROWSER_ID } from '../../shared/types/browser-drawer';
@@ -52,6 +53,11 @@ interface InsightsState {
   draftModelConfig: InsightsModelConfig | undefined;
   /** Replies of chats not on screen, by conversation id, until they end */
   backgroundRuns: Record<string, ChatRun>;
+  /**
+   * A chat to show on the Claude page (an agent window opened as a chat): the app shows the page,
+   * which opens on this chat instead of a new one. `seq` tells requests apart
+   */
+  openChatRequest: { projectId: string; chatId: string; seq: number } | null;
 
   // Actions
   setProjectId: (projectId: string) => void;
@@ -183,6 +189,7 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   pendingImages: [],
   draftModelConfig: undefined,
   backgroundRuns: {},
+  openChatRequest: null,
 
   // Actions
   // Switching projects drops the previous project's in-flight state; its reply is still
@@ -435,7 +442,13 @@ function cacheSentAttachments(images: ImageAttachment[] | undefined): void {
   }
 }
 
-export function sendMessage(projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]): void {
+export function sendMessage(
+  projectId: string,
+  message: string,
+  modelConfig?: InsightsModelConfig,
+  images?: ImageAttachment[],
+  to?: SessionMessageOrigin
+): void {
   useInsightsStore.getState().setProjectId(projectId);
   cacheSentAttachments(images);
   const store = useInsightsStore.getState();
@@ -451,7 +464,8 @@ export function sendMessage(projectId: string, message: string, modelConfig?: In
     role: 'user',
     content: message,
     timestamp: new Date(),
-    ...(displayImages && displayImages.length > 0 ? { images: displayImages } : {})
+    ...(displayImages && displayImages.length > 0 ? { images: displayImages } : {}),
+    ...(to ? { to } : {})
   };
   store.addMessage(userMessage);
 
@@ -469,7 +483,7 @@ export function sendMessage(projectId: string, message: string, modelConfig?: In
   const configToUse = modelConfig || session?.modelConfig;
 
   // Send to main process
-  window.electronAPI.sendInsightsMessage(projectId, message, configToUse, images);
+  window.electronAPI.sendInsightsMessage(projectId, message, configToUse, images, to);
 }
 
 /**
@@ -540,12 +554,37 @@ export async function openInsightsPage(projectId: string, includeArchived?: bool
   useInsightsStore.getState().setProjectId(projectId);
   // Choices made before a conversation existed last only while the page is open
   useInsightsStore.getState().setDraftModelConfig(undefined);
+  // Opened for a chat (an agent window opened as a chat): that chat, not a new one
+  const request = useInsightsStore.getState().openChatRequest;
+  if (request?.projectId === projectId) {
+    useInsightsStore.setState({ openChatRequest: null });
+    await loadInsightsSessions(projectId, includeArchived);
+    await switchSession(projectId, request.chatId);
+    return;
+  }
   const { phase } = useInsightsStore.getState().status;
   if (phase === 'thinking' || phase === 'streaming') {
     await loadInsightsSessions(projectId, includeArchived);
     return;
   }
   await newSession(projectId);
+}
+
+/** Requests to show a chat made so far (App tells a new one by its number) */
+let openChatRequests = 0;
+
+/**
+ * Open an agent window's Claude Code session as a chat and show it on the Claude page. Resolves
+ * with the error code when it can't (an OpenWindowAsChatError)
+ */
+export async function openWindowAsChat(projectId: string, terminalId: string): Promise<string | null> {
+  const result = await window.electronAPI.openWindowAsChat(projectId, terminalId);
+  if (!result.success || !result.data) return result.error ?? 'failed';
+  // Every request gets a number of its own (a used one is cleared, so it can't count from it)
+  const seq = ++openChatRequests;
+  // The app shows the Claude page, which opens on the chat
+  useInsightsStore.setState({ openChatRequest: { projectId, chatId: result.data, seq } });
+  return null;
 }
 
 export async function newSession(projectId: string): Promise<void> {

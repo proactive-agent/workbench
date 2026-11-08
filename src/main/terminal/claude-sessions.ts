@@ -113,6 +113,18 @@ export function summarizeTranscript(head: string, tail: string): TranscriptSumma
   };
 }
 
+/** The name `/resume` shows for one session, or undefined when its transcript can't be read */
+export async function readSessionName(configDir: string, cwd: string, sessionId: string): Promise<string | undefined> {
+  const file = getSessionFilePath(configDir, cwd, sessionId);
+  try {
+    const { size } = await fsp.stat(file);
+    const { head, tail } = await readEnds(file, size);
+    return summarizeTranscript(head, tail).name;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The sessions `/resume` lists for a directory under one account: newest first, interactive ones
  * with a conversation only. `cwd` is the directory as Claude Code sees it (the runtime path).

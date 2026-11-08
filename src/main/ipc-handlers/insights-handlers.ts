@@ -14,6 +14,8 @@ import type {
   InsightsModelConfig,
   ChatSlashCommand,
   ChatCommandsError,
+  OpenWindowAsChatError,
+  SessionMessageOrigin,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -23,11 +25,23 @@ import { insightsService } from "../insights-service";
 import { safeSendToRenderer } from "./utils";
 import { ChatCommandsListError, listChatCommands } from "../insights/chat-commands";
 import { appLog } from "../app-logger";
+import { findWindow } from "../session-messaging/directory";
+import { windowChatSource } from "../session-messaging/window-session";
+import { parseSessionName } from "../../shared/utils/session-names";
 import type { ThinkingLevel } from "../../shared/types/settings";
 
 /** Default model for Insights turns (Claude Code model alias) */
 function getInsightsFeatureSettings(): InsightsModelConfig {
   return { profileId: "balanced", model: "sonnet", thinkingLevel: "medium" as ThinkingLevel };
+}
+
+/** The recipient a sent message names (a pasted session name), when it is a well-formed one */
+function sessionOrigin(value: unknown): SessionMessageOrigin | undefined {
+  const origin = value as Partial<SessionMessageOrigin> | undefined;
+  if (!origin || (origin.kind !== "chat" && origin.kind !== "agent") || typeof origin.name !== "string") return undefined;
+  const parsed = parseSessionName(origin.name);
+  if (!parsed || parsed.kind !== origin.kind) return undefined;
+  return { kind: parsed.kind, name: parsed.name, ...(typeof origin.title === "string" ? { title: origin.title.slice(0, 200) } : {}) };
 }
 
 /**
@@ -89,7 +103,7 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
 
   ipcMain.on(
     IPC_CHANNELS.INSIGHTS_SEND_MESSAGE,
-    async (_, projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => {
+    async (_, projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[], to?: unknown) => {
       const project = projectStore.getProject(projectId);
       if (!project) {
         safeSendToRenderer(
@@ -120,7 +134,7 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
       // the handler returns. This fixes race conditions on Windows where
       // environment setup wouldn't complete before process spawn.
       try {
-        await insightsService.sendMessage(projectId, project.path, message, configWithSettings, images);
+        await insightsService.sendMessage(projectId, project.path, message, configWithSettings, images, sessionOrigin(to));
       } catch (error) {
         // Errors during sendMessage (executor errors) are already emitted via
         // the 'error' event, but we catch here to prevent unhandled rejection
@@ -446,6 +460,25 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
       } catch (error) {
         if (!(error instanceof ChatCommandsListError)) appLog.warn("[Insights] Listing Claude Code's commands failed:", error);
         return { success: false, error: error instanceof ChatCommandsListError ? error.code : ("failed" satisfies ChatCommandsError) };
+      }
+    }
+  );
+
+  // An agent window's Claude Code session as a chat (the error is an OpenWindowAsChatError code)
+  ipcMain.handle(
+    IPC_CHANNELS.INSIGHTS_OPEN_WINDOW_AS_CHAT,
+    async (_, projectId: string, terminalId: string): Promise<IPCResult<string>> => {
+      const project = projectStore.getProject(projectId);
+      if (!project) return { success: false, error: "projectNotFound" satisfies OpenWindowAsChatError };
+      const terminal = findWindow(terminalId);
+      if (!terminal) return { success: false, error: "windowNotFound" satisfies OpenWindowAsChatError };
+      try {
+        const source = await windowChatSource(terminal);
+        const chatId = source ? await insightsService.openSessionAsChat(projectId, project.path, source) : null;
+        return chatId ? { success: true, data: chatId } : { success: false, error: "noSession" satisfies OpenWindowAsChatError };
+      } catch (error) {
+        appLog.warn("[Insights] Could not open an agent window as a chat:", error);
+        return { success: false, error: "failed" satisfies OpenWindowAsChatError };
       }
     }
   );

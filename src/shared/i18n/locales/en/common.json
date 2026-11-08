@@ -227,7 +227,9 @@
       "archive_tasks": "Archiving tasks",
       "unarchive_tasks": "Unarchiving tasks",
       "delete_task": "Deleting a task",
-      "message_task": "Messaging a task"
+      "message_task": "Messaging a task",
+      "list_sessions": "Listing chats and agent windows",
+      "message_chat": "Messaging a chat"
     },
     "mcp": {
       "label": "MCP servers"
@@ -238,6 +240,23 @@
       "label": "Claude Code",
       "off": "Let Claude work like an agent window: change files, run commands and use slash commands and skills",
       "on": "Claude works like an agent window: it can change files, run commands and use slash commands and skills"
+    },
+    "chatName": {
+      "copy": "Copy session name",
+      "copied": "Copied {{name}}"
+    },
+    "incoming": {
+      "fromChat": "From the chat {{title}} ({{name}})",
+      "fromAgent": "From the agent window {{title}} ({{name}})"
+    },
+    "outgoing": {
+      "toChat": "To the chat {{title}} ({{name}})",
+      "toAgent": "To the agent window {{title}} ({{name}})"
+    },
+    "sendTo": {
+      "chat": "Sends this message to the chat {{title}}",
+      "agent": "Sends this message to the agent window {{title}}",
+      "remove": "Don't send to this session"
     },
     "agentWindow": {
       "open": "Open agent",
