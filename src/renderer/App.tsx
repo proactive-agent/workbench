@@ -624,6 +624,13 @@ export function App() {
     };
   }, []);
 
+  // The sidebar's items. Claude while its page shows (a chat open, or the New chat page): a new
+  // chat, as the page's New chat button; from another page it opens as it was left
+  const handleViewChange = (view: SidebarView) => {
+    if (view === 'insights' && activeView === 'insights') useInsightsStore.getState().requestNewChat();
+    setActiveView(view);
+  };
+
   const handleProjectTabClose = (projectId: string) => {
     // Show confirmation dialog before removing the project
     const project = projects.find(p => p.id === projectId);
@@ -718,7 +725,7 @@ export function App() {
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={handleViewChange}
         />
 
         {/* Main content */}

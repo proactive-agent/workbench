@@ -454,6 +454,10 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   later turns `--resume` it, and editing a sent message or regenerating a reply forks it at the earlier reply
   (`--resume <id> --resume-session-at <uuid> --fork-session`), leaving the original session as it was. Chats are saved
   in `.workbench/chats/` (`session-storage.ts`); a new chat is saved only once it has a message.
+- **The page as it was left** — the page opens on the chat it showed last (per project, kept in localStorage across
+  restarts and flushed on quit; the New chat page when that is where the user left, a new chat when the chat is gone),
+  with the composer's text and pasted recipient, the history's open state and the chat's browser drawer view as they
+  were. The sidebar's Claude item clicked on the Claude page starts a new chat, like the page's New chat button.
 - **Chats reply at the same time** — one reply runs per chat (`insights-executor.ts`, keyed by project and chat), and
   switching chats, opening a new chat or leaving the page never stops one; Stop ends the reply of the chat it is pressed
   in, and deleting a chat stops its reply and closes its browser. Every event (stream chunks, status, errors) names its

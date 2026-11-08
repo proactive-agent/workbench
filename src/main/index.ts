@@ -942,6 +942,9 @@ app.on('before-quit', (event) => {
 
   // Remember every open window while they are still open (reopened on the next launch)
   saveWindowStateOnQuit();
+  // What the pages keep in localStorage (the Claude page's last chat, the browser drawer's width):
+  // Chromium writes it out only from time to time, and a quick quit could lose the latest
+  session.defaultSession.flushStorageData();
 
   // Stop synchronous services immediately
   stopPeriodicUpdates();

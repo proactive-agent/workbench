@@ -97,6 +97,13 @@ const CHAT_HISTORY_WIDTH = 256;
 /** The width (px) collapsing the app's sidebar gives the chat */
 const APP_SIDEBAR_COLLAPSE_GAIN = APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH;
 
+
+/**
+ * The chat history was closed by the browser drawer (not by the user), so the drawer may open it
+ * again: kept for the app's life, like the history's own state, across visits to the page
+ */
+const historyClosedByDrawer = { current: false };
+
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
@@ -108,16 +115,30 @@ export function Insights({ projectId }: InsightsProps) {
   const currentTool = useInsightsStore((state) => state.currentTool);
   const isLoadingSessions = useInsightsStore((state) => state.isLoadingSessions);
 
-  const [inputValue, setInputValue] = useState('');
+  // The composer's text, kept in the store so it is still there after a visit to another page
+  const inputValue = useInsightsStore((state) => state.composerText);
+  const setInputValue = useInsightsStore((state) => state.setComposerText);
   // Where the caret is in the composer (the `/` menu follows it)
   const [caret, setCaret] = useState(0);
   // The chat or agent window the next message goes to: a session name pasted into the composer,
-  // shown as an attachment (one at a time: the latest paste wins)
-  const [sendTo, setSendTo] = useState<SessionTarget | null>(null);
+  // shown as an attachment (one at a time: the latest paste wins). It belongs to the chat it was
+  // chosen in: another chat starts without one, and coming back to the page finds it again
+  const chatKey = session?.id ?? 'new';
+  const composerSendTo = useInsightsStore((state) => state.composerSendTo);
+  const sendTo = composerSendTo?.chatKey === chatKey ? composerSendTo.target : null;
+  const setSendTo = useCallback((next: SessionTarget | null | ((current: SessionTarget | null) => SessionTarget | null)) => {
+    useInsightsStore.setState((state) => {
+      const current = state.composerSendTo?.chatKey === chatKey ? state.composerSendTo.target : null;
+      const target = typeof next === 'function' ? next(current) : next;
+      return { composerSendTo: target ? { chatKey, target } : null };
+    });
+  }, [chatKey]);
   const projectPath = useProjectStore((state) => state.projects.find((project) => project.id === projectId)?.path);
   const [creatingTask, setCreatingTask] = useState<Set<string>>(new Set());
   const [taskCreated, setTaskCreated] = useState<Set<string>>(new Set());
-  const [showSidebar, setShowSidebar] = useState(true);
+  // The chat history beside the chat (kept as the user left it)
+  const showSidebar = useInsightsStore((state) => state.chatHistoryOpen);
+  const setShowSidebar = useInsightsStore((state) => state.setChatHistoryOpen);
   const showArchived = useInsightsStore((state) => state.showArchived);
   const [viewportEl, setViewportEl] = useState<HTMLElement | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -137,8 +158,7 @@ export function Insights({ projectId }: InsightsProps) {
   const drawerOpen = useBrowserDrawerStore((state) => state.open);
   const drawerWidth = useBrowserDrawerStore((state) => state.width);
   const chatColumnRef = useRef<HTMLDivElement | null>(null);
-  /** The chat history was closed by the drawer (not by the user): the drawer may open it again */
-  const historyClosedByDrawerRef = useRef(false);
+  const historyClosedByDrawerRef = historyClosedByDrawer;
   const appSidebarSaved = useSettingsStore((state) => state.settings.sidebarCollapsed ?? false);
   const appSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
   const setAppSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
@@ -289,7 +309,8 @@ export function Insights({ projectId }: InsightsProps) {
     };
   }, [viewportEl, checkIfAtBottom, scrollToBottom]);
 
-  // The page always opens on a new chat (IPC listeners are registered app-wide in useIpcListeners)
+  // The page opens as it was left: the last chat, or the New chat page (IPC listeners are
+  // registered app-wide in useIpcListeners)
   useEffect(() => {
     openInsightsPage(projectId, showArchived);
   }, [projectId]);
@@ -303,9 +324,6 @@ export function Insights({ projectId }: InsightsProps) {
     }
     loadInsightsSessions(projectId, showArchived);
   }, [showArchived]);
-
-  // Another chat starts without a recipient
-  useEffect(() => setSendTo(null), [session?.id]);
 
   // Opening a chat from the history shows its latest messages
   useLayoutEffect(() => {
@@ -350,10 +368,21 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const handleNewSession = async () => {
+    // Choices made on an earlier New chat page don't carry over from a conversation
+    if (session) useInsightsStore.getState().setDraftModelConfig(undefined);
     await newSession(projectId);
     setTaskCreated(new Set());
     textareaRef.current?.focus();
   };
+
+  // The sidebar's Claude item clicked while the page shows: a new chat, as the New chat button
+  const newChatRequest = useInsightsStore((state) => state.newChatRequest);
+  const handledNewChatRef = useRef(newChatRequest);
+  useEffect(() => {
+    if (newChatRequest === handledNewChatRef.current) return;
+    handledNewChatRef.current = newChatRequest;
+    void handleNewSession();
+  }, [newChatRequest]);
 
   const handleSelectSession = async (sessionId: string) => {
     if (sessionId !== session?.id) {

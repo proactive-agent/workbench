@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
+import type { SessionTarget } from '../lib/session-targets';
 import type {
   InsightsSession,
   InsightsSessionSummary,
@@ -58,6 +59,14 @@ interface InsightsState {
    * which opens on this chat instead of a new one. `seq` tells requests apart
    */
   openChatRequest: { projectId: string; chatId: string; seq: number } | null;
+  /** Asks the Claude page for a new chat, as its New chat button does (the sidebar's Claude item) */
+  newChatRequest: number;
+  /** The composer's text, kept while the user is on other pages */
+  composerText: string;
+  /** Where the composer's message goes (a pasted name), for the chat it was chosen in ('new': the New chat page) */
+  composerSendTo: { chatKey: string; target: SessionTarget } | null;
+  /** Whether the Claude page shows its chat history */
+  chatHistoryOpen: boolean;
 
   // Actions
   setProjectId: (projectId: string) => void;
@@ -79,6 +88,9 @@ interface InsightsState {
   setShowArchived: (showArchived: boolean) => void;
   setPendingImages: (images: ImageAttachment[]) => void;
   setDraftModelConfig: (config: InsightsModelConfig | undefined) => void;
+  requestNewChat: () => void;
+  setComposerText: (text: string | ((current: string) => string)) => void;
+  setChatHistoryOpen: (open: boolean) => void;
   /**
    * Show another chat (null: the New chat page). A reply the shown chat is writing goes on in the
    * background; the chat shown next comes back with its own reply in flight, if it has one
@@ -98,6 +110,52 @@ const initialStatus: InsightsChatStatus = {
  * reports the conversation it created for it
  */
 export const DRAFT_SESSION_ID = 'draft';
+
+/**
+ * The Claude page as the user left it, kept across restarts: each project's last chat (none: the
+ * New chat page) and whether the chat history shows
+ */
+const LAST_CHATS_KEY = 'workbench.claude.lastChats';
+const CHAT_HISTORY_KEY = 'workbench.claude.historyOpen';
+
+function readChatHistoryOpen(): boolean {
+  try {
+    return localStorage.getItem(CHAT_HISTORY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+let lastChats: Record<string, string> | null = null;
+
+function readLastChats(): Record<string, string> {
+  if (lastChats) return lastChats;
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_CHATS_KEY) ?? '{}') as unknown;
+    lastChats = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+  } catch {
+    lastChats = {};
+  }
+  return lastChats;
+}
+
+/** The chat a project's Claude page showed last (undefined: the New chat page) */
+export function lastChatId(projectId: string): string | undefined {
+  const id = readLastChats()[projectId];
+  return typeof id === 'string' ? id : undefined;
+}
+
+function rememberChat(projectId: string, chatId: string | null): void {
+  const chats = { ...readLastChats() };
+  if (chatId) chats[projectId] = chatId;
+  else delete chats[projectId];
+  lastChats = chats;
+  try {
+    localStorage.setItem(LAST_CHATS_KEY, JSON.stringify(chats));
+  } catch {
+    // Remembered for this run only
+  }
+}
 
 const IDLE_RUN: ChatRun = { status: { phase: 'idle', message: '' }, streamingContent: '', streamingTasks: [], currentTool: null, toolsUsed: [] };
 
@@ -190,6 +248,10 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   draftModelConfig: undefined,
   backgroundRuns: {},
   openChatRequest: null,
+  newChatRequest: 0,
+  composerText: '',
+  composerSendTo: null,
+  chatHistoryOpen: readChatHistoryOpen(),
 
   // Actions
   // Switching projects drops the previous project's in-flight state; its reply is still
@@ -206,13 +268,30 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
             streamingTasks: [],
             currentTool: null,
             toolsUsed: [],
-            backgroundRuns: {}
+            backgroundRuns: {},
+            // Choices for another project's New chat page, and a recipient among its sessions
+            draftModelConfig: undefined,
+            composerSendTo: null
           }
     ),
 
   setSession: (session) => set({ session }),
 
   setDraftModelConfig: (draftModelConfig) => set({ draftModelConfig }),
+
+  requestNewChat: () => set((state) => ({ newChatRequest: state.newChatRequest + 1 })),
+
+  setComposerText: (text) =>
+    set((state) => ({ composerText: typeof text === 'function' ? text(state.composerText) : text })),
+
+  setChatHistoryOpen: (chatHistoryOpen) => {
+    set({ chatHistoryOpen });
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, chatHistoryOpen ? '1' : '0');
+    } catch {
+      // Remembered only where storage works
+    }
+  },
 
   showSession: (session) =>
     set((state) => {
@@ -390,6 +469,15 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
 
 // Helper functions
 
+// The chat shown is the one the page opens on next time (a conversation, or the New chat page;
+// not the moment between a new chat's first message and its conversation)
+useInsightsStore.subscribe((state, previous) => {
+  if (!state.projectId || state.projectId !== previous.projectId) return;
+  const id = state.session?.id ?? null;
+  if (id === (previous.session?.id ?? null) || id === DRAFT_SESSION_ID) return;
+  rememberChat(state.projectId, id);
+});
+
 export async function loadInsightsSessions(projectId: string, includeArchived?: boolean): Promise<void> {
   const store = useInsightsStore.getState();
   store.setLoadingSessions(true);
@@ -551,10 +639,9 @@ export function editMessage(projectId: string, messageId: string, content: strin
 }
 
 export async function openInsightsPage(projectId: string, includeArchived?: boolean): Promise<void> {
+  const sameProject = useInsightsStore.getState().projectId === projectId;
   useInsightsStore.getState().setProjectId(projectId);
-  // Choices made before a conversation existed last only while the page is open
-  useInsightsStore.getState().setDraftModelConfig(undefined);
-  // Opened for a chat (an agent window opened as a chat): that chat, not a new one
+  // Opened for a chat (an agent window opened as a chat): that chat
   const request = useInsightsStore.getState().openChatRequest;
   if (request?.projectId === projectId) {
     useInsightsStore.setState({ openChatRequest: null });
@@ -562,11 +649,27 @@ export async function openInsightsPage(projectId: string, includeArchived?: bool
     await switchSession(projectId, request.chatId);
     return;
   }
-  const { phase } = useInsightsStore.getState().status;
-  if (phase === 'thinking' || phase === 'streaming') {
+  // The page as it was left: the chat it showed last, or the New chat page (with its choices)
+  const last = lastChatId(projectId) ?? null;
+  const shown = useInsightsStore.getState().session;
+  if (sameProject && (shown?.id ?? null) === last) {
     await loadInsightsSessions(projectId, includeArchived);
     return;
   }
+  // A new chat's first message is still on its way to becoming a conversation
+  if (sameProject && shown?.id === DRAFT_SESSION_ID) {
+    await loadInsightsSessions(projectId, includeArchived);
+    return;
+  }
+  if (last) {
+    await loadInsightsSessions(projectId, includeArchived);
+    const result = await window.electronAPI.switchInsightsSession(projectId, last);
+    if (result.success && result.data) {
+      useInsightsStore.getState().showSession(result.data);
+      return;
+    }
+  }
+  // No chat to go back to (none yet, or it was deleted)
   await newSession(projectId);
 }
 

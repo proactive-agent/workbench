@@ -76,6 +76,7 @@ beforeEach(async () => {
   listeners.error = [];
   listeners.session = [];
   vi.clearAllMocks();
+  localStorage.clear();
   (window as unknown as { electronAPI: typeof electronAPI }).electronAPI = electronAPI;
   store = await import('../insights-store');
   cleanup = store.setupInsightsListeners();
@@ -209,13 +210,49 @@ describe('Insights mock conversations', () => {
     expect(state().session?.title).toBe('hello');
   });
 
-  it('opens the page on a new chat', async () => {
+  it('opens the page on the chat it showed last', async () => {
     expect(state().session?.id).toBe('session-project-a');
 
     await store.openInsightsPage('project-a');
 
+    expect(state().session?.id).toBe('session-project-a');
+    expect(electronAPI.newInsightsSession).not.toHaveBeenCalled();
+  });
+
+  it('opens the last chat again after a restart, and a new chat when it is gone', async () => {
+    await store.switchSession('project-a', 'session-7');
+    // A fresh store (the app started again) opens that chat
+    vi.resetModules();
+    store = await import('../insights-store');
+    await store.openInsightsPage('project-a');
+    expect(electronAPI.switchInsightsSession).toHaveBeenLastCalledWith('project-a', 'session-7');
+    expect(state().session?.id).toBe('session-7');
+
+    // Deleted meanwhile: a new chat
+    vi.resetModules();
+    store = await import('../insights-store');
+    electronAPI.switchInsightsSession.mockResolvedValueOnce({ success: false } as never);
+    await store.openInsightsPage('project-a');
     expect(state().session).toBeNull();
     expect(electronAPI.newInsightsSession).toHaveBeenCalledWith('project-a');
+  });
+
+  it('opens the New chat page again when that is where the user left', async () => {
+    await store.newSession('project-a');
+    store.useInsightsStore.getState().setDraftModelConfig({ model: 'opus' } as never);
+    vi.clearAllMocks();
+
+    await store.openInsightsPage('project-a');
+
+    expect(state().session).toBeNull();
+    expect(state().draftModelConfig).toEqual({ model: 'opus' });
+    expect(electronAPI.switchInsightsSession).not.toHaveBeenCalled();
+  });
+
+  it('asks the page for a new chat (the sidebar item on its own page)', () => {
+    const before = state().newChatRequest;
+    state().requestNewChat();
+    expect(state().newChatRequest).toBe(before + 1);
   });
 
   it('keeps a reply being written on screen when the page opens again', async () => {
