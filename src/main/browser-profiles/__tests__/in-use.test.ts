@@ -107,17 +107,19 @@ describe.skipIf(process.platform === 'win32')('isBrowserProfileInUse', () => {
     expect(await isBrowserProfileInUse(chrome())).toBe(true);
   });
 
-  describe.skipIf(process.platform !== 'linux')('on Linux, with processes named like browsers', { timeout: 20_000 }, () => {
+  describe.skipIf(process.platform !== 'linux' || !existsSync('/bin/bash'))('on Linux, with processes named like browsers', { timeout: 20_000 }, () => {
     const children: ChildProcess[] = [];
     /**
-     * A process whose name (comm) is `name`: Node waiting, started through a link with that name.
-     * Not /bin/sleep: Rust coreutils (Ubuntu 26.04, the CI runner) is one binary that picks its
-     * tool by the name it runs as, so it never ran as a browser's name
+     * A process whose name (comm) is `name`: bash waiting on a sleep, started through a link with
+     * that name (`; :` keeps bash itself running instead of replacing itself with sleep). Not
+     * /bin/sleep: Rust coreutils (Ubuntu 26.04, the CI runner) is one binary that picks its tool by
+     * the name it runs as, so it never ran as a browser's name. Not Node: it renames its main thread
+     * (MainThread) right after it starts
      */
     async function processNamed(name: string): Promise<number> {
       const link = path.join(dir, name);
-      await symlink(process.execPath, link);
-      const child = spawn(link, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore', env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
+      await symlink('/bin/bash', link);
+      const child = spawn(link, ['-c', 'sleep 30; :'], { stdio: 'ignore' });
       children.push(child);
       // Until exec has replaced the forked node's name, failing here rather than in the assertion
       // that needs it
