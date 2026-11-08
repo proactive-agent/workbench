@@ -118,6 +118,7 @@
     "back": "Back",
     "forward": "Forward",
     "reload": "Reload",
+    "stop": "Stop loading",
     "address": "Address",
     "addressPlaceholder": "Enter an address",
     "loading": "Connecting to the browser...",

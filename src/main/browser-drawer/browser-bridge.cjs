@@ -20,6 +20,8 @@ const sessions = new Map();
 const pages = new Map();
 const pageIds = new WeakMap();
 let nextPageId = 1;
+/** A navigation that never loads a page (a download, a 204) stops counting as loading after this */
+const LOADING_LIMIT_MS = 60000;
 /** How long connecting to a browser may take */
 const CONNECT_TIMEOUT_MS = 15000;
 /** How long a viewport change or a screencast's start or stop may hold up the commands after it */
@@ -115,6 +117,7 @@ function pushPages() {
       sessionId: entry.sessionId,
       url: entry.page.url(),
       title: await entry.page.title().catch(() => ''),
+      loading: entry.loading === true,
     })));
     send({ type: 'pages', pages: list, connected: [...sessions.keys()] });
   }, 100);
@@ -129,9 +132,40 @@ function addPage(page, sessionId) {
   if (pageIds.has(page)) return;
   const id = `${sessionId}#${nextPageId++}`;
   pageIds.set(page, id);
-  pages.set(id, { page, sessionId });
+  const entry = { page, sessionId, loading: false, loadingTimer: null };
+  pages.set(id, entry);
   applyColorScheme(page);
+  // Loading: from the main frame's navigation request until the page's load event (or the request
+  // failing, or a stop). A navigation that never loads a page (a download, a 204) ends after a while
+  const setLoading = (loading) => {
+    if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
+    entry.loadingTimer = loading ? setTimeout(() => setLoading(false), LOADING_LIMIT_MS) : null;
+    if (entry.loading === loading) return;
+    entry.loading = loading;
+    pushPages();
+  };
+  entry.setLoading = setLoading;
+  const mainNavigation = (request) => {
+    try {
+      return request.isNavigationRequest() && request.frame() === page.mainFrame();
+    } catch {
+      // A request of a frame that is gone
+      return false;
+    }
+  };
+  // Only the navigation in flight ends the loading: a replaced one fails (aborted) after the
+  // request of the one that replaced it
+  page.on('request', (request) => {
+    if (!mainNavigation(request)) return;
+    entry.navigation = request;
+    setLoading(true);
+  });
+  page.on('requestfailed', (request) => {
+    if (request === entry.navigation) setLoading(false);
+  });
+  page.on('load', () => setLoading(false));
   page.on('close', () => {
+    if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
     pages.delete(id);
     dropCast(id);
     inputQueues.delete(id);
@@ -393,9 +427,30 @@ async function input(pageId, event) {
   }
 }
 
+/**
+ * Stop the page's loading, as a browser's stop button does: Chromium's own Page.stopLoading,
+ * `window.stop()` in other browsers
+ */
+async function stopLoading(entry) {
+  const { page } = entry;
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    try {
+      await cdp.send('Page.stopLoading');
+    } finally {
+      cdp.detach().catch(() => undefined);
+    }
+  } catch {
+    await bounded(page.evaluate(() => window.stop()), 3000, undefined).catch(() => undefined);
+  }
+  entry.setLoading?.(false);
+}
+
 async function navigate(pageId, action, url) {
-  const page = pages.get(pageId)?.page;
+  const entry = pages.get(pageId);
+  const page = entry?.page;
   if (!page) return;
+  if (action === 'stop') return stopLoading(entry);
   const options = { timeout: 30000 };
   if (action === 'back') await page.goBack(options);
   else if (action === 'forward') await page.goForward(options);

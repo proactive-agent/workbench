@@ -39,6 +39,8 @@ export interface BrowserDrawerPage {
   sessionId: string;
   title: string;
   url: string;
+  /** A navigation of the page is loading (from its request until the page's load event) */
+  loading?: boolean;
 }
 
 export interface BrowserDrawerState {
@@ -70,4 +72,4 @@ export type BrowserDrawerInput =
   | { kind: 'keydown' | 'keyup'; key: string }
   | { kind: 'text'; text: string };
 
-export type BrowserDrawerNavigation = 'back' | 'forward' | 'reload' | 'goto';
+export type BrowserDrawerNavigation = 'back' | 'forward' | 'reload' | 'stop' | 'goto';

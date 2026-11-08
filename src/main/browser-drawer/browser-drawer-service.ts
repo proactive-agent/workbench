@@ -268,7 +268,7 @@ export class BrowserDrawerService {
     if (action === 'goto') {
       if (typeof url !== 'string' || !/^(https?|about|file):/i.test(url)) return;
       this.bridge.send({ type: 'navigate', pageId, action, url });
-    } else if (action === 'back' || action === 'forward' || action === 'reload') {
+    } else if (action === 'back' || action === 'forward' || action === 'reload' || action === 'stop') {
       this.bridge.send({ type: 'navigate', pageId, action });
     }
   }

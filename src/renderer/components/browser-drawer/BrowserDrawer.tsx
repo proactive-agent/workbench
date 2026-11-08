@@ -230,9 +230,16 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
             <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'forward')} aria-label={t('browserDrawer.forward')} title={t('browserDrawer.forward')}>
               <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
             </button>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'reload')} aria-label={t('browserDrawer.reload')} title={t('browserDrawer.reload')}>
-              <RotateCw className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
+            {/* While the page loads, reload turns into stop */}
+            {selected.loading ? (
+              <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'stop')} aria-label={t('browserDrawer.stop')} title={t('browserDrawer.stop')}>
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            ) : (
+              <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'reload')} aria-label={t('browserDrawer.reload')} title={t('browserDrawer.reload')}>
+                <RotateCw className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </button>
+            )}
             <input
               value={address}
               onChange={(event) => setAddress(event.target.value)}

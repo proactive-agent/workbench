@@ -103,4 +103,67 @@ describe('browser bridge script', () => {
     const mouse = (await calls()).filter((call) => 'move' in call || 'down' in call);
     expect(mouse).toEqual([{ move: 1 }, { move: 4 }, { move: 5 }, { down: true }]);
   });
+
+  it('reports a page loading from its navigation request until it loads, and stops it on request', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    // A page that emits its events: a navigation request of its main frame, then load
+    await writeFile(lib, `
+const fs = require('fs');
+const path = require('path');
+const { EventEmitter } = require('events');
+const log = (entry) => fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify(entry) + '\\n');
+const page = new EventEmitter();
+const mainFrame = {};
+Object.assign(page, {
+  url: () => 'https://example.com/',
+  title: async () => 'Example',
+  mainFrame: () => mainFrame,
+  emulateMedia: async () => {},
+  close: async () => {},
+  context: () => ({ newCDPSession: async () => ({ send: async (method) => log({ cdp: method }), detach: async () => {} }) }),
+});
+const nav = { isNavigationRequest: () => true, frame: () => mainFrame };
+const navB = { isNavigationRequest: () => true, frame: () => mainFrame };
+fs.watch(__dirname, (event, file) => {
+  if (file === 'emit-request') page.emit('request', nav);
+  if (file === 'emit-request-b') page.emit('request', navB);
+  if (file === 'emit-fail-a') page.emit('requestfailed', nav);
+  if (file === 'emit-load') page.emit('load');
+});
+const context = { pages: () => [page], on() {} };
+module.exports = { chromium: { connect: async () => ({ contexts: () => [context], on() {}, close: async () => {} }) } };
+`);
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let latest: { id: string; loading?: boolean } | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) latest = message.pages[0];
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => latest?.loading === false);
+
+    await writeFile(path.join(dir, 'emit-request'), '');
+    await until(() => latest?.loading === true);
+    await writeFile(path.join(dir, 'emit-load'), '');
+    await until(() => latest?.loading === false);
+
+    // A navigation replaced by another fails (aborted) after the new one started: still loading
+    await writeFile(path.join(dir, 'emit-request'), 'a');
+    await until(() => latest?.loading === true);
+    await writeFile(path.join(dir, 'emit-request-b'), '');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await writeFile(path.join(dir, 'emit-fail-a'), '');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(latest?.loading).toBe(true);
+    await writeFile(path.join(dir, 'emit-load'), 'b');
+    await until(() => latest?.loading === false);
+
+    // Stopped from the drawer: Chromium's own stop, and no longer loading
+    await writeFile(path.join(dir, 'emit-request'), 'again');
+    await until(() => latest?.loading === true);
+    bridge.send({ type: 'navigate', pageId: latest!.id, action: 'stop' });
+    await until(() => latest?.loading === false);
+    expect(await readFile(path.join(dir, 'calls.log'), 'utf-8')).toContain('Page.stopLoading');
+  });
 });
