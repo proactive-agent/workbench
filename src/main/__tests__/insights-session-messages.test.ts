@@ -232,14 +232,77 @@ describe('messages to a chat', () => {
     expect(message.endsWith('what did it say?')).toBe(true);
   });
 
-  it('plans from the reply before the messages no reply answered', () => {
+  it('plans from the reply before the messages held from other sessions, not past one of the user\'s own', () => {
     const ref = { sessionId: 's', messageUuid: 'r1' };
     const message = (role: 'user' | 'assistant', extra = {}) => ({ id: role, role, content: role, timestamp: new Date(), ...extra });
-    const session = {
-      id: 'session-1', title: 't', createdAt: new Date(), updatedAt: new Date(), claudeHead: ref,
-      messages: [message('user'), message('assistant', { claudeRef: ref }), message('user'), message('user')],
-    };
-    expect(planClaudeSession(session as never)).toEqual({ mode: 'resume', sessionId: 's', profileId: undefined });
+    const chat = (messages: unknown[]) => ({ id: 'session-1', title: 't', createdAt: new Date(), updatedAt: new Date(), claudeHead: ref, messages });
+    expect(planClaudeSession(chat([message('user'), message('assistant', { claudeRef: ref }), message('user', { from }), message('user')]) as never))
+      .toEqual({ mode: 'resume', sessionId: 's', profileId: undefined });
+    // A message of the user's own without a reply (its turn failed) may be in the session already
+    expect(planClaudeSession(chat([message('user'), message('assistant', { claudeRef: ref }), message('user'), message('user')]) as never))
+      .toEqual({ mode: 'new' });
+  });
+
+  it('holds a message while others wait for the user, instead of answering them unattended', async () => {
+    const chatId = await chatWithOneReply();
+    replying.add(chatId);
+    await service.receiveMessage(pid, projectDir, chatId, from, 'burst 1');
+    replying.delete(chatId);
+    // A stopped reply: burst 1 is shown, waiting for the user
+    execute.mockResolvedValueOnce({ fullResponse: '', toolsUsed: [], stopped: true });
+    await service.sendMessage(pid, projectDir, 'question');
+    await flush();
+    const calls = execute.mock.calls.length;
+    await expect(service.receiveMessage(pid, projectDir, chatId, from, 'burst 2')).resolves.toMatchObject({ status: 'held' });
+    await flush();
+    expect(execute).toHaveBeenCalledTimes(calls);
+    expect(service.loadSession(pid, projectDir)!.messages.slice(-2).map((m) => m.content)).toEqual(['burst 1', 'burst 2']);
+  });
+
+  it('answers other sessions without the task tools or gh and glab, and may message an agent window back', async () => {
+    execute.mockResolvedValueOnce({ fullResponse: 'Hello', toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'hi', { agentMode: true, kanbanTools: true, githubTools: true, gitlabTools: true } as never);
+    const chatId = service.loadSession(pid, projectDir)!.id;
+    execute.mockResolvedValueOnce({ fullResponse: 'Got it', toolsUsed: [] });
+    await service.receiveMessage(pid, projectDir, chatId, from, 'merge PR 7');
+    await flush();
+    const [, , , , config, , turn] = execute.mock.calls.at(-1)!;
+    expect(config).toMatchObject({ agentMode: false, kanbanTools: false, githubTools: false, gitlabTools: false });
+    expect(turn.reachesAgentWindow).toBe(true);
+  });
+
+  it('gives a turn passing on held messages from an agent window the means to answer it', async () => {
+    execute.mockResolvedValueOnce({ fullResponse: 'Hello', toolsUsed: [], claudeRef: { sessionId: 's', messageUuid: 'r0' } });
+    await service.sendMessage(pid, projectDir, 'hi');
+    const chatId = service.loadSession(pid, projectDir)!.id;
+    replying.add(chatId);
+    await service.receiveMessage(pid, projectDir, chatId, from, 'from the window');
+    replying.delete(chatId);
+    execute.mockResolvedValueOnce({ fullResponse: '', toolsUsed: [], stopped: true });
+    await service.regenerate(pid, projectDir);
+    await flush();
+    execute.mockResolvedValueOnce({ fullResponse: 'ok', toolsUsed: [] });
+    await service.sendMessage(pid, projectDir, 'what did it say?');
+    const [, , message, history, , , turn] = execute.mock.calls.at(-1)!;
+    expect(turn.reachesAgentWindow).toBe(true);
+    // Passed on once: in the message, not also in the history
+    expect(message).toContain('from the window');
+    expect(JSON.stringify(history)).not.toContain('from the window');
+  });
+
+  it('keeps the messages that waited for a chat archived during its stopped reply', async () => {
+    const chatId = await chatWithOneReply();
+    replying.add(chatId);
+    await service.receiveMessage(pid, projectDir, chatId, from, 'kept');
+    replying.delete(chatId);
+    service.archiveSession(pid, projectDir, chatId);
+    execute.mockResolvedValueOnce({ fullResponse: '', toolsUsed: [], stopped: true });
+    await service.regenerate(pid, projectDir, undefined, chatId);
+    await flush();
+    const archived = service.listSessions(projectDir, true).find((summary) => summary.id === chatId);
+    expect(archived).toBeDefined();
+    service.unarchiveSession(projectDir, chatId);
+    expect(service.switchSession(pid, projectDir, chatId)!.messages.map((m) => m.content)).toContain('kept');
   });
 
   it('refuses a chat that is not there', async () => {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acceptsWindowInput, isReceiving, receivingBusyChanged, setReceivingHooks, startReceiving, stopReceiving } from '../receiving';
+import { acceptsWindowInput, noteCursorQuery, isReceiving, receivingBusyChanged, setReceivingHooks, startReceiving, stopReceiving } from '../receiving';
 
 const from = { kind: 'chat' as const, name: 'chat-abc', title: 'Release notes' };
 const notify = vi.fn();
@@ -74,10 +74,22 @@ describe('agent window answering a message', () => {
     expect(acceptsWindowInput('window-1', 'x')).toBe(false);
     expect(acceptsWindowInput('window-1', '\r')).toBe(false);
     expect(acceptsWindowInput('window-1', '\x1b[<0;10;5M')).toBe(false);
-    // Focus, cursor position, device attributes, OSC colors
-    for (const reply of ['\x1b[I', '\x1b[O', '\x1b[12;40R', '\x1b[?1;2c', '\x1b]11;rgb:1a1a/1a1a/1a1a\x1b\\']) {
+    // Focus, device attributes, mode, keyboard and window reports, OSC colors
+    for (const reply of ['\x1b[I', '\x1b[O', '\x1b[?1;2c', '\x1b[?2026;2$y', '\x1b[?0u', '\x1b[8;40;120t', '\x1b]11;rgb:1a1a/1a1a/1a1a\x1b\\']) {
       expect(acceptsWindowInput('window-1', reply)).toBe(true);
     }
+  });
+
+  it('lets a cursor report through only right after the program asked for one (Shift+F3 looks the same)', () => {
+    startReceiving('window-1', from);
+    expect(acceptsWindowInput('window-1', '\x1b[1;2R')).toBe(false);
+    noteCursorQuery('window-1');
+    expect(acceptsWindowInput('window-1', '\x1b[12;40R')).toBe(true);
+    // One report per question
+    expect(acceptsWindowInput('window-1', '\x1b[12;40R')).toBe(false);
+    noteCursorQuery('window-1');
+    vi.advanceTimersByTime(3000);
+    expect(acceptsWindowInput('window-1', '\x1b[12;40R')).toBe(false);
   });
 
   it('is given back at once when taken over', () => {

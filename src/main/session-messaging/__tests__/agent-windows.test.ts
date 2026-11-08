@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalProcess } from '../../terminal/types';
 
 const recorded = vi.hoisted(() => ({ value: [] as Array<Record<string, unknown>> }));
@@ -32,6 +32,11 @@ describe('agent windows by name', () => {
     live.value.clear();
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    accepts.value = true;
+  });
+
   it('finds a closed window by its name, titled after its last session', async () => {
     expect(await findAgentWindow('/project', 'agent-1a19c850')).toEqual({ terminalId, title: 'Failing CI', open: false });
     expect(await findAgentWindow('/project', 'agent-ffffffff')).toBeNull();
@@ -58,7 +63,6 @@ describe('agent windows by name', () => {
       sessionId: 'latest',
       configDir: '/home/me/.claude-work',
     });
-    vi.useRealTimers();
   });
 
   it('opens nothing for a name no window had', async () => {
@@ -68,9 +72,17 @@ describe('agent windows by name', () => {
     expect(opener).not.toHaveBeenCalled();
   });
 
+  it('types nothing into a window running another program at its shell', async () => {
+    const opener = vi.fn();
+    setAgentWindowOpener(opener);
+    windows.value = [{ id: terminalId, isCLIMode: false, pty: { process: 'vim' } } as unknown as TerminalProcess];
+    expect(await ensureAgentWindowRunning('/project', 'agent-1a19c850')).toBe(false);
+    expect(opener).not.toHaveBeenCalled();
+  });
+
   it('resumes the session in an open window that is back at its shell', async () => {
     vi.useFakeTimers();
-    const shell = { id: terminalId, isCLIMode: false } as TerminalProcess;
+    const shell = { id: terminalId, isCLIMode: false, pty: { process: 'fish' } } as unknown as TerminalProcess;
     windows.value = [shell];
     const opener = vi.fn(() => {
       shell.isCLIMode = true;
@@ -81,7 +93,6 @@ describe('agent windows by name', () => {
     await vi.advanceTimersByTimeAsync(1000);
     expect(await running).toBe(true);
     expect(opener).toHaveBeenCalledTimes(1);
-    vi.useRealTimers();
 
     // Running Claude Code already: nothing to open
     opener.mockClear();
@@ -96,7 +107,6 @@ describe('agent windows by name', () => {
     accepts.value = false;
     await windowMessaged('/project', 'workbench-d7', { kind: 'chat', name: 'chat-abc' });
     expect(isReceiving(terminalId)).toBe(false);
-    accepts.value = true;
   });
 
   it('makes the window a SendMessage reaches read-only', async () => {

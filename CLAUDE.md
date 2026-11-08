@@ -276,17 +276,19 @@ chat's messages and the chat resumes the session (opened again, the same chat sh
 composer (a chat or agent window of the project, `renderer/lib/session-targets.ts`) becomes the message's recipient, shown
 as an attachment (the latest paste wins): the message keeps it (`InsightsChatMessage.to`) and reaches Claude framed to be
 delivered there. Pasted into an agent window it is typed as `[Chat #<hash>]` / `[Agent #<hash>]` (`useXterm.ts`), which
-the window's system prompt explains. A chat auto-replies to at most 5 messages from other sessions in a row, read-only even with the Clawd button
-on (nobody is watching); further ones, and those that arrived while a reply the user stopped was running, are shown
-without a reply until the user writes (the next turn passes them on). A closed window's name still counts (`agent-sessions.json` keeps the sessions each window started,
+the window's system prompt explains. A chat auto-replies to at most 5 messages from other sessions in a row, read-only (nobody is watching: no
+Clawd, Kanban, GitHub or GitLab tools, whatever the chat's buttons); further ones, those that arrived while a reply the
+user stopped was running, and any that arrive while such messages wait, are shown without a reply until the user
+writes (the next turn passes them on, once). A closed window's name still counts (`agent-sessions.json` keeps the sessions each window started,
 `session-messaging/agent-windows.ts`): a chat message to it opens the window again in the background under the same id,
-resuming its last session in the folder it ran in (a worktree too), and an open window back at its shell resumes it; the
-chat's turn waits for that inside its run (Stop and newer messages see the chat replying). Windows accept messages from the user's
+resuming its last session in the folder it ran in (a worktree too), and an open window back at its shell resumes it (only with the shell in the foreground, never typed into another
+program); the chat's turn waits for that inside its run (Stop and newer messages see the chat replying). Windows accept messages from the user's
 other sessions (`crossSessionInbound: "accept"` in the window's own `--settings` file, which also names the theme, unless
 the user's settings refuse or hold them). A window a chat's turn sends a message to (its SendMessage, seen in the
 turn's stream) is read-only until it has answered, when it accepts such messages without asking
 (`session-messaging/receiving.ts`: busy, then idle, from its output and `claude agents`; only the user's keys are
-ignored, not the terminal's own replies), with a Take over button in its header.
+ignored, not the terminal's own replies; a cursor report only right after the program asked for one), with a Take
+over button in its header.
 
 ### MCP Connectors
 

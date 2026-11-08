@@ -59,15 +59,42 @@ export function isReceiving(terminalId: string): boolean {
 }
 
 /**
- * What xterm sends on its own, answering the program in the window: focus in and out, cursor
- * position and device attribute reports, OSC and DCS replies. These still go through while the
- * window is read-only; Claude Code may be waiting for one
+ * What xterm sends on its own, answering the program in the window: focus in and out, device
+ * attributes, mode, keyboard and window reports, OSC and DCS replies. These still go through while
+ * the window is read-only; Claude Code may be waiting for one (cursor reports: CURSOR_REPORT)
  */
-const TERMINAL_REPLY = /^(?:\x1b\[[IO]|\x1b\[\d+;\d+R|\x1b\[[?>=]?[\d;]*c|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/;
+const TERMINAL_REPLY = new RegExp(
+  '^(?:' + [
+    '\\x1b\\[[IO]', // focus in and out
+    '\\x1b\\[[?>=]?[\\d;]*c', // device attributes
+    '\\x1b\\[\\??\\d+;\\d+\\$y', // mode reports (DECRPM)
+    '\\x1b\\[\\?\\d*u', // kitty keyboard flags
+    '\\x1b\\[\\d+(?:;\\d+)*t', // window size and state reports
+    '\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)', // OSC replies (colors)
+    '\\x1bP[^\\x1b]*\\x1b\\\\', // DCS replies
+  ].join('|') + ')+$'
+);
+
+/**
+ * A cursor position report: also what Shift/Ctrl+F3 sends (`\x1b[1;2R`), so it goes through only
+ * right after the program asked for one (`\x1b[6n`, seen in the window's output)
+ */
+const CURSOR_REPORT = /^(?:\x1b\[\??\d+;\d+R)+$/;
+const CURSOR_REPORT_MS = 2000;
+const cursorAsked = new Map<string, number>();
+
+/** The window's program asked for the cursor position (its output had `\x1b[6n`) */
+export function noteCursorQuery(terminalId: string): void {
+  if (receiving.has(terminalId)) cursorAsked.set(terminalId, Date.now());
+}
 
 /** Whether input the window's xterm sent goes to its program: always, except the user's while read-only */
 export function acceptsWindowInput(terminalId: string, data: string): boolean {
-  return !receiving.has(terminalId) || TERMINAL_REPLY.test(data);
+  if (!receiving.has(terminalId) || TERMINAL_REPLY.test(data)) return true;
+  if (!CURSOR_REPORT.test(data)) return false;
+  const asked = cursorAsked.get(terminalId);
+  cursorAsked.delete(terminalId);
+  return asked !== undefined && Date.now() - asked < CURSOR_REPORT_MS;
 }
 
 function setTimer(terminalId: string, entry: Receiving, ms: number): void {
@@ -117,6 +144,7 @@ export function stopReceiving(terminalId: string): void {
   if (!entry) return;
   clearTimers(entry);
   receiving.delete(terminalId);
+  cursorAsked.delete(terminalId);
   notify(terminalId, null);
 }
 

@@ -14,6 +14,7 @@ import { noteWindowSession, readAgentSessions, type AgentSessionRecord } from '.
 import { readSessionName } from '../terminal/claude-sessions';
 import { sessionSearchDirs } from '../terminal/cli-integration-handler';
 import { toRuntimePath } from '../platform/shell-runtime';
+import type { TerminalProcess } from '../terminal/types';
 import { projectWindows, findWindow } from './directory';
 import { windowLiveSession } from './live-sessions';
 import { startReceiving } from './receiving';
@@ -57,6 +58,24 @@ export async function findAgentWindow(projectPath: string, name: string): Promis
   return { terminalId: session.terminalId, title: await recordedTitle(projectPath, session), open: false };
 }
 
+/** Shells a window shows its prompt in: one of them in the foreground means nothing else runs */
+const SHELLS = new Set(['bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'mksh', 'tcsh', 'csh', 'nu', 'elvish', 'xonsh', 'pwsh', 'powershell', 'cmd', 'wsl']);
+
+/**
+ * Whether a window's shell is what runs in its foreground (not vim, a dev server or another
+ * program the resume command would be typed into); unknown counts as idle
+ */
+function shellIsIdle(terminal: TerminalProcess): boolean {
+  let foreground = '';
+  try {
+    foreground = terminal.pty?.process ?? '';
+  } catch {
+    return true;
+  }
+  const name = foreground.split(/[\\/]/).pop()?.replace(/\.exe$/i, '').replace(/^-/, '').toLowerCase() ?? '';
+  return !name || SHELLS.has(name);
+}
+
 /** Windows being opened, by name, so two messages to one closed window open it once */
 const opening = new Map<string, Promise<boolean>>();
 
@@ -68,6 +87,8 @@ const opening = new Map<string, Promise<boolean>>();
 export function ensureAgentWindowRunning(projectPath: string, name: string): Promise<boolean> {
   const open = projectWindows(projectPath).find((terminal) => agentSessionName(terminal.id) === name);
   if (open?.isCLIMode) return Promise.resolve(true);
+  // Back at its shell, but running something else there: nothing is typed into it
+  if (open && !shellIsIdle(open)) return Promise.resolve(false);
   const pending = opening.get(name);
   if (pending) return pending;
   const run = (async () => {

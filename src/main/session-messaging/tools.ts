@@ -101,7 +101,7 @@ async function messageChat(context: SessionToolContext, args: Record<string, unk
     case 'queued':
       return `delivered: ${target} is writing a reply; it takes the message up once that reply ends`;
     case 'held':
-      return `delivered: ${target} shows the message, but it answered ${outcome.answered} messages from other sessions in a row, so it waits for the user before replying; don't send it more for now`;
+      return `delivered: ${target} shows the message, but it waits for the user before replying to other sessions (it answered ${outcome.answered} of their messages in a row, or others already wait); don't send it more for now`;
     default:
       return `not sent: this project has no chat named ${target} (it may have been deleted or archived)`;
   }

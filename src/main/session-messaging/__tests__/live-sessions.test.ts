@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalProcess } from '../../terminal/types';
 
 const listed = vi.hoisted(() => ({ value: [] as unknown[] }));
@@ -18,8 +18,10 @@ const runTool = vi.hoisted(() => vi.fn());
 vi.mock('../../platform/runtime-exec', () => ({ runTool }));
 vi.mock('../../platform/shell-runtime', () => ({ isWslRuntime: () => false }));
 vi.mock('../../platform', () => ({ isLinux: () => true, isMacOS: () => false }));
-vi.mock('../../terminal/cli-integration-handler', () => ({
-  windowSessionAccount: async () => ({ own: { sessionId: 'session-a' }, configDir: undefined }),
+const account = vi.hoisted(() => ({ value: { own: { sessionId: 'session-a' } as { sessionId: string } | undefined, configDir: undefined as string | undefined } }));
+vi.mock('../../terminal/cli-integration-handler', () => ({ windowSessionAccount: async () => account.value }));
+vi.mock('../../claude-profile-manager', () => ({
+  getClaudeProfileManager: () => ({ getProfile: (id: string) => (id === 'task-account' ? { configDir: '/home/me/.claude-task' } : undefined) }),
 }));
 vi.mock('../../platform/claude-home', () => ({ expandClaudeHome: (dir: string) => dir }));
 vi.mock('../../claude-profile/config-dir-paths', () => ({ withClaudeConfigDir: (env: NodeJS.ProcessEnv) => env }));
@@ -36,6 +38,21 @@ describe('windowLiveSession', () => {
     runTool.mockImplementation(async () => ({ stdout: JSON.stringify(listed.value) }));
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    account.value = { own: { sessionId: 'session-a' }, configDir: undefined };
+  });
+
+  it("also looks under the account the window's Claude Code was started on, without a recorded session", async () => {
+    account.value = { own: undefined, configDir: '/home/me/.claude' };
+    parents.set(700, 100);
+    runTool.mockImplementation(async (_tool: string, _args: string[], options: { env: NodeJS.ProcessEnv }) => ({
+      stdout: JSON.stringify(options.env.CLAUDE_CONFIG_DIR === '/home/me/.claude-task' ? [{ pid: 700, sessionId: 'task-session', name: 'project-t1' }] : []),
+    }));
+    const window = { ...terminal, claudeProfileId: 'task-account' } as TerminalProcess;
+    expect((await windowLiveSession(window))?.name).toBe('project-t1');
+  });
+
   it('shares a listing still running, however long it takes', async () => {
     let finish: (value: unknown) => void = () => {};
     runTool.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
@@ -45,7 +62,6 @@ describe('windowLiveSession', () => {
     const second = liveClaudeSessions();
     finish({ stdout: '[]' });
     await Promise.all([first, second]);
-    vi.useRealTimers();
     expect(runTool).toHaveBeenCalledTimes(1);
   });
 

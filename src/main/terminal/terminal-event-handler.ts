@@ -8,7 +8,7 @@ import * as ClaudeIntegration from './cli-integration-handler';
 import type { TerminalProcess, WindowGetter } from './types';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
-import { receivingBusyChanged, stopReceiving } from '../session-messaging/receiving';
+import { noteCursorQuery, receivingBusyChanged, stopReceiving } from '../session-messaging/receiving';
 
 /**
  * Event handler callbacks
@@ -47,6 +47,9 @@ export function handleTerminalData(
 
   // Check for onboarding complete (after login, Claude shows ready state)
   callbacks.onOnboardingComplete(terminal, data);
+
+  // The program asked for the cursor position: xterm's report may pass a read-only window
+  if (data.includes('\x1b[6n') || data.includes('\x1b[?6n')) noteCursorQuery(terminal.id);
 
   // Detect Claude busy state changes (only when in Claude mode)
   if (terminal.isCLIMode) {

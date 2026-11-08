@@ -21,6 +21,7 @@ import { setChatSource, type ChatDelivery, type ChatEntry } from './session-mess
 import { incomingMessageText, outgoingMessageText } from './session-messaging/tools';
 import { readTranscriptAsChat } from './insights/session-import';
 import { ensureAgentWindowRunning } from './session-messaging/agent-windows';
+import { appLog } from './app-logger';
 
 /** Messages from other sessions a chat answers in a row before it waits for the user */
 const MAX_AUTO_REPLIES = 5;
@@ -40,21 +41,30 @@ function newMessageId(): string {
 }
 
 /**
- * The user messages before the conversation's last one that no reply answered (messages from
- * other sessions held for the user, a prompt interrupted in an agent window): the turn passes them
- * on with its message
+ * The messages from other sessions before the conversation's last one that the chat only showed,
+ * without a reply (held for the user): the turn passes them on with its message, since the
+ * session it resumes never saw them. Only those: a message of the user's own that got no reply (a
+ * failed turn) may already be in the session, so a turn after one starts a new session instead
  */
-function unansweredBefore(session: InsightsSession): InsightsChatMessage[] {
-  const unanswered: InsightsChatMessage[] = [];
-  for (let i = session.messages.length - 2; i >= 0 && session.messages[i].role === 'user'; i--) {
-    unanswered.unshift(session.messages[i]);
+function heldBefore(session: InsightsSession): InsightsChatMessage[] {
+  const held: InsightsChatMessage[] = [];
+  for (let i = session.messages.length - 2; i >= 0; i--) {
+    const message = session.messages[i];
+    if (message.role !== 'user' || !message.from) break;
+    held.unshift(message);
   }
-  return unanswered;
+  return held;
+}
+
+/** Whether the chat shows messages from other sessions that wait for the user (held, unanswered) */
+function waitsForUser(session: InsightsSession): boolean {
+  const last = session.messages.at(-1);
+  return last?.role === 'user' && !!last.from;
 }
 
 /**
- * The Claude Code session a new message runs in, from the reply before it (and before any user
- * messages no reply answered, see unansweredBefore):
+ * The Claude Code session a new message runs in, from the reply before it (and before the
+ * messages from other sessions held without a reply, see heldBefore):
  * - that reply is the session's latest point: resume the session
  * - an earlier reply of the session (an edit or regenerate dropped what came after it): fork the
  *   session there, so the dropped turns stay out of it and the original session is kept
@@ -62,7 +72,7 @@ function unansweredBefore(session: InsightsSession): InsightsChatMessage[] {
  *   from before chats had sessions): a new session, with the conversation folded into its prompt
  */
 export function planClaudeSession(session: InsightsSession): InsightsSessionPlan {
-  const previous = session.messages.at(-2 - unansweredBefore(session).length);
+  const previous = session.messages.at(-2 - heldBefore(session).length);
   const ref = previous?.role === 'assistant' ? previous.claudeRef : undefined;
   if (!ref) return { mode: 'new' };
   const head = session.claudeHead;
@@ -181,10 +191,10 @@ class InsightsService extends EventEmitter {
     if (!session || session.archivedAt) return { status: 'notFound' };
     const key = `${projectId}\u0000${chatId}`;
     const answered = this.autoReplies.get(key) ?? 0;
-    if (answered >= MAX_AUTO_REPLIES) {
-      session.messages.push({ id: newMessageId(), role: 'user', content: text, timestamp: new Date(), from });
-      session.updatedAt = new Date();
-      if (this.sessionManager.saveReply(projectId, projectPath, session)) this.emit('session-updated', projectId, session);
+    // Over the limit, or other messages already wait for the user (an auto-reply must not answer
+    // them unattended): only shown
+    if (answered >= MAX_AUTO_REPLIES || waitsForUser(session)) {
+      this.showIncoming(projectId, projectPath, session, [{ from, text }]);
       return { status: 'held', answered };
     }
     this.autoReplies.set(key, answered + 1);
@@ -192,16 +202,29 @@ class InsightsService extends EventEmitter {
     return { status: 'started' };
   }
 
-  private async answerIncoming(projectId: string, projectPath: string, session: InsightsSession, from: SessionMessageOrigin, text: string): Promise<void> {
-    session.messages.push({ id: newMessageId(), role: 'user', content: text, timestamp: new Date(), from });
+  /**
+   * Add messages from other sessions to a chat, marked with their senders, and save it without
+   * making it the open chat; false when the chat is gone
+   */
+  private showIncoming(projectId: string, projectPath: string, session: InsightsSession, incoming: Array<{ from: SessionMessageOrigin; text: string }>): boolean {
+    for (const { from, text } of incoming) {
+      session.messages.push({ id: newMessageId(), role: 'user', content: text, timestamp: new Date(), from });
+    }
     session.updatedAt = new Date();
-    // Saved without making it the open chat
-    if (!this.sessionManager.saveReply(projectId, projectPath, session)) return;
+    if (!this.sessionManager.saveReply(projectId, projectPath, session)) return false;
     this.emit('session-updated', projectId, session);
-    // No one is watching this reply: it runs read-only, even with the Clawd button on (a session
-    // that was tricked into asking must not get every tool here)
-    const readOnly = session.modelConfig ? { ...session.modelConfig, agentMode: false } : undefined;
-    await this.reply(projectId, projectPath, session, incomingMessageText(from, text), readOnly);
+    return true;
+  }
+
+  private async answerIncoming(projectId: string, projectPath: string, session: InsightsSession, from: SessionMessageOrigin, text: string): Promise<void> {
+    if (!this.showIncoming(projectId, projectPath, session, [{ from, text }])) return;
+    // No one is watching this reply: it runs read-only (a session that was tricked into asking
+    // must get nothing that acts here): not the Clawd button's tools, not the task tools, not gh
+    // or glab
+    const unattended: InsightsModelConfig | undefined = session.modelConfig
+      ? { ...session.modelConfig, agentMode: false, kanbanTools: false, githubTools: false, gitlabTools: false }
+      : undefined;
+    await this.reply(projectId, projectPath, session, incomingMessageText(from, text), unattended);
   }
 
   /**
@@ -269,13 +292,11 @@ class InsightsService extends EventEmitter {
     const queue = this.incoming.get(key);
     this.incoming.delete(key);
     if (!queue?.length) return;
+    // A chat archived meanwhile keeps them too (they show once it is unarchived)
     const session = this.chatById(projectId, projectPath, chatId);
-    if (!session || session.archivedAt) return;
-    for (const { from, text } of queue) {
-      session.messages.push({ id: newMessageId(), role: 'user', content: text, timestamp: new Date(), from });
+    if (!session || !this.showIncoming(projectId, projectPath, session, queue)) {
+      appLog.warn(`[Insights] ${queue.length} message(s) from other sessions were not delivered: chat ${chatId} is gone`);
     }
-    session.updatedAt = new Date();
-    if (this.sessionManager.saveReply(projectId, projectPath, session)) this.emit('session-updated', projectId, session);
   }
 
   /**
@@ -576,18 +597,18 @@ class InsightsService extends EventEmitter {
     const openWindow = to?.kind === 'agent'
       ? () => ensureAgentWindowRunning(projectPath, to.name)
       : undefined;
-    // User messages no reply answered (held while the chat waited for the user) go with this one:
-    // the resumed session never saw them
-    const unanswered = unansweredBefore(session);
-    const turnMessage = unanswered.length > 0
-      ? `${unanswered.map((m) => messageText(m)).join('\n\n')}\n\n${message}`
+    // Messages from other sessions the chat only showed (held for the user) go with this one, once:
+    // the resumed session never saw them, and a new session's history leaves them out
+    const held = heldBefore(session);
+    const turnMessage = held.length > 0
+      ? `${held.map((m) => messageText(m)).join('\n\n')}\n\n${message}`
       : message;
 
-    // The conversation before this message, for a turn that starts a new Claude Code session
-    // (replies stopped before any text are left out; the message itself is sent separately, with
-    // its attachments)
+    // The conversation before this message (and the held ones), for a turn that starts a new
+    // Claude Code session (replies stopped before any text are left out; the message itself is
+    // sent separately, with its attachments)
     const messages = session.messages
-      .slice(0, -1)
+      .slice(0, -1 - held.length)
       .filter((m) => !(m.role === 'assistant' && m.stopped && !m.content));
     const conversationHistory = messages.map((m) => {
       const imageCount = m.images?.length ?? 0;
@@ -607,8 +628,7 @@ class InsightsService extends EventEmitter {
       const result = await this.executor.execute(
         projectId,
         projectPath,
-        // A new session gets the whole conversation as its history
-        plan.mode === 'new' ? message : turnMessage,
+        turnMessage,
         conversationHistory,
         configToUse,
         images,
@@ -617,7 +637,8 @@ class InsightsService extends EventEmitter {
           title: session.title,
           chatSessionId: session.id,
           beforeRun: openWindow,
-          reachesAgentWindow: to?.kind === 'agent' || last?.from?.kind === 'agent',
+          // It sends to an agent window, or answers one (this message or one it passes on)
+          reachesAgentWindow: to?.kind === 'agent' || [...held, last].some((m) => m?.from?.kind === 'agent'),
         }
       );
 

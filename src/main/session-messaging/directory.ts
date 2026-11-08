@@ -18,7 +18,7 @@ export interface ChatEntry {
 export type ChatDelivery =
   | { status: 'started' }
   | { status: 'queued' }
-  /** Shown in the chat without a reply: it answered too many in a row, and waits for the user */
+  /** Shown in the chat without a reply: it answered too many in a row, or others wait, for the user */
   | { status: 'held'; answered: number }
   | { status: 'notFound' };
 

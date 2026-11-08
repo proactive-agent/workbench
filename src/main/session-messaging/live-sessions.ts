@@ -16,6 +16,7 @@ import type { TerminalProcess } from '../terminal/types';
 import { expandClaudeHome } from '../platform/claude-home';
 import { withClaudeConfigDir } from '../claude-profile/config-dir-paths';
 import { windowSessionAccount } from '../terminal/cli-integration-handler';
+import { getClaudeProfileManager } from '../claude-profile-manager';
 
 const execFileAsync = promisify(execFile);
 
@@ -114,10 +115,39 @@ async function runsUnder(pid: number, ancestor: number): Promise<boolean> {
 export async function windowLiveSession(terminal: TerminalProcess): Promise<LiveClaudeSession | undefined> {
   if (!terminal.isCLIMode) return undefined;
   // The account the window resumes its session on (the recorded session's, the default dir
-  // included, else the project's or the one in use), as the window itself would
+  // included, else the project's or the one in use), as the window itself would; without a
+  // recorded session also the account the window's Claude Code was started on (a task's session
+  // opened in the window runs on the task's account)
   const { own, configDir } = await windowSessionAccount(terminal).catch(() => ({ own: undefined, configDir: undefined }));
-  const recorded = own?.sessionId;
-  const sessions = (await liveClaudeSessions(configDir)).filter((session) => session.kind !== 'background');
+  const accounts = [configDir];
+  if (!own) {
+    const started = startedConfigDir(terminal);
+    if (started !== undefined && started !== configDir) accounts.push(started);
+  }
+  for (const account of accounts) {
+    const found = await findWindowSession(terminal, own?.sessionId, await liveClaudeSessions(account));
+    if (found) return found;
+  }
+  return undefined;
+}
+
+/** The config dir of the account the window's Claude Code was started on, if known */
+function startedConfigDir(terminal: TerminalProcess): string | undefined {
+  if (!terminal.claudeProfileId) return undefined;
+  try {
+    return getClaudeProfileManager().getProfile(terminal.claudeProfileId)?.configDir;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The window's session among an account's live sessions: by the recorded id, else under its shell */
+async function findWindowSession(
+  terminal: TerminalProcess,
+  recorded: string | undefined,
+  listed: LiveClaudeSession[]
+): Promise<LiveClaudeSession | undefined> {
+  const sessions = listed.filter((session) => session.kind !== 'background');
   const byId = recorded ? sessions.filter((session) => session.sessionId === recorded) : [];
   if (byId.length === 1) return byId[0];
   // The process tree is only readable natively (in WSL the window's process is wsl.exe)

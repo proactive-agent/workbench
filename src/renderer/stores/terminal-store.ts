@@ -766,6 +766,13 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   reopenAgentWindow: (request) => {
     const session = { sessionId: request.sessionId, configDir: request.configDir };
     const existing = get().terminals.find((t) => t.id === request.terminalId);
+    if (existing?.status === 'exited') {
+      // Its shell is gone (the window is about to be removed): it opens again as a closed one
+      // would, once the old window has unmounted (the same id would keep its component and PTY state)
+      get().removeTerminal(existing.id);
+      setTimeout(() => get().reopenAgentWindow(request), 100);
+      return null;
+    }
     if (existing) {
       if (existing.status === 'idle') {
         // Restored at startup but not started yet (a window starts once the Agents page shows
