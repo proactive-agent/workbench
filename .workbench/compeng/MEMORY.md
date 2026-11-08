@@ -4,3 +4,4 @@
 - [Keep answers and summaries concise](concise-summaries.md) — Give short, highlight-focused answers and summaries instead of long documents.
 - [Act, do not offer menus](act-dont-offer-menus.md) — When told to remove or change something, carry it out instead of presenting options.
 - [Main process: no @shared alias](main-process-no-shared-alias.md) — main-process runtime imports from src/shared must be relative; @shared breaks the Vite build
+- [Lint edits unrelated files](lint-fix-edits-files.md) — npm run lint (knip --fix) strips exports anywhere; revert files outside the change
