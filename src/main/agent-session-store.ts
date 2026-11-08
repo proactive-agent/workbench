@@ -136,8 +136,25 @@ async function isDirectory(dir: string): Promise<boolean> {
   }
 }
 
+/** The window each session was last started or resumed in, while the app runs (newest last) */
+const sessionWindows = new Map<string, string>();
+const MAX_SESSION_WINDOWS = 500;
+
+/** A window started or resumed this session (the Live agent graph shows it in that window) */
+export function noteWindowSession(sessionId: string, terminalId: string): void {
+  sessionWindows.delete(sessionId);
+  sessionWindows.set(sessionId, terminalId);
+  if (sessionWindows.size > MAX_SESSION_WINDOWS) sessionWindows.delete(sessionWindows.keys().next().value!);
+}
+
+/** The window that last started or resumed a session since the app started, if any */
+export function windowOfSession(sessionId: string): string | undefined {
+  return sessionWindows.get(sessionId);
+}
+
 /** Remember a session an agent window just started; a session already known is updated in place */
 export async function recordAgentSession(projectPath: string, session: AgentSessionRecord): Promise<void> {
+  if (session.terminalId) noteWindowSession(session.sessionId, session.terminalId);
   await updateSessions(projectPath, (sessions) => [
     ...sessions.filter((kept) => kept.sessionId !== session.sessionId),
     { ...sessions.find((kept) => kept.sessionId === session.sessionId), ...session },
