@@ -15,6 +15,7 @@ import { cn } from '../lib/utils';
 import { DEFAULT_AGENT_PROFILES, AVAILABLE_MODELS, THINKING_LEVELS } from '../../shared/constants';
 import type { InsightsModelConfig } from '../../shared/types';
 import { CustomModelModal } from './CustomModelModal';
+import { useSettingsStore } from '../stores/settings-store';
 
 interface InsightsModelSelectorProps {
   currentConfig?: InsightsModelConfig;
@@ -42,6 +43,13 @@ export function InsightsModelSelector({
 }: InsightsModelSelectorProps) {
   const { t } = useTranslation('common');
   const [showCustomModal, setShowCustomModal] = useState(false);
+  // The API profile in use: its custom models are listed first (sent to its endpoint as they are)
+  const apiProfile = useSettingsStore((state) => state.profiles.find((p) => p.id === state.activeProfileId));
+  const apiModels = [...new Set(
+    [apiProfile?.models?.default, apiProfile?.models?.opus, apiProfile?.models?.sonnet, apiProfile?.models?.haiku]
+      .map((model) => model?.trim())
+      .filter((model): model is string => !!model)
+  )];
 
   // Resolve the effective model/effort: an explicit config wins, otherwise the Balanced profile
   const balanced = DEFAULT_AGENT_PROFILES.find((p) => p.id === 'balanced');
@@ -49,7 +57,7 @@ export function InsightsModelSelector({
   const activeModel: string = currentConfig?.model ?? profile?.model ?? balanced?.model ?? 'sonnet';
   const activeThinking: ThinkingLevel = currentConfig?.thinkingLevel ?? profile?.thinkingLevel ?? balanced?.thinkingLevel ?? 'medium';
 
-  const isKnownModel = AVAILABLE_MODELS.some((m) => m.value === activeModel);
+  const isKnownModel = AVAILABLE_MODELS.some((m) => m.value === activeModel) || apiModels.includes(activeModel);
   const moreModels = AVAILABLE_MODELS.filter((m) => !(PRIMARY_MODELS as readonly string[]).includes(m.value));
 
   const select = (model: string, thinkingLevel: ThinkingLevel) => {
@@ -78,6 +86,21 @@ export function InsightsModelSelector({
         </DropdownMenuTrigger>
 
         <DropdownMenuContent align="end" sideOffset={6} className="w-80 rounded-xl p-1.5">
+          {apiModels.map((model) => (
+            <DropdownMenuItem
+              key={`api:${model}`}
+              onSelect={() => select(model, activeThinking)}
+              className={cn(menuItemClass, 'flex items-center')}
+            >
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-foreground" title={model}>{model}</div>
+                <div className="truncate text-[0.8125rem] text-muted-foreground">{t('insights.model.apiProfileModel', { profile: apiProfile?.name })}</div>
+              </div>
+              {renderCheck(activeModel === model)}
+            </DropdownMenuItem>
+          ))}
+          {apiModels.length > 0 && <DropdownMenuSeparator className="mx-2 my-1.5" />}
+
           {PRIMARY_MODELS.map((model) => (
             <DropdownMenuItem
               key={model}

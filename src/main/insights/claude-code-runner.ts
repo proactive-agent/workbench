@@ -179,9 +179,21 @@ export const INSIGHTS_GRAPHIFY_COMMANDS = [
 // Arguments
 // =============================================================================
 
-/** Claude Code model alias for a stored Insights model (legacy full IDs map to their family) */
-export function toClaudeModel(model: string | undefined): string {
+/** Variables an API profile sets for its custom models (`getAPIProfileEnv`) */
+const API_PROFILE_MODEL_VARS = [
+  'ANTHROPIC_MODEL',
+  'ANTHROPIC_DEFAULT_OPUS_MODEL',
+  'ANTHROPIC_DEFAULT_SONNET_MODEL',
+  'ANTHROPIC_DEFAULT_HAIKU_MODEL',
+] as const;
+
+/**
+ * Claude Code model alias for a stored Insights model (legacy full IDs map to their family).
+ * The API profile in use's custom models (`customModels`) are passed as they are.
+ */
+export function toClaudeModel(model: string | undefined, customModels: readonly string[] = []): string {
   if (!model) return 'sonnet';
+  if (customModels.includes(model)) return model;
   if ((CLAUDE_MODEL_ALIASES as readonly string[]).includes(model)) return model as ClaudeModelAlias;
   if (model.startsWith('claude-')) return model;
   for (const alias of CLAUDE_MODEL_ALIASES) {
@@ -575,6 +587,10 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     if (plan.mode !== 'new' && config.profileId && config.profileId !== plan.profileId) plan = { mode: 'new' };
     const { command, env, profileId } = await resolveClaudeEnv({ profileId: plan.mode === 'new' ? config.profileId : plan.profileId });
     if (plan.mode !== 'new' && profileId !== plan.profileId) plan = { mode: 'new' };
+    // An API profile in use (no Claude profile): its custom models, which the chat can pick
+    const apiProfileModels = profileId
+      ? []
+      : API_PROFILE_MODEL_VARS.map((name) => env[name]).filter((value): value is string => !!value);
     if (graphify) {
       // graphify commands find the project's graph (GRAPHIFY_OUT, translated for WSL when the
       // run starts) and run without a full path (natively; in WSL from the login PATH)
@@ -641,7 +657,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       const handle = startClaudeProcess({
         command,
         args: buildInsightsArgs(
-          toClaudeModel(config.model),
+          toClaudeModel(config.model, apiProfileModels),
           toClaudeEffort(config.thinkingLevel),
           systemPromptFile,
           !!graphify,

@@ -181,6 +181,7 @@
       "customDescription": "Other providers, models and thinking budgets",
       "effort": "Effort",
       "moreModels": "More models",
+      "apiProfileModel": "From {{profile}}",
       "descriptions": {
         "opus": "For complex, in-depth work",
         "sonnet": "Balanced for everyday questions",
