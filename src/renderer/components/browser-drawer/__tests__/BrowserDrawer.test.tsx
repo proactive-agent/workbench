@@ -7,6 +7,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '../../ui/tooltip';
 import { BrowserDrawer } from '../BrowserDrawer';
 import { useBrowserDrawerStore } from '../../../stores/browser-drawer-store';
+import type { BrowserBookmark } from '../../../../shared/types/browser-drawer';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -22,6 +23,7 @@ const api = {
   closeBrowserPage: vi.fn(),
   onBrowserFrame: vi.fn(() => () => {}),
   setBrowserColorScheme: vi.fn(),
+  getBrowserBookmarks: vi.fn(async (_sessionId: string) => ({ success: true, data: [] as BrowserBookmark[] })),
 };
 
 class FakeResizeObserver {
@@ -37,6 +39,7 @@ describe('BrowserDrawer', () => {
     // The page area's size (jsdom has no layout)
     vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 700.6, height: 500.2, top: 0, left: 0, right: 700, bottom: 500, x: 0, y: 0, toJSON: () => ({}) });
     useBrowserDrawerStore.setState({
+      bookmarks: {},
       open: false,
       selectedPageId: 'p1',
       state: {
@@ -77,5 +80,18 @@ describe('BrowserDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'browserDrawer.close' }));
     expect(useBrowserDrawerStore.getState().open).toBe(false);
+  });
+
+  it("shows the browser profile's bookmarks bar, opening a bookmark in the tab shown", async () => {
+    api.getBrowserBookmarks.mockResolvedValueOnce({
+      success: true,
+      data: [{ title: 'Mail', url: 'https://mail.test/' }, { title: 'Work', children: [] }],
+    });
+    useBrowserDrawerStore.setState({ open: true });
+    renderDrawer();
+    expect(api.getBrowserBookmarks).toHaveBeenCalledWith('s');
+    fireEvent.click(await screen.findByRole('button', { name: 'Mail' }));
+    expect(api.navigateBrowserPage).toHaveBeenCalledWith('p1', 'goto', 'https://mail.test/');
+    expect(screen.getByRole('button', { name: 'Work' })).toBeInTheDocument();
   });
 });

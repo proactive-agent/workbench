@@ -540,6 +540,7 @@ export interface ElectronAPI {
   navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
   closeBrowserPage: (pageId: string) => void;
   newBrowserPage: (sessionId: string) => void;
+  getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<import('./browser-drawer').BrowserBookmark[]>>;
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
   closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;

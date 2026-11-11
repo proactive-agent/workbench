@@ -11,6 +11,7 @@ import {
 import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
 import { AgentLoader } from '../ui/agent-loader';
+import { BrowserBookmarksBar } from './BrowserBookmarksBar';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
 import { addressToUrl, pageLabel, sessionBrowserIcon } from './browser-drawer-utils';
@@ -253,6 +254,12 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
               )}
             />
           </form>
+        )}
+        {selected && (
+          <BrowserBookmarksBar
+            sessionId={selected.sessionId}
+            onOpen={(url) => window.electronAPI.navigateBrowserPage(selected.id, 'goto', url)}
+          />
         )}
 
         {/* The page */}

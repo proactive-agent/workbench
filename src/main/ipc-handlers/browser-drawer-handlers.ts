@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult } from '../../shared/types';
-import type { BrowserDrawerNavigation, BrowserDrawerState } from '../../shared/types/browser-drawer';
+import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState } from '../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { appLog } from '../app-logger';
 import { browserDrawer } from '../browser-drawer';
@@ -60,6 +60,15 @@ export function registerBrowserDrawerHandlers(): void {
 
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string') browserDrawer.newPage(sessionId);
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_BOOKMARKS, async (_event, sessionId: unknown): Promise<IPCResult<BrowserBookmark[]>> => {
+    if (typeof sessionId !== 'string') return { success: false, error: 'Invalid browser' };
+    try {
+      return { success: true, data: await browserDrawer.bookmarks(sessionId) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
   });
 
   ipcMain.handle(

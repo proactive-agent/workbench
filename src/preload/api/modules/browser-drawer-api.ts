@@ -6,6 +6,7 @@
 import { IPC_CHANNELS } from '../../../shared/constants';
 import type { IPCResult } from '../../../shared/types';
 import type {
+  BrowserBookmark,
   BrowserDrawerFrame,
   BrowserDrawerInput,
   BrowserDrawerNavigation,
@@ -33,6 +34,8 @@ export interface BrowserDrawerAPI {
   closeBrowserPage: (pageId: string) => void;
   /** A new tab in a session's browser */
   newBrowserPage: (sessionId: string) => void;
+  /** The bookmarks bar of a session's browser profile (empty without one) */
+  getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<BrowserBookmark[]>>;
   /** Workbench's theme, which the chat browsers' pages get as their color scheme */
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   /** Open a chat's own browser with this browser (undefined: Settings > Connectors) */
@@ -55,6 +58,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),
   newBrowserPage: (sessionId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, sessionId),
+  getBrowserBookmarks: (sessionId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_BOOKMARKS, sessionId),
   setBrowserColorScheme: (scheme) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, scheme),
   openChatBrowser: (projectId, chatId, choice) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_OPEN_CHAT_BROWSER, projectId, chatId, choice),
   closeChatBrowser: (projectId, chatId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId),

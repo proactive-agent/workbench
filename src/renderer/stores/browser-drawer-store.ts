@@ -10,6 +10,7 @@
 import { create } from 'zustand';
 import {
   NEW_CHAT_BROWSER_ID,
+  type BrowserBookmark,
   type BrowserDrawerPage,
   type BrowserDrawerSession,
   type BrowserDrawerState,
@@ -116,6 +117,9 @@ interface BrowserDrawerStore extends DrawerView {
   views: Record<string, DrawerView>;
   /** A new tab was asked for in this session: it is shown once it appears */
   newTabSessionId: string | null;
+  /** Each browser's bookmarks bar (its profile's), read once per browser */
+  bookmarks: Record<string, BrowserBookmark[]>;
+  loadBookmarks: (sessionId: string) => void;
   /**
    * The drawer collapsed the app's sidebar to keep the chat wide enough (Insights.tsx): collapsed
    * while set, on top of the user's own choice (never saved), and expanded again by the drawer
@@ -152,6 +156,16 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   chatId: null,
   views: {},
   newTabSessionId: null,
+  bookmarks: {},
+  loadBookmarks: (sessionId) => {
+    if (sessionId in get().bookmarks) return;
+    set((s) => ({ bookmarks: { ...s.bookmarks, [sessionId]: [] } }));
+    void window.electronAPI.getBrowserBookmarks(sessionId).then((result) => {
+      if (result.success && result.data?.length && sessionId in get().bookmarks) {
+        set((s) => ({ bookmarks: { ...s.bookmarks, [sessionId]: result.data ?? [] } }));
+      }
+    }, () => undefined);
+  },
   appSidebarCollapsedByDrawer: false,
   setAppSidebarCollapsedByDrawer: (appSidebarCollapsedByDrawer) => set({ appSidebarCollapsedByDrawer }),
   setOpen: (open) => set({ open }),
@@ -211,9 +225,14 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
     const selection = newTab
       ? { selectedPageId: newTab.id, revealSessionId: null }
       : chooseSelectedPage(pages, selectedPageId, newest?.id ?? pending);
+    // Browsers that closed forget their bookmarks (another browser of the chat reads its own)
+    const live = new Set(state.sessions.map((session) => session.id));
+    const { bookmarks } = get();
+    const gone = Object.keys(bookmarks).filter((id) => !live.has(id));
     set({
       state,
       loaded: true,
+      ...(gone.length ? { bookmarks: Object.fromEntries(Object.entries(bookmarks).filter(([id]) => live.has(id))) } : {}),
       ...selection,
       ...(newTab ? { newTabSessionId: null } : {}),
       ...(newest ? { open: true } : {}),

@@ -24,6 +24,7 @@
 import type { WebContents } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
+  BrowserBookmark,
   BrowserDrawerInput,
   BrowserDrawerNavigation,
   BrowserDrawerPage,
@@ -41,6 +42,7 @@ import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type R
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
 import { ChatBrowsers } from './chat-browsers';
+import { readBookmarksBar } from '../browser-profiles/bookmarks';
 
 /** How often the registry is read */
 const POLL_INTERVAL_MS = 2000;
@@ -280,6 +282,13 @@ export class BrowserDrawerService {
   /** Open a new tab in a session's browser */
   newPage(sessionId: string): void {
     if (this.sessions.some((session) => session.id === sessionId && session.projectId)) this.bridge.send({ type: 'newPage', sessionId });
+  }
+
+  /** The bookmarks bar of a chat browser's profile (none for other browsers) */
+  async bookmarks(sessionId: string): Promise<BrowserBookmark[]> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (!session) return [];
+    return readBookmarksBar(this.chatBrowsers.chatOfTitle(session.title)?.browser);
   }
 
   /** Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool call) */

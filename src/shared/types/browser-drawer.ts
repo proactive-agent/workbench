@@ -33,6 +33,13 @@ export interface ChatBrowserInfo {
   tabs?: number;
 }
 
+/** An item of a browser profile's bookmarks bar: a bookmark (url) or a folder (children) */
+export interface BrowserBookmark {
+  title: string;
+  url?: string;
+  children?: BrowserBookmark[];
+}
+
 /** A page (tab) of a session's browser */
 export interface BrowserDrawerPage {
   id: string;
