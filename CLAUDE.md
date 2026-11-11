@@ -321,7 +321,7 @@ Playwright's own Chromium also `--sandbox`, which Playwright leaves off on Linux
 pass `--output-dir` to their temporary folder, since Playwright otherwise saves snapshots and screenshots in the
 session's working folder (`.playwright-mcp` in the worktree). The task dialog's Playwright row picks a profile for
 that task (`TaskMetadata.playwrightBrowser`, null for Playwright's own Chromium; unset follows Settings), which its runs
-use instead; sweeps keep the copies of every profile Settings or a task still chooses
+use instead; sweeps keep the copies of every profile Settings, a task or a chat still chooses
 (`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
 `mcp-config.ts`. The default is Playwright's own Chromium (Chrome for Testing, `--browser chromium`, never the
 installed Chrome); the picker also lists Playwright's Firefox and WebKit (`managed.ts`, found in Playwright's cache

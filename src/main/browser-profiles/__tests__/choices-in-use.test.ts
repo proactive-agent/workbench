@@ -1,5 +1,5 @@
 /**
- * The profiles still chosen: Settings plus the tasks' own picks that aren't archived, per project
+ * The profiles still chosen: Settings plus the tasks' and chats' own picks that aren't archived, per project
  * and across projects
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -47,6 +47,24 @@ describe('browserChoicesInUse', () => {
     const inUse = await browserChoicesInUse(a, choice('chrome:Settings') as never);
     expect(inUse.project.map((c) => c.id)).toEqual(['chrome:Settings', 'chrome:A']);
     expect(inUse.all.map((c) => c.id).sort()).toEqual(['chrome:A', 'chrome:B', 'chrome:Older', 'chrome:Settings']);
+  });
+
+  it("lists the chats' own picks, leaving out archived chats and chats that follow Settings", async () => {
+    const [a, b] = projects.list.map((project) => project.path);
+    const chat = async (project: string, name: string, content: unknown) => {
+      const dir = path.join(project, '.workbench', 'chats', 'sessions');
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, name), typeof content === 'string' ? content : JSON.stringify(content));
+    };
+    await chat(a, 'session-1.json', { modelConfig: { playwrightBrowser: choice('firefox:Chat') } });
+    await chat(a, 'session-2.json', { modelConfig: { playwrightBrowser: choice('chrome:Archived') }, archivedAt: '2026-10-01T00:00:00Z' });
+    await chat(a, 'session-3.json', { modelConfig: {} });
+    await chat(a, 'session-4.json', '{');
+    await chat(b, 'session-1.json', { modelConfig: { playwrightBrowser: choice('edge:Other') } });
+
+    const inUse = await browserChoicesInUse(a, undefined);
+    expect(inUse.project.map((c) => c.id)).toEqual(['firefox:Chat']);
+    expect(inUse.all.map((c) => c.id).sort()).toEqual(['edge:Other', 'firefox:Chat']);
   });
 
   it('chooses nothing for a project without tasks', async () => {

@@ -31,9 +31,9 @@
  * that starts while the browser is open copies the saved copy instead of the live profile, which
  * the open browser keeps locked and half written; only without a saved copy does an open browser
  * keep Playwright from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
- * chooses the profile: Settings > Browser or a task's own pick (TaskMetadata.playwrightBrowser,
- * listed by choices-in-use.ts); a project's run copies likewise go at once only when neither
- * Settings nor the project's tasks choose their profile.
+ * chooses the profile: Settings > Browser or a task's or chat's own pick (listed by
+ * choices-in-use.ts); a project's run copies likewise go at once only when neither Settings nor
+ * the project's tasks and chats choose their profile.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
@@ -440,9 +440,9 @@ async function removeOtherSavedCopies(keep: PlaywrightBrowserChoice[]): Promise<
 
 /** The profiles still chosen, whose copies a sweep keeps (choices-in-use.ts) */
 export interface BrowserChoicesInUse {
-  /** Chosen for runs in this project: Settings > Browser and the project's tasks */
+  /** Chosen for runs in this project: Settings > Browser and the project's tasks and chats */
   project: PlaywrightBrowserChoice[];
-  /** Chosen anywhere: Settings and every project's tasks (saved copies are shared by projects) */
+  /** Chosen anywhere: Settings and every project's tasks and chats (saved copies are shared by projects) */
   all: PlaywrightBrowserChoice[];
 }
 
