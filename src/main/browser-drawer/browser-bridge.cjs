@@ -168,7 +168,7 @@ function addPage(page, sessionId) {
     if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
     pages.delete(id);
     dropCast(id);
-    inputQueues.delete(id);
+    dropInput(id);
     pushPages();
   });
   page.on('framenavigated', (frame) => {
@@ -220,7 +220,7 @@ function dropSession(sessionId) {
     if (entry.sessionId !== sessionId) continue;
     pages.delete(id);
     dropCast(id);
-    inputQueues.delete(id);
+    dropInput(id);
   }
   pushPages();
 }
@@ -354,6 +354,15 @@ async function view(viewerId, pageId, width, height, scale) {
 /** page id -> { events: its input waiting to be replayed, in order; running } */
 const inputQueues = new Map();
 
+/** A page's input goes with it; copies still waiting are answered (nothing was selected) */
+function dropInput(pageId) {
+  const queue = inputQueues.get(pageId);
+  inputQueues.delete(pageId);
+  for (const event of queue?.events ?? []) {
+    if (event.kind === 'copy') send({ type: 'copied', id: event.id, text: '' });
+  }
+}
+
 /**
  * Queue a viewer's input for its page. Mouse moves and wheel steps waiting behind a slow one are
  * merged into the newest (a busy page answers each event late: replaying every move of the
@@ -381,6 +390,62 @@ function queueInput(pageId, event) {
   if (!queue.running) void replayInput(pageId, queue);
 }
 
+/** How long one frame may take to say what is selected in it (a busy frame is left out) */
+const SELECTION_TIMEOUT_MS = 1000;
+
+/**
+ * The text selected in a page, as its browser would copy it: in the focused frame (followed from the
+ * top through each frame's focused frame element), the focused text field's selection (looking
+ * into shadow roots; a field without selection offsets, email or number, through the document's
+ * selection, which Chromium fills from it), else the document's. Password fields are never copied
+ */
+async function selectedText(page) {
+  const read = () => {
+    let el = document.activeElement;
+    let root = document;
+    while (el && el.shadowRoot && el.shadowRoot.activeElement) {
+      root = el.shadowRoot;
+      el = el.shadowRoot.activeElement;
+    }
+    const selection = () => String((root.getSelection ? root.getSelection() : null) ?? window.getSelection() ?? '');
+    if (el && (el.tagName === 'IFRAME' || el.tagName === 'FRAME')) return { inFrame: true, text: selection() };
+    if (el && (el.tagName === 'TEXTAREA' || el.tagName === 'INPUT')) {
+      if (el.type === 'password') return { inFrame: false, text: '' };
+      let start = null;
+      let end = null;
+      try {
+        start = el.selectionStart;
+        end = el.selectionEnd;
+      } catch {
+        // No selection offsets for this kind of field
+      }
+      return { inFrame: false, text: typeof start === 'number' && typeof end === 'number' ? el.value.slice(start, end) : selection() };
+    }
+    return { inFrame: false, text: selection() };
+  };
+  let frame = page.mainFrame();
+  for (let depth = 0; frame && depth < 8; depth++) {
+    const result = await bounded(frame.evaluate(read).catch(() => null), SELECTION_TIMEOUT_MS, null);
+    if (!result) return '';
+    if (!result.inFrame) return result.text;
+    // The child frame whose element has the focus
+    let next = null;
+    for (const child of frame.childFrames()) {
+      const element = await child.frameElement().catch(() => null);
+      if (!element) continue;
+      const focused = await bounded(element.evaluate((e) => e === document.activeElement).catch(() => false), SELECTION_TIMEOUT_MS, false);
+      await element.dispose().catch(() => undefined);
+      if (focused) {
+        next = child;
+        break;
+      }
+    }
+    if (!next) return result.text;
+    frame = next;
+  }
+  return '';
+}
+
 async function replayInput(pageId, queue) {
   queue.running = true;
   while (queue.events.length > 0) {
@@ -392,7 +457,10 @@ async function replayInput(pageId, queue) {
 
 async function input(pageId, event) {
   const page = pages.get(pageId)?.page;
-  if (!page) return;
+  if (!page) {
+    if (event.kind === 'copy') send({ type: 'copied', id: event.id, text: '' });
+    return;
+  }
   const button = ['left', 'right', 'middle'].includes(event.button) ? event.button : 'left';
   switch (event.kind) {
     case 'mousemove':
@@ -423,6 +491,11 @@ async function input(pageId, event) {
       break;
     case 'text':
       await page.keyboard.insertText(String(event.text || ''));
+      break;
+    case 'copy':
+      // Asked by the main process (copy and cut shortcuts): answered in turn with the keys, so a cut
+      // that follows can't remove the text first
+      send({ type: 'copied', id: event.id, text: await selectedText(page).catch(() => '') });
       break;
   }
 }
@@ -502,6 +575,11 @@ function onMessage(message) {
       break;
     case 'input':
       queueInput(message.pageId, message.event);
+      break;
+    case 'copy':
+      // The page's selected text, after the input before it
+      if (pages.has(message.pageId)) queueInput(message.pageId, { kind: 'copy', id: message.id });
+      else send({ type: 'copied', id: message.id, text: '' });
       break;
     case 'navigate':
       // Not queued: a slow page must not hold up the other commands

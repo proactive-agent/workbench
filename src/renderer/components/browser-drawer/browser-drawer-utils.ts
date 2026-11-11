@@ -1,6 +1,7 @@
 import type { BrowserDrawerInput, BrowserDrawerSession } from '../../../shared/types/browser-drawer';
 import type { BrowserEngine } from '../../../shared/types/browser-profiles';
 import { browserProfileIcon } from '../settings/browser-profile-meta';
+import { isMacOS } from '../../lib/os-detection';
 
 /** A session's browser icon, as its profile shows in the picker: Playwright's for its own builds, else the engine's */
 export function sessionBrowserIcon(session: Pick<BrowserDrawerSession, 'browserName' | 'managed'>): React.ElementType {
@@ -26,9 +27,26 @@ export function mouseButton(button: number): Extract<BrowserDrawerInput, { kind:
   return button === 1 ? 'middle' : button === 2 ? 'right' : 'left';
 }
 
+/** The shortcut modifier: Cmd on macOS (where Ctrl+click is a secondary click), Ctrl elsewhere */
+function shortcutModifier(event: { ctrlKey: boolean; metaKey: boolean }, mac: boolean): boolean {
+  return mac ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey;
+}
+
+/**
+ * Whether a key press copies or cuts: the page's selected text is put on the clipboard (the headless
+ * browser's own clipboard never reaches the system's), and the keys still reach the page
+ */
+export function isCopyShortcut(
+  event: { key: string; ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean },
+  mac = isMacOS(),
+): boolean {
+  const key = event.key.toLowerCase();
+  return shortcutModifier(event, mac) && !event.altKey && !event.shiftKey && (key === 'c' || key === 'x');
+}
+
 /** Whether a key press pastes (left to the paste event, which sends the text) */
-export function isPasteShortcut(event: { key: string; ctrlKey: boolean; metaKey: boolean }): boolean {
-  return (event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v';
+export function isPasteShortcut(event: { key: string; ctrlKey: boolean; metaKey: boolean }, mac = isMacOS()): boolean {
+  return shortcutModifier(event, mac) && event.key.toLowerCase() === 'v';
 }
 
 /**

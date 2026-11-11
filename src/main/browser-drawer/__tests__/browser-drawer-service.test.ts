@@ -79,6 +79,7 @@ describe('browser drawer service', () => {
     expect(isDrawerInput({ kind: 'keydown', key: 'Enter' })).toBe(true);
     expect(isDrawerInput({ kind: 'keydown', key: '' })).toBe(false);
     expect(isDrawerInput({ kind: 'text', text: 'hello' })).toBe(true);
+    expect(isDrawerInput({ kind: 'mousedown', x: 1, y: 2, button: 'middle', clickCount: 1 })).toBe(true);
     expect(isDrawerInput({ kind: 'evaluate', script: 'x' })).toBe(false);
     expect(isDrawerInput(null)).toBe(false);
   });
@@ -117,6 +118,24 @@ describe('browser drawer viewers', () => {
     sent.length = 0;
     await service.subscribe(window);
     expect(views(sent)).toEqual([]);
+  });
+
+  it("puts a page's selected text on the clipboard for the copy shortcut, and nothing without one", async () => {
+    const { bridge, emitter } = fakeBridge();
+    const selected = new Map([['s#1', 'Copied text'], ['s#2', '']]);
+    Object.assign(bridge, { selectedText: async (pageId: string) => selected.get(pageId) ?? '' });
+    const written: string[] = [];
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge, writeClipboard: (text) => written.push(text) });
+    emitter.emit('message', {
+      type: 'pages',
+      pages: [{ id: 's#1', sessionId: 's', title: '', url: 'about:blank' }, { id: 's#2', sessionId: 's', title: '', url: 'about:blank' }],
+      connected: ['s'],
+    });
+
+    expect(await service.copySelection('s#1')).toBe(true);
+    expect(await service.copySelection('s#2')).toBe(false);
+    expect(await service.copySelection('gone')).toBe(false);
+    expect(written).toEqual(['Copied text']);
   });
 
   it("gives the bridge Workbench's theme when it starts and whenever it changes", async () => {

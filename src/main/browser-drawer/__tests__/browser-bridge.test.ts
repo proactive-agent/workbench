@@ -19,7 +19,19 @@ const page = {
   on() {},
   url: () => 'about:blank',
   title: async () => 'Blank',
-  mainFrame: () => null,
+  // The main frame, whose focused element is an iframe (it has an old selection of its own), with
+  // a busy frame that never answers and the focused iframe, which holds the selection
+  mainFrame: () => ({
+    evaluate: async () => ({ inFrame: true, text: 'Old selection' }),
+    childFrames: () => [
+      { frameElement: async () => ({ evaluate: () => new Promise(() => {}), dispose: async () => {} }) },
+      {
+        frameElement: async () => ({ evaluate: async () => true, dispose: async () => {} }),
+        evaluate: async () => { log({ read: true }); return { inFrame: false, text: 'Selected text' }; },
+        childFrames: () => [],
+      },
+    ],
+  }),
   emulateMedia: async () => {},
   viewportSize: () => viewport,
   setViewportSize: async (size) => { viewport = size; },
@@ -39,7 +51,7 @@ const page = {
     up: async () => {},
     wheel: async (dx, dy) => log({ wheel: dy }),
   },
-  keyboard: { down: async () => {}, up: async () => {}, insertText: async () => {} },
+  keyboard: { down: async (key) => log({ key }), up: async () => {}, insertText: async () => {} },
   close: async () => {},
 };
 const context = { pages: () => [page], on() {}, newPage: async () => page };
@@ -102,6 +114,37 @@ describe('browser bridge script', () => {
     await until(async () => (await calls()).some((call) => call.down));
     const mouse = (await calls()).filter((call) => 'move' in call || 'down' in call);
     expect(mouse).toEqual([{ move: 1 }, { move: 4 }, { move: 5 }, { down: true }]);
+  });
+
+  it("reads a page's selected text in turn with its input, before the keys after it", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    await writeFile(lib, FAKE_PLAYWRIGHT);
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let pageId: string | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+
+    // A slow move, the copy shortcut's request, then its key (a cut removes the text once it lands)
+    bridge.send({ type: 'input', pageId: pageId!, event: { kind: 'mousemove', x: 1, y: 0 } });
+    const text = bridge.selectedText(pageId!);
+    bridge.send({ type: 'input', pageId: pageId!, event: { kind: 'keydown', key: 'x' } });
+    expect(await text).toBe('Selected text');
+    await until(async () => (await calls()).some((call) => call.key));
+    expect((await calls()).filter((call) => 'move' in call || 'read' in call || 'key' in call)).toEqual([{ move: 1 }, { read: true }, { key: 'x' }]);
+
+    // A page it doesn't know has nothing selected
+    await expect(bridge.selectedText('nope')).resolves.toBe('');
   });
 
   it('reports a page loading from its navigation request until it loads, and stops it on request', async () => {

@@ -306,6 +306,7 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_NAVIGATE: 'browserDrawer:navigate',       // Back, forward, reload or an address
   BROWSER_DRAWER_CLOSE_PAGE: 'browserDrawer:closePage',
   BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser
+  BROWSER_DRAWER_COPY: 'browserDrawer:copy',               // The copy/cut shortcut: the page's selection to the clipboard
   BROWSER_DRAWER_BOOKMARKS: 'browserDrawer:bookmarks',     // The bookmarks bar of a session's browser profile
   BROWSER_DRAWER_COLOR_SCHEME: 'browserDrawer:colorScheme', // Workbench's theme, for the chat browsers' pages
   BROWSER_DRAWER_OPEN_CHAT_BROWSER: 'browserDrawer:openChatBrowser',   // Open a chat's own browser

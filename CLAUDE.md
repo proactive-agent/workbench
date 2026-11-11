@@ -390,7 +390,9 @@ the viewport a whole, even number of device pixels (`alignedViewportLength`) and
 pixels, since at a fractional devicePixelRatio (1.25, 1.5) anything else resamples the frame and blurs its text. The
 canvas's mouse, wheel, keys and pasted text are replayed with `page.mouse` / `page.keyboard` from a queue per page,
 mouse moves and wheel steps waiting behind a slow one merged into the newest (a busy page answers each late: replaying
-every move held a click up for seconds), each step given at most 5 seconds. Frames are asked at the window's devicePixelRatio,
+every move held a click up for seconds), each step given at most 5 seconds. The copy and cut
+shortcuts also put the page's selected text on the system clipboard (read in turn with the keys, `copySelection`): a
+headless browser's own clipboard never reaches it. Frames are asked at the window's devicePixelRatio,
 and on HiDPI screens the browsers render that many pixels: `browser-drawer/display-scale.ts` follows the screens'
 largest scale factor (up to 2) into the runs' Playwright config (`setPlaywrightDisplayScale`: `deviceScaleFactor`, plus
 `--force-device-scale-factor` for Chromium, whose screencast otherwise stays at CSS size, rounded up to a whole factor:

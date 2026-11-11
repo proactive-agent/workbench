@@ -21,7 +21,7 @@
  * projects as Windows paths (toHostPath).
  */
 
-import type { WebContents } from 'electron';
+import { clipboard, type WebContents } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
   BrowserBookmark,
@@ -127,6 +127,8 @@ export interface BrowserDrawerServiceOptions {
   registryDir?: string;
   bridge?: BrowserBridgeProcess;
   chatBrowsers?: ChatBrowsers;
+  /** Puts copied text on the system clipboard */
+  writeClipboard?: (text: string) => void;
 }
 
 export class BrowserDrawerService {
@@ -277,6 +279,19 @@ export class BrowserDrawerService {
 
   closePage(pageId: string): void {
     if (this.pages.some((page) => page.id === pageId)) this.bridge.send({ type: 'closePage', pageId });
+  }
+
+  /**
+   * The copy or cut shortcut on a page: its selected text goes on the system clipboard (the headless
+   * browser's own clipboard never reaches it). Asked before the shortcut's keys are sent, so a cut
+   * reads the text before removing it. Whether there was text to copy
+   */
+  async copySelection(pageId: string): Promise<boolean> {
+    if (!this.pages.some((page) => page.id === pageId)) return false;
+    const text = await this.bridge.selectedText(pageId);
+    if (!text) return false;
+    (this.options.writeClipboard ?? ((value: string) => clipboard.writeText(value)))(text);
+    return true;
   }
 
   /** Open a new tab in a session's browser */

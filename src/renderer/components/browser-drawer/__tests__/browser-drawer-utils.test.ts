@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addressToUrl, alignedViewportLength, devicePixelOffset, isPasteShortcut, mouseButton, pageLabel } from '../browser-drawer-utils';
+import { addressToUrl, alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageLabel } from '../browser-drawer-utils';
 
 describe('browser drawer helpers', () => {
   it('turns the address field into a URL', () => {
@@ -18,9 +18,12 @@ describe('browser drawer helpers', () => {
 
   it('maps mouse buttons and the paste shortcut', () => {
     expect([0, 1, 2].map(mouseButton)).toEqual(['left', 'middle', 'right']);
-    expect(isPasteShortcut({ key: 'v', ctrlKey: true, metaKey: false })).toBe(true);
-    expect(isPasteShortcut({ key: 'V', ctrlKey: false, metaKey: true })).toBe(true);
-    expect(isPasteShortcut({ key: 'v', ctrlKey: false, metaKey: false })).toBe(false);
+    expect(isPasteShortcut({ key: 'v', ctrlKey: true, metaKey: false }, false)).toBe(true);
+    expect(isPasteShortcut({ key: 'V', ctrlKey: false, metaKey: true }, true)).toBe(true);
+    expect(isPasteShortcut({ key: 'v', ctrlKey: false, metaKey: false }, false)).toBe(false);
+    // Each platform's own modifier only
+    expect(isPasteShortcut({ key: 'v', ctrlKey: true, metaKey: false }, true)).toBe(false);
+    expect(isPasteShortcut({ key: 'v', ctrlKey: false, metaKey: true }, false)).toBe(false);
   });
 });
 
@@ -52,5 +55,23 @@ describe('devicePixelOffset', () => {
   it('leaves positions on device pixels', () => {
     expect(devicePixelOffset(2, 1.5)).toBe(0);
     expect(devicePixelOffset(7, 1)).toBe(0);
+  });
+});
+
+describe('isCopyShortcut', () => {
+  const press = (key: string, mods: Partial<{ ctrlKey: boolean; metaKey: boolean; altKey: boolean; shiftKey: boolean }>) =>
+    ({ key, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
+
+  it("takes the platform's shortcut modifier with C or X, not other keys or chords", () => {
+    expect(isCopyShortcut(press('c', { ctrlKey: true }), false)).toBe(true);
+    expect(isCopyShortcut(press('X', { metaKey: true }), true)).toBe(true);
+    expect(isCopyShortcut(press('c', {}), false)).toBe(false);
+    expect(isCopyShortcut(press('v', { ctrlKey: true }), false)).toBe(false);
+    // Ctrl+Shift+C opens a browser's inspector; Alt chords are something else
+    expect(isCopyShortcut(press('C', { ctrlKey: true, shiftKey: true }), false)).toBe(false);
+    expect(isCopyShortcut(press('c', { ctrlKey: true, altKey: true }), false)).toBe(false);
+    // On macOS Ctrl+C isn't copy (a web terminal's interrupt), and Cmd+C isn't copy elsewhere
+    expect(isCopyShortcut(press('c', { ctrlKey: true }), true)).toBe(false);
+    expect(isCopyShortcut(press('c', { metaKey: true }), false)).toBe(false);
   });
 });

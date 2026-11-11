@@ -31,6 +31,8 @@ export interface BrowserDrawerAPI {
   /** This window drew a frame of the page (the next frame waits for it) */
   browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: BrowserDrawerNavigation, url?: string) => void;
+  /** The copy or cut shortcut on a page: its selected text goes on the clipboard (whether it had any) */
+  copyBrowserSelection: (pageId: string) => Promise<boolean>;
   closeBrowserPage: (pageId: string) => void;
   /** A new tab in a session's browser */
   newBrowserPage: (sessionId: string) => void;
@@ -56,6 +58,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   sendBrowserInput: (pageId, input) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_INPUT, pageId, input),
   browserFrameDrawn: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_FRAME_DRAWN, pageId),
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
+  copyBrowserSelection: (pageId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_COPY, pageId),
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),
   newBrowserPage: (sessionId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, sessionId),
   getBrowserBookmarks: (sessionId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_BOOKMARKS, sessionId),

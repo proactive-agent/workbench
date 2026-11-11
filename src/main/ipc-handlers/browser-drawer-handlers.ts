@@ -58,6 +58,11 @@ export function registerBrowserDrawerHandlers(): void {
     if (typeof pageId === 'string') browserDrawer.closePage(pageId);
   });
 
+  // Handled at once (no await before the bridge is asked): the shortcut's keys, sent right after,
+  // must reach the page after its selection was read
+  ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_COPY, (_event, pageId: unknown): Promise<boolean> =>
+    typeof pageId === 'string' ? browserDrawer.copySelection(pageId).catch(() => false) : Promise.resolve(false));
+
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, (_event, sessionId: unknown) => {
     if (typeof sessionId === 'string') browserDrawer.newPage(sessionId);
   });

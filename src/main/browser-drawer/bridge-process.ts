@@ -42,13 +42,15 @@ export type BridgeRequest =
   | { type: 'closePage'; pageId: string }
   | { type: 'newPage'; sessionId: string }
   | { type: 'probe'; id: number; endpoints: string[] }
+  | { type: 'copy'; id: number; pageId: string }
   | { type: 'colorScheme'; scheme: 'light' | 'dark' };
 
 export type BridgeMessage =
   | { type: 'pages'; pages: BrowserDrawerPage[]; connected?: string[] }
   | { type: 'frame'; pageId: string; viewers: number[]; data: Uint8Array; width: number; height: number }
   | { type: 'log'; message: string }
-  | { type: 'probed'; id: number; live: string[] };
+  | { type: 'probed'; id: number; live: string[] }
+  | { type: 'copied'; id: number; text: string };
 
 export interface BridgeProcessOptions {
   /** The bridge script (written to a temporary folder when not given) */
@@ -59,6 +61,8 @@ export interface BridgeProcessOptions {
 
 /** How long a liveness probe may take (each endpoint is given a second) */
 const PROBE_TIMEOUT_MS = 10_000;
+/** How long reading a page's selected text may take (it waits for the input before it) */
+const COPY_TIMEOUT_MS = 5000;
 
 /** Emits 'message' (BridgeMessage) and 'exit' */
 export class BrowserBridgeProcess extends EventEmitter {
@@ -67,6 +71,8 @@ export class BrowserBridgeProcess extends EventEmitter {
   private tempDir: string | null = null;
   private nextProbeId = 1;
   private readonly probes = new Map<number, (live: string[] | null) => void>();
+  private nextCopyId = 1;
+  private readonly copies = new Map<number, (text: string) => void>();
   /** Stopped (the app is quitting): never started again, also not by a probe */
   private stopped = false;
 
@@ -111,6 +117,24 @@ export class BrowserBridgeProcess extends EventEmitter {
     return live ? new Set(live) : null;
   }
 
+  /**
+   * The text selected in a page ('' for none). Asked at once, without waiting for anything first:
+   * input sent after this call is replayed after the text was read
+   */
+  selectedText(pageId: string): Promise<string> {
+    const id = this.nextCopyId++;
+    return new Promise<string>((resolve) => {
+      const timer = setTimeout(() => settle(''), COPY_TIMEOUT_MS);
+      const settle = (text: string) => {
+        clearTimeout(timer);
+        this.copies.delete(id);
+        resolve(text);
+      };
+      this.copies.set(id, settle);
+      if (!this.write({ type: 'copy', id, pageId })) settle('');
+    });
+  }
+
   private async spawn(): Promise<void> {
     await whenShellRuntimeReady();
     // Looked up before the script's folder is made: without node in WSL every probe would make one
@@ -153,6 +177,7 @@ export class BrowserBridgeProcess extends EventEmitter {
       if (this.child !== child) return;
       this.child = null;
       for (const settle of [...this.probes.values()]) settle(null);
+      for (const settle of [...this.copies.values()]) settle('');
       void this.removeTempDir();
       this.emit('exit');
     };
@@ -169,6 +194,10 @@ export class BrowserBridgeProcess extends EventEmitter {
   private onMessage(message: BridgeMessage): void {
     if (message.type === 'probed') {
       this.probes.get(message.id)?.(Array.isArray(message.live) ? message.live : []);
+      return;
+    }
+    if (message.type === 'copied') {
+      this.copies.get(message.id)?.(typeof message.text === 'string' ? message.text : '');
       return;
     }
     this.emit('message', message);
@@ -196,6 +225,7 @@ export class BrowserBridgeProcess extends EventEmitter {
     const child = this.child;
     this.child = null;
     for (const settle of [...this.probes.values()]) settle(null);
+    for (const settle of [...this.copies.values()]) settle('');
     if (!child || child.exitCode !== null) return this.removeTempDir();
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import type { KeyboardEvent, MouseEvent, ClipboardEvent, WheelEvent } from 'react';
 import type { BrowserDrawerFrame, BrowserDrawerInput } from '../../../shared/types/browser-drawer';
-import { alignedViewportLength, devicePixelOffset, isPasteShortcut, mouseButton } from './browser-drawer-utils';
+import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton } from './browser-drawer-utils';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
 const RESIZE_DEBOUNCE_MS = 150;
@@ -181,6 +181,8 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
     if (event.nativeEvent.isComposing || isPasteShortcut(event)) return;
     event.preventDefault();
+    // Asked before the keys go: a cut removes the text once they reach the page
+    if (isCopyShortcut(event) && !event.repeat) void window.electronAPI.copyBrowserSelection(pageId);
     send({ kind: 'keydown', key: event.key });
   };
 

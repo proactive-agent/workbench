@@ -538,6 +538,7 @@ export interface ElectronAPI {
   sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
   browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
+  copyBrowserSelection: (pageId: string) => Promise<boolean>;
   closeBrowserPage: (pageId: string) => void;
   newBrowserPage: (sessionId: string) => void;
   getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<import('./browser-drawer').BrowserBookmark[]>>;
