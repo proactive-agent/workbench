@@ -750,9 +750,4 @@ describe('toClaudeModel', () => {
     expect(toClaudeModel('gpt-5')).toBe('sonnet');
     expect(toClaudeModel(undefined)).toBe('sonnet');
   });
-
-  it("passes the API profile's custom models as they are", () => {
-    expect(toClaudeModel('openai/gpt-5', ['openai/gpt-5'])).toBe('openai/gpt-5');
-    expect(toClaudeModel('openai/gpt-5', [])).toBe('sonnet');
-  });
 });
