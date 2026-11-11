@@ -1,6 +1,6 @@
 /**
  * The Playwright browser profiles still chosen, so sweeps of profile copies (profile-copy.ts) keep
- * theirs: the one in Settings > Connectors and every task's own pick (TaskMetadata.playwrightBrowser)
+ * theirs: the one in Settings > Browser and every task's own pick (TaskMetadata.playwrightBrowser)
  * that isn't archived. Read from the tasks' task_metadata.json files without blocking (the
  * project store's task scan is synchronous)
  */

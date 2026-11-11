@@ -302,8 +302,9 @@ Data saved before the browser connector moved from Puppeteer to Playwright (id `
 task metadata in the project store, drafts, chats), so nothing else knows the old names.
 
 Playwright is Microsoft's `@playwright/mcp`, pinned (`PLAYWRIGHT_MCP_PACKAGE` in `browser-profiles/managed.ts`, with the
-browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Its row picks a browser profile
-(`McpConnectorSettings.playwrightBrowser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
+browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Settings > Browser picks the default browser profile
+(`McpConnectorSettings.playwrightBrowser`, `settings/BrowserSettings.tsx`, with the homepage a new chat browser opens and the
+bookmarks bar switch, `AppSettings.browser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
 Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a copy of the chosen profile in the
 app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
@@ -362,7 +363,7 @@ the **browser drawer** at the main window's right edge (`src/main/browser-drawer
 `browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
 reload, address), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
-shows), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
+shows; Settings > Browser can hide it), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
 closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
 other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
 until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing
@@ -416,7 +417,7 @@ inside WSL2 with NAT networking (no way to the app's 127.0.0.1) it sends that ca
 (`task-tools-bridge.cjs`, a Windows process it starts once through interop: `WORKBENCH_CHAT_BROWSER_RELAY`), and with
 interop off chats fall back to a browser per turn. The
 drawer's empty state on the Claude page has the chat's browser profile picker (`InsightsModelConfig.playwrightBrowser`;
-unset = Settings > Connectors; the New chat page starts from Settings) and an Open browser button, which also switches
+unset = Settings > Browser; the New chat page starts from Settings) and an Open browser button, which also switches
 Playwright on for the chat; the picker shows only while the chat has no browser (one profile per chat at a time). The
 New chat page's browser (chat id `new`) moves to the conversation its first message creates. A chat browser closes when
 the user closes its last tab, its chat is deleted, its browser goes away (its registry entry stops answering) or the
@@ -549,7 +550,7 @@ loaded with the FontFace API before xterm measures), Anthropic Serif (sidebar "W
 (optional interface font). Settings > General > Appearance picks the interface and command line fonts.
 
 **Settings UI (claude.ai style)** — The dialog (`settings/AppSettings.tsx`) has one menu: General, Accounts, Agents,
-Project, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_BUILD`), Updates.
+Project, Browser, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_BUILD`), Updates.
 
 - **General** — Appearance (theme, graph colors, Shell on Windows, interface and command line fonts, display) and
   notifications.

@@ -18,7 +18,7 @@ interface ChatBrowserStartProps {
 }
 
 /**
- * The browser profile of the chat's own browser (Settings > Connectors' until the chat picks one)
+ * The browser profile of the chat's own browser (Settings > Browser' until the chat picks one)
  * and a button that opens it, so the user can sign in or set something up by hand before asking
  * the chat to carry on. Opening switches Playwright on for the chat. Shown only while the chat
  * has no browser: an open browser keeps the profile it opened with

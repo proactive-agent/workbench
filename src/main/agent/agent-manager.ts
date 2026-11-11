@@ -452,7 +452,7 @@ export class AgentManager extends EventEmitter {
 
     // Connectors the run leaves out, for the start of its task log
     const startNotes: { phase: TaskLogPhase; line: string }[] = [];
-    // The Playwright connector's browser: the task's own choice, else the one in Settings > Connectors
+    // The Playwright connector's browser: the task's own choice, else the one in Settings > Browser
     const taskBrowser = task.metadata?.playwrightBrowser;
     const browser = getTaskPlaywrightBrowser(taskBrowser, settings.mcpConnectors);
     const connectorSettings: McpConnectorSettings | undefined = taskBrowser === undefined

@@ -7,6 +7,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '../../ui/tooltip';
 import { BrowserDrawer } from '../BrowserDrawer';
 import { useBrowserDrawerStore } from '../../../stores/browser-drawer-store';
+import { useSettingsStore } from '../../../stores/settings-store';
 import type { BrowserBookmark } from '../../../../shared/types/browser-drawer';
 
 vi.mock('react-i18next', () => ({
@@ -93,5 +94,21 @@ describe('BrowserDrawer', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Mail' }));
     expect(api.navigateBrowserPage).toHaveBeenCalledWith('p1', 'goto', 'https://mail.test/');
     expect(screen.getByRole('button', { name: 'Work' })).toBeInTheDocument();
+  });
+
+  it('leaves the bookmarks bar out when Settings > Browser turns it off', async () => {
+    api.getBrowserBookmarks.mockResolvedValue({ success: true, data: [{ title: 'Mail', url: 'https://mail.test/' }] });
+    const previous = useSettingsStore.getState().settings;
+    useSettingsStore.setState({ settings: { ...previous, browser: { showBookmarksBar: false } } });
+    try {
+      useBrowserDrawerStore.setState({ open: true });
+      renderDrawer();
+      await Promise.resolve();
+      expect(screen.queryByRole('toolbar', { name: 'browserDrawer.bookmarks' })).not.toBeInTheDocument();
+      expect(api.getBrowserBookmarks).not.toHaveBeenCalled();
+    } finally {
+      useSettingsStore.setState({ settings: previous });
+      api.getBrowserBookmarks.mockResolvedValue({ success: true, data: [] });
+    }
   });
 });

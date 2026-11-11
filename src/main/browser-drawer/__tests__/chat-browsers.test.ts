@@ -1,7 +1,7 @@
 import os from 'os';
 import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
-import { ChatBrowsers, holderArgs, holderError, type ChatBrowserHolder, type StartChatBrowserHolder } from '../chat-browsers';
+import { ChatBrowsers, holderArgs, holderError, homepageUrl, type ChatBrowserHolder, type StartChatBrowserHolder } from '../chat-browsers';
 import { toDrawerSessions } from '../browser-drawer-service';
 
 /** A holder that starts when `start()` is called and records closes */
@@ -191,5 +191,15 @@ describe('chat browsers', () => {
       (title) => (title === 'Workbench chat x' ? { projectId: 'p', chatId: 'session-1' } : undefined),
     );
     expect(sessions.map((s) => [s.id, s.projectId, s.chatId])).toEqual([['g1', 'p', 'session-1'], ['g2', undefined, undefined]]);
+  });
+});
+
+describe('the homepage a new chat browser opens', () => {
+  it('opens an address the drawer opens, and nothing for a blank or other one', () => {
+    expect(homepageUrl(' https://start.test/ ')).toBe('https://start.test/');
+    expect(homepageUrl('file:///home/me/start.html')).toBe('file:///home/me/start.html');
+    for (const value of [undefined, '', 'about:blank', 'javascript:alert(1)', 'chrome://settings']) {
+      expect(homepageUrl(value)).toBeUndefined();
+    }
   });
 });

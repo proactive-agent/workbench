@@ -201,7 +201,7 @@ export interface TaskMetadata {
   // Copied from the Connectors defaults when the task is created; unset means use the defaults
   mcpConnectors?: string[];
   // The Playwright connector's browser profile for this task, set only when one was picked for it:
-  // null is Playwright's own Chromium; unset follows Settings > Connectors
+  // null is Playwright's own Chromium; unset follows Settings > Browser
   playwrightBrowser?: PlaywrightBrowserChoice | null;
 
   // Git/Worktree configuration

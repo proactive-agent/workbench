@@ -1,5 +1,5 @@
 /**
- * Browser profile picker helpers (Playwright connector, Settings > Connectors). Kept out of
+ * Browser profile picker helpers (Playwright connector, Settings > Browser). Kept out of
  * PlaywrightBrowserSelect.tsx so that file only exports components (Fast Refresh)
  */
 

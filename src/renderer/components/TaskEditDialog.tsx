@@ -64,7 +64,7 @@ export function TaskEditDialog({ task, open, onOpenChange, onSaved }: TaskEditDi
   // connectors were per task. Saving changes only this task
   const taskConnectors = task.metadata?.mcpConnectors ?? getDefaultMcpConnectorIds(settings.mcpConnectors);
   const [mcpConnectors, setMcpConnectors] = useState<string[]>(taskConnectors);
-  // The Playwright connector's browser profile picked for the task; unset follows Settings > Connectors
+  // The Playwright connector's browser profile picked for the task; unset follows Settings > Browser
   const [playwrightBrowser, setPlaywrightBrowser] = useState<PlaywrightBrowserChoice | null | undefined>(task.metadata?.playwrightBrowser);
 
   // Git options: the task's own base branch, listed even when the project no longer has it, and

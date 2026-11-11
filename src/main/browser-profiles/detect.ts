@@ -3,7 +3,7 @@
  * =========================
  *
  * Finds the installed Chromium-family browsers (Chrome, Edge, Brave, Chromium) and Firefox and
- * lists their profiles for the Playwright connector (Settings > Connectors). A profile is usable
+ * lists their profiles for the Playwright connector (Settings > Browser). A profile is usable
  * when Playwright can drive the browser and its executable exists where tools run.
  *
  * When tools run in WSL, Playwright starts inside the distribution: its browsers are read through

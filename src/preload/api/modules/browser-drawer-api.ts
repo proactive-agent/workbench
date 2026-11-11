@@ -38,7 +38,7 @@ export interface BrowserDrawerAPI {
   getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<BrowserBookmark[]>>;
   /** Workbench's theme, which the chat browsers' pages get as their color scheme */
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
-  /** Open a chat's own browser with this browser (undefined: Settings > Connectors) */
+  /** Open a chat's own browser with this browser (undefined: Settings > Browser) */
   openChatBrowser: (projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
   /** Close a chat's own browser */
   closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;

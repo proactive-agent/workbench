@@ -246,7 +246,7 @@ function joinHostPath(dir: string, name: string): string {
 
 /**
  * Microsoft's Playwright server: Playwright's own Chromium (downloaded with its install-browser
- * command), or the browser chosen in Settings > Connectors or the task
+ * command), or the browser chosen in Settings > Browser or the task
  */
 function playwrightServer(choice: PlaywrightBrowserChoice | undefined, options: McpRunOptions): McpServerEntry {
   if (choice && isWindowsBrowserInWsl(choice)) return windowsBrowserServer(choice, options.browserProfileDir);

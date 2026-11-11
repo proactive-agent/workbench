@@ -84,7 +84,7 @@ export interface ChatBrowserHolder {
 export type StartChatBrowserHolder = (options: {
   projectPath: string;
   title: string;
-  /** The browser to open (undefined: Settings > Connectors) */
+  /** The browser to open (undefined: Settings > Browser) */
   choice: PlaywrightBrowserChoice | null | undefined;
   projectId?: string;
   chatId?: string;
@@ -189,7 +189,7 @@ export class ChatBrowsers extends EventEmitter {
 
   /**
    * Open the chat's browser unless it is open or opening (then wait for that). `choice` is the
-   * chat's browser (undefined: Settings > Connectors); an open browser keeps the one it opened with
+   * chat's browser (undefined: Settings > Browser); an open browser keeps the one it opened with
    */
   ensure(projectId: string, projectPath: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
     if (this.stopped) return Promise.reject(new Error('Workbench is quitting'));
@@ -454,10 +454,16 @@ async function initializeHolder(client: HolderClient, title: string, timeoutMs =
   if (failure !== undefined) throw new Error(holderError(failure));
 }
 
+/** The homepage a new chat browser opens, when it is an address the drawer opens */
+export function homepageUrl(homepage: string | undefined): string | undefined {
+  const url = homepage?.trim();
+  return url && /^(https?|about|file):/i.test(url) && url !== 'about:blank' ? url : undefined;
+}
+
 /** How long reopening one saved tab may take */
 const RESTORE_TAB_TIMEOUT_MS = 30_000;
 
-/** Open a crashed chat browser's tabs again: the first in the tab the browser opened with (best effort) */
+/** Open pages in a started browser (a crashed one's tabs, or the homepage): the first in the tab it opened with (best effort) */
 async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]): Promise<void> {
   // Gone (closed or crashed): nothing more to open. Told by its exit, not its error's text (the
   // holder's last stderr line, which can say anything)
@@ -472,10 +478,10 @@ async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]
       : { name: 'browser_tabs', arguments: { action: 'new', url: tab.url } };
     try {
       const failure = replyFailure(await client.request('tools/call', call, RESTORE_TAB_TIMEOUT_MS));
-      if (failure !== undefined) appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}: ${holderError(failure)}`);
+      if (failure !== undefined) appLog.info(`[BrowserDrawer] Could not open ${tab.url}: ${holderError(failure)}`);
     } catch (error) {
       if (gone) return;
-      appLog.info(`[BrowserDrawer] Could not reopen ${tab.url}:`, error);
+      appLog.info(`[BrowserDrawer] Could not open ${tab.url}:`, error);
     }
   }
 }
@@ -539,7 +545,8 @@ function recordWriter(dir: string, initial: ChatBrowserRecord) {
  * again and its tabs reopened; for another browser it is removed and the chat's browser starts anew
  */
 const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice, projectId, chatId, restore }) => {
-  const settings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
+  const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+  const settings = appSettings?.mcpConnectors;
   const runSettings = chatRunSettings(settings, choice);
   const browser = runSettings.playwrightBrowser;
   const browserId = browser?.id ?? null;
@@ -624,7 +631,13 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     // Started: a reused folder and copy go when it closes (or on quit), like a new one's
     if (keptCopy) useKeptBrowserProfileCopy(keptCopy);
     cleanups.push(...removals.splice(0));
-    if (reuse) void restoreTabs(client, tabsToRestore(reuse.record.tabs));
+    const tabs = reuse ? tabsToRestore(reuse.record.tabs) : [];
+    if (tabs.length > 0) void restoreTabs(client, tabs);
+    else {
+      // A new browser opens on the homepage (Settings > Browser); one that doesn't load leaves it blank
+      const homepage = homepageUrl(appSettings?.browser?.homepage);
+      if (homepage) void restoreTabs(client, [{ url: homepage, title: '' }]);
+    }
 
     const listeners: Array<() => void> = [];
     // Gone (closed, crashed or stopped): its folder, profile copy and registration go too

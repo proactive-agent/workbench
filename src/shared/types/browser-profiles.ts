@@ -1,5 +1,5 @@
 /**
- * Local browser profiles the Playwright connector can use (Settings > Connectors). Detected in the
+ * Local browser profiles the Playwright connector can use (Settings > Browser). Detected in the
  * main process (src/main/browser-profiles/); the choice is stored whole in
  * McpConnectorSettings.playwrightBrowser, so runs never need to detect again.
  */

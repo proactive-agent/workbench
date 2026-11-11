@@ -8,6 +8,7 @@ import {
   projectPages,
   projectSessions,
 } from '../../stores/browser-drawer-store';
+import { useSettingsStore } from '../../stores/settings-store';
 import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
 import { AgentLoader } from '../ui/agent-loader';
@@ -50,6 +51,7 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   const setContext = useBrowserDrawerStore((s) => s.setContext);
   const openNewTab = useBrowserDrawerStore((s) => s.openNewTab);
   const contextReady = useBrowserDrawerStore((s) => s.projectId === projectId && s.chatId === chatId);
+  const showBookmarksBar = useSettingsStore((s) => s.settings.browser?.showBookmarksBar !== false);
 
   // Each chat (and the other pages together) keeps its own view of the drawer
   useLayoutEffect(() => setContext(projectId, chatId), [projectId, chatId, setContext]);
@@ -255,7 +257,7 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
             />
           </form>
         )}
-        {selected && (
+        {selected && showBookmarksBar && (
           <BrowserBookmarksBar
             sessionId={selected.sessionId}
             onOpen={(url) => window.electronAPI.navigateBrowserPage(selected.id, 'goto', url)}

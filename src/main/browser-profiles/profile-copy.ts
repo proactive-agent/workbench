@@ -31,7 +31,7 @@
  * that starts while the browser is open copies the saved copy instead of the live profile, which
  * the open browser keeps locked and half written; only without a saved copy does an open browser
  * keep Playwright from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
- * chooses the profile: Settings > Connectors or a task's own pick (TaskMetadata.playwrightBrowser,
+ * chooses the profile: Settings > Browser or a task's own pick (TaskMetadata.playwrightBrowser,
  * listed by choices-in-use.ts); a project's run copies likewise go at once only when neither
  * Settings nor the project's tasks choose their profile.
  *
@@ -440,7 +440,7 @@ async function removeOtherSavedCopies(keep: PlaywrightBrowserChoice[]): Promise<
 
 /** The profiles still chosen, whose copies a sweep keeps (choices-in-use.ts) */
 export interface BrowserChoicesInUse {
-  /** Chosen for runs in this project: Settings > Connectors and the project's tasks */
+  /** Chosen for runs in this project: Settings > Browser and the project's tasks */
   project: PlaywrightBrowserChoice[];
   /** Chosen anywhere: Settings and every project's tasks (saved copies are shared by projects) */
   all: PlaywrightBrowserChoice[];

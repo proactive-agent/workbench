@@ -103,7 +103,7 @@ interface VerifyCall {
 /**
  * Playwright's server starts without a browser and only needs one for its tools: it opens a blank
  * page in a headless browser (closed when the server is stopped). That is the browser chosen in
- * Settings > Connectors (its executable comes with the server's entry, with a profile in memory,
+ * Settings > Browser (its executable comes with the server's entry, with a profile in memory,
  * never the user's), otherwise Playwright's own Chromium
  */
 function verifyCall(id: string, settings: McpConnectorSettings | undefined): VerifyCall | undefined {

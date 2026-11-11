@@ -17,6 +17,10 @@
       "title": "Display",
       "description": "Adjust the size of UI elements"
     },
+    "browser": {
+      "title": "Browser",
+      "description": "The browser Claude chats and tasks use"
+    },
     "connectors": {
       "title": "Connectors",
       "description": "Default MCP servers for new tasks"
@@ -746,5 +750,14 @@
     "generate": "Generate",
     "style": "Graph style",
     "styleDescription": "Plain or colored by community"
+  },
+  "browser": {
+    "profile": "Default profile",
+    "profileDescription": "The browser profile chats and tasks open, unless one picks another. Its sign-ins carry over",
+    "homepage": "Homepage",
+    "homepageDescription": "The page a chat's browser opens on when it starts. Empty opens a blank page",
+    "homepagePlaceholder": "about:blank",
+    "bookmarksBar": "Show bookmarks bar",
+    "bookmarksBarDescription": "Show the profile's bookmarks under the address bar in the browser drawer"
   }
 }

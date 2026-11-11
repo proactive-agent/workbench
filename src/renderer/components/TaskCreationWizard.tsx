@@ -62,7 +62,7 @@ export function TaskCreationWizard({
   // MCP connectors start from the Connectors defaults; changes stay with this task
   const defaultConnectors = useMemo(() => getDefaultMcpConnectorIds(settings.mcpConnectors), [settings.mcpConnectors]);
   const [mcpConnectors, setMcpConnectors] = useState<string[]>(defaultConnectors);
-  // The Playwright connector's browser profile picked for the task; unset follows Settings > Connectors
+  // The Playwright connector's browser profile picked for the task; unset follows Settings > Browser
   const [playwrightBrowser, setPlaywrightBrowser] = useState<PlaywrightBrowserChoice | null | undefined>(undefined);
 
   // Draft state

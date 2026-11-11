@@ -1,5 +1,5 @@
 /**
- * The Playwright connector's browser profile (Settings > Connectors): Playwright's own Chromium or
+ * The Playwright connector's browser profile (Settings > Browser): Playwright's own Chromium or
  * a local profile, in the common dropdown select. The list is the one found when the app started.
  * Profiles that can't be used stay listed, disabled, with the reason as text. Browsers Playwright
  * can download (Firefox and WebKit, and its Chromium when the build its server needs is missing)
