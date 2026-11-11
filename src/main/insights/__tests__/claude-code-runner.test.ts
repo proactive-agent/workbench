@@ -106,6 +106,7 @@ import {
   INSIGHTS_GITLAB_RULES,
   resetTaskToolsBridgeForTests,
   guardChatPlaywright,
+  getTaskToolsRoute,
   CHAT_BROWSER_RELAY_ENV,
   supportsSystemPromptSnapshot,
   toClaudeModel,
@@ -686,14 +687,19 @@ describe('runInsights', () => {
       expect(record().args).not.toContain('--system-prompt-snapshot');
     });
 
-    it('keeps the task tools with mirrored networking', async () => {
-      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+    it('keeps the task tools directly with mirrored networking when interop is off', async () => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: false, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
       setRun(conversation);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig).toEqual({ mcpServers: { 'workbench': mcpServer } });
     });
 
-    it("gives the chat browser's guard the Windows relay under NAT networking, and no relay with mirrored networking", async () => {
+    it('uses the bridge with mirrored networking too (the Hyper-V firewall blocks the distribution)', () => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: true, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+      expect(getTaskToolsRoute()).toBe('bridge');
+    });
+
+    it("gives the chat browser's guard the Windows relay under NAT networking, and the relay with mirrored networking too", async () => {
       const playwright = {
         type: 'stdio' as const,
         command: 'npx',
@@ -714,7 +720,11 @@ describe('runInsights', () => {
 
         wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
         const mirrored = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
-        expect(mirrored.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(JSON.parse(mirrored.env[CHAT_BROWSER_RELAY_ENV]).script).toBe(join(turnDir, 'task-tools-bridge.cjs'));
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: false, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const direct = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
+        expect(direct.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(direct.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
         expect(mirrored.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
       } finally {
         rmSync(turnDir, { recursive: true, force: true });

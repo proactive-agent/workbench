@@ -446,11 +446,12 @@ function handleInsightsEvent(
 
 /**
  * How Claude Code reaches the turn's task tools, served over HTTP on the host's 127.0.0.1:
- * - 'direct': natively, and inside WSL1 or WSL2 with mirrored networking (they share the
- *   host's localhost)
- * - 'bridge': inside WSL2 with NAT networking, which gives the distribution its own localhost:
- *   through the stdio bridge (task-tools-bridge.cjs) that Claude Code starts as a Windows
- *   process through WSL interop
+ * - 'direct': natively, inside WSL1 (it shares the host's localhost) and inside WSL2 with
+ *   mirrored networking when the bridge can't be used
+ * - 'bridge': inside WSL2, through the stdio bridge (task-tools-bridge.cjs) that Claude Code starts
+ *   as a Windows process through WSL interop. NAT networking gives the distribution its own
+ *   localhost; with mirrored networking the Hyper-V firewall blocks inbound connections from the
+ *   distribution by default (Windows' own loopback ports time out), so the bridge is used there too
  * - 'off': the distribution has WSL interop off (the probe says so), or the bridge failed to
  *   start before; tasks are suggested instead
  */
@@ -466,9 +467,10 @@ let taskToolsBridgeFailed = false;
 export function getTaskToolsRoute(): TaskToolsRoute {
   const wsl = getWslInfo();
   if (!wsl) return 'direct';
-  if (wsl.networkingMode === 'mirrored' || getShellRuntimeStatus().wsl?.version === 1) return 'direct';
+  if (getShellRuntimeStatus().wsl?.version === 1) return 'direct';
   // The bridge is a Windows program, which the distribution can only run with interop on
-  return taskToolsBridgeFailed || wsl.interop === false ? 'off' : 'bridge';
+  if (taskToolsBridgeFailed || wsl.interop === false) return wsl.networkingMode === 'mirrored' ? 'direct' : 'off';
+  return 'bridge';
 }
 
 /** Claude Code's init message lists the bridge as failed: task tools are off from the next turn */
