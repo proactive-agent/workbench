@@ -777,14 +777,18 @@ export class ClaudeProfileManager {
 
   /**
    * Why an account found in Claude Code's configuration can't be deleted, or null when it can:
-   * not the account in use, not the only account, and not set up from outside its config dir
-   * (environment variables or managed settings, which would list it again)
+   * not the account in use (unless `replacementId` names another account to take its place for
+   * the projects without their own: a window on another account deletes it), not the only account,
+   * and not set up from outside its config dir (environment variables or managed settings, which
+   * would list it again)
    */
-  detectedAccountDeletionBlocker(profileId: string): string | null {
+  detectedAccountDeletionBlocker(profileId: string, replacementId?: string): string | null {
     const profile = this.getProfile(profileId);
     if (!profile) return 'Account not found';
     if (!profile.detected || !profile.configDir) return "Not an account from Claude Code's configuration";
-    if (profile.id === this.data.activeProfileId) return "The account in use can't be deleted";
+    if (profile.id === this.data.activeProfileId && (!replacementId || replacementId === profileId || !this.getProfile(replacementId))) {
+      return "The account in use can't be deleted";
+    }
     if (this.data.profiles.length <= 1) return "The only Claude account can't be deleted";
     if (profile.detected.isDefaultDir && profile.detected.definedOutside) {
       return 'This account is set up by environment variables or managed settings outside Claude Code\'s config dir; remove them there';

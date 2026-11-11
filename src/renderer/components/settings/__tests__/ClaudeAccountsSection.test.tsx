@@ -13,6 +13,7 @@ import { ClaudeAccountsSection } from '../ClaudeAccountsSection';
 import { useClaudeAccounts } from '../hooks/useClaudeAccounts';
 import { useClaudeProfileStore } from '../../../stores/claude-profile-store';
 import { useSettingsStore } from '../../../stores/settings-store';
+import { useProjectStore } from '../../../stores/project-store';
 
 vi.mock('../hooks/useClaudeAccounts', () => ({ useClaudeAccounts: vi.fn() }));
 vi.mock('../DetectedAccountDialog', () => ({ DetectedAccountDialog: () => null }));
@@ -111,5 +112,30 @@ describe('ClaudeAccountsSection', () => {
 
     fireEvent.click(deleteButtons[0]);
     expect(await screen.findByText('claudeAccounts.dialog.deleteTitle')).toBeInTheDocument();
+  });
+
+  it("offers deleting the app's account in use from a window on another account, which takes its place", async () => {
+    const deleteClaudeProfile = vi.fn(async () => ({ success: true }));
+    vi.stubGlobal('electronAPI', { deleteClaudeProfile });
+    const work = profile('work', 'Work', 'me@work.example');
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com'), work], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    const previous = useProjectStore.getState();
+    useProjectStore.setState({
+      projects: [{ id: 'p', settings: { claudeProfileId: 'work' } }] as unknown as typeof previous.projects,
+      activeProjectId: 'p',
+    });
+    try {
+      renderWith([]);
+      // Rows: personal (the app's, not this window's), work (this window's, in use), new
+      const deleteButtons = screen.getAllByLabelText('claudeAccounts.deleteAriaLabel');
+      expect(deleteButtons).toHaveLength(2);
+      fireEvent.click(deleteButtons[0]);
+      fireEvent.click(await screen.findByRole('button', { name: 'claudeAccounts.dialog.delete' }));
+      await vi.waitFor(() => expect(deleteClaudeProfile).toHaveBeenCalledWith('personal', 'work'));
+    } finally {
+      useProjectStore.setState({ projects: previous.projects, activeProjectId: previous.activeProjectId });
+      vi.unstubAllGlobals();
+    }
   });
 });

@@ -299,19 +299,22 @@ export function registerTerminalHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_PROFILE_DELETE,
-    async (_, profileId: string): Promise<IPCResult> => {
+    async (_, profileId: string, replacementId?: unknown): Promise<IPCResult> => {
       try {
         const profileManager = getClaudeProfileManager();
+        const replacement = typeof replacementId === 'string' ? replacementId : undefined;
         // An account from Claude Code's configuration: signed out and its configuration removed
         // (account-deletion.ts), then dropped from the accounts and from projects that chose it
         const profile = profileManager.getProfile(profileId);
         if (profile?.detected) {
-          const blocker = profileManager.detectedAccountDeletionBlocker(profileId);
+          const blocker = profileManager.detectedAccountDeletionBlocker(profileId, replacement);
           if (blocker) return { success: false, error: blocker };
           if (agentManager?.getRunningTasksByProfile().byProfile[profileId]?.length) {
             return { success: false, error: "Tasks are running on this account; it can't be deleted until they stop" };
           }
           await deleteClaudeCodeAccountFiles(profile);
+          // The account in use for projects without their own: the deleting window's account takes its place
+          if (replacement && profileManager.getActiveProfile()?.id === profileId) profileManager.setActiveProfile(replacement);
           profileManager.removeDetectedAccount(profileId);
           for (const project of projectStore.getProjects()) {
             if (project.settings?.claudeProfileId === profileId) {

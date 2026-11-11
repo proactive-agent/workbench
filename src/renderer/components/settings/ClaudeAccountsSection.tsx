@@ -64,7 +64,9 @@ export function ClaudeAccountsSection() {
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const result = await window.electronAPI.deleteClaudeProfile(deleteTarget.id);
+      // The account in use for projects without their own (not this window's): this window's account takes its place
+      const replacement = deleteTarget.id === activeProfileId && accountId && accountId !== deleteTarget.id ? accountId : undefined;
+      const result = await window.electronAPI.deleteClaudeProfile(deleteTarget.id, replacement);
       if (!result.success) {
         setDeleteError(result.error || t('claudeAccounts.toast.deleteFailed'));
         return;
@@ -147,12 +149,13 @@ export function ClaudeAccountsSection() {
     };
   }, [login, reload, t]);
 
-  // Only accounts that can be deleted show the delete button (on hover, like API profiles): not the
-  // account in use (this window's or the app's), nor one set up from outside its config dir, which
-  // would be listed again
+  // Only accounts that can be deleted show the delete button (on hover, like API profiles): not this
+  // window's account, nor one set up from outside its config dir, which would be listed again. The
+  // app's account in use (for projects without their own) can go when this window runs on another:
+  // that one takes its place
   const canDelete = (profile: ClaudeProfile) =>
     profile.id !== accountId
-    && profile.id !== activeProfileId
+    && !!accountId
     && !(profile.detected?.isDefaultDir && profile.detected.definedOutside);
 
   const describe = (profile: ClaudeProfile): string => {

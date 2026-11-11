@@ -112,6 +112,10 @@ describe('accounts found in Claude Code configuration', () => {
 
     // The account in use can't be deleted
     expect(manager.detectedAccountDeletionBlocker(aws.id)).toMatch(/in use/);
+    expect(manager.detectedAccountDeletionBlocker(aws.id, aws.id)).toMatch(/in use/);
+    expect(manager.detectedAccountDeletionBlocker(aws.id, 'gone')).toMatch(/in use/);
+    // ...unless a window on another account deletes it: that account takes its place
+    expect(manager.detectedAccountDeletionBlocker(aws.id, work.id)).toBeNull();
     expect(manager.detectedAccountDeletionBlocker(work.id)).toBeNull();
 
     // Its files gone (account-deletion.ts), it leaves the accounts
