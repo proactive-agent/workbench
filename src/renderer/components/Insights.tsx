@@ -986,7 +986,9 @@ export function Insights({ projectId }: InsightsProps) {
         ) : (
           <>
             {/* Messages */}
-            <ScrollArea className="min-h-0 flex-1" onViewportRef={setViewportEl}>
+            {/* Radix lays the messages out as a table, as wide as their widest line (a tool call's command
+                that doesn't wrap): block keeps them within the chat's width */}
+            <ScrollArea className="min-h-0 flex-1" viewportClassName="[&>div]:block!" onViewportRef={setViewportEl}>
               <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
                 {messages.map((message, index) => (
                   <MessageBubble
