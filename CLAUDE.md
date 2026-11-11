@@ -387,7 +387,8 @@ connects to the projects' browsers with each one's own playwright-core
 server; disconnecting leaves the browser running) and reports their pages, each given Workbench's theme as its
 `prefers-color-scheme` (`page.emulateMedia`; every window sends the theme, also when it changes, from `useBrowserDrawerSync`); the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
-(`page.screencast`, quality 100) to that window only, one at a time: the window acknowledges each frame it draws
+(`page.screencast`, quality 100; one that didn't start is tried again, and one without a frame yet starts again
+once its page loads) to that window only, one at a time: the window acknowledges each frame it draws
 (`BROWSER_DRAWER_FRAME_DRAWN`), the next waits for that (or a second), and frames waiting meanwhile are replaced by
 newer ones, so the browser makes no more frames than the drawer draws. Frames are drawn on a canvas at their CSS size,
 the viewport a whole, even number of device pixels (`alignedViewportLength`) and the canvas moved onto whole device

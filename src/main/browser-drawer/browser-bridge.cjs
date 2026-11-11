@@ -163,7 +163,10 @@ function addPage(page, sessionId) {
   page.on('requestfailed', (request) => {
     if (request === entry.navigation) setLoading(false);
   });
-  page.on('load', () => setLoading(false));
+  page.on('load', () => {
+    setLoading(false);
+    restartSilentCast(id);
+  });
   page.on('close', () => {
     if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
     pages.delete(id);
@@ -292,6 +295,7 @@ async function startCast(pageId) {
         onFrame: ({ data, viewportWidth, viewportHeight }) => {
           const current = casts.get(pageId);
           if (!current || current.viewers.size === 0) return;
+          current.framed = true;
           // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
           const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
           const frame = { data, width: css.width, height: css.height };
@@ -310,8 +314,43 @@ async function startCast(pageId) {
     COMMAND_TIMEOUT_MS,
     false
   );
-  // Only a cast that started counts: one that failed (the page was navigating) is tried again
-  if (started) cast.size = size;
+  // Only a cast that started counts: one that failed (the page was navigating: a browser just
+  // opened is still loading its homepage) is tried again shortly, while the page is viewed
+  if (started) {
+    cast.size = size;
+    cast.retries = 0;
+    cast.framed = false;
+    return;
+  }
+  log(`The screencast of ${pageId} didn't start; trying again`);
+  retryCast(pageId);
+}
+
+/** How often, and how many times, a screencast that didn't start is tried again */
+const CAST_RETRY_MS = 500;
+const CAST_RETRIES = 20;
+
+function retryCast(pageId) {
+  const cast = casts.get(pageId);
+  if (!cast || cast.viewers.size === 0 || (cast.retries ?? 0) >= CAST_RETRIES) return;
+  cast.retries = (cast.retries ?? 0) + 1;
+  setTimeout(() => enqueue(() => (casts.get(pageId) === cast && !cast.size ? startCast(pageId) : undefined)), CAST_RETRY_MS);
+}
+
+/**
+ * A viewed page whose screencast started while it was navigating may never send a frame: once its
+ * new document loads, a cast without frames yet starts again
+ */
+function restartSilentCast(pageId) {
+  const cast = casts.get(pageId);
+  if (!cast || cast.viewers.size === 0 || !cast.size || cast.framed) return;
+  const entry = pages.get(pageId);
+  enqueue(async () => {
+    if (casts.get(pageId) !== cast || cast.framed || !entry) return;
+    await bounded(entry.page.screencast.stop().catch(() => undefined), COMMAND_TIMEOUT_MS);
+    cast.size = null;
+    await startCast(pageId);
+  });
 }
 
 async function stopCast(pageId) {
