@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from 'lucide-react';
@@ -71,6 +71,37 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   const [address, setAddress] = useState('');
   const selectedUrl = selected?.url ?? '';
   useEffect(() => setAddress(selectedUrl), [selectedUrl, selected?.id]);
+
+  // A tab that just opened takes the focus: the address bar of one the + button opened, the page of
+  // one opened from the drawer's page (a link opened in a new tab). Elsewhere (typing in the chat
+  // while Claude opens a tab) the focus stays where it is
+  const asideRef = useRef<HTMLElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const pageAreaRef = useRef<HTMLDivElement>(null);
+  const focusPageId = useBrowserDrawerStore((s) => s.focusPageId);
+  const focusRequestedByUser = useBrowserDrawerStore((s) => s.focusRequestedByUser);
+  const clearFocusRequest = useBrowserDrawerStore((s) => s.clearFocusRequest);
+  const selectedId = selected?.id;
+  // The address bar is focused once it shows the new tab's address, so typing replaces it
+  const addressFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusPageId || focusPageId !== selectedId) return;
+    clearFocusRequest();
+    if (focusRequestedByUser) addressFocusRef.current = focusPageId;
+    else if (asideRef.current?.contains(document.activeElement)) pageAreaRef.current?.querySelector('canvas')?.focus();
+  }, [focusPageId, focusRequestedByUser, selectedId, clearFocusRequest]);
+  useEffect(() => {
+    if (!addressFocusRef.current || addressFocusRef.current !== selectedId || address !== selectedUrl) return;
+    addressFocusRef.current = null;
+    addressRef.current?.focus();
+    addressRef.current?.select();
+  });
+
+  // The tab shown stays in sight in a strip of many
+  useEffect(() => {
+    if (!selectedId) return;
+    asideRef.current?.querySelector('[role=tab][aria-selected=true]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [selectedId]);
 
   // The pages are tracked while the drawer is open
   useEffect(() => {
@@ -163,10 +194,10 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
       {/* Window drag strip, under the Windows/Linux window controls: the drawer starts below it, level
           with the content area's top (the DEVELOPMENT BUILD strip in development builds) */}
       <div className="electron-drag shrink-0" style={{ height: TITLE_BAR_STRIP_HEIGHT }} />
-      <aside className="relative flex min-h-0 flex-1 flex-col border-l border-t border-border bg-background">
+      <aside ref={asideRef} className="relative flex min-h-0 flex-1 flex-col border-l border-t border-border bg-background">
         {/* Tabs */}
         <div className="flex h-10 shrink-0 items-end gap-1 border-b border-border bg-sidebar pl-2 pr-1.5">
-          <div className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto" role="tablist" aria-label={t('browserDrawer.title')}>
+          <div className="flex min-w-0 items-end gap-1 overflow-x-auto" role="tablist" aria-label={t('browserDrawer.title')}>
             {pages.map((page) => {
               const active = page.id === selected?.id;
               const label = pageLabel(page) || t('browserDrawer.untitled');
@@ -201,21 +232,22 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
                 </div>
               );
             })}
-            {newTabSession && (
-              <button
-                type="button"
-                className={cn(iconButton, 'mb-0.5')}
-                onClick={() => openNewTab(newTabSession)}
-                aria-label={t('browserDrawer.newTab')}
-                title={t('browserDrawer.newTab')}
-              >
-                <Plus className="h-4 w-4" strokeWidth={1.75} />
-              </button>
-            )}
           </div>
+          {/* Beside the tabs, not among them: it stays in sight when they scroll */}
+          {newTabSession && (
+            <button
+              type="button"
+              className={cn(iconButton, 'mb-0.5')}
+              onClick={() => openNewTab(newTabSession)}
+              aria-label={t('browserDrawer.newTab')}
+              title={t('browserDrawer.newTab')}
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          )}
           <button
             type="button"
-            className={cn(iconButton, 'mb-1.5')}
+            className={cn(iconButton, 'ml-auto mb-1.5')}
             onClick={() => setOpen(false)}
             aria-label={t('browserDrawer.close')}
             title={t('browserDrawer.close')}
@@ -244,6 +276,7 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
               </button>
             )}
             <input
+              ref={addressRef}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               onFocus={(event) => event.target.select()}
@@ -265,7 +298,7 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
         )}
 
         {/* The page */}
-        <div className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>{body}</div>
+        <div ref={pageAreaRef} className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>{body}</div>
 
         <div
           role="separator"

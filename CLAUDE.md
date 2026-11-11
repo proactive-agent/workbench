@@ -360,7 +360,11 @@ built-in's id (moved to `<id>-custom` when the settings are read).
 Runs' browsers are headless (`--headless` on every Playwright server's command line, also over a profile copy's config),
 so no browser window opens. Task runs' browsers stay that way, unseen; Claude chats' browsers are watched and driven in
 the **browser drawer** at the main window's right edge (`src/main/browser-drawer/`, `components/browser-drawer/`,
-`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
+`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button beside them opens a new tab in the shown tab's browser;
+Ctrl/Cmd+click and a middle click open links in new tabs as the browser itself does, the click's modifiers synced
+first; a tab the user opens, with + or right after clicking or typing in a page of that browser, is shown and focused,
+its address bar for +, while tabs Claude opens stay in the background; keys and buttons still down are released on
+their page when another tab shows or the focus leaves), a toolbar (back, forward,
 reload, address), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
 shows; Settings > Browser can hide it), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);

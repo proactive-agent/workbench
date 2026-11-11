@@ -96,6 +96,19 @@ function readStoredWidth(): number {
   }
 }
 
+/** How long after the user's input in a page a tab its browser opens counts as the user's (a link opened in a new tab, a popup) */
+const USER_TAB_WINDOW_MS = 5000;
+/** How long a tab the + button asked for may take to appear */
+const NEW_TAB_WINDOW_MS = 10_000;
+
+/** The page the user last clicked or typed in, and when (not state: nothing renders from it) */
+let lastDrawerInput: { pageId: string; at: number } | null = null;
+
+/** The user clicked or typed in a page of the drawer */
+export function noteDrawerInput(pageId: string): void {
+  lastDrawerInput = { pageId, at: Date.now() };
+}
+
 /** What a drawer context shows */
 interface DrawerView {
   open: boolean;
@@ -117,6 +130,16 @@ interface BrowserDrawerStore extends DrawerView {
   views: Record<string, DrawerView>;
   /** A new tab was asked for in this session: it is shown once it appears */
   newTabSessionId: string | null;
+  /** When the + button asked for it (a tab that never appeared doesn't count later) */
+  newTabAskedAt: number;
+  /**
+   * A tab that just opened and is shown (the + button, a link opened in a new tab, a page's popup):
+   * the drawer focuses it (its address bar for an empty one), then clears this
+   */
+  focusPageId: string | null;
+  /** Whether the + button asked for the tab focusPageId names (it takes the focus wherever it is) */
+  focusRequestedByUser: boolean;
+  clearFocusRequest: () => void;
   /** Each browser's bookmarks bar (its profile's), read once per browser */
   bookmarks: Record<string, BrowserBookmark[]>;
   loadBookmarks: (sessionId: string) => void;
@@ -156,6 +179,10 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   chatId: null,
   views: {},
   newTabSessionId: null,
+  newTabAskedAt: 0,
+  focusPageId: null,
+  focusRequestedByUser: false,
+  clearFocusRequest: () => set({ focusPageId: null, focusRequestedByUser: false }),
   bookmarks: {},
   loadBookmarks: (sessionId) => {
     if (sessionId in get().bookmarks) return;
@@ -190,7 +217,7 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
     const views = { ...current.views, [drawerViewKey(current.projectId, current.chatId)]: viewOf(current) };
     const next = views[drawerViewKey(projectId, chatId)] ?? CLOSED_VIEW;
     const selection = chooseSelectedPage(projectPages(current.state, projectId, chatId), next.selectedPageId, next.revealSessionId);
-    set({ projectId, chatId, views, ...next, ...selection, newTabSessionId: null });
+    set({ projectId, chatId, views, ...next, ...selection, newTabSessionId: null, focusPageId: null, focusRequestedByUser: false });
   },
   adoptChatView: (projectId, chatId) => {
     const current = get();
@@ -210,18 +237,27 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
     }
   },
   openNewTab: (sessionId) => {
-    set({ newTabSessionId: sessionId });
+    set({ newTabSessionId: sessionId, newTabAskedAt: Date.now() });
     window.electronAPI.newBrowserPage(sessionId);
   },
   receiveState: (state, projectId) => {
-    const { loaded, state: previous, selectedPageId, revealSessionId, chatId, newTabSessionId } = get();
+    const { loaded, state: previous, selectedPageId, revealSessionId, chatId, newTabSessionId, newTabAskedAt } = get();
     const started = loaded && state.available ? newProjectSessions(previous.sessions, state.sessions, projectId, chatId) : [];
     const newest = started[started.length - 1];
     const pending = revealSessionId && state.sessions.some((session) => session.id === revealSessionId) ? revealSessionId : null;
     const pages = projectPages(state, projectId, chatId);
-    // A tab the user just opened is shown
+    // A tab the user opened is shown: the one the + button asked for, else one the browser opened
+    // right after the user clicked or typed in a page of it (a link opened in a new tab, a popup).
+    // Tabs Claude opens, or a restored browser reopens, leave the tab shown alone
+    const now = Date.now();
     const known = new Set(previous.pages.map((page) => page.id));
-    const newTab = newTabSessionId ? pages.find((page) => page.sessionId === newTabSessionId && !known.has(page.id)) : undefined;
+    const wantsNewTab = newTabSessionId && now - newTabAskedAt < NEW_TAB_WINDOW_MS ? newTabSessionId : null;
+    const asked = wantsNewTab ? pages.find((page) => page.sessionId === wantsNewTab && !known.has(page.id)) : undefined;
+    const inputSession = lastDrawerInput && now - lastDrawerInput.at < USER_TAB_WINDOW_MS
+      ? previous.pages.find((page) => page.id === lastDrawerInput?.pageId)?.sessionId
+      : undefined;
+    const opened = loaded && inputSession ? pages.filter((page) => !known.has(page.id) && page.sessionId === inputSession) : [];
+    const newTab = asked ?? opened[opened.length - 1];
     const selection = newTab
       ? { selectedPageId: newTab.id, revealSessionId: null }
       : chooseSelectedPage(pages, selectedPageId, newest?.id ?? pending);
@@ -234,7 +270,8 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
       loaded: true,
       ...(gone.length ? { bookmarks: Object.fromEntries(Object.entries(bookmarks).filter(([id]) => live.has(id))) } : {}),
       ...selection,
-      ...(newTab ? { newTabSessionId: null } : {}),
+      ...(asked || (newTabSessionId && !wantsNewTab) ? { newTabSessionId: null } : {}),
+      ...(newTab ? { focusPageId: newTab.id, focusRequestedByUser: !!asked } : {}),
       ...(newest ? { open: true } : {}),
     });
   },

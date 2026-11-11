@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useBrowserDrawerStore, clampDrawerWidth, chooseSelectedPage, projectPages, BROWSER_DRAWER_MIN_WIDTH } from '../browser-drawer-store';
+import { useBrowserDrawerStore, clampDrawerWidth, chooseSelectedPage, noteDrawerInput, projectPages, BROWSER_DRAWER_MIN_WIDTH } from '../browser-drawer-store';
 import type { BrowserDrawerPage, BrowserDrawerSession } from '../../../shared/types/browser-drawer';
 
 const session = (id: string, projectId?: string, chatId?: string): BrowserDrawerSession => ({
@@ -12,7 +12,7 @@ describe('browser drawer store', () => {
     useBrowserDrawerStore.setState({
       open: false, loaded: false, selectedPageId: null, revealSessionId: null,
       state: { available: true, sessions: [], pages: [] },
-      projectId: 'app', chatId: null, views: {}, newTabSessionId: null,
+      projectId: 'app', chatId: null, views: {}, newTabSessionId: null, newTabAskedAt: 0, focusPageId: null, focusRequestedByUser: false,
     });
   });
 
@@ -125,7 +125,45 @@ describe('browser drawer store', () => {
     receiveState({ available: true, sessions, pages: [page('p1', 's')] }, 'app');
     openNewTab('s');
     receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')] }, 'app');
-    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p2', newTabSessionId: null });
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p2', newTabSessionId: null, focusPageId: 'p2', focusRequestedByUser: true });
     vi.unstubAllGlobals();
+  });
+
+  it('shows and focuses a tab its browser opens right after the user clicked in it, and leaves others in the background', () => {
+    vi.useFakeTimers();
+    const { receiveState } = useBrowserDrawerStore.getState();
+    const sessions = [session('s', 'app')];
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null });
+
+    // Claude opens a tab: the tab shown stays
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null });
+
+    // The user Ctrl+clicks a link in p1: the tab it opens is shown and focused
+    noteDrawerInput('p1');
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's'), page('p4', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p4', focusPageId: 'p4', focusRequestedByUser: false });
+    useBrowserDrawerStore.getState().clearFocusRequest();
+
+    // Long after the click, a new tab is Claude's again
+    vi.advanceTimersByTime(10_000);
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's'), page('p4', 's'), page('p5', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p4', focusPageId: null });
+    vi.useRealTimers();
+  });
+
+  it('forgets a + press whose tab never appeared', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { electronAPI: { newBrowserPage: () => {} } });
+    const { receiveState, openNewTab } = useBrowserDrawerStore.getState();
+    const sessions = [session('s', 'app')];
+    receiveState({ available: true, sessions, pages: [page('p1', 's')], connectedSessions: ['s'] }, 'app');
+    openNewTab('s');
+    vi.advanceTimersByTime(20_000);
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null, newTabSessionId: null });
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });
