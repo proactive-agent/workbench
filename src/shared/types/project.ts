@@ -10,6 +10,8 @@ export interface Project {
   settings: ProjectSettings;
   createdAt: Date;
   updatedAt: Date;
+  /** When a window last showed the project (the Projects page lists the latest first) */
+  lastOpenedAt?: Date;
 }
 
 /** What a project spent on one calendar day */

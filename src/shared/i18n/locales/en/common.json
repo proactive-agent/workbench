@@ -456,6 +456,7 @@
     "searchPlaceholder": "Search projects…",
     "closeSearch": "Close search",
     "sortBy": {
+      "recent": "Sort by last opened",
       "nameAsc": "Sort by name (A–Z)",
       "nameDesc": "Sort by name (Z–A)"
     },

@@ -276,6 +276,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   setActiveProject: (projectId) => {
+    // The project shown is the latest opened (the main process records it with the tab state)
+    if (projectId && projectId !== get().activeProjectId) {
+      set((state) => ({
+        projects: state.projects.map((p) => (p.id === projectId ? { ...p, lastOpenedAt: new Date() } : p))
+      }));
+    }
     set({ activeProjectId: projectId });
     // Also update selectedProjectId for backward compatibility
     get().selectProject(projectId);

@@ -95,7 +95,8 @@ export class ProjectStore {
           // Ensure project.path is always absolute (critical for dev mode path resolution)
           path: ensureAbsolutePath(p.path),
           createdAt: new Date(p.createdAt),
-          updatedAt: new Date(p.updatedAt)
+          updatedAt: new Date(p.updatedAt),
+          lastOpenedAt: p.lastOpenedAt ? new Date(p.lastOpenedAt) : undefined
         }));
         // Settings kept in the project's own settings file win over older copies in this list
         for (const project of data.projects as Project[]) {
@@ -239,6 +240,11 @@ export class ProjectStore {
   saveTabState(tabState: TabState): void {
     // Filter out any project IDs that no longer exist
     const validProjectIds = this.data.projects.map(p => p.id);
+    // A window showing another project: it is the latest opened
+    if (tabState.activeProjectId && tabState.activeProjectId !== this.data.tabState?.activeProjectId) {
+      const opened = this.data.projects.find((p) => p.id === tabState.activeProjectId);
+      if (opened) opened.lastOpenedAt = new Date();
+    }
     this.data.tabState = {
       openProjectIds: tabState.openProjectIds.filter(id => validProjectIds.includes(id)),
       activeProjectId: tabState.activeProjectId && validProjectIds.includes(tabState.activeProjectId)
