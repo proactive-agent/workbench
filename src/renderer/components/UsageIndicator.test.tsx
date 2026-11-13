@@ -46,6 +46,7 @@ vi.mock('react-i18next', () => ({
         'common:usage.compactDays': '{{days}}d {{hours}}h',
         'common:usage.resetsInLowerHours': 'resets in {{hours}}h {{minutes}}m',
         'common:usage.resetsInLowerDays': 'resets in {{days}}d {{hours}}h',
+        'common:usage.spendOfLimit': '{{used}} of {{limit}} this month',
       };
 
       if (params && Object.keys(params).length > 0) {
@@ -231,6 +232,34 @@ describe('UsageIndicator', () => {
 
       expect(await screen.findByText('Fable · Week')).toBeInTheDocument();
       expect(screen.getByText('18%')).toBeInTheDocument();
+    });
+
+    it("shows an Enterprise account's monthly spend limit instead of the 5-hour and weekly windows", async () => {
+      (window as any).electronAPI.requestUsageUpdate = vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          profileId: 'account-enterprise',
+          profileName: 'Enterprise',
+          sessionPercent: 54.488,
+          weeklyPercent: 54.488,
+          spendLimit: { used: 136.22, limit: 250, currency: 'USD' },
+          fetchedAt: new Date(),
+          needsReauthentication: false,
+        },
+      });
+
+      render(<UsageIndicator />);
+      const usageTrigger = await screen.findByRole('button', { name: 'common:usage.usageStatusAriaLabel' });
+      // One number in the badge: the share of the month's limit spent
+      await waitFor(() => expect(usageTrigger).toHaveTextContent(/^54%$/));
+      fireEvent.click(usageTrigger);
+
+      const breakdown = within(await screen.findByRole('dialog'));
+      expect(breakdown.getByText('54')).toBeInTheDocument();
+      expect(breakdown.getByText(/136\.22 of .*250\.00 this month/)).toBeInTheDocument();
+      // No window resets, and no weekly row
+      expect(breakdown.queryByText('Week')).not.toBeInTheDocument();
+      expect(breakdown.queryByText('common:usage.sessionNotStarted')).not.toBeInTheDocument();
     });
 
     it('shows a zero Fable limit rather than hiding the row', async () => {

@@ -28,6 +28,18 @@ export interface ClaudeUsageData {
  * Real-time usage snapshot for proactive monitoring
  * Returned from API or CLI usage check
  */
+/**
+ * A monthly spend limit, in the currency's major units (136.22 USD). Enterprise accounts have it
+ * instead of the 5-hour and weekly windows: no time restriction, only what may be spent in a month
+ */
+export interface UsageSpendLimit {
+  used: number;
+  /** The month's limit (null: no limit set) */
+  limit: number | null;
+  /** ISO 4217 code ('USD') */
+  currency: string;
+}
+
 export interface ClaudeUsageSnapshot {
   /** Session usage percentage (0-100) - represents 5-hour window for most providers */
   sessionPercent: number;
@@ -93,6 +105,11 @@ export interface ClaudeUsageSnapshot {
   weeklyUsageLimit?: number;
   /** True if profile has invalid refresh token and needs re-authentication */
   needsReauthentication?: boolean;
+  /**
+   * The account's monthly spend limit, when it has one instead of the 5-hour and weekly windows
+   * (Enterprise). sessionPercent and weeklyPercent then both hold the share of it spent
+   */
+  spendLimit?: UsageSpendLimit;
 }
 
 /**
@@ -130,6 +147,8 @@ export interface ProfileUsageSummary {
   fetchError?: string;
   /** True if profile has invalid refresh token and needs re-authentication */
   needsReauthentication?: boolean;
+  /** The monthly spend limit it has instead of the 5-hour and weekly windows (Enterprise) */
+  spendLimit?: UsageSpendLimit;
 }
 
 /**

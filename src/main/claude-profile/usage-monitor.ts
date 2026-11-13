@@ -12,7 +12,7 @@
 import { EventEmitter } from 'events';
 import { expandClaudeHome } from '../platform/claude-home';
 import { getClaudeProfileManager } from '../claude-profile-manager';
-import { ClaudeUsageSnapshot, ProfileUsageSummary, AllProfilesUsage } from '../../shared/types/agent';
+import { ClaudeUsageSnapshot, ProfileUsageSummary, AllProfilesUsage, type UsageSpendLimit } from '../../shared/types/agent';
 import { loadProfilesFile } from '../services/profile/profile-manager';
 import type { APIProfile } from '../../shared/types/profile';
 import { detectProvider as sharedDetectProvider, type ApiProvider } from '../../shared/utils/provider-detection';
@@ -189,6 +189,50 @@ interface ActiveProfileResult {
   isAPIProfile: boolean;
   baseUrl: string;
   credential?: string;
+}
+
+/** An amount of money as the usage API sends it: minor units and their exponent */
+function moneyAmount(value: any): number | undefined {
+  if (!value || typeof value.amount_minor !== 'number') return undefined;
+  const exponent = typeof value.exponent === 'number' ? value.exponent : 2;
+  return value.amount_minor / 10 ** exponent;
+}
+
+/**
+ * An account summary's spend limit: the one just fetched, else (the fetch failed, the stored
+ * percents stand in) the one it had, so an Enterprise account keeps showing its monthly limit
+ */
+function spendLimitOf(fetched: ClaudeUsageSnapshot | null, previous: ProfileUsageSummary | undefined): { spendLimit?: UsageSpendLimit } {
+  const spendLimit = fetched ? fetched.spendLimit : previous?.spendLimit;
+  return spendLimit ? { spendLimit } : {};
+}
+
+/**
+ * The monthly spend limit the usage API reports (`spend`, else the older `extra_usage`), when it
+ * is on. Enterprise accounts have it instead of the 5-hour and weekly windows
+ */
+function readSpendLimit(data: any): UsageSpendLimit | undefined {
+  const spend = data?.spend;
+  if (spend && spend.enabled !== false) {
+    const used = moneyAmount(spend.used);
+    if (used !== undefined) {
+      return {
+        used,
+        limit: moneyAmount(spend.limit) ?? null,
+        currency: spend.used.currency || spend.limit?.currency || 'USD',
+      };
+    }
+  }
+  const extra = data?.extra_usage;
+  if (extra?.is_enabled && typeof extra.used_credits === 'number') {
+    const scale = 10 ** (typeof extra.decimal_places === 'number' ? extra.decimal_places : 2);
+    return {
+      used: extra.used_credits / scale,
+      limit: typeof extra.monthly_limit === 'number' ? extra.monthly_limit / scale : null,
+      currency: extra.currency || 'USD',
+    };
+  }
+  return undefined;
 }
 
 /**
@@ -369,6 +413,7 @@ export class UsageMonitor extends EventEmitter {
         weeklyPercent: cached.weeklyPercent,
         sessionResetTimestamp: cached.sessionResetTimestamp,
         weeklyResetTimestamp: cached.weeklyResetTimestamp,
+        spendLimit: cached.spendLimit,
         fetchedAt: new Date(cached.lastFetchedAt),
         needsReauthentication: this.needsReauthProfiles.has(profileId)
       };
@@ -704,7 +749,8 @@ export class UsageMonitor extends EventEmitter {
           ),
           isActive: profile.id === activeProfileId,
           lastFetchedAt: inactiveUsage?.fetchedAt?.toISOString() ?? profile.usage?.lastUpdated?.toISOString(),
-          needsReauthentication: this.needsReauthProfiles.has(profile.id)
+          needsReauthentication: this.needsReauthProfiles.has(profile.id),
+          ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(profile.id)?.usage)
         };
 
         this.allProfilesUsageCache.set(profile.id, { usage: summary, fetchedAt: now });
@@ -758,7 +804,8 @@ export class UsageMonitor extends EventEmitter {
             ),
             isActive: sibling.profile.id === activeProfileId,
             lastFetchedAt: inactiveUsage?.fetchedAt?.toISOString() ?? sibling.profile.usage?.lastUpdated?.toISOString(),
-            needsReauthentication: this.needsReauthProfiles.has(sibling.profile.id)
+            needsReauthentication: this.needsReauthProfiles.has(sibling.profile.id),
+            ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(sibling.profile.id)?.usage)
           };
 
           this.allProfilesUsageCache.set(sibling.profile.id, { usage: summary, fetchedAt: now });
@@ -956,7 +1003,8 @@ export class UsageMonitor extends EventEmitter {
       ),
       isActive: profile.id === profileManager.getActiveProfile()?.id,
       lastFetchedAt: usage.fetchedAt?.toISOString(),
-      needsReauthentication: this.needsReauthProfiles.has(profile.id)
+      needsReauthentication: this.needsReauthProfiles.has(profile.id),
+      ...(usage.spendLimit ? { spendLimit: usage.spendLimit } : {})
     };
   }
 
@@ -1739,6 +1787,23 @@ export class UsageMonitor extends EventEmitter {
     let fablePercent: number | undefined;
     let fableResetTimestamp: string | undefined;
     let fableModelName: string | undefined;
+
+    // Enterprise accounts have no 5-hour or weekly window, only a monthly spend limit: both
+    // percents are the share of it spent, so ranking and the tray follow the one limit there is
+    const spendLimit = data.five_hour == null && data.seven_day == null ? readSpendLimit(data) : undefined;
+    if (spendLimit) {
+      const percent = spendLimit.limit ? Math.min(100, (spendLimit.used / spendLimit.limit) * 100) : 0;
+      return {
+        sessionPercent: percent,
+        weeklyPercent: percent,
+        profileId,
+        profileName,
+        profileEmail,
+        fetchedAt: new Date(),
+        limitType: 'weekly',
+        spendLimit,
+      };
+    }
 
     // Check for new nested format first
     if (data.five_hour !== undefined || data.seven_day !== undefined) {

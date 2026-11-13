@@ -665,6 +665,8 @@
     "needsSignIn": "Needs to sign in again",
     "rateLimited": "Rate limited",
     "usage": "Session {{session}}% · Weekly {{weekly}}%",
+    "spendUsage": "{{used}} of {{limit}} this month",
+    "spendNoLimit": "{{used}} spent this month",
     "add": "Add Claude account",
     "addButton": "Add",
     "addDescription": "Opens a terminal with claude auth login",

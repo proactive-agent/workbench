@@ -318,7 +318,11 @@
     "resetsInLowerDays": "resets in {{days}}d {{hours}}h",
     "sessionNotStarted": "starts when a message is sent",
     "heartsLeft": "{{percent}}% of the 5-hour limit left",
-    "weekScoped": "{{model}} · Week"
+    "weekScoped": "{{model}} · Week",
+    "heartsLeftSpend": "{{percent}}% of the monthly spend limit left",
+    "spendOfLimit": "{{used}} of {{limit}} this month",
+    "spendNoLimit": "{{used}} spent this month, no limit set",
+    "spendShort": "Monthly spend limit"
   },
   "oauth": {
     "enterCode": "Manual Code Entry (Fallback)",

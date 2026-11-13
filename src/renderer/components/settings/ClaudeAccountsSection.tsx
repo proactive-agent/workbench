@@ -27,6 +27,7 @@ import { SettingsRow } from './SettingsRow';
 import { DetectedAccountDialog } from './DetectedAccountDialog';
 import { useClaudeAccounts } from './hooks/useClaudeAccounts';
 import { switchClaudeAccount, useWindowClaudeAccountId } from '../../hooks/useWindowClaudeAccount';
+import { formatSpend } from '../usage/spend-limit';
 import { useSettingsStore } from '../../stores/settings-store';
 import type { ClaudeProfile } from '../../../shared/types';
 
@@ -180,10 +181,19 @@ export function ClaudeAccountsSection() {
     if (summary?.isRateLimited) parts.push(t('claudeAccounts.rateLimited'));
     // Usage only once it was fetched for this account (lastFetchedAt): never placeholder zeros
     if (summary && summary.isAuthenticated && !summary.fetchError && summary.lastFetchedAt) {
-      parts.push(t('claudeAccounts.usage', {
-        session: Math.round(summary.sessionPercent),
-        weekly: Math.round(summary.weeklyPercent)
-      }));
+      const spend = summary.spendLimit;
+      // Enterprise: a monthly spend limit instead of the session and weekly windows
+      if (spend) {
+        const used = formatSpend(spend.used, spend.currency);
+        parts.push(spend.limit
+          ? t('claudeAccounts.spendUsage', { used, limit: formatSpend(spend.limit, spend.currency) })
+          : t('claudeAccounts.spendNoLimit', { used }));
+      } else {
+        parts.push(t('claudeAccounts.usage', {
+          session: Math.round(summary.sessionPercent),
+          weekly: Math.round(summary.weeklyPercent)
+        }));
+      }
     }
     return parts.join(' · ');
   };

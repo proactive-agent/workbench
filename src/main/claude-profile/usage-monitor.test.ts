@@ -1101,6 +1101,56 @@ describe('usage-monitor', () => {
       });
     });
 
+    describe('Enterprise monthly spend limit', () => {
+      // The shape the live API returns for an Enterprise account: no 5-hour or weekly window,
+      // only what may be spent in a month
+      const enterpriseData = {
+        five_hour: null,
+        seven_day: null,
+        seven_day_opus: null,
+        extra_usage: {
+          is_enabled: true, monthly_limit: 25000, used_credits: 13622.0, utilization: 54.488,
+          currency: 'USD', decimal_places: 2
+        },
+        limits: [],
+        spend: {
+          used: { amount_minor: 13622, currency: 'USD', exponent: 2 },
+          limit: { amount_minor: 25000, currency: 'USD', exponent: 2 },
+          percent: 54,
+          enabled: true
+        }
+      };
+
+      it('reads the spend limit, and both percents are the share of it spent', () => {
+        const usage = getUsageMonitor()['normalizeAnthropicResponse'](enterpriseData, 'p', 'Enterprise');
+
+        expect(usage.spendLimit).toEqual({ used: 136.22, limit: 250, currency: 'USD' });
+        expect(usage.sessionPercent).toBeCloseTo(54.488);
+        expect(usage.weeklyPercent).toBeCloseTo(54.488);
+        expect(usage.sessionResetTimestamp).toBeUndefined();
+        expect(usage.weeklyResetTimestamp).toBeUndefined();
+      });
+
+      it('falls back to extra_usage when spend is missing', () => {
+        const { spend: _spend, ...older } = enterpriseData;
+        const usage = getUsageMonitor()['normalizeAnthropicResponse'](older, 'p', 'Enterprise');
+
+        expect(usage.spendLimit).toEqual({ used: 136.22, limit: 250, currency: 'USD' });
+      });
+
+      it('leaves accounts with windows as they are, extra usage or not', () => {
+        const usage = getUsageMonitor()['normalizeAnthropicResponse'](
+          { ...enterpriseData, five_hour: { utilization: 9, resets_at: '2026-10-19T15:30:00Z' }, seven_day: { utilization: 10 } },
+          'p',
+          'Team'
+        );
+
+        expect(usage.spendLimit).toBeUndefined();
+        expect(usage.sessionPercent).toBe(9);
+        expect(usage.weeklyPercent).toBe(10);
+      });
+    });
+
     describe('Fable (premium model) weekly bucket', () => {
       it('should read the model-scoped entry of the limits array', () => {
         const monitor = getUsageMonitor();

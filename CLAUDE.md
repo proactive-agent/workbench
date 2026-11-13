@@ -601,7 +601,9 @@ borderless selects, or dropdown menus (no collapsible rows). UI copy conventions
 trailing period in setting descriptions, and no green check / red x status icons (state the status in text).
 
 **Usage popover** — The header's usage indicator (`UsageIndicator.tsx`) opens `components/usage/`: the 5-hour limit
-under Clawd's pixel sky (local time, moon phase, seasonal decor; `usage/clawd/`) and the weekly limits. Loading
+under Clawd's pixel sky (local time, moon phase, seasonal decor; `usage/clawd/`) and the weekly limits. Enterprise
+accounts have neither window, only a monthly spend limit (the usage API's `spend`, `ClaudeUsageSnapshot.spendLimit`):
+the badge, the popover and the Accounts row show the share and amount spent of it instead. Loading
 overlays use `AgentLoader` (`ui/agent-loader.tsx`, the live agent node bouncing) instead of a spinner.
 
 **IPC** — Handlers in `src/main/ipc-handlers/` (by domain), safe APIs exposed in `src/preload/`, renderer calls

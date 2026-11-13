@@ -1,5 +1,6 @@
 /**
- * The three hearts in the popover's header: how much of the 5-hour limit is left.
+ * The three hearts in the popover's header: how much of the 5-hour limit is left (an Enterprise
+ * account's monthly spend limit, which it has instead).
  *
  * Smooth vector hearts that fill from the left in the pixel heart's column steps, so the three
  * together read to about 5% rather than snapping to thirds. The last hearts beat.
@@ -27,14 +28,16 @@ interface HeartsProps {
   fraction: number | null;
   /** Scale of the beat */
   beat: number;
+  /** The limit is a monthly spend limit (Enterprise), not the 5-hour one */
+  spend?: boolean;
 }
 
-export function Hearts({ fraction, beat }: HeartsProps) {
+export function Hearts({ fraction, beat, spend = false }: HeartsProps) {
   const { t } = useTranslation(['common']);
   const uid = useId().replace(/:/g, '');
   if (fraction == null) return null;
 
-  const title = t('common:usage.heartsLeft', { percent: Math.round(fraction * 100) });
+  const title = t(spend ? 'common:usage.heartsLeftSpend' : 'common:usage.heartsLeft', { percent: Math.round(fraction * 100) });
 
   return (
     <div className="flex items-center gap-[2.5px]" title={title}>
