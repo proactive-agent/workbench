@@ -1,36 +1,36 @@
 /**
- * The window's close button while Workbench can keep running in the background (tray): asks
- * whether to keep it running there or quit (this window when others are open, else Workbench).
- * The main process asks (index.ts) and acts on the answer (window-handlers.ts).
+ * The window's close button while other project windows are open and Workbench can keep running
+ * in the background (tray): asks whether to keep this window running there or close its project.
+ * The main process asks (index.ts; the only window just hides) and acts on the answer
+ * (window-handlers.ts).
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { WindowCloseChoice, WindowCloseRequest } from '../../shared/types';
+import type { WindowCloseChoice } from '../../shared/types';
 import { Button } from './ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 
 export function CloseWindowDialog() {
   const { t } = useTranslation('dialogs');
-  const [request, setRequest] = useState<WindowCloseRequest | null>(null);
+  const [asked, setAsked] = useState(false);
 
-  useEffect(() => window.electronAPI.onWindowCloseRequested(setRequest), []);
+  useEffect(() => window.electronAPI.onWindowCloseRequested(() => setAsked(true)), []);
 
   const choose = (choice: WindowCloseChoice) => {
-    setRequest(null);
+    setAsked(false);
     void window.electronAPI.chooseWindowClose(choice);
   };
 
-  const otherWindows = request?.otherWindows === true;
   return (
-    <Dialog open={request !== null} onOpenChange={(open) => !open && setRequest(null)}>
+    <Dialog open={asked} onOpenChange={(open) => !open && setAsked(false)}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{t(otherWindows ? 'closeWindow.titleWindow' : 'closeWindow.title')}</DialogTitle>
+          <DialogTitle>{t('closeWindow.title')}</DialogTitle>
           <DialogDescription>{t('closeWindow.description')}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
           <Button variant="ghost" size="sm" onClick={() => choose('quit')}>
-            {t(otherWindows ? 'closeWindow.closeWindow' : 'closeWindow.quit')}
+            {t('closeWindow.closeProject')}
           </Button>
           <Button size="sm" autoFocus onClick={() => choose('background')}>
             {t('closeWindow.keepRunning')}

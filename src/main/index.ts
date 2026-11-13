@@ -443,11 +443,11 @@ function createWindow(assignedProjectId: string | null = null, restored: Restore
   }
   const recovery: RendererRecoveryState = { attempts: 0, windowStart: 0 };
 
-  // Background mode: closing a window asks first (CloseWindowDialog). Kept running, it hides to
-  // the tray: agents and terminals keep running and its project stays open, so the tray still
-  // lists it and selecting it brings the window back. Quitting there, or "Quit window" on a
-  // project card, closes a window for real, and real quits (tray "Quit", OS quit) set isQuitting
-  // first and close normally.
+  // Background mode: closing a window hides it to the tray (with other project windows open, it
+  // asks first, CloseWindowDialog): agents and terminals keep running and its project stays open,
+  // so the tray still lists it and selecting it brings the window back. Closing the project there,
+  // or "Quit window" on a project card, closes a window for real, and real quits (tray "Quit", OS
+  // quit) set isQuitting first and close normally.
   appWindow.on('close', (event) => {
     const hideToTray =
       !isQuitting &&
@@ -456,16 +456,17 @@ function createWindow(assignedProjectId: string | null = null, restored: Restore
       !isClosingForReal(appWindow.id);
     if (!hideToTray) return;
     event.preventDefault();
-    // The window asks whether to keep running in the background or quit (WINDOW_CLOSE_CHOICE);
-    // a renderer that can't show the question hides the window as before
+    // With other project windows open, the window asks whether to keep running in the background
+    // or close its project (WINDOW_CLOSE_CHOICE); the only window, or a renderer that can't show
+    // the question, hides to the tray
     const contents = appWindow.webContents;
-    if (contents.isCrashed() || contents.isLoading()) {
+    if (!hasOtherWindows(appWindow.id) || contents.isCrashed() || contents.isLoading()) {
       appWindow.hide();
       return;
     }
     if (appWindow.isMinimized()) appWindow.restore();
     appWindow.focus();
-    contents.send(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED, { otherWindows: hasOtherWindows(appWindow.id) });
+    contents.send(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED);
   });
   appWindow.on('show', () => appTray?.refresh());
   appWindow.on('hide', () => appTray?.refresh());
