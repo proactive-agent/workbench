@@ -436,7 +436,10 @@ to the drawer's page area (debounced on resize; the agent sees that size too) an
 (`page.screencast`, quality 100; one that didn't start is tried again, and one without a frame yet starts again
 once its page loads) to that window only, one at a time: the window acknowledges each frame it draws
 (`BROWSER_DRAWER_FRAME_DRAWN`), the next waits for that (or a second), and frames waiting meanwhile are replaced by
-newer ones, so the browser makes no more frames than the drawer draws. Frames are drawn on a canvas at their CSS size,
+newer ones, so the browser makes no more frames than the drawer draws. A Chromium page hidden while its screencast runs
+(another tab came to the front: an extension's popup tab, one Claude opened) and shown again sends frames of the window's
+size, not its viewport's, which the drawer would show scaled: such frames are left out and the viewport is set one pixel
+wider and back, which brings them back (`staleChromiumFrame`; after three tries they pass as they come). Frames are drawn on a canvas at their CSS size,
 the viewport a whole, even number of device pixels (`alignedViewportLength`) and the canvas moved onto whole device
 pixels, since at a fractional devicePixelRatio (1.25, 1.5) anything else resamples the frame and blurs its text. The
 canvas's mouse, wheel, keys and pasted text are replayed with `page.mouse` / `page.keyboard` from a queue per page,

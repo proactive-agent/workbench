@@ -133,6 +133,59 @@ describe('browser bridge script', () => {
     expect(mouse).toEqual([{ move: 1 }, { move: 4 }, { move: 5 }, { down: true }]);
   });
 
+  it("leaves out a Chromium page's frames of the window's size and sets its viewport again until they fit", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    // Chromium, whose page was hidden and shown again: its frames are of the window's size (1280 wide)
+    // until its viewport changes
+    await writeFile(
+      lib,
+      FAKE_PLAYWRIGHT.replace('let front = false;', 'let front = true;\nlet stale = true;')
+        .replace('    viewport = size;\n', '    if (size.width !== viewport.width) stale = false;\n    viewport = size;\n')
+        .replace(
+          `setTimeout(() => {
+        for (const n of [1, 2, 3]) {
+          Promise.resolve(onFrame({ data: new Uint8Array([n]), viewportWidth: 0, viewportHeight: 0 })).then(() => log({ acked: n }));
+        }
+      }, 50);`,
+          `let n = 0;
+      const timer = setInterval(() => {
+        n++;
+        const width = stale ? 1280 : viewport.width;
+        onFrame({ data: new Uint8Array([n, width === viewport.width ? 1 : 0]), viewportWidth: width, viewportHeight: viewport.height });
+        if (n > 40) clearInterval(timer);
+      }, 30);`
+        )
+        .replace('connect: async () => ({ contexts', 'connect: async () => ({ browserType: () => ({ name: () => "chromium" }), contexts')
+    );
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    const fitting: number[] = [];
+    let pageId: string | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'frame') {
+        fitting.push(message.data[1]);
+        bridge?.send({ type: 'frameAck', pageId: message.pageId });
+      }
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 800, height: 600, scale: 1 });
+
+    await until(() => fitting.length > 0);
+    // Only frames of the page's size reach the drawer, once its viewport was set one pixel wider and back
+    expect(fitting.every((fits) => fits === 1)).toBe(true);
+    const resized = (await calls()).filter((call) => 'resized' in call).map((call) => call.resized);
+    expect(resized).toEqual([801, 800]);
+  });
+
   it('shows a background tab at once: brought to the front on a switch, not on a resize unless it stalls', async () => {
     dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
     const lib = path.join(dir, 'fake-playwright.cjs');

@@ -337,6 +337,8 @@ async function startCast(pageId) {
           const current = casts.get(pageId);
           if (!current || current.viewers.size === 0) return;
           current.framed = true;
+          // A frame of the window's size, not the page's: dropped while the viewport is set again
+          if (staleChromiumFrame(pageId, entry, viewportWidth, viewportHeight)) return;
           // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
           const css = pageViewport(entry) || { width: viewportWidth, height: viewportHeight };
           const frame = { data, width: css.width, height: css.height };
@@ -365,6 +367,41 @@ async function startCast(pageId) {
   }
   log(`The screencast of ${pageId} didn't start; trying again`);
   retryCast(pageId);
+}
+
+/** How long after setting a page's viewport again its frames may still be of the window's size */
+const VIEWPORT_RESET_GRACE_MS = 1000;
+/** How many times in a row it is set again before such frames are shown as they come (it never helped) */
+const VIEWPORT_RESET_TRIES = 3;
+
+/**
+ * Chromium: once a page's tab was hidden while its screencast ran (another tab came to the front:
+ * one Claude or an extension opened, a tab switch) and is shown again, its frames are of the
+ * browser window's size rather than the page's viewport (the page itself keeps its viewport), so
+ * the drawer shows it scaled. Setting the viewport again brings them back, but only a change
+ * counts: one pixel wider, then back. Whether this frame is such a one (the drawer leaves it out)
+ */
+function staleChromiumFrame(pageId, entry, viewportWidth, viewportHeight) {
+  if (entry.keepsViewport || sessions.get(entry.sessionId)?.browser.browserType?.().name() !== 'chromium') return false;
+  const viewport = entry.page.viewportSize();
+  if (!viewport || (Math.abs(viewportWidth - viewport.width) <= 1 && Math.abs(viewportHeight - viewport.height) <= 1)) {
+    entry.viewportResets = 0;
+    return false;
+  }
+  if ((entry.viewportResets ?? 0) >= VIEWPORT_RESET_TRIES) return false;
+  const now = Date.now();
+  if (!entry.viewportResetAt || now - entry.viewportResetAt > VIEWPORT_RESET_GRACE_MS) {
+    entry.viewportResetAt = now;
+    entry.viewportResets = (entry.viewportResets ?? 0) + 1;
+    enqueue(async () => {
+      const current = entry.page.viewportSize();
+      if (!current || !pages.has(pageId)) return;
+      await bounded(entry.page.setViewportSize({ width: current.width + 1, height: current.height }).catch(() => undefined), COMMAND_TIMEOUT_MS);
+      await bounded(entry.page.setViewportSize(current).catch(() => undefined), COMMAND_TIMEOUT_MS);
+      entry.viewportResetAt = Date.now();
+    });
+  }
+  return true;
 }
 
 /** How often, and how many times, a screencast that didn't start is tried again */
