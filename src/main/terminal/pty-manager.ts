@@ -445,7 +445,22 @@ export function writeToPty(terminal: TerminalProcess, data: string): void {
  * @param rows New row count
  * @returns true if resize was successful, false otherwise
  */
+/**
+ * How long a same-size resize keeps the PTY one column narrower: the program must see that size
+ * before the real one comes back. Node reads the size when it handles SIGWINCH, so two resizes in
+ * a row reach Claude Code as one, at the size it already had, and it never redraws
+ */
+const SIGWINCH_CYCLE_MS = 200;
+/** The PTYs waiting to get their size back after a same-size resize, by terminal id */
+const pendingSizeRestores = new Map<string, ReturnType<typeof setTimeout>>();
+
 export function resizePty(terminal: TerminalProcess, cols: number, rows: number): boolean {
+  // A newer size replaces the one a same-size resize was about to restore
+  const pending = pendingSizeRestores.get(terminal.id);
+  if (pending) {
+    clearTimeout(pending);
+    pendingSizeRestores.delete(terminal.id);
+  }
   if (terminal.hasExited) {
     debugError('[PtyManager] Resize skipped for exited terminal:', terminal.id);
     return false;
@@ -466,9 +481,21 @@ export function resizePty(terminal: TerminalProcess, cols: number, rows: number)
     // changes. This matters after project switch: PTY persists with old dimensions,
     // terminal remounts at same size, TUI apps (Claude Code) never get SIGWINCH
     // and never redraw — leaving the terminal blank.
-    if (prevCols === cols && prevRows === rows) {
+    // The narrower size and the real one are set apart (SIGWINCH_CYCLE_MS), so Claude Code sees
+    // both and redraws (a window shown again after the Projects page stayed blank otherwise)
+    if (prevCols === cols && prevRows === rows && cols > 1) {
       debugLog('[PtyManager] Same-dimension resize detected, forcing SIGWINCH cycle for terminal:', terminal.id);
-      terminal.pty.resize(Math.max(1, cols - 1), rows);
+      terminal.pty.resize(cols - 1, rows);
+      pendingSizeRestores.set(terminal.id, setTimeout(() => {
+        pendingSizeRestores.delete(terminal.id);
+        if (terminal.hasExited) return;
+        try {
+          terminal.pty.resize(cols, rows);
+        } catch (error) {
+          debugError('[PtyManager] Size restore failed for terminal:', terminal.id, 'error:', error);
+        }
+      }, SIGWINCH_CYCLE_MS));
+      return true;
     }
 
     debugLog('[PtyManager] Resizing PTY - terminal:', terminal.id, 'from:', prevCols, 'x', prevRows, 'to:', cols, 'x', rows);
