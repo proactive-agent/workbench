@@ -85,6 +85,8 @@
     "openAsChatBusy": "Wait for Claude to finish",
     "receiving": "Answering {{title}} · read-only",
     "receivingTitle": "This window is answering a message from the chat {{title}} ({{name}}). Your keys are ignored until it's done",
+    "sharing": "{{title}} is replying · read-only",
+    "sharingTitle": "The chat {{title}} ({{name}}) is replying in this window's session. Your keys are ignored until its reply ends; the window then takes it up",
     "takeOver": "Take over",
     "openAsChatErrors": {
       "projectNotFound": "This window's project isn't open",

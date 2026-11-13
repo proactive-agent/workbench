@@ -23,7 +23,7 @@ import { safeSendToRenderer } from '../ipc-handlers/utils';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { SESSION_SAVE_INTERVAL_MS } from '../terminal-session-store';
-import { setWindowSource } from '../session-messaging/directory';
+import { setWindowSessionReopener, setWindowSource } from '../session-messaging/directory';
 import { closeWindowTools } from '../session-messaging/window-tools';
 import { setReceivingHooks } from '../session-messaging/receiving';
 import { setAgentWindowOpener } from '../session-messaging/agent-windows';
@@ -41,6 +41,9 @@ export class TerminalManager {
 
     // The project's chats and agent windows message each other: the windows are these terminals
     setWindowSource(() => [...this.terminals.values()]);
+    // A window sharing a chat's session takes up the chat's turns by resuming it again
+    setWindowSessionReopener((terminalId, sessionId) =>
+      this.openClaudeSession(terminalId, sessionId, this.terminals.get(terminalId)?.dangerouslySkipPermissions));
     // A closed window a chat messages opens again; a window answering a message is read-only
     setAgentWindowOpener((request) => safeSendToRenderer(this.getWindow, IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, request));
     setReceivingHooks({
@@ -193,7 +196,7 @@ export class TerminalManager {
    */
   async resumeTaskSessionAsync(
     id: string,
-    options: { sessionId: string; cwd: string; profileId?: string; configDir?: string },
+    options: { sessionId: string; cwd: string; profileId?: string; configDir?: string; own?: boolean },
     dangerouslySkipPermissions?: boolean
   ): Promise<void> {
     const terminal = this.terminals.get(id);
@@ -207,7 +210,7 @@ export class TerminalManager {
       options.profileId,
       this.getWindow,
       dangerouslySkipPermissions,
-      { resumeSessionId: options.sessionId, configDir: options.configDir }
+      { resumeSessionId: options.sessionId, configDir: options.configDir, own: options.own === true }
     );
   }
 

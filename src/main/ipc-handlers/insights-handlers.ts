@@ -27,6 +27,8 @@ import { ChatCommandsListError, listChatCommands } from "../insights/chat-comman
 import { appLog } from "../app-logger";
 import { findWindow } from "../session-messaging/directory";
 import { windowChatSource } from "../session-messaging/window-session";
+import { sessionWindow } from "../session-messaging/shared-session";
+import type { SharedSessionWindow } from "../../shared/types/insights";
 import { parseSessionName } from "../../shared/utils/session-names";
 import type { ThinkingLevel } from "../../shared/types/settings";
 
@@ -480,6 +482,29 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
         appLog.warn("[Insights] Could not open an agent window as a chat:", error);
         return { success: false, error: "failed" satisfies OpenWindowAsChatError };
       }
+    }
+  );
+
+  // The agent window running a Claude Code session of the project (a chat's, opened with its Clawd
+  // button), or null: the chat shows that window instead of opening another, and waits while it works
+  ipcMain.handle(
+    IPC_CHANNELS.INSIGHTS_SESSION_WINDOW,
+    async (_, projectId: string, claudeSessionId: string): Promise<IPCResult<SharedSessionWindow | null>> => {
+      const project = projectStore.getProject(projectId);
+      if (!project || typeof claudeSessionId !== "string") return { success: false, error: "Project not found" };
+      const found = await sessionWindow(project.path, claudeSessionId).catch(() => undefined);
+      return { success: true, data: found ? { terminalId: found.terminal.id, busy: found.busy } : null };
+    }
+  );
+
+  // What an agent window said in a chat's session since the chat's last reply comes into the chat
+  // (the window's turn ended); whether the chat changed
+  ipcMain.handle(
+    IPC_CHANNELS.INSIGHTS_SYNC_SHARED_SESSION,
+    async (_, projectId: string, chatId: string): Promise<IPCResult<boolean>> => {
+      const project = projectStore.getProject(projectId);
+      if (!project || typeof chatId !== "string") return { success: false, error: "Project not found" };
+      return { success: true, data: await insightsService.syncSharedSession(projectId, project.path, chatId) };
     }
   );
 

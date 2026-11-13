@@ -263,7 +263,8 @@
     "agentWindow": {
       "open": "Open agent",
       "replying": "Wait for the reply to finish",
-      "noRoom": "This project has no room for another agent window"
+      "noRoom": "This project has no room for another agent window",
+      "working": "The agent window {{name}} is working in this chat's session: send once it is done"
     },
     "slashCommands": {
       "label": "Slash commands and skills",

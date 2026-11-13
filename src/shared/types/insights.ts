@@ -59,10 +59,21 @@ export type OpenWindowAsChatError = 'projectNotFound' | 'windowNotFound' | 'noSe
  * Where a chat message from another of the user's sessions came from (a chat or an agent window
  * of the project, by its stable name: shared/utils/session-names.ts)
  */
+/** The agent window running a chat's Claude Code session too, and whether its Claude Code is working */
+export interface SharedSessionWindow {
+  terminalId: string;
+  busy: boolean;
+}
+
 export interface SessionMessageOrigin {
   kind: 'chat' | 'agent';
   name: string;
   title?: string;
+  /**
+   * Set on what makes an agent window read-only when it is a chat replying in the window's own
+   * Claude Code session (the two share it), rather than a message the window answers
+   */
+  sharing?: boolean;
 }
 
 type InsightsChatRole = 'user' | 'assistant';

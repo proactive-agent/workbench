@@ -10,6 +10,9 @@
  * arrives, and every few seconds from `claude agents` (its session's status), which a missed
  * footer can't fool. A window that never starts working is given back after a while, and none
  * stays read-only longer than MAX_MS.
+ *
+ * A window running a chat's own Claude Code session (shared-session.ts) is read-only the same way
+ * while that chat replies in the session (holdForChatReply), until the reply ends.
  */
 import type { SessionMessageOrigin } from '../../shared/types';
 
@@ -31,6 +34,8 @@ interface Receiving {
 }
 
 const receiving = new Map<string, Receiving>();
+/** Windows running the session a chat is replying in, by window: the chat (read-only until the reply ends) */
+const chatHolds = new Map<string, SessionMessageOrigin>();
 
 let notify: (terminalId: string, from: SessionMessageOrigin | null) => void = () => {};
 let busyNow: (terminalId: string) => boolean = () => false;
@@ -85,12 +90,16 @@ const cursorAsked = new Map<string, number>();
 
 /** The window's program asked for the cursor position (its output had `\x1b[6n`) */
 export function noteCursorQuery(terminalId: string): void {
-  if (receiving.has(terminalId)) cursorAsked.set(terminalId, Date.now());
+  if (isReadOnly(terminalId)) cursorAsked.set(terminalId, Date.now());
+}
+
+function isReadOnly(terminalId: string): boolean {
+  return receiving.has(terminalId) || chatHolds.has(terminalId);
 }
 
 /** Whether input the window's xterm sent goes to its program: always, except the user's while read-only */
 export function acceptsWindowInput(terminalId: string, data: string): boolean {
-  if (!receiving.has(terminalId) || TERMINAL_REPLY.test(data)) return true;
+  if (!isReadOnly(terminalId) || TERMINAL_REPLY.test(data)) return true;
   if (!CURSOR_REPORT.test(data)) return false;
   const asked = cursorAsked.get(terminalId);
   cursorAsked.delete(terminalId);
@@ -138,14 +147,40 @@ export function receivingBusyChanged(terminalId: string, isBusy: boolean): void 
   }
 }
 
-/** Give the window back: answered, taken over, Claude Code exited or the window closed */
+/** The window answered the message: given back, unless a chat is replying in its session */
 export function stopReceiving(terminalId: string): void {
   const entry = receiving.get(terminalId);
   if (!entry) return;
   clearTimers(entry);
   receiving.delete(terminalId);
-  cursorAsked.delete(terminalId);
-  notify(terminalId, null);
+  const hold = chatHolds.get(terminalId);
+  if (!hold) cursorAsked.delete(terminalId);
+  notify(terminalId, hold ? { ...hold, sharing: true } : null);
+}
+
+/** A chat replies in the session the window runs: read-only until releaseChatReply */
+export function holdForChatReply(terminalId: string, from: SessionMessageOrigin): void {
+  chatHolds.set(terminalId, from);
+  // A message it is answering shows first: the window is read-only either way
+  if (!receiving.has(terminalId)) notify(terminalId, { ...from, sharing: true });
+}
+
+/** The chat's reply in the window's session ended */
+export function releaseChatReply(terminalId: string): void {
+  if (!chatHolds.delete(terminalId)) return;
+  const entry = receiving.get(terminalId);
+  if (!entry) cursorAsked.delete(terminalId);
+  notify(terminalId, entry ? entry.from : null);
+}
+
+/** Give the window back at once, whatever made it read-only: taken over, Claude Code exited or the window closed */
+export function releaseWindow(terminalId: string): void {
+  chatHolds.delete(terminalId);
+  if (receiving.has(terminalId)) stopReceiving(terminalId);
+  else {
+    cursorAsked.delete(terminalId);
+    notify(terminalId, null);
+  }
 }
 
 function clearTimers(entry: Receiving): void {

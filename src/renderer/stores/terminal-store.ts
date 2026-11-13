@@ -296,7 +296,11 @@ interface TerminalState {
    * asks the app to show the Agents page. Returns null when the project has no room for another
    * window.
    */
-  openProjectSession: (request: { projectPath: string; title: string; sessionId: string; profileId?: string }) => Terminal | null;
+  /**
+   * Show a Claude chat's session in an agent window: the window running it already (`terminalId`,
+   * resumed there when it is back at its shell), else a new window resuming it as its own
+   */
+  openProjectSession: (request: { projectPath: string; title: string; sessionId: string; profileId?: string; terminalId?: string | null }) => Terminal | null;
   /**
    * Open a closed agent window again under its own id (so its name stays the same), resuming its
    * last session, without leaving the page the user is on: a chat messages it. A window restored at
@@ -750,11 +754,31 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   openProjectSession: (request) => {
+    const showAgents = () => set((state) => ({
+      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
+    }));
+    const existing = request.terminalId ? get().terminals.find((t) => t.id === request.terminalId && t.status !== 'exited') : undefined;
+    if (existing) {
+      // Back at its shell (Claude Code exited): the session resumes in it
+      if (!existing.isCLIMode && existing.status === 'running') {
+        get().setCLIMode(existing.id, true);
+        window.electronAPI.resumeTaskSessionInTerminal(existing.id, {
+          sessionId: request.sessionId,
+          profileId: request.profileId,
+          cwd: existing.cwd || request.projectPath,
+          own: true,
+        });
+      }
+      get().setActiveTerminal(existing.id);
+      showAgents();
+      return get().getTerminal(existing.id) ?? existing;
+    }
     const terminal = get().addTerminal(request.projectPath, request.projectPath, { launchCLI: true });
     if (terminal) {
       get().updateTerminal(terminal.id, {
         title: request.title,
-        pendingTaskSession: { sessionId: request.sessionId, profileId: request.profileId }
+        // The chat's session becomes the window's own: found as the window's and resumed when restored
+        pendingTaskSession: { sessionId: request.sessionId, profileId: request.profileId, own: true }
       });
     }
     set((state) => ({

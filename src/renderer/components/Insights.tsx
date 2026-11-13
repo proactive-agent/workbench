@@ -66,12 +66,13 @@ import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
+import { useSharedSessionWindow } from '../hooks/useSharedSessionWindow';
 import { InsightsChatNameButton } from './InsightsChatNameButton';
 import { splitSlashCommands, useSlashCommandMenu } from './insights-slash-commands';
 import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
 import { closedAgentWindow, mayNameClosedAgent, sessionTargetNow, windowSessionTitle, type SessionTarget } from '../lib/session-targets';
 import { useProjectStore } from '../stores/project-store';
-import { chatSessionName } from '../../shared/utils/session-names';
+import { agentSessionName, chatSessionName } from '../../shared/utils/session-names';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -229,6 +230,10 @@ export function Insights({ projectId }: InsightsProps) {
 
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
   const replyingIds = replyingSessionIds({ session, status, backgroundRuns });
+  // An agent window running this chat's session too: while its Claude Code works, the chat waits
+  // (sending, editing or regenerating would branch the session)
+  const sharedWindow = useSharedSessionWindow(projectId, session);
+  const windowBusy = sharedWindow.busy;
 
   // Stop turns disabled once clicked, until the reply has ended
   const [stopRequested, setStopRequested] = useState(false);
@@ -346,7 +351,7 @@ export function Insights({ projectId }: InsightsProps) {
   const handleSend = () => {
     const message = inputValue.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!message && !hasImages) || isLoading) return;
+    if ((!message && !hasImages) || isLoading || windowBusy) return;
 
     setInputValue('');
     const to = sendTo ? { kind: sendTo.kind, name: sendTo.name, ...(sendTo.title ? { title: sendTo.title } : {}) } : undefined;
@@ -447,7 +452,7 @@ export function Insights({ projectId }: InsightsProps) {
 
   const messages = session?.messages || [];
   const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
-  const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading;
+  const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading && !windowBusy;
 
   // Time-of-day greeting, refreshed every minute so it follows the clock while the page stays open
   const [hour, setHour] = useState(() => new Date().getHours());
@@ -885,6 +890,11 @@ export function Insights({ projectId }: InsightsProps) {
       </div>
 
       {/* Image error */}
+      {windowBusy && sharedWindow.terminalId && (
+        <p className="px-1 text-xs text-muted-foreground">
+          {t('insights.agentWindow.working', { name: agentSessionName(sharedWindow.terminalId) })}
+        </p>
+      )}
       {imageError && (
         <p className="px-1 text-xs text-destructive">{imageError}</p>
       )}
@@ -964,7 +974,7 @@ export function Insights({ projectId }: InsightsProps) {
           {/* The browser drawer's button, and under it the chat's session in an agent window */}
           <div className="flex flex-col items-end gap-3">
             <BrowserDrawerButton projectId={projectId} />
-            <InsightsAgentWindowButton projectId={projectId} session={session} replying={isLoading} />
+            <InsightsAgentWindowButton projectId={projectId} session={session} replying={isLoading} windowId={sharedWindow.terminalId} />
             <InsightsChatNameButton session={session} />
           </div>
         </div>
@@ -996,7 +1006,7 @@ export function Insights({ projectId }: InsightsProps) {
                     message={message}
                     onRegenerate={
                       // The latest reply can be written again once Claude is done
-                      index === messages.length - 1 && message.role === 'assistant' && !isLoading
+                      index === messages.length - 1 && message.role === 'assistant' && !isLoading && !windowBusy
                         ? () => {
                           setTaskCreated(new Set());
                           regenerateMessage(projectId, effectiveModelConfig);
@@ -1006,7 +1016,7 @@ export function Insights({ projectId }: InsightsProps) {
                     onEdit={
                       // A sent message can be edited once Claude is done; the chat after it is
                       // replaced by the edited message's reply
-                      message.role === 'user' && !isLoading
+                      message.role === 'user' && !isLoading && !windowBusy
                         ? (content) => {
                           setTaskCreated(new Set());
                           stickToBottomRef.current = true; // Follow the edited message's reply

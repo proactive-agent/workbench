@@ -8,7 +8,7 @@ import * as ClaudeIntegration from './cli-integration-handler';
 import type { TerminalProcess, WindowGetter } from './types';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
-import { noteCursorQuery, receivingBusyChanged, stopReceiving } from '../session-messaging/receiving';
+import { noteCursorQuery, receivingBusyChanged, releaseWindow } from '../session-messaging/receiving';
 
 /**
  * Event handler callbacks
@@ -102,7 +102,7 @@ export function createEventCallbacks(
       receivingBusyChanged(terminal.id, isBusy);
     },
     onClaudeExit: (terminal) => {
-      stopReceiving(terminal.id);
+      releaseWindow(terminal.id);
       ClaudeIntegration.handleClaudeExit(terminal, getWindow);
     }
   };

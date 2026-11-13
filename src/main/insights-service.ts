@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import path from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { stat } from 'fs/promises';
 import type {
   InsightsSession,
   InsightsSessionSummary,
@@ -21,6 +22,10 @@ import { setChatSource, type ChatDelivery, type ChatEntry } from './session-mess
 import { incomingMessageText, outgoingMessageText } from './session-messaging/tools';
 import { readTranscriptAsChat } from './insights/session-import';
 import { ensureAgentWindowRunning } from './session-messaging/agent-windows';
+import { busyWindowOfSession, shareSessionForReply } from './session-messaging/shared-session';
+import { findTranscript } from './terminal/session-follower';
+import { getClaudeProfileManager } from './claude-profile-manager';
+import { agentSessionName, chatSessionName } from '../shared/utils/session-names';
 import { appLog } from './app-logger';
 
 /** Messages from other sessions a chat answers in a row before it waits for the user */
@@ -239,11 +244,9 @@ class InsightsService extends EventEmitter {
   ): Promise<string | null> {
     const { messages, head } = await readTranscriptAsChat(source.transcriptPath, source.sessionId, source.profileId);
     if (messages.length === 0) return null;
-    // The chat opened from this session before (the latest, archived ones too)
-    const summary = this.listSessions(projectPath, true)
-      .filter((candidate) => candidate.fromSessionId === source.sessionId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
-    const existing = summary ? this.chatById(projectId, projectPath, summary.id) : null;
+    // The chat of this session (the latest, archived ones too): one opened from it before, or the
+    // chat whose session it is (its Clawd button opened it in the window)
+    const existing = this.chatOfClaudeSession(projectId, projectPath, source.sessionId);
     const replying = !!existing && this.executor.isSessionActive(projectId, existing.id);
     // It takes what was said in the window since: the transcript after the chat's own last point.
     // A chat that went on in another session (a stop, an edit) keeps its conversation, and the
@@ -281,6 +284,64 @@ class InsightsService extends EventEmitter {
     this.sessionManager.switchSession(projectId, projectPath, session.id);
     this.emit('session-updated', projectId, session);
     return session.id;
+  }
+
+  /**
+   * The chat a Claude Code session belongs to: opened from it ("Open as chat"), or the chat that
+   * goes on in it now (its last reply's point is in it); the latest such chat, archived ones too
+   */
+  private chatOfClaudeSession(projectId: string, projectPath: string, claudeSessionId: string): InsightsSession | null {
+    const candidates = this.listSessions(projectPath, true)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    for (const summary of candidates) {
+      if (summary.fromSessionId === claudeSessionId) return this.chatById(projectId, projectPath, summary.id);
+      const chat = this.chatById(projectId, projectPath, summary.id);
+      if (chat?.claudeHead?.sessionId === claudeSessionId) return chat;
+    }
+    return null;
+  }
+
+  /**
+   * What was said in an agent window since the chat's last point in its session (the window runs
+   * the chat's session too, shared-session.ts): taken from the transcript into the chat, which
+   * goes on from there. Whether the chat changed
+   */
+  private async takeSharedTurns(projectId: string, projectPath: string, session: InsightsSession): Promise<boolean> {
+    const head = session.claudeHead;
+    if (!head) return false;
+    const configDir = head.profileId ? getClaudeProfileManager().getProfile(head.profileId)?.configDir : undefined;
+    const transcript = await findTranscript(head.sessionId, configDir);
+    if (!transcript) return false;
+    // Not written since the chat's last change: nothing was said elsewhere
+    if ((await stat(transcript)).mtimeMs <= new Date(session.updatedAt).getTime()) return false;
+    const { messages, head: latest } = await readTranscriptAsChat(transcript, head.sessionId, head.profileId);
+    const since = messages.findIndex((message) => message.claudeRef?.messageUuid === head.messageUuid);
+    if (since < 0) return false;
+    // Whole turns only, up to the session's latest reply: a turn the window is still writing comes
+    // in once it ends (taken now, its prompt would come in again with its reply)
+    let end = -1;
+    messages.forEach((message, index) => {
+      if (message.role === 'assistant' && message.claudeRef?.messageUuid === latest?.messageUuid) end = index;
+    });
+    if (!latest || end <= since) return false;
+    session.messages.push(...messages.slice(since + 1, end + 1));
+    session.claudeHead = latest;
+    session.updatedAt = new Date();
+    this.storage.saveSession(projectPath, session);
+    this.emit('session-updated', projectId, session);
+    return true;
+  }
+
+  /**
+   * The chat is shown or about to go on: what was said in an agent window sharing its session
+   * comes in (the window's turn just ended, or the chat opened). Whether the chat changed
+   */
+  async syncSharedSession(projectId: string, projectPath: string, chatId: string): Promise<boolean> {
+    const session = this.chatById(projectId, projectPath, chatId);
+    if (!session?.claudeHead || this.executor.isSessionActive(projectId, chatId)) return false;
+    // Not while the window works: its turn comes in once it ends
+    if (await busyWindowOfSession(projectPath, session.claudeHead.sessionId).catch(() => undefined)) return false;
+    return this.takeSharedTurns(projectId, projectPath, session).catch(() => false);
   }
 
   /**
@@ -464,6 +525,19 @@ class InsightsService extends EventEmitter {
       // A browser opened on the New chat page belongs to the conversation its first message made
       browserDrawer.chatBrowsers.adopt(projectId, session.id);
     }
+    // An agent window running the chat's session too (shared-session.ts): not while it works, and
+    // what was said there comes in first, so the chat goes on from there (no branch)
+    if (session.claudeHead) {
+      const busy = await busyWindowOfSession(projectPath, session.claudeHead.sessionId);
+      if (busy) {
+        this.failTurn(projectId, session, `The agent window ${agentSessionName(busy.id)} is working in this chat's session: send once it is done`);
+        return;
+      }
+      await this.takeSharedTurns(projectId, projectPath, session).catch((error) => {
+        appLog.warn('[Insights] Could not read what an agent window said in the chat\'s session:', error);
+        return false;
+      });
+    }
 
     // Auto-generate title from first user message if still default
     if (session.messages.length === 0 && session.title === 'New Conversation') {
@@ -623,8 +697,18 @@ class InsightsService extends EventEmitter {
 
     let answeredFully = false;
     let replaced = false;
+    // An agent window running the session this reply goes on in is read-only meanwhile, and
+    // resumes the session afterwards with this turn in it (shared-session.ts)
+    let releaseWindow: (() => Promise<void>) | undefined;
     try {
       const plan = planClaudeSession(session);
+      if (plan.mode === 'resume') {
+        releaseWindow = await shareSessionForReply(projectPath, plan.sessionId, {
+          kind: 'chat',
+          name: chatSessionName(session.id) ?? session.id,
+          ...(session.title ? { title: session.title } : {}),
+        }).catch(() => undefined);
+      }
       const result = await this.executor.execute(
         projectId,
         projectPath,
@@ -681,6 +765,7 @@ class InsightsService extends EventEmitter {
       // Error already emitted by executor
       console.error('[InsightsService] Error executing insights:', error);
     } finally {
+      void releaseWindow?.();
       // A message another session sent meanwhile is answered now; after a stop or a failure it is
       // only shown, for the user to take up
       // (A newer reply took this one's place: the waiting messages are its own)

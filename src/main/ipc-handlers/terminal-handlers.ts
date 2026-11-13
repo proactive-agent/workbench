@@ -21,7 +21,7 @@ import { isWslRuntime, toRuntimePath } from '../platform/shell-runtime';
 import { safeSendToRenderer } from './utils';
 import { openTerminalWithCommand } from './claude-code-handlers';
 import { readClipboardFilePaths } from '../terminal/clipboard-files';
-import { acceptsWindowInput, stopReceiving } from '../session-messaging/receiving';
+import { acceptsWindowInput, releaseWindow } from '../session-messaging/receiving';
 import { findAgentWindow } from '../session-messaging/agent-windows';
 import { parseSessionName } from '../../shared/utils/session-names';
 
@@ -72,7 +72,7 @@ export function registerTerminalHandlers(
   );
 
   ipcMain.on(IPC_CHANNELS.TERMINAL_TAKE_OVER, (_, id: string) => {
-    if (typeof id === 'string') stopReceiving(id);
+    if (typeof id === 'string') releaseWindow(id);
   });
 
   ipcMain.handle(

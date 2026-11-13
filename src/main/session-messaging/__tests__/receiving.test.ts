@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { acceptsWindowInput, noteCursorQuery, isReceiving, receivingBusyChanged, setReceivingHooks, startReceiving, stopReceiving } from '../receiving';
+import {
+  acceptsWindowInput,
+  holdForChatReply,
+  isReceiving,
+  noteCursorQuery,
+  receivingBusyChanged,
+  releaseChatReply,
+  releaseWindow,
+  setReceivingHooks,
+  startReceiving,
+  stopReceiving,
+} from '../receiving';
 
 const from = { kind: 'chat' as const, name: 'chat-abc', title: 'Release notes' };
 const notify = vi.fn();
@@ -14,7 +25,7 @@ describe('agent window answering a message', () => {
   });
 
   afterEach(() => {
-    stopReceiving('window-1');
+    releaseWindow('window-1');
     vi.useRealTimers();
   });
 
@@ -96,6 +107,30 @@ describe('agent window answering a message', () => {
     startReceiving('window-1', from);
     stopReceiving('window-1');
     expect(isReceiving('window-1')).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('window-1', null);
+  });
+
+  it("is read-only while a chat replies in the session it runs too, until the reply ends", () => {
+    holdForChatReply('window-1', from);
+    expect(notify).toHaveBeenLastCalledWith('window-1', { ...from, sharing: true });
+    expect(acceptsWindowInput('window-1', 'a')).toBe(false);
+    // Nothing of the busy and idle timing applies: only the reply's end gives it back
+    vi.advanceTimersByTime(60 * 60_000);
+    expect(acceptsWindowInput('window-1', 'a')).toBe(false);
+    releaseChatReply('window-1');
+    expect(acceptsWindowInput('window-1', 'a')).toBe(true);
+    expect(notify).toHaveBeenLastCalledWith('window-1', null);
+  });
+
+  it('stays read-only for the chat replying when a message it answered is done, and is given back by Take over', () => {
+    holdForChatReply('window-1', from);
+    startReceiving('window-1', { kind: 'agent', name: 'agent-other' });
+    stopReceiving('window-1');
+    expect(acceptsWindowInput('window-1', 'a')).toBe(false);
+    expect(notify).toHaveBeenLastCalledWith('window-1', { ...from, sharing: true });
+
+    releaseWindow('window-1');
+    expect(acceptsWindowInput('window-1', 'a')).toBe(true);
     expect(notify).toHaveBeenLastCalledWith('window-1', null);
   });
 });

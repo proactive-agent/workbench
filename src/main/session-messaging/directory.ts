@@ -45,6 +45,18 @@ export function setWindowSource(source: () => TerminalProcess[]): void {
   windowSource = source;
 }
 
+let sessionReopener: (terminalId: string, sessionId: string) => Promise<void> = async () => undefined;
+
+/** How a window opens a session again in place (the terminal manager's openClaudeSession) */
+export function setWindowSessionReopener(reopen: (terminalId: string, sessionId: string) => Promise<void>): void {
+  sessionReopener = reopen;
+}
+
+/** End a window's Claude Code and resume `sessionId` in it, from its transcript as it is now */
+export function reopenWindowSession(terminalId: string, sessionId: string): Promise<void> {
+  return sessionReopener(terminalId, sessionId);
+}
+
 /** A project's agent windows */
 export function projectWindows(projectPath: string): TerminalProcess[] {
   return windowSource().filter((terminal) => terminal.projectPath === projectPath);

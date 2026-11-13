@@ -218,6 +218,8 @@ export const IPC_CHANNELS = {
   INSIGHTS_GET_ATTACHMENT: 'insights:getAttachment',
   INSIGHTS_LIST_COMMANDS: 'insights:listCommands',  // Claude Code's slash commands and skills in a project
   INSIGHTS_OPEN_WINDOW_AS_CHAT: 'insights:openWindowAsChat',  // An agent window's Claude Code session as a chat
+  INSIGHTS_SESSION_WINDOW: 'insights:sessionWindow',          // The agent window running a chat's Claude Code session, if one does
+  INSIGHTS_SYNC_SHARED_SESSION: 'insights:syncSharedSession', // What an agent window said in a chat's session comes into the chat
 
   // Insights events (main -> renderer)
   INSIGHTS_STREAM_CHUNK: 'insights:streamChunk',

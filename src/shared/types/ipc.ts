@@ -15,6 +15,12 @@ export interface TerminalTaskSessionOptions {
   /** Task the session belongs to: while it runs, the window follows the session read-only */
   taskId?: string;
   /**
+   * The session becomes the window's own (a Claude chat's, opened with the chat's Clawd button):
+   * recorded like one the window started, so the window resumes it when restored and is found as
+   * the one running it (session-messaging/shared-session.ts)
+   */
+  own?: boolean;
+  /**
    * Project the task belongs to. A task id is only unique within a project, so the main process
    * needs it to find the right run among the projects that may be running a task of this id.
    * Optional because a window restored from a saved session, or an older renderer, sends the
@@ -438,6 +444,8 @@ export interface ElectronAPI {
   listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
   /** Open an agent window's Claude Code session as a chat of the project; the chat's id (error: OpenWindowAsChatError) */
   openWindowAsChat: (projectId: string, terminalId: string) => Promise<IPCResult<string>>;
+  getSessionWindow: (projectId: string, claudeSessionId: string) => Promise<IPCResult<import('./insights').SharedSessionWindow | null>>;
+  syncSharedSession: (projectId: string, chatId: string) => Promise<IPCResult<boolean>>;
 
   // Insights event listeners
   onInsightsStreamChunk: (

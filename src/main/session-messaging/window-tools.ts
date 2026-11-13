@@ -27,7 +27,7 @@ import type { TerminalProcess } from '../terminal/types';
 import { findWindow } from './directory';
 import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import { isSessionMessagingEnabled } from './tools';
-import { stopReceiving } from './receiving';
+import { releaseWindow } from './receiving';
 import { claudeConfigDirs } from '../claude-profile/profile-config-dirs';
 import { claudeTheme } from '../claude-cli-theme';
 import { crossSessionInboundFiles, userLimitsCrossSessionInbound } from '../task-messaging/inbound-settings';
@@ -108,7 +108,7 @@ export async function windowAcceptsMessages(terminalId: string): Promise<boolean
 
 /** The window closed: its token stops working, its file goes and it no longer answers a message */
 export function closeWindowTools(terminalId: string): void {
-  stopReceiving(terminalId);
+  releaseWindow(terminalId);
   const tools = opened.get(terminalId);
   opened.delete(terminalId);
   void tools?.then(async (value) => {

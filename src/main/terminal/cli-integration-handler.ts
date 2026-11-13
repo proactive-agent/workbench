@@ -491,6 +491,11 @@ export interface InvokeCLIOptions {
    * CLAUDE_CONFIG_DIR even if the terminal (or its active profile) uses another one.
    */
   configDir?: string;
+  /**
+   * The resumed session becomes the window's own (a Claude chat's, opened in the window): recorded
+   * as one it started, so it is found as the window's and resumed when the window is restored
+   */
+  own?: boolean;
 }
 
 /** Session ids are UUIDs; anything else is refused so it never reaches the shell unescaped */
@@ -1928,6 +1933,7 @@ export async function invokeCLIAsync(
     // terminal already uses that profile, the profile is the default one, or the transcript sits
     // in Claude Code's default dir, where the variable the window carries has to go
     const resumedConfigDir = resumeSessionId ? options.configDir ?? activeProfile?.configDir : undefined;
+    if (resumeSessionId && options.own) trackAgentWindowSession(terminal, resumeSessionId, resumedConfigDir, cwd);
     const sessionAccount = sessionAccountCommand(terminal, resumedConfigDir);
     if (sessionAccount) {
       ensureAccountOnboarded(resumedConfigDir);

@@ -2,8 +2,9 @@
  * An agent window's header buttons for its Claude Code session as a whole: open the session as a
  * Claude chat of the project ("Open as chat", the counterpart of a chat's "Open agent") and copy the
  * window's stable name (other chats and windows message it by that name). "Open as chat" is disabled
- * while the window's Claude Code is working. While the window answers a chat's message it is
- * read-only, which a label here says, with a Take over button that gives the window back.
+ * while the window's Claude Code is working. While the window answers a chat's message, or a chat
+ * replies in the session the window runs too, it is read-only, which a label here says, with a Take
+ * over button that gives the window back.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -70,10 +71,12 @@ export function WindowSessionButtons({ terminalId, projectPath }: WindowSessionB
       {receivingFrom && (
         <span
           className="flex min-w-0 items-center gap-1.5 rounded-md bg-primary/10 px-2 py-1 text-xs text-primary"
-          title={t('terminal:header.receivingTitle', { title: receivingFrom.title ?? receivingFrom.name, name: receivingFrom.name })}
+          title={t(receivingFrom.sharing ? 'terminal:header.sharingTitle' : 'terminal:header.receivingTitle', { title: receivingFrom.title ?? receivingFrom.name, name: receivingFrom.name })}
         >
           <MessagesIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="max-w-48 truncate">{t('terminal:header.receiving', { title: receivingFrom.title ?? receivingFrom.name })}</span>
+          <span className="max-w-48 truncate">
+            {t(receivingFrom.sharing ? 'terminal:header.sharing' : 'terminal:header.receiving', { title: receivingFrom.title ?? receivingFrom.name })}
+          </span>
           <button
             type="button"
             className="shrink-0 font-medium underline-offset-2 hover:underline"

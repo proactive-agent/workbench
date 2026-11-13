@@ -7,6 +7,7 @@ import type {
   InsightsModelConfig,
   ChatSlashCommand,
   SessionMessageOrigin,
+  SharedSessionWindow,
   ImageAttachment,
   Task,
   TaskMetadata,
@@ -44,6 +45,10 @@ export interface InsightsAPI {
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
   listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
   openWindowAsChat: (projectId: string, terminalId: string) => Promise<IPCResult<string>>;
+  /** The agent window running a Claude Code session of the project, if one does */
+  getSessionWindow: (projectId: string, claudeSessionId: string) => Promise<IPCResult<SharedSessionWindow | null>>;
+  /** What an agent window said in a chat's session comes into the chat (whether it changed) */
+  syncSharedSession: (projectId: string, chatId: string) => Promise<IPCResult<boolean>>;
 
   // Event Listeners
   onInsightsStreamChunk: (
@@ -129,6 +134,10 @@ export const createInsightsAPI = (): InsightsAPI => ({
 
   openWindowAsChat: (projectId: string, terminalId: string): Promise<IPCResult<string>> =>
     invokeIpc(IPC_CHANNELS.INSIGHTS_OPEN_WINDOW_AS_CHAT, projectId, terminalId),
+  getSessionWindow: (projectId: string, claudeSessionId: string): Promise<IPCResult<SharedSessionWindow | null>> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_SESSION_WINDOW, projectId, claudeSessionId),
+  syncSharedSession: (projectId: string, chatId: string): Promise<IPCResult<boolean>> =>
+    invokeIpc(IPC_CHANNELS.INSIGHTS_SYNC_SHARED_SESSION, projectId, chatId),
 
   // Event Listeners
   onInsightsStreamChunk: (

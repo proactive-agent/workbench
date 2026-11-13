@@ -272,7 +272,8 @@ replies on its own (after the reply it is writing). An agent window is a live Cl
 through Claude Code's own SendMessage: `list_sessions` gives each window's `sendMessageTo` name (`live-sessions.ts`, from
 `claude agents --json`, matched by the window's recorded session or the process under its shell). An agent window's
 header also opens its session as a chat ("Open as chat", `session-import.ts`): the transcript's active branch becomes the
-chat's messages and the chat resumes the session (opened again, the same chat shows what was said since). A name pasted into a chat's
+chat's messages and the chat resumes the session (opened again, the same chat shows what was said since; a window
+running a chat's own session opens that chat). A name pasted into a chat's
 composer (a chat or agent window of the project, `renderer/lib/session-targets.ts`) becomes the message's recipient, shown
 as an attachment (the latest paste wins): the message keeps it (`InsightsChatMessage.to`) and reaches Claude framed to be
 delivered there. Pasted into an agent window it is typed as `[Chat #<hash>]` / `[Agent #<hash>]` (`useXterm.ts`), which
@@ -526,7 +527,13 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   commands and skills, minus built-ins that don't fit a chat (`/clear`, `/model`...) (`insights-slash-commands.ts`; asked per project and account with the
   control protocol's `initialize` request, without MCP servers or a model call, again when the button is switched on,
   `insights/chat-commands.ts`). A local command's output (`/compact`) is its reply and keeps the session. A chat with a session also shows a Clawd button under the browser
-  button that opens its session in an agent window (`claude --resume` on its account, `openProjectSession`).
+  button that shows its session in an agent window: the one running it already, else a new one resuming it as its own
+  (`claude --resume` on its account, `openProjectSession`, recorded in `agent-sessions.json` so it is found and
+  restored). The chat and the window then share one session and take turns (`session-messaging/shared-session.ts`):
+  while the chat replies the window is read-only (`holdForChatReply` in `receiving.ts`, with Take over) and resumes
+  the session again afterwards, so its Claude Code has the chat's turn; while the window works (`claude agents`
+  status) the chat doesn't send, edit or regenerate, and when its turn ends the chat takes it from the transcript
+  (whole turns only, `useSharedSessionWindow`, `syncSharedSession`), so neither branches the session.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,
@@ -557,7 +564,7 @@ agent window (`src/main/live-agent/`, `src/renderer/components/live-agent/`). It
 and Claude Code hooks in the project's and its worktrees' `.claude/settings.local.json` (`project-setup.ts`); the
 `.workbench/flow` folder's existence is the setting, switched on when a project is set up. A relay worker
 (`live-agent-relay.ts`, `relay/`) runs while any project has it on; each window's graph shows only the sessions run in
-it, never headless ones.
+it, never headless ones, except a chat's session the window resumed (its hooks report the window).
 
 ### Electron MCP (testing the app from a task)
 
