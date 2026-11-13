@@ -13,6 +13,7 @@ import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
 import { AgentLoader } from '../ui/agent-loader';
 import { BrowserBookmarksBar } from './BrowserBookmarksBar';
+import { BrowserDrawerFrame } from './BrowserDrawerFrame';
 import { BrowserExtensionsMenu } from './BrowserExtensionsMenu';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
@@ -44,7 +45,6 @@ const iconButton = cn(
 export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) {
   const { t } = useTranslation('navigation');
   const open = useBrowserDrawerStore((s) => s.open);
-  const width = useBrowserDrawerStore((s) => s.width);
   const state = useBrowserDrawerStore((s) => s.state);
   const selectedPageId = useBrowserDrawerStore((s) => s.selectedPageId);
   const setOpen = useBrowserDrawerStore((s) => s.setOpen);
@@ -59,7 +59,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   useLayoutEffect(() => setContext(projectId, chatId), [projectId, chatId, setContext]);
 
   const [resizing, setResizing] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
 
   const sessions = projectSessions(state.sessions, projectId, chatId);
   const pages = projectPages(state, projectId, chatId);
@@ -124,13 +123,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     };
   }, [open, state.available]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [open]);
-
   // Closing a chat browser's last tab closes that browser
   const closeTab = (pageId: string, sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId);
@@ -191,23 +183,31 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   // Closed: the Claude chat's top bar has the button that opens it (BrowserDrawerButton)
   if (!open) return null;
 
-  const drawerWidth = clampDrawerWidth(width, windowWidth);
-
   // Drag the left edge to resize (the page under the pointer would take the moves, so it ignores
   // the pointer meanwhile)
   const onResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = drawerWidth;
+    // The width shown (BrowserDrawerFrame): the drawer itself doesn't render again while it is dragged
+    const { width, chatMinWidth } = useBrowserDrawerStore.getState();
+    const startWidth = clampDrawerWidth(width, window.innerWidth, chatMinWidth);
     setResizing(true);
-    const onMove = (move: PointerEvent) => setWidth(clampDrawerWidth(startWidth + startX - move.clientX, window.innerWidth));
+    // Remembered once the edge is let go
+    const onMove = (move: PointerEvent) =>
+      setWidth(clampDrawerWidth(startWidth + startX - move.clientX, window.innerWidth, useBrowserDrawerStore.getState().chatMinWidth), false);
+    // Let go, or the drag ended without a release (cancelled by the system): the width is kept
     const onUp = () => {
       setResizing(false);
+      setWidth(useBrowserDrawerStore.getState().width);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('blur', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('blur', onUp);
   };
 
   const onSubmitAddress = (event: FormEvent) => {
@@ -249,7 +249,7 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   } else body = message(t('browserDrawer.empty'), t('browserDrawer.emptyDescription'));
 
   return (
-    <div className="flex h-full shrink-0 flex-col" style={{ width: drawerWidth }}>
+    <BrowserDrawerFrame>
       {/* Window drag strip, under the Windows/Linux window controls: the drawer starts below it, level
           with the content area's top (the DEVELOPMENT BUILD strip in development builds) */}
       <div className="electron-drag shrink-0" style={{ height: TITLE_BAR_STRIP_HEIGHT }} />
@@ -388,6 +388,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
           )}
         />
       </aside>
-    </div>
+    </BrowserDrawerFrame>
   );
 }

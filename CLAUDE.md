@@ -392,10 +392,17 @@ same way at a fixed popup size, mouse only (Juggler ignores `moz-extension://` d
 are out of reach, while frames and clicks go through the browser window); one without a popup opens its homepage (from
 `addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
 closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
-other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
-until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing
-the drawer opens them again in the other order, only what the drawer closed), and it stops where the chat keeps 500px
-beside the collapsed sidebar; each chat keeps its own view (open or closed, the tab shown).
+other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered. The chat's
+narrowest width is what its composer's tool row needs (`useChatMinWidth`, `lib/composer-fit.ts`: the row marked
+`data-composer-row`, each part at its full width even while squeezed, text marked `data-composer-shrinks` may
+truncate, plus the room of what holds it, scrollbars included), measured when a chat opens or its composer changes (a
+new chat's or a conversation's, another model's label, the interface font): widening the drawer, the
+chat needing more or the window narrowing until the chat is narrower than that closes the chat history, then collapses
+the app's sidebar (not saved; the other way round opens them again in the other order, only what the drawer closed),
+and the drawer stops where the chat keeps that width beside the collapsed sidebar. `useChatRoom` does that from the
+stores outside React, working out the chat's width from the layout's state (never the page, which may not have caught
+up), also when the page shows with the drawer open, and only the drawer's frame (`BrowserDrawerFrame`) takes its width, so a drag renders neither the
+chat page nor the drawer's content again; each chat keeps its own view (open or closed, the tab shown).
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link

@@ -70,12 +70,14 @@ describe('browser drawer store', () => {
   });
 
   it('keeps its width within the window', () => {
-    expect(clampDrawerWidth(100, 1600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
-    expect(clampDrawerWidth(700, 1600)).toBe(700);
+    expect(clampDrawerWidth(100, 1600, 500)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    expect(clampDrawerWidth(700, 1600, 500)).toBe(700);
     // Up to what leaves the chat 500px beside the app's collapsed sidebar (56px)
-    expect(clampDrawerWidth(1500, 1600)).toBe(1044);
-    expect(clampDrawerWidth(1044, 1600)).toBe(1044);
-    expect(clampDrawerWidth(900, 600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    expect(clampDrawerWidth(1500, 1600, 500)).toBe(1044);
+    expect(clampDrawerWidth(1044, 1600, 500)).toBe(1044);
+    expect(clampDrawerWidth(900, 600, 500)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    // A chat needing more room (more composer buttons) keeps it
+    expect(clampDrawerWidth(1500, 1600, 620)).toBe(924);
   });
 
   it("shows a chat's own browser only, and keeps each context's view", () => {

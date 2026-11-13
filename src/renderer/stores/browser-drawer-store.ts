@@ -17,25 +17,23 @@ import {
   type BrowserExtensions,
 } from '../../shared/types/browser-drawer';
 import { saveSettings, useSettingsStore } from './settings-store';
+import { APP_SIDEBAR_COLLAPSED_WIDTH } from '../lib/layout-widths';
 
 export const BROWSER_DRAWER_MIN_WIDTH = 420;
 const BROWSER_DRAWER_DEFAULT_WIDTH = 760;
 /**
- * The chat's narrowest width (px) beside the drawer: widening the drawer past it closes the chat
- * history, then collapses the app's sidebar (Insights.tsx), and the drawer stops there
+ * The chat's narrowest width (px) until the Claude page has measured its own (`chatMinWidth`: what
+ * the composer's buttons need, useChatMinWidth.ts)
  */
-export const CHAT_MIN_WIDTH = 500;
-/** The app's sidebar's width (px) expanded and collapsed to its icon rail (Sidebar's w-72 and w-14) */
-export const APP_SIDEBAR_WIDTH = 288;
-export const APP_SIDEBAR_COLLAPSED_WIDTH = 56;
+const DEFAULT_CHAT_MIN_WIDTH = 500;
 const WIDTH_STORAGE_KEY = 'workbench.browserDrawer.width';
 
 /**
- * A width within the drawer's limits for a window this wide: at most what leaves the chat
- * CHAT_MIN_WIDTH beside the app's collapsed sidebar (the chat history closed)
+ * A width within the drawer's limits for a window this wide: at most what leaves the chat its
+ * narrowest width (`chatMinWidth`) beside the app's collapsed sidebar (the chat history closed)
  */
-export function clampDrawerWidth(width: number, windowWidth: number): number {
-  const max = Math.max(BROWSER_DRAWER_MIN_WIDTH, Math.floor(windowWidth - APP_SIDEBAR_COLLAPSED_WIDTH - CHAT_MIN_WIDTH));
+export function clampDrawerWidth(width: number, windowWidth: number, chatMinWidth: number): number {
+  const max = Math.max(BROWSER_DRAWER_MIN_WIDTH, Math.floor(windowWidth - APP_SIDEBAR_COLLAPSED_WIDTH - chatMinWidth));
   return Math.round(Math.min(Math.max(width, BROWSER_DRAWER_MIN_WIDTH), max));
 }
 
@@ -161,8 +159,22 @@ interface BrowserDrawerStore extends DrawerView {
    */
   appSidebarCollapsedByDrawer: boolean;
   setAppSidebarCollapsedByDrawer: (collapsed: boolean) => void;
+  /**
+   * The chat's narrowest width (px) beside the drawer: what its composer's buttons need
+   * (useChatMinWidth.ts). Widening the drawer, or the chat needing more, past it closes the chat
+   * history, then collapses the app's sidebar (Insights.tsx), and the drawer stops there
+   */
+  chatMinWidth: number;
+  setChatMinWidth: (width: number) => void;
+  /**
+   * The drawer closed the chat history (not the user), so it may open it again (useChatRoom): kept
+   * for the app's life, like the history's own state, across visits to the Claude page
+   */
+  historyClosedByDrawer: boolean;
+  setHistoryClosedByDrawer: (closed: boolean) => void;
   setOpen: (open: boolean) => void;
-  setWidth: (width: number) => void;
+  /** The drawer's width, remembered unless `save` is false (while its edge is dragged) */
+  setWidth: (width: number, save?: boolean) => void;
   /** An open drawer gets narrower by `px` (a sidebar it had closed was opened: the chat keeps its width) */
   narrowBy: (px: number) => void;
   selectPage: (pageId: string) => void;
@@ -237,9 +249,16 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   },
   appSidebarCollapsedByDrawer: false,
   setAppSidebarCollapsedByDrawer: (appSidebarCollapsedByDrawer) => set({ appSidebarCollapsedByDrawer }),
+  historyClosedByDrawer: false,
+  setHistoryClosedByDrawer: (historyClosedByDrawer) => set({ historyClosedByDrawer }),
+  chatMinWidth: DEFAULT_CHAT_MIN_WIDTH,
+  setChatMinWidth: (chatMinWidth) => {
+    if (chatMinWidth !== get().chatMinWidth) set({ chatMinWidth });
+  },
   setOpen: (open) => set({ open }),
-  setWidth: (width) => {
+  setWidth: (width, save = true) => {
     set({ width });
+    if (!save) return;
     try {
       localStorage.setItem(WIDTH_STORAGE_KEY, String(width));
     } catch {
@@ -247,10 +266,10 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
     }
   },
   narrowBy: (px) => {
-    const { open, width, setWidth } = get();
+    const { open, width, setWidth, chatMinWidth } = get();
     if (!open) return;
-    const shown = clampDrawerWidth(width, window.innerWidth);
-    setWidth(clampDrawerWidth(shown - px, window.innerWidth));
+    const shown = clampDrawerWidth(width, window.innerWidth, chatMinWidth);
+    setWidth(clampDrawerWidth(shown - px, window.innerWidth, chatMinWidth));
   },
   selectPage: (pageId) => set({ selectedPageId: pageId, revealSessionId: null }),
   setContext: (projectId, chatId) => {

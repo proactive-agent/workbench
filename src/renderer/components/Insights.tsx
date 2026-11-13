@@ -55,18 +55,16 @@ import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
-import {
-  useBrowserDrawerStore,
-  APP_SIDEBAR_COLLAPSED_WIDTH,
-  APP_SIDEBAR_WIDTH,
-  CHAT_MIN_WIDTH,
-} from '../stores/browser-drawer-store';
+import { useBrowserDrawerStore } from '../stores/browser-drawer-store';
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
 import { InsightsSlashMenu } from './InsightsSlashMenu';
 import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
 import { useSharedSessionWindow } from '../hooks/useSharedSessionWindow';
+import { useChatMinWidth } from '../hooks/useChatMinWidth';
+import { useChatRoom } from '../hooks/useChatRoom';
+import { CHAT_HISTORY_WIDTH } from '../lib/layout-widths';
 import { InsightsChatNameButton } from './InsightsChatNameButton';
 import { splitSlashCommands, useSlashCommandMenu } from './insights-slash-commands';
 import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
@@ -92,18 +90,6 @@ interface InsightsProps {
  * The browser drawer starts at the same height, so its top border and the top bar's line meet
  */
 const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
-
-/** The chat history sidebar's width (px, ChatHistorySidebar's w-64) */
-const CHAT_HISTORY_WIDTH = 256;
-/** The width (px) collapsing the app's sidebar gives the chat */
-const APP_SIDEBAR_COLLAPSE_GAIN = APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH;
-
-
-/**
- * The chat history was closed by the browser drawer (not by the user), so the drawer may open it
- * again: kept for the app's life, like the history's own state, across visits to the page
- */
-const historyClosedByDrawer = { current: false };
 
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
@@ -157,55 +143,23 @@ export function Insights({ projectId }: InsightsProps) {
   const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
   // The browser drawer beside the chat (its top border runs on along the top bar while it is open)
   const drawerOpen = useBrowserDrawerStore((state) => state.open);
-  const drawerWidth = useBrowserDrawerStore((state) => state.width);
   const chatColumnRef = useRef<HTMLDivElement | null>(null);
-  const historyClosedByDrawerRef = historyClosedByDrawer;
-  const appSidebarSaved = useSettingsStore((state) => state.settings.sidebarCollapsed ?? false);
-  const appSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
   const setAppSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
   const narrowDrawerBy = useBrowserDrawerStore((state) => state.narrowBy);
-  /** The drawer as the last change left it: which way it moved decides what may close or open */
-  const lastDrawerRef = useRef({ open: false, width: drawerWidth });
-  // Opening or widening the drawer until the chat is narrower than CHAT_MIN_WIDTH closes the chat
-  // history, then collapses the app's sidebar; narrowing or closing the drawer opens them again in
-  // the other order, each once the chat keeps that width with it. Only what the drawer closed opens
-  // again: a history or sidebar the user closed stays closed. Only the drawer growing closes them,
-  // so one the user opens again (which narrows the drawer by its width) stays open
-  useLayoutEffect(() => {
-    const last = lastDrawerRef.current;
-    lastDrawerRef.current = { open: drawerOpen, width: drawerWidth };
-    const grew = drawerOpen && (!last.open || drawerWidth > last.width);
-    const shrank = drawerOpen ? last.open && drawerWidth < last.width : last.open;
-    let width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
-    if (width <= 0) return;
-    if (grew && width < CHAT_MIN_WIDTH) {
-      if (showSidebar) {
-        historyClosedByDrawerRef.current = true;
-        setShowSidebar(false, false);
-        width += CHAT_HISTORY_WIDTH;
-      }
-      if (width < CHAT_MIN_WIDTH && !appSidebarSaved && !appSidebarCollapsedByDrawer) setAppSidebarCollapsedByDrawer(true);
-      return;
-    }
-    if (!shrank) return;
-    if (appSidebarCollapsedByDrawer) {
-      if (width - APP_SIDEBAR_COLLAPSE_GAIN < CHAT_MIN_WIDTH) return;
-      setAppSidebarCollapsedByDrawer(false);
-      width -= APP_SIDEBAR_COLLAPSE_GAIN;
-    }
-    if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
-      historyClosedByDrawerRef.current = false;
-      setShowSidebar(true, false);
-    }
-    // The drawer's changes only: not the sidebars', so the user's toggles stay as they are
-  }, [drawerOpen, drawerWidth]);
+  // The chat keeps the width its composer needs beside the drawer (sidebars close and open again
+  // as the drawer moves, without this page rendering again)
+  useChatRoom();
+  const [composerRow, setComposerRow] = useState<HTMLDivElement | null>(null);
   // The app's sidebar is the drawer's to collapse only on this page
   useEffect(() => () => setAppSidebarCollapsedByDrawer(false), [setAppSidebarCollapsedByDrawer]);
   const toggleHistory = () => {
-    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its width
-    if (!showSidebar && historyClosedByDrawerRef.current) narrowDrawerBy(CHAT_HISTORY_WIDTH);
-    historyClosedByDrawerRef.current = false;
+    const drawer = useBrowserDrawerStore.getState();
+    const reopened = !showSidebar && drawer.historyClosedByDrawer;
+    drawer.setHistoryClosedByDrawer(false);
     setShowSidebar(!showSidebar);
+    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its
+    // width (once the history shows, so the drawer's narrowing counts it)
+    if (reopened) narrowDrawerBy(CHAT_HISTORY_WIDTH);
   };
 
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
@@ -464,6 +418,13 @@ export function Insights({ projectId }: InsightsProps) {
 
   const messages = session?.messages || [];
   const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
+  // The chat's narrowest width, measured when a chat opens and when its composer changes (a new
+  // chat's toolbar or a conversation's, another model's label)
+  useChatMinWidth(
+    composerRow,
+    chatColumnRef,
+    `${session?.id ?? ''}:${isEmpty}:${effectiveModelConfig?.profileId}:${effectiveModelConfig?.model}:${effectiveModelConfig?.thinkingLevel}`
+  );
   const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading && !windowBusy;
 
   // Time-of-day greeting, refreshed every minute so it follows the clock while the page stays open
@@ -833,12 +794,13 @@ export function Insights({ projectId }: InsightsProps) {
         </div>
 
         {isEmpty ? (
-          /* Toolbar (new chat): attach on the left; the model and send on the right */
-          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+          /* Toolbar (new chat): attach on the left; the model and send on the right. The chat is kept
+             wide enough for all of it (useChatMinWidth); narrower still, the model's label truncates */
+          <div ref={setComposerRow} data-composer-row className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
             <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
             <div className="flex min-w-0 items-center gap-1.5">
               {modelSelector}
-              {/* Send button only appears once there is something to send; it turns into stop while Claude works */}
+              {/* Send button, disabled until there is something to send; it turns into stop while Claude works */}
               {isLoading ? (
                 <button
                   type="button"
@@ -850,11 +812,12 @@ export function Insights({ projectId }: InsightsProps) {
                 >
                   <Square className="h-3 w-3 fill-current" />
                 </button>
-              ) : canSend && (
+              ) : (
                 <button
                   type="button"
                   onClick={() => void handleSend()}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+                  disabled={!canSend}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
                   aria-label={t('insights.send')}
                   title={t('insights.send')}
                 >
@@ -1084,10 +1047,11 @@ export function Insights({ projectId }: InsightsProps) {
               <div className="mx-auto max-w-3xl">
                 {composer}
                 {/* Under the field: attach, disclaimer, model */}
-                <div className="mt-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
-                  <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
-                  <span className="truncate text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
-                  <div className="flex justify-end">{modelSelector}</div>
+                {/* The disclaimer gives up its room first (down to nothing), the model's label only after */}
+                <div ref={setComposerRow} data-composer-row className="mt-1.5 flex items-center gap-2 text-sm">
+                  <div className="flex shrink-0 items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
+                  <span data-composer-shrinks className="min-w-0 flex-1 basis-0 truncate text-center text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
+                  <div className="flex min-w-0 justify-end">{modelSelector}</div>
                 </div>
               </div>
             </div>
