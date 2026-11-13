@@ -366,7 +366,10 @@ the **browser drawer** at the main window's right edge (`src/main/browser-drawer
 Ctrl/Cmd+click and a middle click open links in new tabs as the browser itself does, the click's modifiers synced
 first; a tab the user opens, with + or right after clicking or typing in a page of that browser, is shown and focused,
 its address bar for +, while tabs Claude opens stay in the background; keys and buttons still down are released on
-their page when another tab shows or the focus leaves), a toolbar (back, forward,
+their page when another tab shows or the focus leaves; while it shows a tab, the browser's own shortcuts act on it,
+Ctrl/Cmd+T, W, Tab, 1-9, L, R, Alt+Left... as `shared/utils/browser-shortcuts.ts` binds them: the headless browser has
+no window to take them, so the main process catches them in `before-input-event`, before the page and the app's
+menu, and the drawer acts on them), a toolbar (back, forward,
 reload, address), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
 shows; Settings > Browser can hide it), the profile's extensions at the address bar's end when the chat browser runs them

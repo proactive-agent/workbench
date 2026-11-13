@@ -3,12 +3,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import { TooltipProvider } from '../../ui/tooltip';
 import { BrowserDrawer } from '../BrowserDrawer';
 import { useBrowserDrawerStore } from '../../../stores/browser-drawer-store';
 import { useSettingsStore } from '../../../stores/settings-store';
 import type { BrowserBookmark, BrowserExtensions } from '../../../../shared/types/browser-drawer';
+import type { BrowserShortcut } from '../../../../shared/utils/browser-shortcuts';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key, i18n: { language: 'en' } }),
@@ -29,7 +30,16 @@ const api = {
   restartChatBrowser: vi.fn(async (_sessionId: string) => ({ success: true })),
   runBrowserExtension: vi.fn(async (_pageId: string, _extensionId: string, _name: string) => ({ success: true, data: {} })),
   saveSettings: vi.fn(async (_settings: unknown) => ({ success: true })),
+  newBrowserPage: vi.fn(),
+  setBrowserShortcuts: vi.fn(),
+  onBrowserShortcut: vi.fn((listener: (shortcut: BrowserShortcut) => void) => {
+    shortcutListener = listener;
+    return () => {
+      if (shortcutListener === listener) shortcutListener = null;
+    };
+  }),
 };
+let shortcutListener: ((shortcut: BrowserShortcut) => void) | null = null;
 
 class FakeResizeObserver {
   observe() {}
@@ -86,6 +96,43 @@ describe('BrowserDrawer', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'browserDrawer.close' }));
     expect(useBrowserDrawerStore.getState().open).toBe(false);
+  });
+
+  it("acts on the browser's shortcuts while it shows a tab (the main process catches them)", () => {
+    const { unmount } = renderDrawer();
+    // Closed: the keys are the app's
+    expect(api.setBrowserShortcuts).not.toHaveBeenCalledWith(true);
+    act(() => useBrowserDrawerStore.setState({ open: true }));
+    expect(api.setBrowserShortcuts).toHaveBeenLastCalledWith(true);
+    const press = (shortcut: BrowserShortcut) => act(() => shortcutListener?.(shortcut));
+
+    press({ kind: 'nextTab' });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p2');
+    press({ kind: 'nextTab' });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p1');
+    press({ kind: 'previousTab' });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p2');
+    press({ kind: 'tab', index: 0 });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p1');
+    press({ kind: 'tab', index: -1 });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p2');
+    // A tab that isn't there
+    press({ kind: 'tab', index: 5 });
+    expect(useBrowserDrawerStore.getState().selectedPageId).toBe('p2');
+
+    press({ kind: 'reload' });
+    expect(api.navigateBrowserPage).toHaveBeenLastCalledWith('p2', 'reload');
+    press({ kind: 'back' });
+    expect(api.navigateBrowserPage).toHaveBeenLastCalledWith('p2', 'back');
+    press({ kind: 'address' });
+    expect(screen.getByLabelText('browserDrawer.address')).toHaveFocus();
+    press({ kind: 'newTab' });
+    expect(api.newBrowserPage).toHaveBeenCalledWith('s');
+    press({ kind: 'closeTab' });
+    expect(api.closeBrowserPage).toHaveBeenCalledWith('p2');
+
+    unmount();
+    expect(api.setBrowserShortcuts).toHaveBeenLastCalledWith(false);
   });
 
   it("shows the browser profile's bookmarks bar, opening a bookmark in the tab shown", async () => {

@@ -13,6 +13,13 @@ import { appLog } from '../app-logger';
 import { browserDrawer } from '../browser-drawer';
 import { autoconfigureChatBrowserRuntime, getChatBrowserRuntimeStatus, onChatBrowserRuntimeStatus } from '../browser-drawer/browser-runtime';
 import { getAllWindows } from '../window-manager';
+import { isMacOS } from '../platform';
+import { browserShortcut } from '../../shared/utils/browser-shortcuts';
+
+/** Windows whose drawer is open with tabs: their browser shortcuts are caught */
+const shortcutWindows = new Set<number>();
+/** Windows whose keys are watched for them (once each) */
+const watchedForShortcuts = new Set<number>();
 
 export function registerBrowserDrawerHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_GET_STATE, (): IPCResult<BrowserDrawerState> => ({
@@ -151,6 +158,34 @@ export function registerBrowserDrawerHandlers(): void {
       appLog.error('[BrowserDrawer] Autoconfigure failed:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     }
+  });
+
+  // While a window's drawer is open with tabs, the browser's own shortcuts (Ctrl+T, Ctrl+W,
+  // Ctrl+Tab...) are caught before the page and the app's menu, and the drawer acts on them
+  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUTS, (event, active: unknown) => {
+    const contents = event.sender;
+    if (active === true) shortcutWindows.add(contents.id);
+    else shortcutWindows.delete(contents.id);
+    if (watchedForShortcuts.has(contents.id)) return;
+    watchedForShortcuts.add(contents.id);
+    // Keys caught on their way down whose release the page mustn't get either
+    const caught = new Set<string>();
+    contents.on('before-input-event', (inputEvent, input) => {
+      if (input.type === 'keyUp') {
+        if (caught.delete(input.code)) inputEvent.preventDefault();
+        return;
+      }
+      if (input.type !== 'keyDown' || !shortcutWindows.has(contents.id)) return;
+      const shortcut = browserShortcut(input, isMacOS());
+      if (!shortcut) return;
+      inputEvent.preventDefault();
+      caught.add(input.code);
+      contents.send(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUT, shortcut);
+    });
+    contents.once('destroyed', () => {
+      shortcutWindows.delete(contents.id);
+      watchedForShortcuts.delete(contents.id);
+    });
   });
 
   onChatBrowserRuntimeStatus((status) => {

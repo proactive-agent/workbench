@@ -553,6 +553,8 @@ export interface ElectronAPI {
   getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
   autoconfigureChatBrowserRuntime: () => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
   onChatBrowserRuntimeStatus: (callback: (status: import('./settings').ChatBrowserRuntimeStatus) => void) => () => void;
+  setBrowserShortcuts: (active: boolean) => void;
+  onBrowserShortcut: (callback: (shortcut: import('../utils/browser-shortcuts').BrowserShortcut) => void) => () => void;
 
   // MCP Server health check operations
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;

@@ -17,6 +17,7 @@ import { BrowserExtensionsMenu } from './BrowserExtensionsMenu';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
 import { addressToUrl, pageLabel, sessionBrowserIcon } from './browser-drawer-utils';
+import type { BrowserShortcut } from '../../../shared/utils/browser-shortcuts';
 
 interface BrowserDrawerProps {
   /** The window's project: its sessions' pages are the drawer's tabs */
@@ -130,6 +131,61 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     return () => window.removeEventListener('resize', onResize);
   }, [open]);
 
+  // Closing a chat browser's last tab closes that browser
+  const closeTab = (pageId: string, sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const lastTab = pages.filter((page) => page.sessionId === sessionId).length === 1;
+    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId);
+    else window.electronAPI.closeBrowserPage(pageId);
+  };
+
+  // The browser's own shortcuts (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1..9, Ctrl+L, Ctrl+R, Alt+Left...;
+  // Cmd on macOS) act on the drawer's tabs while it shows one: its browser is headless, so the
+  // main process catches them (before the page and the app's menu) and sends them here
+  const shortcutsActive = contextReady && open && !!selected;
+  useEffect(() => {
+    if (!shortcutsActive) return;
+    window.electronAPI.setBrowserShortcuts(true);
+    return () => window.electronAPI.setBrowserShortcuts(false);
+  }, [shortcutsActive]);
+  const onShortcutRef = useRef<(shortcut: BrowserShortcut) => void>(() => undefined);
+  onShortcutRef.current = (shortcut) => {
+    if (!selected) return;
+    const index = pages.findIndex((page) => page.id === selected.id);
+    const show = (at: number) => {
+      const page = pages[(at + pages.length) % pages.length];
+      if (page) selectPage(page.id);
+    };
+    switch (shortcut.kind) {
+      case 'newTab':
+        if (newTabSession) openNewTab(newTabSession);
+        break;
+      case 'closeTab':
+        closeTab(selected.id, selected.sessionId);
+        break;
+      case 'nextTab':
+        show(index + 1);
+        break;
+      case 'previousTab':
+        show(index - 1);
+        break;
+      case 'tab':
+        if (shortcut.index < 0) show(pages.length - 1);
+        else if (shortcut.index < pages.length) show(shortcut.index);
+        break;
+      case 'address':
+        addressRef.current?.focus();
+        addressRef.current?.select();
+        break;
+      case 'reload':
+      case 'back':
+      case 'forward':
+        window.electronAPI.navigateBrowserPage(selected.id, shortcut.kind);
+        break;
+    }
+  };
+  useEffect(() => window.electronAPI.onBrowserShortcut((shortcut) => onShortcutRef.current(shortcut)), []);
+
   if (!contextReady) return null;
 
   // Closed: the Claude chat's top bar has the button that opens it (BrowserDrawerButton)
@@ -191,14 +247,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
       <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} />,
     );
   } else body = message(t('browserDrawer.empty'), t('browserDrawer.emptyDescription'));
-
-  // Closing a chat browser's last tab closes that browser
-  const closeTab = (pageId: string, sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    const lastTab = pages.filter((page) => page.sessionId === sessionId).length === 1;
-    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId);
-    else window.electronAPI.closeBrowserPage(pageId);
-  };
 
   return (
     <div className="flex h-full shrink-0 flex-col" style={{ width: drawerWidth }}>

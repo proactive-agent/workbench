@@ -15,6 +15,7 @@ import type {
 } from '../../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 import type { ChatBrowserRuntimeStatus } from '../../../shared/types/settings';
+import type { BrowserShortcut } from '../../../shared/utils/browser-shortcuts';
 import { createIpcListener, invokeIpc, sendIpc, type IpcListenerCleanup } from './ipc-utils';
 
 export interface BrowserDrawerAPI {
@@ -68,6 +69,10 @@ export interface BrowserDrawerAPI {
   autoconfigureChatBrowserRuntime: () => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
   /** The status changed (an autoconfigure window closed) */
   onChatBrowserRuntimeStatus: (callback: (status: ChatBrowserRuntimeStatus) => void) => IpcListenerCleanup;
+  /** This window's drawer is open with tabs: the browser's shortcuts go to it (or no longer) */
+  setBrowserShortcuts: (active: boolean) => void;
+  /** A browser shortcut was pressed while they go to this window's drawer */
+  onBrowserShortcut: (callback: (shortcut: BrowserShortcut) => void) => IpcListenerCleanup;
 }
 
 export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
@@ -93,4 +98,6 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   getChatBrowserRuntimeStatus: (refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, refresh === true),
   autoconfigureChatBrowserRuntime: () => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE),
   onChatBrowserRuntimeStatus: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, callback),
+  setBrowserShortcuts: (active) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUTS, active),
+  onBrowserShortcut: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUT, callback),
 });
