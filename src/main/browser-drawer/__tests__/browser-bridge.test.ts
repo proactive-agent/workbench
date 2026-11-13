@@ -15,6 +15,7 @@ const path = require('path');
 const log = (entry) => fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify(entry) + '\\n');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let viewport = { width: 800, height: 600 };
+let front = false;
 const page = {
   on() {},
   url: () => 'about:blank',
@@ -34,7 +35,18 @@ const page = {
   }),
   emulateMedia: async () => {},
   viewportSize: () => viewport,
-  setViewportSize: async (size) => { viewport = size; },
+  // As in Firefox: a background tab resizes only once it is brought to the front, which answers late
+  // (a 'background' file in this folder: another tab came to the front meanwhile)
+  setViewportSize: async (size) => {
+    if (fs.existsSync(path.join(__dirname, 'background'))) {
+      fs.rmSync(path.join(__dirname, 'background'));
+      front = false;
+    }
+    while (!front) await sleep(20);
+    viewport = size;
+    log({ resized: size.width });
+  },
+  bringToFront: () => { front = true; log({ front: true }); return new Promise(() => {}); },
   screencast: {
     start: async ({ onFrame }) => {
       setTimeout(() => {
@@ -114,6 +126,44 @@ describe('browser bridge script', () => {
     await until(async () => (await calls()).some((call) => call.down));
     const mouse = (await calls()).filter((call) => 'move' in call || 'down' in call);
     expect(mouse).toEqual([{ move: 1 }, { move: 4 }, { move: 5 }, { down: true }]);
+  });
+
+  it('shows a background tab at once: brought to the front on a switch, not on a resize unless it stalls', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    await writeFile(lib, FAKE_PLAYWRIGHT);
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const fronts = async () => (await calls()).filter((call) => call.front).length;
+    const resizedTo = (width: number) => async () => (await calls()).some((call) => call.resized === width);
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let pageId: string | undefined;
+    let framed = false;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'frame') framed = true;
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 700, height: 500, scale: 1 });
+    // Well within the 5 second command timeout a resize waiting for the tab would take
+    await until(() => framed, 1500);
+    expect(await fronts()).toBe(1);
+
+    // The drawer resized: the tab in front stays, nothing is brought forward
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 710, height: 500, scale: 1 });
+    await until(resizedTo(710), 1500);
+    expect(await fronts()).toBe(1);
+
+    // Another tab came to the front meanwhile: the stalled resize brings the viewed one back
+    await writeFile(path.join(dir, 'background'), '');
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 720, height: 500, scale: 1 });
+    await until(resizedTo(720), 1500);
+    expect(await fronts()).toBe(2);
   });
 
   it("reads a page's selected text in turn with its input, before the keys after it", async () => {

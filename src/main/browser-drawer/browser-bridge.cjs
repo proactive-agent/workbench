@@ -30,6 +30,8 @@ const COMMAND_TIMEOUT_MS = 5000;
 const INPUT_TIMEOUT_MS = 5000;
 /** How long a frame may wait for the drawer to draw it before the next one goes anyway */
 const FRAME_ACK_TIMEOUT_MS = 1000;
+/** A viewed page's resize taking longer than this is a background tab's (it resizes once in front) */
+const RESIZE_STALL_MS = 300;
 /**
  * page id -> { viewers: Map<viewer id, scale>, size: the frame size asked for | null, sending: the
  * frame the drawer is drawing | null, next: the newest frame waiting for it | null }. Frames are
@@ -374,11 +376,22 @@ async function view(viewerId, pageId, width, height, scale) {
     return;
   }
   viewers.set(viewerId, pageId);
+  // A tab the user switches to becomes the browser's active one, as a click on a tab would:
+  // Firefox resizes a background tab only once it is in front, so setting its viewport took the
+  // command's whole timeout. Not awaited: the tab is active at once, Firefox answers later. Only
+  // on a switch: the agent's tab, in front meanwhile, stays there while the drawer resizes
+  const switched = previous !== pageId;
+  if (switched) entry.page.bringToFront().catch(() => undefined);
   // The page fills the drawer: its viewport is the drawer's page area (what the agent sees too)
   if (width > 0 && height > 0) {
     const current = entry.page.viewportSize();
     if (!current || current.width !== width || current.height !== height) {
-      await bounded(entry.page.setViewportSize({ width, height }).catch((error) => log(error)), COMMAND_TIMEOUT_MS);
+      const resized = entry.page.setViewportSize({ width, height }).catch((error) => log(error));
+      // A resize that stalls: another tab came to the front since (Claude opened or picked one)
+      if (!switched && !(await bounded(resized.then(() => true), RESIZE_STALL_MS, false))) {
+        entry.page.bringToFront().catch(() => undefined);
+      }
+      await bounded(resized, COMMAND_TIMEOUT_MS);
     }
   }
   let cast = casts.get(pageId);
