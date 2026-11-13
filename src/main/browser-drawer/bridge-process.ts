@@ -31,6 +31,8 @@ export interface BridgeSession {
   endpoint: string;
   browserName: string;
   playwrightLib: string;
+  /** Driven over WebDriver BiDi (registry.ts) */
+  bidi?: boolean;
 }
 
 export type BridgeRequest =

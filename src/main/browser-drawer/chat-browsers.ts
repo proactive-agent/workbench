@@ -85,6 +85,11 @@ const CHAT_BROWSER_TITLE_PREFIX = 'Workbench chat ';
 const START_TIMEOUT_MS = MCP_STARTUP_TIMEOUT_MS;
 /** How long a holder may take to close its browser and exit before it is stopped */
 const CLOSE_TIMEOUT_MS = 5000;
+/**
+ * Lets WebDriver BiDi open `moz-extension://` pages (its navigate refuses them otherwise): the
+ * drawer opens a Firefox extension's popup as a page in a tab. Only chat browsers running extensions
+ */
+const FIREFOX_EXTENSION_PAGES_ENV = { MOZ_REMOTE_ALLOW_SYSTEM_ACCESS: '1' };
 
 /** A running holder */
 export interface ChatBrowserHolder {
@@ -838,7 +843,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       cwd: dir,
       stdio: ['pipe', 'pipe', 'pipe'],
       // In WSL the distribution's login environment applies (only changed variables are passed in)
-      env: { ...baseEnv, ...entry.env },
+      env: { ...baseEnv, ...entry.env, ...(extensions && browser?.engine === 'firefox' ? FIREFOX_EXTENSION_PAGES_ENV : {}) },
       windowsHide: true,
       // Its own process group, so the server npx starts (and its browser) can be stopped with it
       detached: !isWindows(),

@@ -109,6 +109,27 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     for (const id of stalePopups.split(' ').filter(Boolean)) window.electronAPI.closeBrowserPage(id);
   }, [stalePopups]);
 
+  // As the browser's own popup, it closes on a click anywhere beside it (the page, the toolbar, the
+  // tabs, the rest of the window) or when the window loses the focus. An extension's button
+  // handles its own click: its popup toggles, another one's replaces it
+  const popupBoxRef = useRef<HTMLDivElement>(null);
+  const popupId = popup?.id;
+  useEffect(() => {
+    if (!popupId) return;
+    const close = () => window.electronAPI.closeBrowserPage(popupId);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && (popupBoxRef.current?.contains(target) || target.closest('[data-extension-button]'))) return;
+      close();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('blur', close);
+    };
+  }, [popupId]);
+
   // The tab shown stays in sight in a strip of many
   useEffect(() => {
     if (!selectedId) return;
@@ -368,7 +389,12 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
               )}
             />
             {sessions.find((session) => session.id === selected.sessionId)?.chatId && (
-              <BrowserExtensionsMenu sessionId={selected.sessionId} pageId={selected.id} browserStatus={chatBrowser?.status} />
+              <BrowserExtensionsMenu
+                sessionId={selected.sessionId}
+                pageId={selected.id}
+                browserStatus={chatBrowser?.status}
+                popup={popup?.popup ? { id: popup.id, extensionId: popup.popup.extensionId } : undefined}
+              />
             )}
           </form>
         )}
@@ -382,12 +408,15 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
         {/* The page */}
         <div ref={pageAreaRef} className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>
           {body}
-          {/* An extension's popup under its button, at its own size; a click beside it closes it */}
+          {/* An extension's popup under its button, at its own size: only its page shows (no border
+              or background of the drawer's around it, just a shadow under it); a click beside it
+              closes it (above), and never reaches the page */}
           {popup?.popup && popup.popup.width > 0 && popup.popup.height > 0 && (
             <>
-              <div className="absolute inset-0 z-10" aria-hidden onPointerDown={() => window.electronAPI.closeBrowserPage(popup.id)} />
+              <div className="absolute inset-0 z-10" aria-hidden />
               <div
-                className="absolute right-2 top-1 z-20 max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] overflow-hidden rounded-lg border border-border bg-background shadow-lg"
+                ref={popupBoxRef}
+                className="absolute right-2 top-1 z-20 max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] overflow-hidden shadow-lg"
                 style={{ width: popup.popup.width, height: popup.popup.height }}
               >
                 <BrowserPageView pageId={popup.id} label={popup.title || t('browserDrawer.extensions')} popup />

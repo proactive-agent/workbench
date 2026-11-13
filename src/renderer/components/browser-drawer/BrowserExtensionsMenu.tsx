@@ -22,6 +22,8 @@ interface BrowserExtensionsMenuProps {
   pageId: string;
   /** Changes when the chat's browser opens or starts again: its extensions are read again */
   browserStatus?: string;
+  /** The extension popup shown over the tab, if one is: its button closes it again */
+  popup?: { id: string; extensionId: string };
 }
 
 const buttonClass = cn(
@@ -63,7 +65,7 @@ function ExtensionSwitch({ extension, label, onSwitch }: { extension: BrowserExt
  * only its switch turns it on or off (a pinned one's is in its right-click menu). Shown only for a
  * chat browser that runs its profile's extensions (Settings > Browser)
  */
-export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus }: BrowserExtensionsMenuProps) {
+export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus, popup }: BrowserExtensionsMenuProps) {
   const { t } = useTranslation('navigation');
   const info = useBrowserDrawerStore((s) => s.extensions[sessionId]);
   const loadExtensions = useBrowserDrawerStore((s) => s.loadExtensions);
@@ -90,6 +92,11 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus }: Brow
 
   /** What its toolbar button does: its popup opens (shown over the page), or its action runs */
   const openExtension = (extension: BrowserExtension) => {
+    // Its popup shown: the button closes it, as the browser's does
+    if (popup?.extensionId === extension.id) {
+      window.electronAPI.closeBrowserPage(popup.id);
+      return;
+    }
     if (!canOpen || !extension.enabled) return;
     // A tab the extension opens is the user's: shown, as one opened from the page would be
     noteDrawerInput(pageId);
@@ -116,6 +123,8 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus }: Brow
             className={buttonClass}
             title={extension.name}
             aria-label={extension.name}
+            // Not a click beside the popup (BrowserDrawer): this one toggles it, another replaces it
+            data-extension-button=""
             // A click opens the extension; the right-click menu has its switch
             onPointerDown={(event) => {
               if (event.button === 0) event.preventDefault();
@@ -155,6 +164,7 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus }: Brow
           {listed.map((extension) => (
             <DropdownMenuItem
               key={extension.id}
+              data-extension-button=""
               className="gap-2 py-1.5 text-xs"
               onSelect={(event) => {
                 // Nothing to open: the list stays

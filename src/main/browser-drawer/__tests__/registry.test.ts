@@ -53,6 +53,17 @@ describe('registry descriptors', () => {
     expect(withExecutable('C:\\Users\\me\\AppData\\Local\\ms-playwright\\firefox-1500\\firefox.exe')).toBe(true);
   });
 
+  it('tells a browser driven over WebDriver BiDi', () => {
+    const withChannel = (channel?: string) => {
+      const raw = JSON.parse(descriptor('g1'));
+      raw.browser.launchOptions = channel ? { channel } : {};
+      return parseDescriptor(JSON.stringify(raw))?.bidi;
+    };
+    expect(withChannel('moz-firefox')).toBe(true);
+    expect(withChannel('chrome')).toBeUndefined();
+    expect(withChannel()).toBeUndefined();
+  });
+
   it('leaves out what is not one', () => {
     expect(parseDescriptor('{')).toBeNull();
     expect(parseDescriptor('null')).toBeNull();

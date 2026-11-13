@@ -223,6 +223,47 @@ describe('BrowserDrawer', () => {
     expect(api.closeBrowserPage).toHaveBeenCalledWith('pop');
   });
 
+  it("closes an extension's popup on a click anywhere beside it or when the window loses the focus, not on one in it", () => {
+    useBrowserDrawerStore.setState((s) => ({
+      open: true,
+      state: {
+        ...s.state,
+        pages: [
+          ...s.state.pages,
+          { id: 'pop', sessionId: 's', title: 'uBlock Origin', url: 'chrome-extension://ub/popup.html', popup: { extensionId: 'ub', openerId: 'p1', width: 320, height: 200 } },
+        ],
+      },
+    }));
+    renderDrawer();
+    fireEvent.pointerDown(screen.getByRole('img', { name: 'uBlock Origin' }));
+    expect(api.closeBrowserPage).not.toHaveBeenCalled();
+    fireEvent.pointerDown(screen.getAllByRole('tab')[0]);
+    expect(api.closeBrowserPage).toHaveBeenCalledWith('pop');
+    api.closeBrowserPage.mockClear();
+    fireEvent.blur(window);
+    expect(api.closeBrowserPage).toHaveBeenCalledWith('pop');
+  });
+
+  it("closes an extension's popup from its own button", async () => {
+    api.getBrowserExtensions.mockResolvedValue({ success: true, data: listed(true) });
+    chatSession();
+    useBrowserDrawerStore.setState((s) => ({
+      state: {
+        ...s.state,
+        pages: [
+          ...s.state.pages,
+          { id: 'pop', sessionId: 's', title: 'Dark Reader', url: 'chrome-extension://dr/popup.html', popup: { extensionId: 'dr', openerId: 'p1', width: 320, height: 200 } },
+        ],
+      },
+    }));
+    renderDrawer();
+    const button = await screen.findByRole('button', { name: 'Dark Reader' });
+    fireEvent.pointerDown(button);
+    fireEvent.click(button);
+    expect(api.closeBrowserPage).toHaveBeenCalledWith('pop');
+    expect(api.runBrowserExtension).not.toHaveBeenCalled();
+  });
+
   it('shows no extensions for a browser that runs none', async () => {
     api.getBrowserExtensions.mockResolvedValue({ success: true, data: null });
     useBrowserDrawerStore.setState((s) => ({

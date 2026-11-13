@@ -5,6 +5,7 @@ import type { BrowserDrawerFrame, BrowserDrawerInput } from '../../../shared/typ
 type BrowserDrawerButton = Extract<BrowserDrawerInput, { kind: 'mousedown' | 'mouseup' }>['button'];
 import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageCursor } from './browser-drawer-utils';
 import { noteDrawerInput } from '../../stores/browser-drawer-store';
+import { cn } from '../../lib/utils';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
 const RESIZE_DEBOUNCE_MS = 150;
@@ -261,7 +262,7 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-background">
+    <div ref={containerRef} className={cn('absolute inset-0 overflow-hidden', !popup && 'bg-background')}>
       <canvas
         ref={canvasRef}
         tabIndex={0}

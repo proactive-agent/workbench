@@ -87,7 +87,7 @@ export function bridgeSessions(descriptors: readonly RegistryDescriptor[], sessi
   return descriptors
     .filter((d): d is RegistryDescriptor & { endpoint: string; playwrightLib: string } =>
       withProject.has(d.guid) && !!d.endpoint && !!d.playwrightLib)
-    .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib }));
+    .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib, ...(d.bidi ? { bidi: true } : {}) }));
 }
 
 /** A viewport size the drawer may ask for (whole CSS pixels within limits), or 0 for none */

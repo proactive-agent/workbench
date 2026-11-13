@@ -387,14 +387,25 @@ can't reach its add-on manager, so its list is read from the copy's files and a 
 `extensions.json` before the next start, offered as Restart browser: `ChatBrowsers.restart` keeps the folder, copy and
 tabs). Clicking a Chromium extension does what its toolbar button does, for the tab shown: the bridge runs CDP's
 `Extensions.triggerAction` (needs `--enable-unsafe-extension-debugging`, added with extensions on, and Playwright's pipe:
-not Windows browsers run over `--cdp-endpoint` in WSL), and a popup that opens (a target Playwright never attaches) is
-attached over a non-flattened CDP session and wrapped as a page (`attachPopup`), so frames and input go through the usual
-paths; it is listed with `popup` (not a tab) and shown over its tab at its own size, as the window's second view
-(viewer id negated), closed by a click beside it or another tab showing. Firefox's toolbar is out of Playwright's reach, so its popup's page
-(`firefoxExtensionTarget`: the manifest's popup at the profile's `moz-extension://<uuid>`) opens in a new tab shown the
-same way at a fixed popup size, mouse only (Juggler ignores `moz-extension://` documents, so their address, title and keys
-are out of reach, while frames and clicks go through the browser window); one without a popup opens its homepage (from
-`addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
+not Windows browsers run over `--cdp-endpoint` in WSL). A headless browser's popup never grows to its content and takes no
+other size, so the popup the browser opens only gives its address (the one the extension set for that tab) and is closed:
+that page opens in a tab behind the page's (`chromiumPopupTab`; the page's tab stays active, so the extension acts on it,
+and a background tab still renders headless), is measured (its document's preferred width and its height at that width,
+at most 800x600, `popupContentSize`) and is listed with `popup` (not a tab), shown over its tab at that size as the
+window's second view (viewer id negated). Popup tabs keep their own viewport (`keepsViewport`: a headless Chromium's tabs
+share their window, so resizing one broke the frames of the page behind it), streamed whole, and the drawer shows the
+corner the content takes, with no border or background of its own. A popup closes on a click anywhere beside it, the
+window losing the focus, another tab showing or its button again; another extension's replaces it. Firefox's toolbar is
+out of Playwright's reach, so its popup's page (`firefoxExtensionTarget`: the manifest's popup at the profile's
+`moz-extension://<uuid>`) opens in a new tab the same way. Over WebDriver BiDi (the user's own Firefox) that needs the
+system access chat browsers running extensions get (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, `chat-browsers.ts`; BiDi refuses
+`moz-extension://` otherwise), and BiDi still refuses to resize, activate or report events of such a privileged page:
+the popup loads in front, hidden, to be measured, then loads again behind the page's tab (the extension asks for the
+active tab as its popup loads), and closing it first leaves it for `about:blank` (`closePage`), else Playwright keeps it.
+The registry's `launchOptions.channel` (`moz-firefox`) tells the bridge a browser runs over BiDi (`bidi`). Under Juggler
+(Playwright's Firefox) the tab stays in front at a fixed popup size, mouse only (Juggler ignores `moz-extension://`
+documents, so their address, title and keys are out of reach, while frames and clicks go through the browser window).
+One without a popup opens its homepage (from `addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
 a button in the chat's top-right corner shows and hides it (with a dot while the chat's browser is open), its close
 button closes the chat's browser once asked (an overlay on the drawer), and
 other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered. The chat's

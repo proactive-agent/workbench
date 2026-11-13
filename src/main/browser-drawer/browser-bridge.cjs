@@ -120,7 +120,8 @@ function pushPages() {
   if (pagesTimer) return;
   pagesTimer = setTimeout(async () => {
     pagesTimer = null;
-    const list = await Promise.all([...pages].filter(([, entry]) => !isHelperPage(entry.page)).map(async ([id, entry]) => ({
+    // Not a popup still being prepared (see firefoxExtensionAction)
+    const list = await Promise.all([...pages].filter(([, entry]) => !isHelperPage(entry.page) && !entry.hidden).map(async ([id, entry]) => ({
       id,
       sessionId: entry.sessionId,
       url: entry.page.url(),
@@ -131,6 +132,14 @@ function pushPages() {
     })));
     send({ type: 'pages', pages: list, connected: [...sessions.keys()] });
   }, 100);
+}
+
+/**
+ * A page's viewport in CSS pixels: the one set, or for a page whose viewport can't be set (a
+ * Firefox extension page under WebDriver BiDi) the one it has
+ */
+function pageViewport(entry) {
+  return entry.viewport || entry.page.viewportSize();
 }
 
 /** Give a page Workbench's theme (some browsers can't emulate it: their pages keep their own) */
@@ -177,19 +186,39 @@ function addPage(page, sessionId, popup) {
     setLoading(false);
     restartSilentCast(id);
   });
-  page.on('close', () => {
-    if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
-    pages.delete(id);
-    dropCast(id);
-    dropInput(id);
-    pushPages();
-  });
+  page.on('close', () => forgetPage(id));
   page.on('framenavigated', (frame) => {
     if (frame === page.mainFrame()) pushPages();
   });
   page.on('load', pushPages);
   pushPages();
   return id;
+}
+
+/** A page that closed goes from the drawer */
+function forgetPage(id) {
+  const entry = pages.get(id);
+  if (!entry) return;
+  if (entry.loadingTimer) clearTimeout(entry.loadingTimer);
+  pages.delete(id);
+  dropCast(id);
+  dropInput(id);
+  cursorLookups.delete(id);
+  pushPages();
+}
+
+/**
+ * Close a page. A Firefox extension page under WebDriver BiDi would close without a word (no event
+ * of a privileged page comes: Playwright would keep it, for the drawer and the chat's Playwright), so
+ * it leaves its extension page for a blank one first, and goes from the drawer at once
+ */
+async function closePage(id) {
+  const entry = pages.get(id);
+  if (!entry) return;
+  if (!entry.privileged) return entry.page.close();
+  forgetPage(id);
+  await bounded(entry.page.goto('about:blank', { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
+  await entry.page.close().catch(() => undefined);
 }
 
 function wireContext(context, sessionId) {
@@ -210,7 +239,7 @@ async function connect(session) {
   const browserType = playwright[session.browserName] || playwright.chromium;
   // Bounded: commands run one at a time, so a browser that never answers must not hold up the rest
   const browser = await browserType.connect(session.endpoint, { timeout: CONNECT_TIMEOUT_MS });
-  sessions.set(session.id, { browser, key });
+  sessions.set(session.id, { browser, key, bidi: session.bidi === true });
   for (const context of browser.contexts()) wireContext(context, session.id);
   browser.on('context', (context) => wireContext(context, session.id));
   browser.on('disconnected', () => {
@@ -290,7 +319,7 @@ async function startCast(pageId) {
   const entry = pages.get(pageId);
   const cast = casts.get(pageId);
   if (!entry || !cast) return;
-  const viewport = entry.page.viewportSize() || { width: 1280, height: 720 };
+  const viewport = pageViewport(entry) || { width: 1280, height: 720 };
   const scale = Math.max(1, ...cast.viewers.values());
   const size = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
   if (cast.size && cast.size.width === size.width && cast.size.height === size.height) return;
@@ -309,7 +338,7 @@ async function startCast(pageId) {
           if (!current || current.viewers.size === 0) return;
           current.framed = true;
           // The viewport in CSS pixels (Firefox reports the frame's device pixels as its viewport)
-          const css = entry.page.viewportSize() || { width: viewportWidth, height: viewportHeight };
+          const css = pageViewport(entry) || { width: viewportWidth, height: viewportHeight };
           const frame = { data, width: css.width, height: css.height };
           // Acknowledged to the browser once drawn, or once a newer frame replaced it
           return new Promise((done) => {
@@ -394,14 +423,16 @@ async function view(viewerId, pageId, width, height, scale) {
   // command's whole timeout. Not awaited: the tab is active at once, Firefox answers later. Only
   // on a switch: the agent's tab, in front meanwhile, stays there while the drawer resizes
   const switched = previous !== pageId;
-  if (switched) entry.page.bringToFront().catch(() => undefined);
+  // Not a popup's: the tab it opened for stays active (see firefoxExtensionAction)
+  if (switched && !entry.popup) entry.page.bringToFront().catch(() => undefined);
   // The page fills the drawer: its viewport is the drawer's page area (what the agent sees too)
-  if (width > 0 && height > 0) {
+  if (width > 0 && height > 0 && !entry.keepsViewport) {
     const current = entry.page.viewportSize();
     if (!current || current.width !== width || current.height !== height) {
       const resized = entry.page.setViewportSize({ width, height }).catch((error) => log(error));
-      // A resize that stalls: another tab came to the front since (Claude opened or picked one)
-      if (!switched && !(await bounded(resized.then(() => true), RESIZE_STALL_MS, false))) {
+      // A resize that stalls: another tab came to the front since (Claude opened or picked one).
+      // Never a popup's: the page it opened for stays in front
+      if (!switched && !entry.popup && !(await bounded(resized.then(() => true), RESIZE_STALL_MS, false))) {
         entry.page.bringToFront().catch(() => undefined);
       }
       await bounded(resized, COMMAND_TIMEOUT_MS);
@@ -517,6 +548,10 @@ async function replayInput(pageId, queue) {
     const event = queue.events.shift();
     await bounded(input(pageId, event).catch(() => undefined), INPUT_TIMEOUT_MS);
     if (POINTER_EVENTS.has(event.kind)) noteCursor(pageId, event.x, event.y);
+    // A click may change what a popup shows (another of its views): as in the browser, it resizes
+    // (not a Firefox popup: its tab answers no measuring once behind the page's)
+    const entry = pages.get(pageId);
+    if (event.kind === 'mouseup' && entry?.popup && !entry.privileged && !entry.mouseOnly) void settlePopupSize(pageId);
   }
   queue.running = false;
 }
@@ -694,9 +729,9 @@ async function input(pageId, event) {
 
 /** How long an extension's popup may take to show after its action ran */
 const POPUP_WAIT_MS = 1500;
-/** Popups are at most this big (the browser's own limit), in CSS pixels; frames twice that */
+/** Popups are at most this big (the browser's own limit), in CSS pixels */
 const POPUP_MAX = { width: 800, height: 600 };
-/** A Firefox popup's size: its content can't be measured (see extensionAction) */
+/** A popup's size under Juggler, where its content can't be measured (see firefoxExtensionAction) */
 const FIREFOX_POPUP = { width: 380, height: 560 };
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -705,180 +740,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function browserCdp(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) throw new Error('The browser is gone');
-  if (!session.cdp) {
-    const cdp = await session.browser.newBrowserCDPSession();
-    session.cdp = cdp;
-    session.popups = new Map();
-    // Messages of the popups' own sessions (attached without flattening: playwright-core's CDP
-    // session only speaks to the browser), and their end
-    cdp.on('Target.receivedMessageFromTarget', (event) => session.popups.get(event.sessionId)?.receive(event.message));
-    cdp.on('Target.detachedFromTarget', (event) => session.popups.get(event.sessionId)?.detached());
-  }
+  session.cdp ??= await session.browser.newBrowserCDPSession();
   return session.cdp;
-}
-
-/** CDP key event fields for a key as the drawer names it (KeyboardEvent.key) */
-const KEY_CODES = {
-  Enter: 13, Backspace: 8, Tab: 9, Escape: 27, ' ': 32, PageUp: 33, PageDown: 34, End: 35, Home: 36,
-  ArrowLeft: 37, ArrowUp: 38, ArrowRight: 39, ArrowDown: 40, Delete: 46, Shift: 16, Control: 17, Alt: 18, Meta: 91,
-};
-const MODIFIER_BITS = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
-
-/**
- * An extension's popup as a page: the bridge streams and drives it like a tab (screencast frames,
- * mouse and keys), through its own CDP session. Popups size themselves to their content
- */
-async function attachPopup(sessionId, targetId, url, title) {
-  const session = sessions.get(sessionId);
-  const cdp = await browserCdp(sessionId);
-  const { sessionId: popupSession } = await cdp.send('Target.attachToTarget', { targetId, flatten: false });
-  let nextId = 0;
-  const waiting = new Map();
-  const listeners = { close: [] };
-  let closed = false;
-  let size = { width: 0, height: 0 };
-  let onFrame = null;
-  let modifiers = 0;
-  let pointer = { x: 0, y: 0 };
-  let buttons = 0;
-  const call = (method, params = {}) => new Promise((resolve, reject) => {
-    if (closed) return reject(new Error('The popup closed'));
-    const id = ++nextId;
-    waiting.set(id, { resolve, reject });
-    cdp.send('Target.sendMessageToTarget', { sessionId: popupSession, message: JSON.stringify({ id, method, params }) }).catch((error) => {
-      waiting.delete(id);
-      reject(error);
-    });
-  });
-  const close = () => {
-    if (closed) return;
-    closed = true;
-    session.popups.delete(popupSession);
-    for (const { reject } of waiting.values()) reject(new Error('The popup closed'));
-    waiting.clear();
-    for (const listener of listeners.close) listener();
-  };
-  const resized = (width, height) => {
-    if (!(width > 0 && height > 0) || (width === size.width && height === size.height)) return;
-    size = { width: Math.min(width, POPUP_MAX.width), height: Math.min(height, POPUP_MAX.height) };
-    pushPages();
-  };
-  session.popups.set(popupSession, {
-    receive: (text) => {
-      let message;
-      try {
-        message = JSON.parse(text);
-      } catch {
-        return;
-      }
-      if (message.id && waiting.has(message.id)) {
-        const { resolve, reject } = waiting.get(message.id);
-        waiting.delete(message.id);
-        if (message.error) reject(new Error(message.error.message));
-        else resolve(message.result);
-      } else if (message.method === 'Page.screencastFrame') {
-        const { data, metadata, sessionId: frameSession } = message.params;
-        resized(Math.round(metadata.deviceWidth), Math.round(metadata.deviceHeight));
-        const ack = () => call('Page.screencastFrameAck', { sessionId: frameSession }).catch(() => undefined);
-        if (!onFrame) return void ack();
-        Promise.resolve(onFrame({ data: new Uint8Array(Buffer.from(data, 'base64')), viewportWidth: size.width, viewportHeight: size.height })).then(ack, ack);
-      }
-    },
-    detached: close,
-  });
-  const evaluate = async (fn, arg) => {
-    const expression = typeof fn === 'function' ? `(${fn})(${JSON.stringify(arg)})` : String(fn);
-    const result = await call('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-    if (result.exceptionDetails) throw new Error(result.exceptionDetails.text || 'Evaluation failed');
-    return result.result.value;
-  };
-  const mouse = (type, extra = {}) => call('Input.dispatchMouseEvent', { type, x: pointer.x, y: pointer.y, modifiers, buttons, ...extra });
-  const BUTTON_BITS = { left: 1, right: 2, middle: 4 };
-  const key = (type, name) => {
-    const code = KEY_CODES[name] ?? ([...name].length === 1 ? name.toUpperCase().charCodeAt(0) : 0);
-    // Printable keys type their character, unless a shortcut modifier is down
-    const text = [...name].length === 1 && !(modifiers & (MODIFIER_BITS.Control | MODIFIER_BITS.Meta | MODIFIER_BITS.Alt)) ? name : name === 'Enter' ? '\r' : '';
-    return call('Input.dispatchKeyEvent', {
-      type: type === 'down' ? (text ? 'keyDown' : 'rawKeyDown') : 'keyUp',
-      key: name,
-      windowsVirtualKeyCode: code,
-      modifiers,
-      ...(type === 'down' && text ? { text, unmodifiedText: text } : {}),
-    });
-  };
-  const page = {
-    url: () => url,
-    title: async () => title,
-    on: (event, listener) => {
-      if (event === 'close') listeners.close.push(listener);
-    },
-    mainFrame: () => ({ evaluate, childFrames: () => [] }),
-    evaluate,
-    context: () => {
-      throw new Error('A popup has no context');
-    },
-    emulateMedia: async ({ colorScheme: scheme }) => {
-      await call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] }).catch(() => undefined);
-    },
-    viewportSize: () => (size.width > 0 ? size : null),
-    // A popup sizes itself to its content
-    setViewportSize: async () => undefined,
-    bringToFront: async () => undefined,
-    screencast: {
-      start: async (options) => {
-        onFrame = options.onFrame;
-        await call('Page.startScreencast', { format: 'jpeg', quality: options.quality ?? 100, maxWidth: POPUP_MAX.width * 2, maxHeight: POPUP_MAX.height * 2 });
-      },
-      stop: async () => {
-        onFrame = null;
-        await call('Page.stopScreencast').catch(() => undefined);
-      },
-    },
-    mouse: {
-      move: async (x, y) => {
-        pointer = { x, y };
-        await mouse('mouseMoved');
-      },
-      down: async ({ button = 'left', clickCount = 1 } = {}) => {
-        buttons |= BUTTON_BITS[button] ?? 1;
-        await mouse('mousePressed', { button, clickCount });
-      },
-      up: async ({ button = 'left', clickCount = 1 } = {}) => {
-        buttons &= ~(BUTTON_BITS[button] ?? 1);
-        await mouse('mouseReleased', { button, clickCount });
-      },
-      wheel: async (deltaX, deltaY) => mouse('mouseWheel', { deltaX, deltaY }),
-    },
-    keyboard: {
-      down: async (name) => {
-        modifiers |= MODIFIER_BITS[name] ?? 0;
-        await key('down', name);
-      },
-      up: async (name) => {
-        modifiers &= ~(MODIFIER_BITS[name] ?? 0);
-        await key('up', name);
-      },
-      insertText: (text) => call('Input.insertText', { text }),
-    },
-    goBack: async () => undefined,
-    goForward: async () => undefined,
-    reload: async () => call('Page.reload'),
-    goto: async () => undefined,
-    close: async () => {
-      await cdp.send('Target.closeTarget', { targetId }).catch(() => undefined);
-      close();
-    },
-  };
-  // Its size before the first frame
-  const initial = await evaluate(() => ({ width: innerWidth, height: innerHeight })).catch(() => null);
-  if (initial) resized(initial.width, initial.height);
-  return page;
 }
 
 /** One popup at a time, as in the browser */
 function closePopups(sessionId) {
-  for (const other of pages.values()) {
-    if (other.popup && other.sessionId === sessionId) other.page.close().catch(() => undefined);
+  for (const [id, other] of pages) {
+    if (other.popup && other.sessionId === sessionId) closePage(id).catch(() => undefined);
   }
 }
 
@@ -890,11 +759,19 @@ async function openTab(entry) {
 }
 
 /**
- * Firefox: its popup can't open as one (Playwright's Firefox has no way to its toolbar), so the
- * popup's page opens in a new tab the drawer shows as the popup, at a popup's size. Juggler ignores
- * extension pages, so the tab's address, title and keys stay out of reach: only the mouse drives it
- * (its frames and clicks go through the browser window). An extension without a popup opens its
- * homepage in a new tab instead
+ * Firefox: its popup can't open as one (a popup is a panel of the browser's window, which a headless
+ * browser lacks and neither Juggler nor WebDriver BiDi can open), so the popup's page opens in a new
+ * tab the drawer shows as the popup. An extension without a popup opens its homepage in a new tab
+ * instead.
+ *
+ * WebDriver BiDi (the user's own Firefox) opens extension pages thanks to the system access chat
+ * browsers get (chat-browsers.ts). The popup loads in front, hidden from the drawer, where it is
+ * measured (its size is its content's, as the browser sizes a popup); then the tab it opened for
+ * goes back in front and the popup loads again behind it, as under the browser's own popup: the
+ * extension acts on the active tab, which its popup asks for as it loads. Juggler (Playwright's
+ * Firefox) ignores extension pages, so the tab's address, title, size and keys stay out of reach
+ * there: its tab stays in front at a fixed size, driven by the mouse only (its frames and clicks go
+ * through the browser window)
  */
 async function firefoxExtensionAction(entry, pageId, extensionId, name, target) {
   const popupUrl = typeof target.popupUrl === 'string' && target.popupUrl.startsWith('moz-extension://') ? target.popupUrl : '';
@@ -906,22 +783,142 @@ async function firefoxExtensionAction(entry, pageId, extensionId, name, target) 
     page.goto(homepageUrl, { timeout: 30000 }).catch(log);
     return undefined;
   }
-  if (added) {
-    added.popup = { extensionId, openerId: pageId, ...FIREFOX_POPUP };
+  if (!added) return undefined;
+  added.popup = { extensionId, openerId: pageId, ...FIREFOX_POPUP };
+  added.title = String(name || '');
+  if (!sessions.get(entry.sessionId)?.bidi) {
     added.mouseOnly = true;
-    added.title = String(name || '');
+    pushPages();
+    // Never reported as loaded (see above): its frames show it once it has
+    page.goto(popupUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => undefined);
+    return id;
   }
-  pushPages();
-  // Never reported as loaded (see above): its frames show it once it has
-  page.goto(popupUrl, { waitUntil: 'commit', timeout: 5000 }).catch(() => undefined);
+  added.hidden = true;
+  added.privileged = true;
+  // WebDriver BiDi can't set an extension page's viewport
+  added.keepsViewport = true;
+  try {
+    // No load event comes for an extension page (WebDriver BiDi reports none of a privileged page).
+    // The first extension page a browser loads may never give Playwright its script context:
+    // loaded once more then
+    let measured = false;
+    for (let attempt = 0; attempt < 2 && !measured && pages.has(id); attempt++) {
+      await bounded(page.goto(popupUrl, { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
+      measured = await settlePopupSize(id);
+    }
+    await bounded(entry.page.bringToFront().catch(() => undefined), COMMAND_TIMEOUT_MS);
+    if (measured) {
+      await bounded(page.evaluate(() => void setTimeout(() => location.reload())).catch(() => undefined), COMMAND_TIMEOUT_MS);
+    }
+  } finally {
+    added.hidden = false;
+    pushPages();
+  }
+  return id;
+}
+
+/**
+ * How long a popup's page may take to answer a first measuring (a browser just started is slow to
+ * give a new page its script context), then to settle on its size, measured every step meanwhile
+ */
+const POPUP_FIRST_MEASURE_MS = 3000;
+const POPUP_SETTLE_MS = 2000;
+const POPUP_SETTLE_STEP_MS = 200;
+/** How long one measuring may take */
+const POPUP_MEASURE_TIMEOUT_MS = 1000;
+
+/** Measure a popup until its size holds (its content may render a moment after it loads) */
+async function settlePopupSize(pageId) {
+  let last = null;
+  let until = Date.now() + POPUP_FIRST_MEASURE_MS;
+  while (Date.now() < until && pages.get(pageId)?.popup) {
+    const size = await measurePopup(pageId);
+    if (size && last && size.width === last.width && size.height === last.height) break;
+    if (size && !last) until = Date.now() + POPUP_SETTLE_MS;
+    if (size) last = size;
+    await sleep(POPUP_SETTLE_STEP_MS);
+  }
+  return last !== null;
+}
+
+/** A popup's page sized to its content: the size, if it answered */
+async function measurePopup(pageId) {
+  const entry = pages.get(pageId);
+  if (!entry?.popup) return null;
+  const size = await bounded(entry.page.evaluate(popupContentSize, POPUP_MAX).catch(() => null), POPUP_MEASURE_TIMEOUT_MS, null);
+  if (!size || !(size.width > 0 && size.height > 0)) return null;
+  let { width, height } = size;
+  // A popup's tab keeps its viewport (see keepsViewport), streamed whole: the drawer shows the corner
+  // its content takes
+  if (entry.keepsViewport) {
+    const viewport = size.viewport;
+    if (!entry.viewport || entry.viewport.width !== viewport.width || entry.viewport.height !== viewport.height) {
+      entry.viewport = viewport;
+      if (casts.get(pageId)?.viewers.size) enqueue(() => startCast(pageId));
+    }
+    width = Math.min(width, viewport.width);
+    height = Math.min(height, viewport.height);
+  }
+  if (width !== entry.popup.width || height !== entry.popup.height) {
+    entry.popup = { ...entry.popup, width, height };
+    pushPages();
+  }
+  return { width, height };
+}
+
+/**
+ * The size a browser gives an extension's popup, in the page: its document's preferred width (the
+ * widest its content lays out) and its height at that width, at most `max`
+ */
+function popupContentSize(max) {
+  const root = document.documentElement;
+  const style = root.getAttribute('style');
+  try {
+    root.style.setProperty('width', 'max-content', 'important');
+    const width = Math.min(Math.ceil(root.getBoundingClientRect().width), max.width);
+    root.style.setProperty('width', `${width}px`, 'important');
+    root.style.setProperty('height', 'max-content', 'important');
+    const height = Math.min(Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight)), max.height);
+    return { width, height, viewport: { width: innerWidth, height: innerHeight } };
+  } finally {
+    if (style === null) root.removeAttribute('style');
+    else root.setAttribute('style', style);
+  }
+}
+
+/**
+ * Chromium: a headless browser's popup keeps the size its view first had (it never grows to its
+ * content, and takes no other: no window, no metrics override), so its page opens in a tab behind
+ * the page's instead, shown once measured, as the corner of the tab its content takes.
+ * The page's tab stays the active one, so the extension acts on it (its popup asks for the active
+ * tab as it loads), and a background tab still renders in a headless browser
+ */
+async function chromiumPopupTab(entry, pageId, extensionId, name, popupUrl) {
+  const { page, id, added } = await openTab(entry);
+  if (!added) return undefined;
+  added.popup = { extensionId, openerId: pageId, ...POPUP_MAX };
+  added.title = String(name || '');
+  added.hidden = true;
+  // Its viewport is never set: a headless Chromium's tabs share their window, so one tab's resized
+  // the frames of the page it opened for
+  added.keepsViewport = true;
+  try {
+    await bounded(entry.page.bringToFront().catch(() => undefined), COMMAND_TIMEOUT_MS);
+    await page.goto(popupUrl, { timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined);
+    await settlePopupSize(id);
+  } finally {
+    added.hidden = false;
+    pushPages();
+  }
   return id;
 }
 
 /**
  * Click an extension's toolbar button for a page (Chromium's Extensions.triggerAction, as the
  * browser's own button does: its popup opens for that tab, or the extension's click handler runs).
- * A popup is streamed like a page (marked with its extension and the page it opened for); the
- * drawer shows it over that page. Answers with the popup's page id, if one opened
+ * The popup the browser opens gives its address (the one the extension set for that tab) and closes:
+ * its page is shown as the popup (chromiumPopupTab), over the page it opened for. Answers with the
+ * popup's page id, if one opened
  */
 async function extensionAction(requestId, pageId, extensionId, name, target) {
   try {
@@ -949,9 +946,9 @@ async function extensionAction(requestId, pageId, extensionId, name, target) {
       await sleep(100);
       const popup = (await cdp.send('Target.getTargets')).targetInfos.find((target) => isPopup(target) && !before.has(target.targetId));
       if (!popup) continue;
-      const page = await attachPopup(entry.sessionId, popup.targetId, popup.url, String(name || ''));
-      const popupId = addPage(page, entry.sessionId, { extensionId, openerId: pageId });
-      send({ type: 'extensionActionDone', id: requestId, popupId });
+      await cdp.send('Target.closeTarget', { targetId: popup.targetId }).catch(() => undefined);
+      const popupId = await chromiumPopupTab(entry, pageId, extensionId, name, popup.url);
+      send({ type: 'extensionActionDone', id: requestId, ...(popupId ? { popupId } : {}) });
       return;
     }
     send({ type: 'extensionActionDone', id: requestId });
@@ -1053,7 +1050,7 @@ function onMessage(message) {
       void extensionAction(message.id, message.pageId, String(message.extensionId || ''), message.name, message.target);
       break;
     case 'closePage':
-      pages.get(message.pageId)?.page.close().catch(log);
+      closePage(message.pageId).catch(log);
       break;
     case 'newPage':
       enqueue(() => newPage(message.sessionId));

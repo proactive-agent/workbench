@@ -33,6 +33,8 @@ export interface RegistryDescriptor {
   playwrightLib?: string;
   /** Playwright's own browser build (no executable of the user's, or one in Playwright's cache) */
   managed?: boolean;
+  /** Driven over WebDriver BiDi (the user's own Firefox, channel `moz-firefox`), not Playwright's own protocol */
+  bidi?: boolean;
 }
 
 /** Sessions with this title prefix are Playwright's own (its dashboard leaves them out too) */
@@ -111,6 +113,7 @@ export function parseDescriptor(text: string): RegistryDescriptor | null {
     ...(typeof value.playwrightVersion === 'string' ? { playwrightVersion: value.playwrightVersion } : {}),
     ...(typeof value.playwrightLib === 'string' ? { playwrightLib: value.playwrightLib } : {}),
     managed: !executablePath || /[\\/]ms-playwright[\\/]/.test(executablePath),
+    ...(typeof launchOptions?.channel === 'string' && /^(moz-firefox|bidi-)/.test(launchOptions.channel) ? { bidi: true } : {}),
   };
 }
 
