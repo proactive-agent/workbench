@@ -155,6 +155,7 @@ const browserMockAPI: ElectronAPI = {
   getChatBrowserRuntimeStatus: async () => ({ success: true, data: { active: 'pwsh', wslShell: false, missing: [] } }),
   autoconfigureChatBrowserRuntime: async () => ({ success: false, error: 'Not available in the browser preview' }),
   onChatBrowserRuntimeStatus: () => () => {},
+  onBrowserCursor: () => () => {},
   setBrowserShortcuts: () => {},
   onBrowserShortcut: () => () => {},
 

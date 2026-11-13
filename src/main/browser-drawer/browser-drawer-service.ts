@@ -401,6 +401,14 @@ export class BrowserDrawerService {
           });
         }
       }
+    } else if (message.type === 'cursor') {
+      // The cursor the page asks for where the mouse is, for the windows viewing it
+      for (const viewerId of new Set(message.viewers.map(Math.abs))) {
+        const target = this.subscribers.get(viewerId);
+        if (target && !target.isDestroyed()) {
+          target.send(IPC_CHANNELS.BROWSER_DRAWER_CURSOR, { pageId: message.pageId, cursor: message.cursor });
+        }
+      }
     } else if (message.type === 'log') {
       appLog.warn(`[BrowserDrawer] ${message.message}`);
     }

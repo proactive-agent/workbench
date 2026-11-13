@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent, ClipboardEvent, WheelEvent } from 'react';
 import type { BrowserDrawerFrame, BrowserDrawerInput } from '../../../shared/types/browser-drawer';
 
 type BrowserDrawerButton = Extract<BrowserDrawerInput, { kind: 'mousedown' | 'mouseup' }>['button'];
-import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton } from './browser-drawer-utils';
+import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageCursor } from './browser-drawer-utils';
 import { noteDrawerInput } from '../../stores/browser-drawer-store';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
@@ -45,6 +45,12 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
   const moveRef = useRef<{ x: number; y: number } | null>(null);
   const moveFrameRef = useRef<number | null>(null);
+  /** The cursor the page asks for where the mouse is (the main process asks it), by page */
+  const [cursor, setCursor] = useState<{ pageId: string; cursor: string } | null>(null);
+
+  useEffect(() => window.electronAPI.onBrowserCursor?.((update) => {
+    if (update.pageId === pageId) setCursor({ pageId, cursor: pageCursor(update.cursor) });
+  }), [pageId]);
 
   // The page's viewport follows the area's size
   useEffect(() => {
@@ -262,6 +268,7 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
         role="img"
         aria-label={label}
         className="block outline-none"
+        style={{ cursor: cursor?.pageId === pageId ? cursor.cursor : 'default' }}
         // Captured: a button released outside the canvas still reaches the page (no stuck drag)
         onPointerDown={(event) => {
           try {

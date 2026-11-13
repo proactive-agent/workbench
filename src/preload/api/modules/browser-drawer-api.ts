@@ -7,6 +7,7 @@ import { IPC_CHANNELS } from '../../../shared/constants';
 import type { IPCResult } from '../../../shared/types';
 import type {
   BrowserBookmark,
+  BrowserDrawerCursor,
   BrowserDrawerFrame,
   BrowserDrawerInput,
   BrowserDrawerNavigation,
@@ -69,6 +70,8 @@ export interface BrowserDrawerAPI {
   autoconfigureChatBrowserRuntime: () => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
   /** The status changed (an autoconfigure window closed) */
   onChatBrowserRuntimeStatus: (callback: (status: ChatBrowserRuntimeStatus) => void) => IpcListenerCleanup;
+  /** The cursor the page this window views asks for where the mouse is */
+  onBrowserCursor: (callback: (cursor: BrowserDrawerCursor) => void) => IpcListenerCleanup;
   /** This window's drawer is open with tabs: the browser's shortcuts go to it (or no longer) */
   setBrowserShortcuts: (active: boolean) => void;
   /** A browser shortcut was pressed while they go to this window's drawer */
@@ -98,6 +101,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   getChatBrowserRuntimeStatus: (refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, refresh === true),
   autoconfigureChatBrowserRuntime: () => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE),
   onChatBrowserRuntimeStatus: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, callback),
+  onBrowserCursor: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_CURSOR, callback),
   setBrowserShortcuts: (active) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUTS, active),
   onBrowserShortcut: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUT, callback),
 });

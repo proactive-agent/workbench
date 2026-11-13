@@ -320,6 +320,7 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser
   BROWSER_DRAWER_STATE: 'browserDrawer:state',             // main -> renderer: sessions or pages changed
   BROWSER_DRAWER_FRAME: 'browserDrawer:frame',             // main -> renderer: a frame of the viewed page
+  BROWSER_DRAWER_CURSOR: 'browserDrawer:cursor',           // main -> renderer: the cursor the viewed page asks for
   BROWSER_DRAWER_SHORTCUTS: 'browserDrawer:shortcuts',     // A window's drawer is open with tabs (its browser shortcuts are caught) or not
   BROWSER_DRAWER_SHORTCUT: 'browserDrawer:shortcut',       // main -> renderer: a browser shortcut was pressed (Ctrl+T, Ctrl+W, Ctrl+Tab...)
   BROWSER_RUNTIME_STATUS: 'browserRuntime:status',               // Where chat browsers run on Windows, and what running them there needs

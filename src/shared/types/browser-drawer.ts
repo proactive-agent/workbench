@@ -102,6 +102,12 @@ export interface BrowserDrawerFrame {
   height: number;
 }
 
+/** The CSS cursor a viewed page asks for where the mouse is (a keyword, never an image) */
+export interface BrowserDrawerCursor {
+  pageId: string;
+  cursor: string;
+}
+
 /** The viewer's input, in the page's CSS pixels */
 export type BrowserDrawerInput =
   | { kind: 'mousemove'; x: number; y: number }

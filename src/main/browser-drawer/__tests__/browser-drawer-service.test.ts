@@ -213,4 +213,16 @@ describe('browser drawer viewers', () => {
     service.setColorScheme('sepia');
     expect(schemes()).toEqual([{ type: 'colorScheme', scheme: 'dark' }, { type: 'colorScheme', scheme: 'light' }]);
   });
+
+  it('sends the cursor a page asks for to the windows viewing it, popups included', async () => {
+    const { bridge, emitter } = fakeBridge();
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge });
+    const sent: Array<[number, unknown]> = [];
+    const window = (id: number) => ({ id, once: () => undefined, isDestroyed: () => false, send: (_channel: string, payload: unknown) => sent.push([id, payload]) }) as unknown as WebContents;
+    await service.subscribe(window(3));
+    await service.subscribe(window(4));
+    // Window 3 views the page, window 4's popup view too (its id negated)
+    emitter.emit('message', { type: 'cursor', pageId: 's#1', viewers: [3, -4], cursor: 'pointer' });
+    expect(sent).toEqual([[3, { pageId: 's#1', cursor: 'pointer' }], [4, { pageId: 's#1', cursor: 'pointer' }]]);
+  });
 });

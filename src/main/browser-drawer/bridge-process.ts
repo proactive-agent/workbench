@@ -49,6 +49,7 @@ export type BridgeRequest =
 export type BridgeMessage =
   | { type: 'pages'; pages: BrowserDrawerPage[]; connected?: string[] }
   | { type: 'frame'; pageId: string; viewers: number[]; data: Uint8Array; width: number; height: number }
+  | { type: 'cursor'; pageId: string; viewers: number[]; cursor: string }
   | { type: 'log'; message: string }
   | { type: 'probed'; id: number; live: string[] }
   | { type: 'copied'; id: number; text: string }

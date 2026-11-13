@@ -561,6 +561,7 @@ export interface ElectronAPI {
   getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
   autoconfigureChatBrowserRuntime: () => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
   onChatBrowserRuntimeStatus: (callback: (status: import('./settings').ChatBrowserRuntimeStatus) => void) => () => void;
+  onBrowserCursor: (callback: (cursor: import('./browser-drawer').BrowserDrawerCursor) => void) => () => void;
   setBrowserShortcuts: (active: boolean) => void;
   onBrowserShortcut: (callback: (shortcut: import('../utils/browser-shortcuts').BrowserShortcut) => void) => () => void;
 

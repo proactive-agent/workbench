@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addressToUrl, alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageLabel } from '../browser-drawer-utils';
+import { addressToUrl, alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageLabel, pageCursor } from '../browser-drawer-utils';
 
 describe('browser drawer helpers', () => {
   it('turns the address field into a URL', () => {
@@ -73,5 +73,15 @@ describe('isCopyShortcut', () => {
     // On macOS Ctrl+C isn't copy (a web terminal's interrupt), and Cmd+C isn't copy elsewhere
     expect(isCopyShortcut(press('c', { ctrlKey: true }), true)).toBe(false);
     expect(isCopyShortcut(press('c', { metaKey: true }), false)).toBe(false);
+  });
+});
+
+describe('pageCursor', () => {
+  it("keeps CSS's cursor keywords and shows the arrow for anything else", () => {
+    expect(pageCursor('pointer')).toBe('pointer');
+    expect(pageCursor('text')).toBe('text');
+    expect(pageCursor('grabbing')).toBe('grabbing');
+    expect(pageCursor('url(https://evil.test/c.png)')).toBe('default');
+    expect(pageCursor('auto')).toBe('default');
   });
 });

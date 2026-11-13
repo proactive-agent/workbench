@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Puzzle, RotateCw } from 'lucide-react';
+import { RotateCw } from 'lucide-react';
+import { ExtensionsIcon } from '../icons/app-icons';
 import type { BrowserExtension } from '../../../shared/types/browser-drawer';
 import { noteDrawerInput, useBrowserDrawerStore } from '../../stores/browser-drawer-store';
 import { cn } from '../../lib/utils';
@@ -31,7 +32,7 @@ const buttonClass = cn(
 
 function ExtensionIcon({ extension, className }: { extension: BrowserExtension; className?: string }) {
   if (extension.icon) return <img src={extension.icon} alt="" draggable={false} className={cn('object-contain', className)} />;
-  return <Puzzle className={cn('text-muted-foreground', className)} strokeWidth={1.75} />;
+  return <ExtensionsIcon className={cn('text-muted-foreground', className)} />;
 }
 
 /** An extension's switch, which alone turns it on or off (a click elsewhere on its row opens it) */
@@ -144,7 +145,7 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus }: Brow
       ))}
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger className={buttonClass} title={t('browserDrawer.extensions')} aria-label={t('browserDrawer.extensions')}>
-          <Puzzle className="h-4 w-4" strokeWidth={1.75} />
+          <ExtensionsIcon className="h-4 w-4" />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="max-h-[70vh] w-72 overflow-y-auto">
           <DropdownMenuLabel className="text-xs">{t('browserDrawer.extensions')}</DropdownMenuLabel>

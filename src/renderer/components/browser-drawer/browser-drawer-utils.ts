@@ -77,3 +77,16 @@ export function devicePixelOffset(position: number, scale: number): number {
   const offset = (Math.round(device) - device) / scale;
   return Math.abs(offset) < 1e-6 ? 0 : offset;
 }
+
+/** The CSS cursor keywords a page's cursor may be (anything else shows the arrow) */
+const CURSOR_KEYWORDS = new Set([
+  'default', 'none', 'context-menu', 'help', 'pointer', 'progress', 'wait', 'cell', 'crosshair', 'text',
+  'vertical-text', 'alias', 'copy', 'move', 'no-drop', 'not-allowed', 'grab', 'grabbing', 'all-scroll',
+  'col-resize', 'row-resize', 'n-resize', 'e-resize', 's-resize', 'w-resize', 'ne-resize', 'nw-resize',
+  'se-resize', 'sw-resize', 'ew-resize', 'ns-resize', 'nesw-resize', 'nwse-resize', 'zoom-in', 'zoom-out',
+]);
+
+/** The canvas cursor for the cursor a page asks for: one of CSS's keywords, else the arrow */
+export function pageCursor(cursor: string): string {
+  return CURSOR_KEYWORDS.has(cursor) ? cursor : 'default';
+}

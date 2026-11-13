@@ -235,6 +235,7 @@ function dropSession(sessionId) {
     pages.delete(id);
     dropCast(id);
     dropInput(id);
+    cursorLookups.delete(id);
   }
   pushPages();
 }
@@ -373,6 +374,9 @@ async function stopCast(pageId) {
 }
 
 async function view(viewerId, pageId, width, height, scale) {
+  // A window that starts viewing a page shows the arrow until told: the page's cursor is sent again
+  const lookup = cursorLookups.get(pageId);
+  if (lookup && viewers.get(viewerId) !== pageId) lookup.cursor = 'default';
   const previous = viewers.get(viewerId);
   if (previous && previous !== pageId) {
     casts.get(previous)?.viewers.delete(viewerId);
@@ -512,8 +516,129 @@ async function replayInput(pageId, queue) {
   while (queue.events.length > 0) {
     const event = queue.events.shift();
     await bounded(input(pageId, event).catch(() => undefined), INPUT_TIMEOUT_MS);
+    if (POINTER_EVENTS.has(event.kind)) noteCursor(pageId, event.x, event.y);
   }
   queue.running = false;
+}
+
+// The cursor the page asks for where the mouse is: the drawer shows the page as frames on a
+// canvas, and Chromium's DevTools protocol doesn't report cursor changes, so the page is asked.
+// One lookup at a time per page, for the newest position, after the input is replayed (never in
+// its way); only a change is sent
+const POINTER_EVENTS = new Set(['mousemove', 'mousedown', 'mouseup', 'wheel']);
+/** How long one frame may take to say its cursor */
+const CURSOR_TIMEOUT_MS = 1000;
+/** Iframes descended into at most */
+const CURSOR_FRAME_DEPTH = 8;
+/** page id -> { running, next: {x, y} | null, cursor: the last one sent } */
+const cursorLookups = new Map();
+
+function noteCursor(pageId, x, y) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+  let lookup = cursorLookups.get(pageId);
+  if (!lookup) {
+    lookup = { running: false, next: null, cursor: 'default' };
+    cursorLookups.set(pageId, lookup);
+  }
+  lookup.next = { x, y };
+  if (!lookup.running) void lookUpCursor(pageId, lookup);
+}
+
+async function lookUpCursor(pageId, lookup) {
+  lookup.running = true;
+  while (lookup.next) {
+    const { x, y } = lookup.next;
+    lookup.next = null;
+    const page = pages.get(pageId)?.page;
+    if (!page) break;
+    const cursor = await cursorAt(page, x, y).catch(() => null);
+    if (cursor && cursor !== lookup.cursor && pages.has(pageId)) {
+      lookup.cursor = cursor;
+      send({ type: 'cursor', pageId, viewers: [...(casts.get(pageId)?.viewers.keys() ?? [])], cursor });
+    }
+  }
+  lookup.running = false;
+}
+
+/**
+ * The CSS cursor at a point of a frame's viewport, as the browser would show it: the computed
+ * `cursor` (links get `pointer` from the browser's own stylesheet), an image cursor's keyword
+ * fallback (no image reaches the app), and for `auto` the text cursor over text and editable
+ * fields, the arrow elsewhere. An iframe at the point answers with the point in its own viewport
+ */
+function cursorInFrame({ x, y }) {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return { cursor: 'default' };
+  if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+    const rect = el.getBoundingClientRect();
+    const style = getComputedStyle(el);
+    return {
+      iframe: true,
+      x: x - rect.left - el.clientLeft - (parseFloat(style.paddingLeft) || 0),
+      y: y - rect.top - el.clientTop - (parseFloat(style.paddingTop) || 0),
+    };
+  }
+  const keywords = getComputedStyle(el).cursor.split(',').map((part) => part.trim()).filter((part) => part && !part.startsWith('url('));
+  const cursor = keywords[keywords.length - 1] || 'auto';
+  if (cursor !== 'auto') return { cursor };
+  const textInput = !['button', 'submit', 'reset', 'checkbox', 'radio', 'image', 'color', 'file', 'range', 'hidden'].includes(el.type);
+  if (el.isContentEditable || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && textInput)) return { cursor: 'text' };
+  // Over a character of text (the caret position alone also lands beside text and in blank space)
+  let node = null;
+  let offset = 0;
+  if (document.caretPositionFromPoint) {
+    const position = document.caretPositionFromPoint(x, y);
+    node = position && position.offsetNode;
+    offset = position ? position.offset : 0;
+  } else if (document.caretRangeFromPoint) {
+    const range = document.caretRangeFromPoint(x, y);
+    node = range && range.startContainer;
+    offset = range ? range.startOffset : 0;
+  }
+  if (node && node.nodeType === Node.TEXT_NODE && node.textContent.trim()) {
+    const range = document.createRange();
+    for (const start of [offset, offset - 1]) {
+      if (start < 0 || start >= node.textContent.length) continue;
+      range.setStart(node, start);
+      range.setEnd(node, start + 1);
+      for (const box of range.getClientRects()) {
+        if (x >= box.left && x <= box.right && y >= box.top && y <= box.bottom) return { cursor: 'text' };
+      }
+    }
+  }
+  return { cursor: 'default' };
+}
+
+async function cursorAt(page, x, y) {
+  let frame = page.mainFrame();
+  let point = { x, y };
+  for (let depth = 0; frame && depth < CURSOR_FRAME_DEPTH; depth++) {
+    const result = await bounded(frame.evaluate(cursorInFrame, point).catch(() => null), CURSOR_TIMEOUT_MS, null);
+    if (!result) return null;
+    if (!result.iframe) return result.cursor;
+    // The child frame whose element is at the point, same-origin or not
+    const target = await bounded(
+      frame.evaluateHandle((p) => document.elementFromPoint(p.x, p.y), point).catch(() => null),
+      CURSOR_TIMEOUT_MS,
+      null
+    );
+    let next = null;
+    for (const child of frame.childFrames()) {
+      const element = await child.frameElement().catch(() => null);
+      if (!element) continue;
+      const same = target ? await element.evaluate((a, b) => a === b, target).catch(() => false) : false;
+      await element.dispose().catch(() => undefined);
+      if (same) {
+        next = child;
+        break;
+      }
+    }
+    await target?.dispose().catch(() => undefined);
+    if (!next) return 'default';
+    frame = next;
+    point = { x: result.x, y: result.y };
+  }
+  return 'default';
 }
 
 async function input(pageId, event) {
