@@ -723,7 +723,8 @@
       "apiProfile": "No usage endpoint",
       "unavailable": "Usage couldn't be fetched",
       "reauth": "Has to sign in again"
-    }
+    },
+    "spendLimit": "Enterprise"
   },
   "liveAgentSimulator": {
     "title": "Live agent graph",
