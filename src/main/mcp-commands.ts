@@ -89,12 +89,15 @@ const lookups = new Map<string, Promise<string | null>>();
  * with the extension spawn needs, such as `npx.cmd`), a Linux path in WSL. Cached; `refresh`
  * looks again
  */
-export function resolveCommand(command: string, options: { refresh?: boolean } = {}): Promise<string | null> {
-  if (options.refresh) lookups.delete(command);
-  let lookup = lookups.get(command);
+export async function resolveCommand(command: string, options: { refresh?: boolean } = {}): Promise<string | null> {
+  // Per runtime (once it is known): code run natively in a WSL session (runNatively) looks on Windows
+  await whenShellRuntimeReady();
+  const key = `${getWslInfo() ? 'wsl' : 'native'}:${command}`;
+  if (options.refresh) lookups.delete(key);
+  let lookup = lookups.get(key);
   if (!lookup) {
     lookup = lookUp(command);
-    lookups.set(command, lookup);
+    lookups.set(key, lookup);
   }
   return lookup;
 }

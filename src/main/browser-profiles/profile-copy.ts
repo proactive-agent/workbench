@@ -708,8 +708,9 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
   const keepSaved = options.keepSaved ?? options.keep;
   const profileKey = (list: PlaywrightBrowserChoice[] | undefined) =>
     list === undefined ? '' : `[${[...new Set(list.map((choice) => slug(choice.id)))].sort().join(',')}]`;
-  // A changed choice is looked at again at once
-  const sweepKey = `${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;
+  // A changed choice is looked at again at once; a sweep in WSL looks at other folders than one
+  // run natively (chat browsers on Windows, runNatively)
+  const sweepKey = `${getWslInfo() ? 'wsl' : 'native'}\0${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;
   if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
   lastSweep.set(sweepKey, now);
   if (keepSaved !== undefined) await removeOtherSavedCopies(keepSaved);

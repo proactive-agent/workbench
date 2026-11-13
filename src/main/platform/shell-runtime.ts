@@ -6,8 +6,13 @@
  *
  * Everything is native before `initShellRuntime()` finishes and on macOS/Linux. Not re-exported
  * from platform/index.ts.
+ *
+ * Code run through runNatively() sees a native runtime even in a WSL session: on Windows, chat
+ * browsers can run natively while everything else runs in WSL (Settings > Browser, the
+ * browser-drawer/browser-runtime.ts module), and their code paths are the native ones throughout.
  */
 
+import { AsyncLocalStorage } from 'async_hooks';
 import type {
   ShellFallbackReason,
   ShellRuntimeStatus,
@@ -142,9 +147,36 @@ export async function refreshWslAvailability(): Promise<ShellRuntimeStatus> {
   return getShellRuntimeStatus();
 }
 
-/** Whether this session runs tools inside WSL (always false off Windows) */
-export function isWslRuntime(): boolean {
+/** Set inside runNatively(): what runs there runs natively, whatever the session's runtime */
+const nativeScope = new AsyncLocalStorage<true>();
+
+/**
+ * Run `fn` (and everything it starts, awaits or schedules) as if the session ran natively: the
+ * runtime checks, path translations and spawnTool below act natively there. The session's own
+ * runtime is unchanged for everything else
+ */
+export function runNatively<T>(fn: () => T): T {
+  return nativeScope.run(true, fn);
+}
+
+/** Run `fn` in the session's own runtime, also from inside runNatively() (what it starts, too) */
+export function runInSessionRuntime<T>(fn: () => T): T {
+  return nativeScope.exit(fn);
+}
+
+/** Whether the session runs tools inside WSL, whatever runNatively() says (always false off Windows) */
+function isWslSession(): boolean {
   return isWindows() && state.active === 'wsl' && state.wslInfo !== null;
+}
+
+/** The session's distribution when it runs in WSL, also inside runNatively() (else null) */
+export function getSessionWslInfo(): WslProbeResult | null {
+  return isWslSession() ? state.wslInfo : null;
+}
+
+/** Whether this session runs tools inside WSL (always false off Windows and inside runNatively()) */
+export function isWslRuntime(): boolean {
+  return isWslSession() && nativeScope.getStore() !== true;
 }
 
 /** The probed distribution when running in WSL, else null */
