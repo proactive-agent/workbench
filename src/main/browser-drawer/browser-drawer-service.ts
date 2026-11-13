@@ -15,10 +15,8 @@
  *   opens new tabs
  * - opens and closes the chats' own browsers (chat-browsers.ts), which it tells by their title
  *
- * In WSL mode the browsers run inside the distribution, where their registry and sockets are: the
- * registry is read through `\\wsl.localhost`, the bridge runs there (with the distribution's
- * node) and also says which registered browsers answer, and workspace folders are matched to
- * projects as Windows paths (toHostPath).
+ * Chat browsers run natively, on Windows also while the shell is WSL (browser-runtime.ts), so the
+ * registry, the bridge and the browsers' sockets are this machine's.
  */
 
 import { clipboard, type WebContents } from 'electron';
@@ -35,12 +33,10 @@ import type {
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { appLog } from '../app-logger';
 import { isMacOS, isWindows } from '../platform';
-import { toHostPath } from '../platform/shell-runtime';
-import { chatBrowserWsl, whenChatBrowserRuntimeReady } from './browser-runtime';
-import path from 'path';
+import { whenChatBrowserRuntimeReady } from './browser-runtime';
 import { getAllWindows } from '../window-manager';
 import { clampPixelScale } from './pixel-scale';
-import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type RegistryDescriptor } from './registry';
+import { readLiveSessions, registryAccess, registryOs, type RegistryDescriptor } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
 import { ChatBrowsers, type ChatBrowserOpenOptions } from './chat-browsers';
@@ -184,18 +180,6 @@ export class BrowserDrawerService {
     // After the shell runtime (it waits for that)
     await whenChatBrowserRuntimeReady();
     if (this.stopped) return;
-    // Where chat browsers run: WSL, or Windows also with the WSL shell (browser-runtime.ts)
-    const wsl = chatBrowserWsl();
-    if (wsl && !this.options.registryDir) {
-      setRegistryAccess({
-        dir: toHostPath(path.posix.join(wsl.home, '.cache', 'ms-playwright', 'b')),
-        // Only a running bridge is asked: a check never starts it (it runs once a drawer opens).
-        // Until then the chat browsers Workbench holds open count as live (knownLive below)
-        connect: (endpoint) => (this.bridge.running
-          ? this.bridge.probe([endpoint]).then((live) => (live ? live.has(endpoint) : null))
-          : Promise.resolve(null)),
-      });
-    }
     void this.poll();
     this.timer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
     this.timer.unref?.();
@@ -455,13 +439,7 @@ export class BrowserDrawerService {
       const registry = this.options.registryDir
         ? { dir: this.options.registryDir, connect: undefined }
         : registryAccess(registryOs());
-      const wslBeforeBridge = !!chatBrowserWsl() && !this.options.registryDir && !this.bridge.running;
-      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (descriptor) => {
-        if (connected.has(descriptor.guid)) return true;
-        if (!wslBeforeBridge) return false;
-        const chat = this.chatBrowsers.chatOfTitle(descriptor.title);
-        return !!chat && this.chatBrowsers.isOpen(chat.projectId, chat.chatId);
-      });
+      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (descriptor) => connected.has(descriptor.guid));
       this.chatBrowsers.syncLive(new Set(this.descriptors.map((descriptor) => descriptor.title)));
       const sessions = toDrawerSessions(
         this.descriptors,
@@ -469,8 +447,6 @@ export class BrowserDrawerService {
         getChatBrowserWorkspaces(),
         isWindows() || isMacOS(),
         (title) => this.chatBrowsers.chatOfTitle(title),
-        // WSL mode: the distribution's folders, as the app stores them (Windows paths)
-        chatBrowserWsl() ? toHostPath : undefined,
       );
       if (JSON.stringify(sessions) !== JSON.stringify(this.sessions)) {
         this.sessions = sessions;

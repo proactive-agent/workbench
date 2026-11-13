@@ -20,8 +20,8 @@
 // Windows program, its executable and script), which the guard starts through interop once and
 // sends those calls through.
 //
-// When the chat's browser runs on Windows while Claude Code runs in WSL (Settings > Browser >
-// Browser runtime), the guard and the server run on Windows (started through interop): the server
+// The chat's browser runs on Windows while Claude Code runs in WSL (browser-runtime.ts), so the
+// guard and the server run on Windows (started through interop): the server
 // reports files by their Windows paths, which WORKBENCH_PATH_MAP ({ from, to, distro, mountRoot })
 // turns into the paths Claude Code reads them by (`C:\...\playwright\page.yml` ->
 // `/mnt/c/.../playwright/page.yml`), and the Linux paths Claude Code names in file arguments

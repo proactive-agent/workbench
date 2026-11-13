@@ -1,8 +1,7 @@
 /**
  * Browser (app settings): the chat browsers shown in the browser drawer. The default profile (which
  * task runs and chats use unless they pick another) is kept with the connector defaults
- * (McpConnectorSettings.playwrightBrowser); tasks still pick their own on the Playwright row. On
- * Windows, the Browser runtime row picks where chat browsers run while the shell is WSL.
+ * (McpConnectorSettings.playwrightBrowser); tasks still pick their own on the Playwright row.
  */
 
 import { useEffect, useState } from 'react';
@@ -12,7 +11,6 @@ import { Input } from '../ui/input';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { PlaywrightBrowserSelect } from './PlaywrightBrowserSelect';
-import { BrowserRuntimeRow } from './BrowserRuntimeRow';
 import { isChromiumNotDownloaded } from './connector-meta';
 import { useMcpUnavailableReason } from '../../hooks/useMcpAvailability';
 import { addressToUrl } from '../browser-drawer/browser-drawer-utils';
@@ -43,7 +41,6 @@ export function BrowserSettings({ settings, onSettingsChange }: BrowserSettingsP
   return (
     <SettingsSection title={t('sections.browser.title')}>
       <SettingsRows>
-        <BrowserRuntimeRow settings={settings} onSettingsChange={onSettingsChange} />
         <SettingsRow label={t('browser.profile')} description={t('browser.profileDescription')}>
           <PlaywrightBrowserSelect
             value={connectors.playwrightBrowser}

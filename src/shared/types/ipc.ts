@@ -558,10 +558,10 @@ export interface ElectronAPI {
   closeChatBrowser: (projectId: string, chatId: string, keepTabs?: boolean) => Promise<IPCResult>;
   onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
   onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
-  getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
-  autoconfigureChatBrowserRuntime: () => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
-  onChatBrowserRuntimeStatus: (callback: (status: import('./settings').ChatBrowserRuntimeStatus) => void) => () => void;
   onBrowserCursor: (callback: (cursor: import('./browser-drawer').BrowserDrawerCursor) => void) => () => void;
+  getChatBrowserRequirements: (choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined, refresh?: boolean) => Promise<IPCResult<import('./browser-drawer').ChatBrowserRequirements>>;
+  autoconfigureChatBrowser: (choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult<import('./browser-drawer').ChatBrowserRequirements>>;
+  onChatBrowserRequirementsChanged: (callback: (change: { configuring: boolean }) => void) => () => void;
   setBrowserShortcuts: (active: boolean) => void;
   onBrowserShortcut: (callback: (shortcut: import('../utils/browser-shortcuts').BrowserShortcut) => void) => () => void;
 

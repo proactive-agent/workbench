@@ -149,6 +149,23 @@
     "restorableNoTabs": "This chat's browser closed when Workbench stopped unexpectedly. Opening it with the same profile brings back its sign-ins",
     "opening": "Opening the browser...",
     "openFailed": "The browser could not be opened: {{error}}",
+    "setup": {
+      "description": "Opening the browser needs {{items}} on Windows. Autoconfigure opens PowerShell and installs what is missing",
+      "and": "{{first}} and {{second}}",
+      "missing": {
+        "node": "Node.js 20 or newer",
+        "browserBuild": "Playwright's {{browser}}"
+      },
+      "browsers": {
+        "chromium": "Chromium",
+        "firefox": "Firefox",
+        "webkit": "WebKit"
+      },
+      "autoconfigure": "Autoconfigure",
+      "installing": "Installing...",
+      "configuring": "Follow the steps in the PowerShell window. Open browser shows up here as soon as the browser can open",
+      "failed": "PowerShell could not be opened: {{error}}"
+    },
     "openFailedUnknown": "Unknown error",
     "noTabs": "No tabs are open",
     "noTabsDescription": "Open a new tab to keep using this browser",

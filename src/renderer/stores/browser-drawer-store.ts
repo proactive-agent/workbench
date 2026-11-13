@@ -141,6 +141,12 @@ interface BrowserDrawerStore extends DrawerView {
   /** Whether the + button asked for the tab focusPageId names (it takes the focus wherever it is) */
   focusRequestedByUser: boolean;
   clearFocusRequest: () => void;
+  /**
+   * Why opening a chat's browser failed last, by `<project>:<chat>`: kept here, since the drawer
+   * shows its loader while the browser starts (the empty state that asked goes meanwhile)
+   */
+  openErrors: Record<string, string>;
+  setOpenError: (projectId: string, chatId: string, error: string | null) => void;
   /** Each browser's bookmarks bar (its profile's), read once per browser */
   bookmarks: Record<string, BrowserBookmark[]>;
   loadBookmarks: (sessionId: string) => void;
@@ -207,6 +213,12 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   focusPageId: null,
   focusRequestedByUser: false,
   clearFocusRequest: () => set({ focusPageId: null, focusRequestedByUser: false }),
+  openErrors: {},
+  setOpenError: (projectId, chatId, error) => set((s) => {
+    const key = `${projectId}:${chatId}`;
+    const { [key]: _previous, ...rest } = s.openErrors;
+    return { openErrors: error ? { ...rest, [key]: error } : rest };
+  }),
   bookmarks: {},
   loadBookmarks: (sessionId) => {
     if (sessionId in get().bookmarks) return;

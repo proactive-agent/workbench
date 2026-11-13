@@ -10,7 +10,7 @@ import type {
   ClaudeSessionRef
 } from '../../shared/types';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
-import { CHAT_BROWSER_TOKEN_ENV, CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { CHAT_BROWSER_TOKEN_ENV, CHAT_BROWSER_URL_ENV, runInsights, type InsightsSessionPlan } from './claude-code-runner';
 import { chatBrowsersOnWindows, whenChatBrowserRuntimeReady } from '../browser-drawer/browser-runtime';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
@@ -133,12 +133,12 @@ async function chatMcpServers(
   const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
   const connectorSettings = appSettings?.mcpConnectors;
   const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
-  // In WSL the guard reaches Workbench directly or through the Windows relay; with interop off it
-  // can't, and each turn opens a browser of its own as before. With chat browsers on Windows the
-  // guard runs there and reaches Workbench directly
+  // Chat browsers run on Windows while the shell is WSL: the turn's guard runs there through
+  // interop and reaches Workbench directly. With interop off it can't, and each turn opens a
+  // browser of its own in the distribution, as before
   await whenChatBrowserRuntimeReady();
-  const onWindows = chatBrowsersOnWindows();
-  const chatBrowser = target && (!getWslInfo() || onWindows || getTaskToolsRoute() !== 'off') ? target : undefined;
+  const onWindows = chatBrowsersOnWindows() && getWslInfo()?.interop !== false;
+  const chatBrowser = target && (!getWslInfo() || onWindows) ? target : undefined;
   // An open chat browser is usable whatever the chosen browser's check says now; one that runs on
   // Windows isn't what the check (where Claude Code runs, WSL) looks at: its start says what fails
   const open = chatBrowser && (onWindows || browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId));

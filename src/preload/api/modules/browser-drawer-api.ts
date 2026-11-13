@@ -13,9 +13,9 @@ import type {
   BrowserDrawerNavigation,
   BrowserDrawerState,
   BrowserExtensions,
+  ChatBrowserRequirements,
 } from '../../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
-import type { ChatBrowserRuntimeStatus } from '../../../shared/types/settings';
 import type { BrowserShortcut } from '../../../shared/utils/browser-shortcuts';
 import { createIpcListener, invokeIpc, sendIpc, type IpcListenerCleanup } from './ipc-utils';
 
@@ -64,14 +64,14 @@ export interface BrowserDrawerAPI {
   onBrowserDrawerState: (callback: (state: BrowserDrawerState) => void) => IpcListenerCleanup;
   /** A frame of the page this window views */
   onBrowserFrame: (callback: (frame: BrowserDrawerFrame) => void) => IpcListenerCleanup;
-  /** Windows: where chat browsers run and what running them on Windows needs (`refresh`: checked again) */
-  getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
-  /** Windows: a PowerShell window installs what running chat browsers on Windows needs */
-  autoconfigureChatBrowserRuntime: () => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
-  /** The status changed (an autoconfigure window closed) */
-  onChatBrowserRuntimeStatus: (callback: (status: ChatBrowserRuntimeStatus) => void) => IpcListenerCleanup;
   /** The cursor the page this window views asks for where the mouse is */
   onBrowserCursor: (callback: (cursor: BrowserDrawerCursor) => void) => IpcListenerCleanup;
+  /** Windows: what opening a chat browser with this profile choice needs that is missing (`refresh`: checked again) */
+  getChatBrowserRequirements: (choice: PlaywrightBrowserChoice | null | undefined, refresh?: boolean) => Promise<IPCResult<ChatBrowserRequirements>>;
+  /** Windows: a PowerShell window installs what opening a chat browser with this choice needs */
+  autoconfigureChatBrowser: (choice: PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult<ChatBrowserRequirements>>;
+  /** An autoconfigure window opened or closed: what is missing may have changed */
+  onChatBrowserRequirementsChanged: (callback: (change: { configuring: boolean }) => void) => IpcListenerCleanup;
   /** This window's drawer is open with tabs: the browser's shortcuts go to it (or no longer) */
   setBrowserShortcuts: (active: boolean) => void;
   /** A browser shortcut was pressed while they go to this window's drawer */
@@ -98,10 +98,10 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   closeChatBrowser: (projectId, chatId, keepTabs) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId, keepTabs),
   onBrowserDrawerState: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_STATE, callback),
   onBrowserFrame: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_FRAME, callback),
-  getChatBrowserRuntimeStatus: (refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, refresh === true),
-  autoconfigureChatBrowserRuntime: () => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE),
-  onChatBrowserRuntimeStatus: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, callback),
   onBrowserCursor: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_CURSOR, callback),
+  getChatBrowserRequirements: (choice, refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, choice ?? null, refresh === true),
+  autoconfigureChatBrowser: (choice) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE, choice ?? null),
+  onChatBrowserRequirementsChanged: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, callback),
   setBrowserShortcuts: (active) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUTS, active),
   onBrowserShortcut: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUT, callback),
 });

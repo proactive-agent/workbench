@@ -6,12 +6,11 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult } from '../../shared/types';
-import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState, BrowserExtensions } from '../../shared/types/browser-drawer';
+import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState, BrowserExtensions, ChatBrowserRequirements } from '../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
-import type { ChatBrowserRuntimeStatus } from '../../shared/types/settings';
 import { appLog } from '../app-logger';
 import { browserDrawer } from '../browser-drawer';
-import { autoconfigureChatBrowserRuntime, getChatBrowserRuntimeStatus, onChatBrowserRuntimeStatus } from '../browser-drawer/browser-runtime';
+import { autoconfigureChatBrowser, getChatBrowserRequirements, onChatBrowserRequirementsChanged } from '../browser-drawer/browser-runtime';
 import { getAllWindows } from '../window-manager';
 import { isMacOS } from '../platform';
 import { actsWhileHeld, browserShortcut } from '../../shared/utils/browser-shortcuts';
@@ -145,19 +144,22 @@ export function registerBrowserDrawerHandlers(): void {
     }
   );
 
-  // Settings > Browser > Browser runtime (Windows): where chat browsers run, what running them on
-  // Windows needs (`refresh` checks again), and its Autoconfigure button
-  ipcMain.handle(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, async (_event, refresh: unknown): Promise<IPCResult<ChatBrowserRuntimeStatus>> => {
-    try {
-      return { success: true, data: await getChatBrowserRuntimeStatus({ refresh: refresh === true }) };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : String(error) };
+  // The browser drawer (Windows): what opening a chat browser with a profile choice needs that is
+  // missing (`refresh` checks again), and its Autoconfigure button
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER_RUNTIME_STATUS,
+    async (_event, choice: unknown, refresh: unknown): Promise<IPCResult<ChatBrowserRequirements>> => {
+      try {
+        return { success: true, data: await getChatBrowserRequirements(choice, { refresh: refresh === true }) };
+      } catch (error) {
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
     }
-  });
+  );
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE, async (): Promise<IPCResult<ChatBrowserRuntimeStatus>> => {
+  ipcMain.handle(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE, async (_event, choice: unknown): Promise<IPCResult<ChatBrowserRequirements>> => {
     try {
-      return { success: true, data: await autoconfigureChatBrowserRuntime() };
+      return { success: true, data: await autoconfigureChatBrowser(choice) };
     } catch (error) {
       appLog.error('[BrowserDrawer] Autoconfigure failed:', error);
       return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -198,9 +200,9 @@ export function registerBrowserDrawerHandlers(): void {
     });
   });
 
-  onChatBrowserRuntimeStatus((status) => {
+  onChatBrowserRequirementsChanged((change) => {
     for (const window of getAllWindows()) {
-      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, status);
+      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, change);
     }
   });
 }

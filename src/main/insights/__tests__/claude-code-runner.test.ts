@@ -87,7 +87,7 @@ const wslRef = vi.hoisted(() => ({
 }));
 /** Node.js on Windows while chat browsers run there (browser-runtime.ts) */
 const windowsRef = vi.hoisted(() => ({ node: null as null | { node: string; npx: string; version: string } }));
-vi.mock('../../browser-drawer/browser-runtime', () => ({ windowsNode: () => windowsRef.node }));
+vi.mock('../../browser-drawer/browser-runtime', () => ({ chatBrowserNode: async () => windowsRef.node }));
 vi.mock('../../platform/shell-runtime', () => ({
   whenShellRuntimeReady: async () => ({}),
   isWslRuntime: () => false,

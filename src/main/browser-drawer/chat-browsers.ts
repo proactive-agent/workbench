@@ -28,11 +28,9 @@
  * Chats are told apart by id within their project; the New chat page (no conversation yet) is
  * NEW_CHAT_BROWSER_ID, and its browser moves to the conversation its first message creates.
  *
- * In WSL mode the holder runs inside the distribution (spawnTool, like every MCP server there),
- * its folder in the distribution's own temp folder (runtimeTempParent), so the browser's profile
- * isn't on a Windows drive. Settings > Browser > Browser runtime can run chat browsers on Windows
- * instead (browser-runtime.ts): the holder then starts natively (runNatively), with Windows'
- * Node.js and the chat's choice as its Windows profile.
+ * On Windows chat browsers always run on Windows itself, also while the shell is WSL
+ * (browser-runtime.ts): the holder then starts natively (runNatively), with Windows' Node.js and
+ * the chat's choice as its Windows profile.
  */
 
 import { EventEmitter } from 'events';
@@ -75,7 +73,15 @@ import {
 } from './chat-browser-restore';
 import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
 import { registerChatBrowserWorkspace } from './project-match';
-import { inChatBrowserRuntime, whenChatBrowserRuntimeReady, windowsBrowserChoice, windowsNode, withWindowsNodeOnPath } from './browser-runtime';
+import {
+  chatBrowserNode,
+  chatBrowsersOnWindows,
+  forgetChatBrowserRequirements,
+  inChatBrowserRuntime,
+  whenChatBrowserRuntimeReady,
+  windowsBrowserChoice,
+  withWindowsNodeOnPath,
+} from './browser-runtime';
 import { SavedChatTabs } from './saved-tabs';
 
 /** The bind titles of chat browsers start with this */
@@ -350,6 +356,9 @@ export class ChatBrowsers extends EventEmitter {
   private failed(entry: Entry, error: unknown, restore: RestorableChatBrowser | undefined): never {
     entry.starting = undefined;
     const key = keyOf(entry.projectId, entry.chatId);
+    appLog.warn('[BrowserDrawer] The chat browser could not be opened:', error);
+    // Something it needs may be missing since it was last checked (the drawer then offers Autoconfigure)
+    forgetChatBrowserRequirements();
     // A failed start keeps what it was to open again (its folder is left as it was)
     if (restore && !this.stopped && !this.restorables.has(key)) {
       void stat(restore.dir).then(() => {
@@ -754,8 +763,12 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
   const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
   const settings = appSettings?.mcpConnectors;
   const runSettings = chatRunSettings(settings, choice);
-  // On Windows while the shell is WSL: the Windows profile of the choice (made from WSL's list)
-  const node = windowsNode();
+  // On Windows while the shell is WSL: Windows' Node.js (the drawer offers Autoconfigure while
+  // none is installed) and the Windows profile of the choice (made from WSL's list)
+  const node = await chatBrowserNode();
+  if (chatBrowsersOnWindows() && !node) {
+    throw new Error("Node.js isn't installed on Windows, where chat browsers run: the browser drawer's Autoconfigure installs it");
+  }
   if (node) runSettings.playwrightBrowser = await windowsBrowserChoice(runSettings.playwrightBrowser);
   const browser = runSettings.playwrightBrowser;
   const browserId = browser?.id ?? null;

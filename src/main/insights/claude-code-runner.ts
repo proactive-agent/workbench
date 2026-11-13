@@ -40,7 +40,7 @@ import { extractTaskSuggestions, stripTaskSuggestions } from '../../shared/utils
 import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
 import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
-import { windowsNode } from '../browser-drawer/browser-runtime';
+import { chatBrowserNode } from '../browser-drawer/browser-runtime';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { registerChatBrowserWorkspace } from '../browser-drawer/project-match';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
@@ -520,7 +520,7 @@ export async function guardChatPlaywright(
   // the guard and the server run on Windows (Workbench's executable as Node, started through
   // interop), in the turn's folder on Windows; the paths they report are translated for WSL
   const wsl = getWslInfo();
-  const windows = wsl && entry.env?.[CHAT_BROWSER_URL_ENV] ? windowsNode() : null;
+  const windows = wsl && entry.env?.[CHAT_BROWSER_URL_ENV] ? await chatBrowserNode() : null;
   if (wsl && windows && entry.args) {
     const forwarded = ['ELECTRON_RUN_AS_NODE', CHAT_BROWSER_URL_ENV, CHAT_BROWSER_TOKEN_ENV, PATH_MAP_ENV];
     const onWindows: McpServerEntry = {

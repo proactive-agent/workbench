@@ -9,6 +9,18 @@ vi.mock('electron', () => ({ app: { getPath: () => '/tmp' } }));
 vi.mock('../../app-logger', () => ({ appLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../../settings-utils', () => ({ readSettingsFileAsync: vi.fn(async () => ({})) }));
 vi.mock('../../cli-tool-manager', () => ({ getNodeVersionManagerPaths: () => [] }));
+const platform = vi.hoisted(() => ({ windows: true, wsl: true }));
+vi.mock('../../platform', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../platform')>()),
+  isWindows: () => platform.windows,
+}));
+vi.mock('../../platform/shell-runtime', () => ({
+  getSessionWslInfo: () => (platform.wsl ? { distro: 'Ubuntu' } : null),
+  runNatively: <T>(fn: () => T) => fn(),
+  whenShellRuntimeReady: async () => undefined,
+}));
+// No Node.js on Windows
+vi.mock('../../utils/windows-paths', () => ({ findWindowsExecutableViaWhereAsync: async () => null }));
 const detect = vi.hoisted(() => ({ detectWindowsBrowserProfiles: vi.fn() }));
 vi.mock('../../browser-profiles/detect', () => detect);
 const builds = vi.hoisted(() => ({ downloaded: new Set<string>() }));
@@ -19,11 +31,15 @@ vi.mock('../../browser-profiles/managed', async (importOriginal) => ({
 
 import {
   autoconfigureScript,
+  chatBrowserNode,
+  chatBrowsersOnWindows,
+  getChatBrowserRequirements,
   managedBuildOf,
   nodeMajor,
+  onChatBrowserRequirementsChanged,
   resetChatBrowserRuntimeForTests,
+  watchChatBrowserRequirements,
   windowsBrowserChoice,
-  windowsNode,
   withWindowsNodeOnPath,
 } from '../browser-runtime';
 
@@ -55,6 +71,8 @@ describe('browser runtime', () => {
   beforeEach(() => {
     detect.detectWindowsBrowserProfiles.mockReset();
     builds.downloaded.clear();
+    platform.windows = true;
+    platform.wsl = true;
     resetChatBrowserRuntimeForTests();
   });
 
@@ -117,14 +135,52 @@ describe('browser runtime', () => {
     expect(withWindowsNodeOnPath({}, node)).toEqual({ PATH: 'C:\\Program Files\\nodejs' });
   });
 
-  it("gives Windows' Node.js only while chat browsers run on Windows", () => {
-    const node = { node: 'C:\\n\\node.exe', npx: 'C:\\n\\npx.cmd', version: 'v22.0.0' };
-    resetChatBrowserRuntimeForTests({ native: false, node: null, requirements: { missing: [], node } });
-    expect(windowsNode()).toBeNull();
-    resetChatBrowserRuntimeForTests({ native: true, node, requirements: { missing: [], node } });
-    expect(windowsNode()).toEqual(node);
-    // A later check that finds none leaves the session's Node.js as decided
-    resetChatBrowserRuntimeForTests({ native: true, node, requirements: { missing: ['node'], node: null } });
-    expect(windowsNode()).toEqual(node);
+  it('runs chat browsers on Windows whenever the shell is WSL there, and natively elsewhere', async () => {
+    expect(chatBrowsersOnWindows()).toBe(true);
+    // None installed: the drawer offers Autoconfigure
+    expect(await chatBrowserNode()).toBeNull();
+    platform.wsl = false;
+    expect(chatBrowsersOnWindows()).toBe(false);
+    platform.windows = false;
+    platform.wsl = true;
+    expect(chatBrowsersOnWindows()).toBe(false);
+  });
+
+  it("names what opening a profile needs on Windows, kept until checked again, and nothing elsewhere", async () => {
+    expect(await getChatBrowserRequirements(undefined)).toEqual({ missing: ['node', 'browserBuild'], build: 'chromium' });
+    expect(await getChatBrowserRequirements(choice('edge:Default'))).toEqual({ missing: ['node'] });
+    expect(await getChatBrowserRequirements({ ...choice('playwright:firefox'), managed: true, engine: 'firefox' }))
+      .toEqual({ missing: ['node', 'browserBuild'], build: 'firefox' });
+
+    builds.downloaded.add('chromium');
+    expect((await getChatBrowserRequirements(undefined)).missing).toEqual(['node', 'browserBuild']);
+    expect((await getChatBrowserRequirements(undefined, { refresh: true })).missing).toEqual(['node']);
+
+    platform.windows = false;
+    expect(await getChatBrowserRequirements(undefined, { refresh: true })).toEqual({ missing: [] });
+  });
+
+  it('checks every few seconds after Autoconfigure, telling the windows when what is missing changes', async () => {
+    vi.useFakeTimers();
+    try {
+      const told = vi.fn();
+      onChatBrowserRequirementsChanged(told);
+      const firefox = { ...choice('playwright:firefox'), managed: true, engine: 'firefox' };
+      expect((await getChatBrowserRequirements(firefox)).missing).toEqual(['node', 'browserBuild']);
+      watchChatBrowserRequirements(firefox);
+
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(told).not.toHaveBeenCalled();
+      // Playwright's Firefox downloaded meanwhile: the next check sees it
+      builds.downloaded.add('firefox');
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(told).toHaveBeenCalledTimes(1);
+      expect((await getChatBrowserRequirements(firefox)).missing).toEqual(['node']);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(told).toHaveBeenCalledTimes(1);
+    } finally {
+      resetChatBrowserRuntimeForTests();
+      vi.useRealTimers();
+    }
   });
 });

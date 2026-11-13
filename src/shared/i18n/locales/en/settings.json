@@ -755,24 +755,6 @@
     "styleDescription": "Plain or colored by community"
   },
   "browser": {
-    "runtime": {
-      "label": "Browser runtime",
-      "description": "Where chat browsers run while the shell is WSL",
-      "pwsh": "PWSH",
-      "wsl": "WSL",
-      "pwshShell": "With the PowerShell shell, chat browsers run on Windows",
-      "missing": {
-        "node": "Running them on Windows needs Node.js 20 or newer there",
-        "browserBuild": "Running them on Windows needs Playwright's browser for the default profile there",
-        "profile": "The default profile is a browser in WSL: pick a Windows one to run them on Windows",
-        "interop": "WSL interop is off, so Claude Code can't reach browsers on Windows"
-      },
-      "configuring": "Setting up in PowerShell...",
-      "autoconfigure": "Autoconfigure",
-      "autoconfigureFailed": "PowerShell could not be opened",
-      "checkAgain": "Check again",
-      "restartToApply": "Restart to apply"
-    },
     "profile": "Default profile",
     "profileDescription": "The browser profile chats and tasks open, unless one picks another. Its sign-ins carry over",
     "homepage": "Homepage",

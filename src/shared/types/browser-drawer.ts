@@ -3,6 +3,8 @@
  * and driven inside Workbench (src/main/browser-drawer/). Task runs' browsers stay headless and unseen
  */
 
+import type { DownloadableBrowser } from './browser-profiles';
+
 /** A live browser of a Playwright MCP server */
 export interface BrowserDrawerSession {
   /** The browser's guid in Playwright's registry */
@@ -117,3 +119,15 @@ export type BrowserDrawerInput =
   | { kind: 'text'; text: string };
 
 export type BrowserDrawerNavigation = 'back' | 'forward' | 'reload' | 'stop' | 'goto';
+
+/** What opening a chat browser on Windows needs that can be missing there */
+export type ChatBrowserRequirement = 'node' | 'browserBuild';
+
+/** What opening a chat browser with a profile choice needs that is missing (Windows only; empty elsewhere) */
+export interface ChatBrowserRequirements {
+  missing: ChatBrowserRequirement[];
+  /** Playwright's own browser the choice runs, whose build is needed */
+  build?: DownloadableBrowser;
+  /** An autoconfigure window is open and its result is awaited */
+  configuring?: boolean;
+}

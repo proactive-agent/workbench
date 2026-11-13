@@ -323,9 +323,9 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_CURSOR: 'browserDrawer:cursor',           // main -> renderer: the cursor the viewed page asks for
   BROWSER_DRAWER_SHORTCUTS: 'browserDrawer:shortcuts',     // A window's drawer is open with tabs (its browser shortcuts are caught) or not
   BROWSER_DRAWER_SHORTCUT: 'browserDrawer:shortcut',       // main -> renderer: a browser shortcut was pressed (Ctrl+T, Ctrl+W, Ctrl+Tab...)
-  BROWSER_RUNTIME_STATUS: 'browserRuntime:status',               // Where chat browsers run on Windows, and what running them there needs
-  BROWSER_RUNTIME_AUTOCONFIGURE: 'browserRuntime:autoconfigure', // A PowerShell window installs what chat browsers on Windows need
-  BROWSER_RUNTIME_STATUS_CHANGED: 'browserRuntime:statusChanged', // main -> renderer: an autoconfigure finished
+  BROWSER_RUNTIME_STATUS: 'browserRuntime:status',               // Windows: what opening a chat browser with a profile needs that is missing
+  BROWSER_RUNTIME_AUTOCONFIGURE: 'browserRuntime:autoconfigure', // A PowerShell window installs what opening a chat browser needs
+  BROWSER_RUNTIME_STATUS_CHANGED: 'browserRuntime:statusChanged', // main -> renderer: an autoconfigure window opened or closed
 
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check

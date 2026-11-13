@@ -299,27 +299,6 @@ export interface BrowserSettings {
    * (unset: as the profile has it)
    */
   extensionSwitches?: Record<string, Record<string, boolean>>;
-  /**
-   * Windows: where chat browsers run while the shell (windowsShell) is WSL. 'pwsh' runs them on
-   * Windows (Node.js there starts Playwright; faster, Windows profiles as they are), 'wsl' inside
-   * the distribution with everything else. Unset follows the shell. Read at startup
-   */
-  windowsRuntime?: WindowsShell;
-}
-
-/** What running chat browsers on Windows needs that is missing there */
-export type WindowsBrowserRequirement = 'node' | 'browserBuild' | 'profile' | 'interop';
-
-/** Where chat browsers run on Windows (Settings > Browser), and what running them natively needs */
-export interface ChatBrowserRuntimeStatus {
-  /** Where this session's chat browsers run */
-  active: WindowsShell;
-  /** The session runs its tools in WSL (else chat browsers run natively anyway) */
-  wslShell: boolean;
-  /** What running chat browsers on Windows still needs (empty: nothing) */
-  missing: WindowsBrowserRequirement[];
-  /** An autoconfigure terminal was opened and its result is awaited */
-  configuring?: boolean;
 }
 
 export interface AppSettings {

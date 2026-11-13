@@ -9,10 +9,9 @@
 // the MCP server that launched it), the way Playwright's own dashboard does; disconnecting leaves
 // the browser running. It reports their pages, streams the viewed pages as JPEG frames
 // (`page.screencast`, one at a time: the next goes once the drawer drew the last), sizes a viewed page's viewport to the drawer, gives every page Workbench's
-// theme as its `prefers-color-scheme`, and replays the viewer's mouse, wheel and keys on it; it also says which registry endpoints answer (`probe`), for WSL
-// mode, where the main process can't reach the sockets. Plain Node, no packages of its own.
+// theme as its `prefers-color-scheme`, and replays the viewer's mouse, wheel and keys on it.
+// Plain Node, no packages of its own.
 'use strict';
-const net = require('net');
 
 /** session id -> { browser, key } */
 const sessions = new Map();
@@ -1025,39 +1024,6 @@ async function navigate(pageId, action, url) {
   else if (action === 'goto' && url) await page.goto(url, options);
 }
 
-/** Whether a bound browser's socket (or ws:// endpoint) answers; a slow answer counts as live (registry.ts canConnect) */
-function canConnect(endpoint) {
-  return new Promise((resolve) => {
-    let socket;
-    try {
-      if (/^wss?:\/\//.test(endpoint)) {
-        const url = new URL(endpoint);
-        socket = net.createConnection(Number(url.port) || (url.protocol === 'wss:' ? 443 : 80), url.hostname);
-      } else {
-        socket = net.createConnection(endpoint);
-      }
-    } catch {
-      resolve(false);
-      return;
-    }
-    const done = (result) => {
-      clearTimeout(timer);
-      socket.destroy();
-      resolve(result);
-    };
-    const timer = setTimeout(() => done(true), 1000);
-    socket.once('connect', () => done(true));
-    socket.once('error', () => done(false));
-  });
-}
-
-/** Which of the endpoints answer (WSL mode: the main process can't reach the sockets) */
-async function probe(id, endpoints) {
-  const list = Array.isArray(endpoints) ? endpoints.filter((e) => typeof e === 'string') : [];
-  const answers = await Promise.all(list.map((endpoint) => canConnect(endpoint)));
-  send({ type: 'probed', id, live: list.filter((_, index) => answers[index]) });
-}
-
 function onMessage(message) {
   if (!message || typeof message !== 'object') return;
   switch (message.type) {
@@ -1091,10 +1057,6 @@ function onMessage(message) {
       break;
     case 'newPage':
       enqueue(() => newPage(message.sessionId));
-      break;
-    case 'probe':
-      // Not queued: answered while a slow connect runs
-      probe(message.id, message.endpoints).catch(log);
       break;
     case 'colorScheme':
       colorScheme = message.scheme === 'dark' ? 'dark' : 'light';

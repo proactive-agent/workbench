@@ -452,29 +452,30 @@ largest scale factor (up to 2) into the runs' Playwright config (`setPlaywrightD
 `--force-device-scale-factor` for Chromium, whose screencast otherwise stays at CSS size, rounded up to a whole factor:
 a fractional one leaves the screencast without frames once the viewport is set), a small config file for runs
 without a profile copy; screenshots for agents stay in CSS pixels. The renderer gets bytes and text only (no remote content, no webview).
-The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
-browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
-runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through
-`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), a running bridge also says which of its browsers answer
-(`probe`, `setRegistryAccess` in `registry.ts`; a check never starts it: until a drawer does, the chat browsers
-Workbench holds open count as live), and workspace folders are matched to projects as Windows paths
-(`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
-(`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
-Settings > Browser > Browser runtime (Windows, `AppSettings.browser.windowsRuntime`, read at startup like the shell;
-`browser-drawer/browser-runtime.ts`) can run chat browsers on Windows while the shell is WSL: much of a WSL start is
-crossing into the distribution (wsl.exe, a profile copied through `\\wsl.localhost`, a Windows Chromium through the
-launcher and relay). Their code then runs inside `runNatively()` (`platform/shell-runtime.ts`: an AsyncLocalStorage scope
-in which `isWslRuntime()` is false, so every native path applies): the holder with Windows' Node.js (`npx`), its profile
-copied on Windows (the chat's choice, made from WSL's list, mapped to its Windows profile: `windows-<id>` -> `<id>`,
-`detectWindowsBrowserProfiles`), the bridge and the registry native. A chat turn's Playwright attaches through Windows'
-registry, so its guard runs on Windows too (Workbench's executable as Node through interop, `guardChatPlaywright`), in
-the turn's Windows folder, and translates paths both ways (`WORKBENCH_PATH_MAP`: the server's Windows paths for Claude
-Code in WSL, Claude Code's Linux paths in file arguments for the server). It needs Node.js 20+ on Windows, Playwright's
-build when the default profile is one of Playwright's browsers, a default profile Windows has, and interop (looked at
-only with the setting at PWSH, or when the row shows); until then the PWSH option is off and its Autoconfigure button
-opens PowerShell running a script that installs Node.js LTS with winget and fetches the server (and the build). Sweeps
+The availability probe's browser is titled with Playwright's internal prefix, so it never shows. On Windows chat
+browsers always run on Windows itself (`browser-drawer/browser-runtime.ts`), also while the shell is WSL: much of a WSL
+start was crossing into the distribution (wsl.exe, a profile copied through `\\wsl.localhost`, a Windows Chromium
+through the launcher and relay). With the WSL shell their code runs inside `runNatively()` (`platform/shell-runtime.ts`:
+an AsyncLocalStorage scope in which `isWslRuntime()` is false, so every native path applies): the holder with Windows'
+Node.js (`npx`, `chatBrowserNode()`, looked for when a browser opens), its profile copied on Windows (the chat's choice,
+made from WSL's list, mapped to its Windows profile: `windows-<id>` -> `<id>`, `detectWindowsBrowserProfiles`), the
+bridge and the registry native. A chat turn's Playwright attaches through Windows' registry, so its guard runs on
+Windows too (Workbench's executable as Node through interop, `guardChatPlaywright`), in the turn's Windows folder, and
+translates paths both ways (`WORKBENCH_PATH_MAP`: the server's Windows paths for Claude Code in WSL, Claude Code's Linux
+paths in file arguments for the server); with interop off each turn opens a browser of its own in the distribution.
+Opening one needs Node.js 20+ on Windows and, for one of Playwright's own browsers, its build in Windows' Playwright
+cache (`getChatBrowserRequirements`, for the profile picked in the drawer, kept until checked again or an open fails,
+which is logged and whose error the drawer keeps across its loader, `openErrors`): while either is
+missing, the drawer's empty state (`ChatBrowserStart.tsx`) says what is missing and offers Autoconfigure instead of Open
+browser, which opens a PowerShell window (`Start-Process` from a hidden PowerShell that waits for it: a detached start
+from the app gets no console) running a script that installs Node.js LTS with winget (found by its App Installer path
+too) and fetches the server (and the build). From then on what is missing is checked every 5 seconds (for up to 15
+minutes, `watchChatBrowserRequirements`) and when the window closes, so Open browser comes back as soon as the browser
+can open, without a restart. Sweeps
 keep a `windows-<id>` choice's native `<id>` copies too (`choices-in-use.ts`), and the caches the two runtimes share
-(`resolveCommand`, sweep times) are kept per runtime. Each start logs how long it took and where.
+(`resolveCommand`, sweep times) are kept per runtime. Each start logs how long it took and where. Chat browsers no longer run
+inside the distribution (no bridge there, no registry read through `\\wsl.localhost`; `chatBrowserWsl()` is always
+null), but the startup sweep still looks in its `~/.cache/workbench/tmp` for holder folders an older version left.
 
 **Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
 by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in

@@ -2,22 +2,16 @@
  * Where chat browsers run on Windows
  * ==================================
  *
- * With the WSL shell (Settings > General), everything Workbench starts runs inside the
- * distribution, chat browsers too: the holder's server (wsl.exe, npx there), its profile copy
- * (written through `\\wsl.localhost`, slow for a profile's many files), a Windows Chromium
- * through the launcher and the DevTools relay (windows-browser.ts), the drawer's bridge and the
- * registry read through `\\wsl.localhost`. Settings > Browser > Browser runtime
- * (`AppSettings.browser.windowsRuntime`) can run chat browsers on Windows instead, as with the
- * PowerShell shell: their profiles copied on Windows, launched by Playwright itself, the bridge
- * and the registry native, while Claude Code and task runs stay in WSL. A chat turn's Playwright
- * then runs on Windows too, through interop (claude-code-runner.ts's guard): it attaches to the
- * chat's browser through Windows' registry, which the distribution can't reach.
+ * Always on Windows itself, whatever the shell (Settings > General): with the WSL shell their code
+ * runs inside runNatively() (shell-runtime.ts), so the native paths apply throughout: the holder
+ * started by Windows' Node.js (npx), its profile copied on Windows, launched by Playwright itself,
+ * the drawer's bridge and the registry native, while Claude Code and task runs stay in WSL. A chat
+ * turn's Playwright then runs on Windows too, through interop (claude-code-runner.ts's guard): it
+ * attaches to the chat's browser through Windows' registry, which the distribution can't reach.
  *
- * That needs Node.js (npx starts Playwright's MCP server) on Windows, and, for Playwright's own
- * browser as the default profile, its build in Windows' Playwright cache: the settings row's
- * Autoconfigure button installs what is missing in a PowerShell window. Decided once at startup
- * (like the shell): `windowsRuntime: 'pwsh'` with something missing keeps chat browsers in WSL.
- * Their code runs inside runNatively() (shell-runtime.ts), so the native paths apply throughout.
+ * Opening one needs Node.js on Windows and, for one of Playwright's own browsers, its build in
+ * Windows' Playwright cache. While either is missing the browser drawer offers Autoconfigure in
+ * place of Open browser, which installs them in a PowerShell window.
  */
 
 import os from 'os';
@@ -26,7 +20,8 @@ import { spawn } from 'child_process';
 import { existsSync } from 'fs';
 import { mkdir, writeFile } from 'fs/promises';
 import { app } from 'electron';
-import type { AppSettings, ChatBrowserRuntimeStatus, WindowsBrowserRequirement, WindowsShell } from '../../shared/types/settings';
+import type { AppSettings } from '../../shared/types/settings';
+import type { ChatBrowserRequirement, ChatBrowserRequirements } from '../../shared/types/browser-drawer';
 import type { BrowserProfile, DownloadableBrowser, PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { toBrowserChoice } from '../../shared/utils/browser-choice';
 import { appLog } from '../app-logger';
@@ -107,91 +102,135 @@ export function managedBuildOf(choice: PlaywrightBrowserChoice | undefined): Dow
 
 const windowsContext = () => ({ os: 'windows' as const, home: os.homedir(), env: process.env, toHost: (p: string) => p });
 
-/** A choice from WSL's list that only WSL has: neither a Windows profile (`windows-<id>`) nor one of Playwright's */
-function isWslOnlyChoice(choice: PlaywrightBrowserChoice | undefined): boolean {
-  return !!choice && !choice.managed && !choice.id.startsWith('windows-');
+/** Whether chat browsers run on Windows while the shell is WSL (always so: never in the distribution) */
+export function chatBrowsersOnWindows(): boolean {
+  return isWindows() && !!getSessionWslInfo();
 }
 
-interface Requirements {
-  missing: WindowsBrowserRequirement[];
-  node: WindowsNode | null;
+/** Ready once the shell runtime is (chat browsers follow it: natively on Windows) */
+export async function whenChatBrowserRuntimeReady(): Promise<void> {
+  await whenShellRuntimeReady();
 }
 
-/** What running chat browsers on Windows needs that is missing (Windows with the WSL shell) */
-async function checkRequirements(): Promise<Requirements> {
+/** The distribution chat browsers run in: none, they run on Windows (and natively elsewhere) */
+export function chatBrowserWsl(): WslProbeResult | null {
+  return null;
+}
+
+/** Run chat browser code where chat browsers run: natively (runNatively) while the shell is WSL */
+export function inChatBrowserRuntime<T>(fn: () => T): T {
+  return chatBrowsersOnWindows() ? runNatively(fn) : fn();
+}
+
+/** Windows' Node.js last found (looked for again when it is gone or none was found) */
+let foundNode: WindowsNode | null = null;
+
+/**
+ * Windows' Node.js while chat browsers run on Windows with the WSL shell (the shell's lookups are
+ * the distribution's), else null; also null when none is installed (the drawer offers Autoconfigure)
+ */
+export async function chatBrowserNode(): Promise<WindowsNode | null> {
+  if (!chatBrowsersOnWindows()) return null;
+  if (foundNode && existsSync(foundNode.node) && existsSync(foundNode.npx)) return foundNode;
   const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
-  const node = await findWindowsNode(settings?.nodePath);
-  const choice = settings?.mcpConnectors?.playwrightBrowser;
-  const build = managedBuildOf(choice);
-  const missing: WindowsBrowserRequirement[] = [];
-  if (!node) missing.push('node');
-  if (build && !(await findManagedBrowser(build, windowsContext()))) missing.push('browserBuild');
-  // The default profile is a browser only the distribution has
-  if (isWslOnlyChoice(choice)) missing.push('profile');
-  // A chat turn (Claude Code in WSL) starts its Windows side through interop
-  if (getSessionWslInfo()?.interop === false) missing.push('interop');
-  return { missing, node };
+  foundNode = await findWindowsNode(settings?.nodePath);
+  return foundNode;
 }
 
-interface RuntimeState {
-  /** Chat browsers run on Windows while the shell is WSL (decided at startup) */
-  native: boolean;
-  /** Windows' Node.js as found when that was decided (fixed for the session) */
-  node: WindowsNode | null;
-  /** The latest check (the settings row's status) */
-  requirements: Requirements | null;
-  configuring: boolean;
+/** The Playwright build a choice sent by a window needs (only its own fields are read) */
+function buildOfChoice(choice: unknown): DownloadableBrowser | null {
+  if (!choice || typeof choice !== 'object') return 'chromium';
+  const { managed, engine } = choice as { managed?: unknown; engine?: unknown };
+  if (managed !== true) return null;
+  return engine === 'webkit' ? 'webkit' : engine === 'firefox' ? 'firefox' : 'chromium';
 }
 
-let state: RuntimeState = { native: false, node: null, requirements: null, configuring: false };
-let ready: Promise<void> | null = null;
-/** Told when the status changes (an autoconfigure finished): every window gets it */
-let notify: ((status: ChatBrowserRuntimeStatus) => void) | null = null;
+/** Results of the latest checks, by the build looked for ('' for none), until checked again */
+const checked = new Map<string, ChatBrowserRequirements>();
+let configuring = false;
+/** Told when what is missing may have changed (an autoconfigure finished): every window gets it */
+let notify: ((change: { configuring: boolean }) => void) | null = null;
 
-/** Where the shell's chat browsers run unless the setting says otherwise */
-function configuredRuntime(settings: Partial<AppSettings> | undefined): WindowsShell {
-  return settings?.browser?.windowsRuntime ?? (getSessionWslInfo() ? 'wsl' : 'pwsh');
+/**
+ * What opening a chat browser with this profile choice needs on Windows that is missing: Node.js
+ * (npx starts Playwright's MCP server) and, for one of Playwright's own browsers, its build in
+ * Windows' Playwright cache. Nothing elsewhere. Kept until `refresh` (or an autoconfigure) asks again
+ */
+export async function getChatBrowserRequirements(choice: unknown, options: { refresh?: boolean } = {}): Promise<ChatBrowserRequirements> {
+  if (!isWindows()) return { missing: [] };
+  await whenShellRuntimeReady();
+  const build = buildOfChoice(choice);
+  const key = build ?? '';
+  let result = options.refresh ? undefined : checked.get(key);
+  if (!result) {
+    const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+    const node = await findWindowsNode(settings?.nodePath);
+    const missing: ChatBrowserRequirement[] = [];
+    if (!node) missing.push('node');
+    if (build && !(await findManagedBrowser(build, windowsContext()))) missing.push('browserBuild');
+    result = { missing, ...(build ? { build } : {}) };
+    checked.set(key, result);
+  }
+  return { ...result, ...(configuring ? { configuring: true } : {}) };
 }
 
 /**
- * Where this session's chat browsers run, decided once (the first call; startup makes it): on
- * Windows only with the WSL shell, the setting at 'pwsh' and nothing missing. Windows is only
- * looked at for that; otherwise the settings row asks when it shows
+ * A chat browser failed to open: what it needs is checked again on the next ask (something may
+ * have gone since, such as Node.js), and every window is told so its drawer asks
  */
-export function whenChatBrowserRuntimeReady(): Promise<void> {
-  ready ??= (async () => {
-    await whenShellRuntimeReady();
-    if (!isWindows() || !getSessionWslInfo()) return;
-    const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
-    if (configuredRuntime(settings) !== 'pwsh') return;
-    const requirements = await checkRequirements();
-    const native = requirements.missing.length === 0;
-    state = { ...state, native, node: native ? requirements.node : null, requirements };
-    if (!native) appLog.warn(`[BrowserDrawer] Chat browsers run in WSL: running them on Windows needs ${requirements.missing.join(', ')}`);
-  })().catch((error: unknown) => {
-    appLog.warn('[BrowserDrawer] Could not decide where chat browsers run:', error);
-  });
-  return ready;
+export function forgetChatBrowserRequirements(): void {
+  checked.clear();
+  foundNode = null;
+  if (!configuring) notify?.({ configuring: false });
 }
 
-/** Whether this session's chat browsers run on Windows while the shell is WSL (after the startup decision) */
-export function chatBrowsersOnWindows(): boolean {
-  return state.native;
+/** How often what is missing is checked again after Autoconfigure was pressed, and for how long at most */
+const AUTOCONFIGURE_POLL_MS = 5000;
+const AUTOCONFIGURE_POLL_LIMIT_MS = 15 * 60_000;
+let poll: { timer: ReturnType<typeof setInterval>; busy: boolean } | null = null;
+
+function stopWatchingChatBrowserRequirements(): void {
+  if (poll) clearInterval(poll.timer);
+  poll = null;
 }
 
-/** The distribution chat browsers run in, or null when they run natively (always so off WSL) */
-export function chatBrowserWsl(): WslProbeResult | null {
-  return state.native ? null : getSessionWslInfo();
+/**
+ * Check what opening a chat browser with this choice needs every few seconds (after Autoconfigure:
+ * whatever installs it, the drawer offers Open browser as soon as it can open), telling every window
+ * when that changes, until nothing is missing or the time is up
+ */
+export function watchChatBrowserRequirements(choice: unknown): void {
+  stopWatchingChatBrowserRequirements();
+  const until = Date.now() + AUTOCONFIGURE_POLL_LIMIT_MS;
+  const key = (missing: readonly string[]) => missing.join(',');
+  let last = key(checked.get(buildOfChoice(choice) ?? '')?.missing ?? []);
+  const current = {
+    busy: false,
+    timer: setInterval(() => {
+      if (current.busy) return;
+      if (Date.now() > until) return stopWatchingChatBrowserRequirements();
+      current.busy = true;
+      foundNode = null;
+      void getChatBrowserRequirements(choice, { refresh: true })
+        .then((result) => {
+          if (poll !== current) return;
+          if (result.missing.length === 0) stopWatchingChatBrowserRequirements();
+          if (key(result.missing) !== last) {
+            last = key(result.missing);
+            notify?.({ configuring });
+          }
+        }, () => undefined)
+        .finally(() => {
+          current.busy = false;
+        });
+    }, AUTOCONFIGURE_POLL_MS),
+  };
+  poll = current;
 }
 
-/** Run chat browser code where chat browsers run: natively (runNatively) when they run on Windows */
-export function inChatBrowserRuntime<T>(fn: () => T): T {
-  return state.native ? runNatively(fn) : fn();
-}
-
-/** Windows' Node.js while chat browsers run on Windows (as found at the startup decision), else null */
-export function windowsNode(): WindowsNode | null {
-  return state.native ? state.node : null;
+/** Where every window is told that what is missing may have changed (set by the IPC handlers) */
+export function onChatBrowserRequirementsChanged(listener: (change: { configuring: boolean }) => void): void {
+  notify = listener;
 }
 
 /** `env` with Windows' node first on its PATH (npx's shims start `node` from the PATH) */
@@ -206,8 +245,8 @@ export function withWindowsNodeOnPath(env: NodeJS.ProcessEnv, node: WindowsNode)
 /** Thrown for a Playwright build that isn't downloaded on Windows: the command that downloads it */
 function notDownloaded(name: string, build: DownloadableBrowser): Error {
   return new Error(
-    `${name} isn't downloaded on Windows, where chat browsers run (Settings > Browser > Browser runtime). `
-    + `Download it in PowerShell: ${playwrightInstallCommand(build)}`
+    `${name} isn't downloaded on Windows, where chat browsers run: the browser drawer's Autoconfigure downloads it, `
+    + `or run in PowerShell: ${playwrightInstallCommand(build)}`
   );
 }
 
@@ -232,26 +271,8 @@ export async function windowsBrowserChoice(choice: PlaywrightBrowserChoice | und
   const build = managedBuildOf(choice);
   if (build) throw notDownloaded(`Playwright's ${choice.browser}`, build);
   throw new Error(
-    `${choice.profileName} (${choice.browser}) can't run on Windows, where chat browsers run (Settings > Browser > Browser runtime). Pick a Windows browser profile for the chat`
+    `${choice.profileName} (${choice.browser}) can't run on Windows, where chat browsers run. Pick a Windows browser profile for the chat`
   );
-}
-
-/** The settings row's status (Windows): what running chat browsers there needs, checked when asked */
-export async function getChatBrowserRuntimeStatus(options: { refresh?: boolean } = {}): Promise<ChatBrowserRuntimeStatus> {
-  await whenChatBrowserRuntimeReady();
-  const wslShell = isWindows() && !!getSessionWslInfo();
-  if (wslShell && (options.refresh || !state.requirements)) state = { ...state, requirements: await checkRequirements() };
-  return {
-    active: state.native || !wslShell ? 'pwsh' : 'wsl',
-    wslShell,
-    missing: wslShell ? state.requirements?.missing ?? [] : [],
-    ...(state.configuring ? { configuring: true } : {}),
-  };
-}
-
-/** Where every window is told of a new status (set by the IPC handlers) */
-export function onChatBrowserRuntimeStatus(listener: (status: ChatBrowserRuntimeStatus) => void): void {
-  notify = listener;
 }
 
 /** A PowerShell string literal */
@@ -268,7 +289,7 @@ export function autoconfigureScript(build: DownloadableBrowser | null): string {
   const pkg = psString(PLAYWRIGHT_MCP_PACKAGE);
   return [
     "$ErrorActionPreference = 'Stop'",
-    "$Host.UI.RawUI.WindowTitle = 'Workbench: chat browsers on Windows'",
+    "$Host.UI.RawUI.WindowTitle = 'Workbench: set up the chat browser'",
     'function Update-PathFromRegistry {',
     "  $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' + [Environment]::GetEnvironmentVariable('Path', 'User')",
     '}',
@@ -279,11 +300,14 @@ export function autoconfigureScript(build: DownloadableBrowser | null): string {
     "    $major = [int]((& node --version).TrimStart('v').Split('.')[0])",
     '  }',
     `  if ($major -lt ${NODE_MIN_MAJOR}) {`,
-    '    if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {',
+    // App Installer's alias, also when the user's WindowsApps folder isn't on the PATH
+    '    $winget = (Get-Command winget -ErrorAction SilentlyContinue).Source',
+    "    if (-not $winget) { $winget = Join-Path $env:LOCALAPPDATA 'Microsoft\\WindowsApps\\winget.exe' }",
+    '    if (-not (Test-Path $winget)) {',
     `      throw 'winget is not available. Install Node.js ${NODE_MIN_MAJOR} or newer from https://nodejs.org, then press Autoconfigure again'`,
     '    }',
     "    Write-Host 'Installing Node.js (LTS) with winget...'",
-    '    & winget install --id OpenJS.NodeJS.LTS --exact --source winget --accept-source-agreements --accept-package-agreements',
+    '    & $winget install --id OpenJS.NodeJS.LTS --exact --source winget --accept-source-agreements --accept-package-agreements',
     '    if ($LASTEXITCODE -ne 0) { throw "winget could not install Node.js (exit code $LASTEXITCODE)" }',
     '    Update-PathFromRegistry',
     '  } else {',
@@ -301,7 +325,7 @@ export function autoconfigureScript(build: DownloadableBrowser | null): string {
           '  if ($LASTEXITCODE -ne 0) { throw "Playwright\'s MCP server could not be fetched (exit code $LASTEXITCODE)" }',
         ]),
     "  Write-Host ''",
-    "  Write-Host 'Done. Restart Workbench to run chat browsers on Windows.' -ForegroundColor Green",
+    "  Write-Host 'Done. Close this window and open the browser in Workbench.' -ForegroundColor Green",
     '} catch {',
     '  Write-Host $_ -ForegroundColor Red',
     '}',
@@ -311,43 +335,53 @@ export function autoconfigureScript(build: DownloadableBrowser | null): string {
 }
 
 /**
- * Autoconfigure (the settings row's button): a PowerShell window installs what running chat
- * browsers on Windows needs. The script is chosen here, never sent by the window. When it closes,
- * the requirements are checked again and every window gets the new status
+ * Autoconfigure (the browser drawer's button, shown while something is missing): a PowerShell
+ * window installs Node.js and the Playwright build the chat's browser choice needs. The script is
+ * chosen here, never sent by the window. When it closes, what is missing is checked again and every
+ * window is told
  */
-export async function autoconfigureChatBrowserRuntime(): Promise<ChatBrowserRuntimeStatus> {
+export async function autoconfigureChatBrowser(choice: unknown): Promise<ChatBrowserRequirements> {
   if (!isWindows()) throw new Error('Only on Windows');
-  if (state.configuring) return getChatBrowserRuntimeStatus();
-  const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+  if (configuring) return getChatBrowserRequirements(choice);
   const dir = path.join(app.getPath('userData'), 'windows-browser');
   const script = path.join(dir, 'autoconfigure.ps1');
   await mkdir(dir, { recursive: true });
-  await writeFile(script, autoconfigureScript(managedBuildOf(settings?.mcpConnectors?.playwrightBrowser)), 'utf-8');
+  await writeFile(script, autoconfigureScript(buildOfChoice(choice)), 'utf-8');
   // PowerShell 7 when installed, else Windows PowerShell (always there)
   const powershell = getWindowsShellPaths().powershell?.find((candidate) => existsSync(candidate)) ?? 'powershell.exe';
-  // Its own console window, which the user watches and closes
-  const child = spawn(powershell, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script], {
-    detached: true,
+  // Its own console window, which the user watches and closes: opened by Start-Process from a hidden
+  // PowerShell that waits for it, so its exit is the window's (a detached start from this app, which
+  // has no console, gets none either: the script never ran)
+  const open = `Start-Process -FilePath ${psString(powershell)} -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ${psString(`"${script}"`)}) -Wait`;
+  const child = spawn(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', open], {
     stdio: 'ignore',
-    windowsHide: false,
+    windowsHide: true,
   });
-  state = { ...state, configuring: true };
-  const finished = async () => {
-    const requirements = await checkRequirements().catch(() => state.requirements);
-    state = { ...state, configuring: false, requirements };
-    notify?.(await getChatBrowserRuntimeStatus());
+  configuring = true;
+  let done = false;
+  const finished = () => {
+    if (done) return;
+    done = true;
+    configuring = false;
+    checked.clear();
+    foundNode = null;
+    notify?.({ configuring: false });
   };
   child.once('error', (error) => {
-    appLog.warn('[BrowserDrawer] Could not open PowerShell to set up chat browsers on Windows:', error);
-    void finished();
+    appLog.warn('[BrowserDrawer] Could not open PowerShell to set up the chat browser:', error);
+    finished();
   });
-  child.once('exit', () => void finished());
+  child.once('exit', finished);
   child.unref();
-  return getChatBrowserRuntimeStatus();
+  watchChatBrowserRequirements(choice);
+  notify?.({ configuring: true });
+  return getChatBrowserRequirements(choice);
 }
 
-/** For tests: forget the startup decision */
-export function resetChatBrowserRuntimeForTests(overrides: Partial<RuntimeState> = {}): void {
-  state = { native: false, node: null, requirements: null, configuring: false, ...overrides };
-  ready = overrides.native === undefined ? null : Promise.resolve();
+/** For tests: forget what was found and checked */
+export function resetChatBrowserRuntimeForTests(): void {
+  foundNode = null;
+  checked.clear();
+  configuring = false;
+  stopWatchingChatBrowserRequirements();
 }
