@@ -90,9 +90,14 @@ async function attachedPlaywright(
 ): Promise<{ entry: McpServerEntry; session: TaskToolsSession }> {
   const session = await openMcpToolsSession({
     instructions: "Open the chat's browser.",
-    tools: [{ name: 'open_chat_browser', description: "Open the chat's browser unless it is open", inputSchema: { type: 'object', properties: {} } }],
-    call: async () => {
-      await browserDrawer.openChatBrowser(target.projectId, target.chatId, choice);
+    tools: [{
+      name: 'open_chat_browser',
+      description: "Open the chat's browser unless it is open",
+      inputSchema: { type: 'object', properties: { withUrl: { type: 'boolean' } } },
+    }],
+    // The call it opens for names an address: that takes the first tab (no homepage)
+    call: async (_name, args) => {
+      await browserDrawer.openChatBrowser(target.projectId, target.chatId, choice, { withUrl: args.withUrl === true });
       return 'open';
     },
   });

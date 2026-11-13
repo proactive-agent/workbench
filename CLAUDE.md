@@ -391,7 +391,8 @@ paths; it is listed with `popup` (not a tab) and shown over its tab at its own s
 same way at a fixed popup size, mouse only (Juggler ignores `moz-extension://` documents, so their address, title and keys
 are out of reach, while frames and clicks go through the browser window); one without a popup opens its homepage (from
 `addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
-closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
+a button in the chat's top-right corner shows and hides it (with a dot while the chat's browser is open), its close
+button closes the chat's browser once asked (an overlay on the drawer), and
 other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered. The chat's
 narrowest width is what its composer's tool row needs (`useChatMinWidth`, `lib/composer-fit.ts`: the row marked
 `data-composer-row`, each part at its full width even while squeezed, text marked `data-composer-shrinks` may
@@ -472,8 +473,15 @@ drawer's empty state on the Claude page has the chat's browser profile picker (`
 unset = Settings > Browser; the New chat page starts from Settings) and an Open browser button, which also switches
 Playwright on for the chat; the picker shows only while the chat has no browser (one profile per chat at a time). The
 New chat page's browser (chat id `new`) moves to the conversation its first message creates. A chat browser closes when
-the user closes its last tab, its chat is deleted, its browser goes away (its registry entry stops answering) or the
-app quits.
+the user closes it (the drawer's close button) or its last tab, its chat is deleted, its browser goes away (its registry
+entry stops answering) or the app quits. Its tabs are kept then (`saved-tabs.ts`, `<userData>/chat-browser-tabs.json`
+by project and chat), except for a deleted chat or a last tab closed, listed as `ChatBrowserInfo.status: 'saved'` (the
+drawer says how many) and opened again when the chat's browser next opens. A browser opening with nothing to open again
+shows the homepage, unless it opens for a turn's call that names an address (the guard's `open_chat_browser` with
+`withUrl`: browser_navigate with a url, also when it comes while the browser starts): the turn's Playwright takes the
+browser's first tab, so the address goes there and kept tabs open beside it. Kept tabs stay kept until the browser has
+started (a close or quit while it starts loses none; tabs still reopening count as its tabs), and those of chats that
+are gone (project removed, chat file deleted) are dropped at startup.
 
 **Crash leftovers** — Workbench's folders in the system temp folder (`temp-folders.ts`: `workbench-task-`,
 `workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`,

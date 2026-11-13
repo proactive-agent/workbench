@@ -3,6 +3,11 @@ import { describe, it, expect, vi } from 'vitest';
 import path from 'path';
 import { ChatBrowsers, holderArgs, holderError, homepageUrl, type ChatBrowserHolder, type StartChatBrowserHolder } from '../chat-browsers';
 import { toDrawerSessions } from '../browser-drawer-service';
+import { SavedChatTabs } from '../saved-tabs';
+import { rm, stat } from 'fs/promises';
+
+/** Kept tabs in memory only (never the test app's data folder) */
+const memoryTabs = () => new SavedChatTabs(() => null);
 
 /** A holder that starts when `start()` is called and records closes */
 function fakeHolders() {
@@ -35,7 +40,7 @@ describe('chat browsers left by a crash', () => {
   it('lists them for their chats and starts the chat browser from them', async () => {
     const { start, started } = fakeHolders();
     const discard = vi.fn(async () => undefined);
-    const chats = new ChatBrowsers(start, discard);
+    const chats = new ChatBrowsers(start, discard, memoryTabs());
     const left = restorable('session-1');
     chats.addRestorable(left);
     expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'restorable', tabs: 2 }]);
@@ -53,7 +58,7 @@ describe('chat browsers left by a crash', () => {
   it('keeps one whose start failed, and removes those of deleted chats or chats that have a browser', async () => {
     const { start, started } = fakeHolders();
     const discard = vi.fn(async () => undefined);
-    const chats = new ChatBrowsers(start, discard);
+    const chats = new ChatBrowsers(start, discard, memoryTabs());
     const left = restorable('session-1');
     chats.addRestorable(left);
     const failing = chats.ensure('p', '/proj', 'session-1', undefined);
@@ -78,7 +83,7 @@ describe('chat browsers left by a crash', () => {
 describe('chat browsers', () => {
   it('opens one browser per chat, once, with a title that names the chat', async () => {
     const { start, started } = fakeHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     const change = vi.fn();
     chats.on('change', change);
 
@@ -100,7 +105,7 @@ describe('chat browsers', () => {
 
   it('opens no second browser for a chat until the one closed while starting has closed', async () => {
     const { start, started } = fakeHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     const opening = chats.ensure('p', '/proj', 'a', null);
     const closed = chats.close('p', 'a');
     const reopening = chats.ensure('p', '/proj', 'a', null);
@@ -118,7 +123,7 @@ describe('chat browsers', () => {
 
   it('forgets a browser that failed to open, closed, or exited', async () => {
     const { start, started } = fakeHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     const failing = chats.ensure('p', '/proj', 'a', null);
     started[0].reject(new Error('Chromium is not installed'));
     await expect(failing).rejects.toThrow('Chromium is not installed');
@@ -140,7 +145,7 @@ describe('chat browsers', () => {
 
   it("moves the New chat page's browser to its conversation", async () => {
     const { start, started } = fakeHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     const opening = chats.ensure('p', '/proj', 'new', null);
     started[0].resolve();
     await opening;
@@ -152,7 +157,7 @@ describe('chat browsers', () => {
 
   it('closes a browser that went away after it was seen live, and deleted chats', async () => {
     const { start, started } = fakeHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     const opening = chats.ensure('p', '/proj', 'a', null);
     started[0].resolve();
     await opening;
@@ -223,7 +228,7 @@ describe('restarting a chat browser', () => {
 
   it('starts it again from its folder, copy and tabs with the same browser, open for its chat throughout', async () => {
     const { start, starts, kept } = restartableHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     await chats.ensure('p', '/proj', 'session-1', undefined);
     const restarting = chats.restart('p', 'session-1');
     // Its old holder exited meanwhile: the chat's browser is starting, not gone
@@ -238,7 +243,7 @@ describe('restarting a chat browser', () => {
 
   it('keeps what a failed restart was to open again', async () => {
     const { start, failNext } = restartableHolders();
-    const chats = new ChatBrowsers(start);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
     await chats.ensure('p', '/proj', 'session-1', undefined);
     failNext();
     await expect(chats.restart('p', 'session-1')).rejects.toThrow('Firefox did not start');
@@ -253,5 +258,119 @@ describe('the homepage a new chat browser opens', () => {
     for (const value of [undefined, '', 'about:blank', 'javascript:alert(1)', 'chrome://settings']) {
       expect(homepageUrl(value)).toBeUndefined();
     }
+  });
+});
+
+describe("a chat browser's tabs, kept when it closes", () => {
+  const A = { url: 'https://a.test/', title: 'A' };
+  const B = { url: 'https://b.test/', title: 'B' };
+  /** Holders that report `tabs`, recording what each start was given */
+  function tabbedHolders(tabs: Array<{ url: string; title: string }>) {
+    const starts: Array<Parameters<StartChatBrowserHolder>[0]> = [];
+    const start: StartChatBrowserHolder = async (options) => {
+      starts.push(options);
+      const listeners: Array<() => void> = [];
+      return {
+        close: async () => listeners.forEach((l) => l()),
+        onExit: (l) => { listeners.push(l); },
+        tabs: () => tabs,
+      };
+    };
+    return { start, starts };
+  }
+
+  it('keeps them when the browser is closed and opens them again with it, which no longer lists them', async () => {
+    const { start, starts } = tabbedHolders([A, { url: 'about:blank', title: '' }, B]);
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
+    await chats.ensure('p', '/proj', 'chat', undefined);
+    await chats.close('p', 'chat');
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'chat', status: 'saved', tabs: 2 }]);
+
+    await chats.ensure('p', '/proj', 'chat', undefined, { withUrl: true });
+    expect(starts[1]).toMatchObject({ tabs: [A, B] });
+    expect(starts[1].withUrl?.()).toBe(true);
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'chat', status: 'open' }]);
+  });
+
+  it('keeps none when its last tab is closed or its chat deleted, and keeps them when it goes away or the app quits', async () => {
+    const saved = new SavedChatTabs(() => null);
+    const { start } = tabbedHolders([A]);
+    const chats = new ChatBrowsers(start, undefined, saved);
+    await chats.ensure('p', '/proj', 'chat', undefined);
+    await chats.close('p', 'chat', { keepTabs: false });
+    expect(saved.get('p', 'chat')).toEqual([]);
+
+    await chats.ensure('p', '/proj', 'chat', undefined);
+    await chats.close('p', 'chat');
+    await chats.closeChats('p', ['chat']);
+    expect(saved.get('p', 'chat')).toEqual([]);
+
+    await chats.ensure('p', '/proj', 'other', undefined);
+    await chats.shutdown();
+    expect(saved.get('p', 'other')).toEqual([A]);
+  });
+
+  it("moves the New chat page's tabs to the conversation it created", () => {
+    const saved = new SavedChatTabs(() => null);
+    saved.set('p', 'new', [A]);
+    const chats = new ChatBrowsers(tabbedHolders([]).start, undefined, saved);
+    chats.adopt('p', 'chat-1', 'new');
+    expect(saved.get('p', 'new')).toEqual([]);
+    expect(saved.get('p', 'chat-1')).toEqual([A]);
+  });
+
+  it('keeps them in an owner-only file across starts, read in the background, with changes made meanwhile on top', async () => {
+    const file = path.join(os.tmpdir(), `wb-saved-tabs-${process.pid}-${Date.now()}.json`);
+    try {
+      const first = new SavedChatTabs(() => file);
+      await first.ready;
+      first.set('p', 'chat', [A, B]);
+      first.flushSync();
+      if (process.platform !== 'win32') expect((await stat(file)).mode & 0o777).toBe(0o600);
+
+      const second = new SavedChatTabs(() => file);
+      // Changed before the file was read: applied on top of it
+      second.set('p', 'other', [B]);
+      await second.ready;
+      expect(second.get('p', 'chat')).toEqual([A, B]);
+      expect(second.get('p', 'other')).toEqual([B]);
+    } finally {
+      await rm(file, { force: true });
+    }
+  });
+
+  it('forgets the tabs of chats that are gone', async () => {
+    const saved = memoryTabs();
+    saved.set('p', 'kept', [A]);
+    saved.set('p', 'gone', [B]);
+    expect(await saved.prune(async (_projectId, chatId) => chatId === 'kept')).toBe(1);
+    expect(saved.list()).toEqual([{ projectId: 'p', chatId: 'kept', tabs: 1 }]);
+  });
+
+  it('keeps them through a close while the browser was still starting', async () => {
+    const saved = memoryTabs();
+    saved.set('p', 'chat', [A, B]);
+    const { start, started } = fakeHolders();
+    const chats = new ChatBrowsers(start, undefined, saved);
+    const opening = chats.ensure('p', '/proj', 'chat', undefined);
+    const closing = chats.close('p', 'chat');
+    started[0].resolve();
+    await expect(opening).rejects.toThrow();
+    await closing;
+    expect(saved.get('p', 'chat')).toEqual([A, B]);
+  });
+
+  it("gives the first tab to a turn's address that asks while the browser starts", async () => {
+    const seen: boolean[] = [];
+    const start: StartChatBrowserHolder = async ({ withUrl }) => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      seen.push(withUrl?.() === true);
+      return { close: async () => undefined, onExit: () => undefined };
+    };
+    const chats = new ChatBrowsers(start, undefined, memoryTabs());
+    const byUser = chats.ensure('p', '/proj', 'chat', undefined);
+    const byTurn = chats.ensure('p', '/proj', 'chat', undefined, { withUrl: true });
+    await Promise.all([byUser, byTurn]);
+    expect(seen).toEqual([true]);
   });
 });

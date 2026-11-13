@@ -11,23 +11,25 @@ interface BrowserDrawerButtonProps {
   className?: string;
 }
 
-/** An icon button that opens the closed browser drawer (pages that place it in their own top bar) */
+/** An icon button that shows or hides the browser drawer (pages that place it in their own top bar) */
 export function BrowserDrawerButton({ projectId, className }: BrowserDrawerButtonProps) {
   const { t } = useTranslation('navigation');
   const open = useBrowserDrawerStore((s) => s.open);
   const sessionCount = useBrowserDrawerStore((s) => projectSessions(s.state.sessions, projectId, s.chatId).length);
   const setOpen = useBrowserDrawerStore((s) => s.setOpen);
-  if (open) return null;
 
-  const label = sessionCount > 0 ? t('browserDrawer.openWithSessions', { count: sessionCount }) : t('browserDrawer.open');
+  const label = open
+    ? t('browserDrawer.hide')
+    : sessionCount > 0 ? t('browserDrawer.openWithSessions', { count: sessionCount }) : t('browserDrawer.open');
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className={cn('electron-no-drag relative h-8 w-8 text-muted-foreground', className)}
-          onClick={() => setOpen(true)}
+          className={cn('electron-no-drag relative h-8 w-8 text-muted-foreground', open && 'bg-nav-hover text-foreground', className)}
+          onClick={() => setOpen(!open)}
+          aria-pressed={open}
           aria-label={label}
         >
           <Globe className="h-4 w-4" />

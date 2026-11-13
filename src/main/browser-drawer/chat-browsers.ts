@@ -18,8 +18,12 @@
  *
  * The browser opens when the user asks (the drawer's Open browser button) or on a turn's first
  * browser tool call (the chat's Playwright guard asks through the turn's token,
- * `insights-executor.ts`). It closes when the user closes its last tab, the chat is deleted, the
- * browser goes away (it crashed: its registry entry stops answering) or the app quits.
+ * `insights-executor.ts`). It closes when the user closes it (the drawer's close button) or its last
+ * tab, the chat is deleted, the browser goes away (it crashed: its registry entry stops answering)
+ * or the app quits. Its tabs are kept then (saved-tabs.ts), except when the chat was deleted or
+ * its last tab closed, and open again when the chat's browser next opens. A browser that opens
+ * with nothing to open again shows the homepage (Settings > Browser), unless it opens for a turn's
+ * call that names an address (`withUrl`): that address takes the first tab instead.
  *
  * Chats are told apart by id within their project; the New chat page (no conversation yet) is
  * NEW_CHAT_BROWSER_ID, and its browser moves to the conversation its first message creates.
@@ -32,6 +36,7 @@
  */
 
 import { EventEmitter } from 'events';
+import { app } from 'electron';
 import { randomUUID } from 'crypto';
 import path from 'path';
 import { realpath, stat, writeFile } from 'fs/promises';
@@ -71,6 +76,7 @@ import {
 import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
 import { registerChatBrowserWorkspace } from './project-match';
 import { inChatBrowserRuntime, whenChatBrowserRuntimeReady, windowsBrowserChoice, windowsNode, withWindowsNodeOnPath } from './browser-runtime';
+import { SavedChatTabs } from './saved-tabs';
 
 /** The bind titles of chat browsers start with this */
 const CHAT_BROWSER_TITLE_PREFIX = 'Workbench chat ';
@@ -99,6 +105,8 @@ export interface ChatBrowserHolder {
   extensionTarget?: (extensionId: string) => Promise<FirefoxExtensionTarget>;
   /** Close the browser but keep its folder, profile copy and tabs, to start it again from them */
   suspend?: () => Promise<RestorableChatBrowser>;
+  /** Its open tabs, as the drawer last reported them (or as it opened them) */
+  tabs?: () => ChatBrowserTab[];
 }
 
 /** Starts a holder whose browser is bound under `title` (rejects with a readable message) */
@@ -111,7 +119,29 @@ export type StartChatBrowserHolder = (options: {
   chatId?: string;
   /** The chat's browser left by a crash: started from its profile and tabs when it is the same browser */
   restore?: RestorableChatBrowser;
+  /** The tabs the chat's browser had when it last closed, opened again */
+  tabs?: readonly ChatBrowserTab[];
+  /**
+   * Opened for a turn's call that names an address: the first tab is left for it (no homepage).
+   * Asked once the browser is up, so a turn's call that comes while it starts counts too
+   */
+  withUrl?: () => boolean;
 }) => Promise<ChatBrowserHolder>;
+
+/** How a chat browser opens */
+export interface ChatBrowserOpenOptions {
+  /** For a turn's call that names an address (browser_navigate, a new tab with a url) */
+  withUrl?: boolean;
+}
+
+/** Where the chats' tabs are kept (none outside the app, as in tests) */
+function savedTabsFile(): string | null {
+  try {
+    return path.join(app.getPath('userData'), 'chat-browser-tabs.json');
+  } catch {
+    return null;
+  }
+}
 
 interface Entry {
   projectId: string;
@@ -122,6 +152,8 @@ interface Entry {
   holder?: ChatBrowserHolder;
   /** Its browser has been seen live in Playwright's registry */
   seenLive: boolean;
+  /** A turn's call that names an address asked for it (while it started): its first tab is that call's */
+  withUrl?: boolean;
 }
 
 const keyOf = (projectId: string, chatId: string) => `${projectId}\n${chatId}`;
@@ -140,6 +172,8 @@ export class ChatBrowsers extends EventEmitter {
   constructor(
     private readonly startHolder: StartChatBrowserHolder = startChatBrowserHolder,
     private readonly discard: (restorable: RestorableChatBrowser) => Promise<void> = discardRestorable,
+    /** The tabs each chat's browser had when it closed */
+    readonly savedTabs: SavedChatTabs = new SavedChatTabs(savedTabsFile),
   ) {
     super();
   }
@@ -181,7 +215,11 @@ export class ChatBrowsers extends EventEmitter {
         status: 'restorable',
         tabs: tabsToRestore(record.tabs).length,
       }));
-    return [...open, ...restorable];
+    // Closed with tabs to open again
+    const saved = this.savedTabs.list()
+      .filter(({ projectId, chatId }) => !this.entries.has(keyOf(projectId, chatId)) && !this.restorables.has(keyOf(projectId, chatId)))
+      .map(({ projectId, chatId, tabs }): ChatBrowserInfo => ({ projectId, chatId, status: 'saved', tabs }));
+    return [...open, ...restorable, ...saved];
   }
 
   /**
@@ -212,22 +250,36 @@ export class ChatBrowsers extends EventEmitter {
    * Open the chat's browser unless it is open or opening (then wait for that). `choice` is the
    * chat's browser (undefined: Settings > Browser); an open browser keeps the one it opened with
    */
-  ensure(projectId: string, projectPath: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
+  ensure(
+    projectId: string,
+    projectPath: string,
+    chatId: string,
+    choice: PlaywrightBrowserChoice | null | undefined,
+    options: ChatBrowserOpenOptions = {},
+  ): Promise<void> {
     if (this.stopped) return Promise.reject(new Error('Workbench is quitting'));
     const key = keyOf(projectId, chatId);
     // A browser closed while it started is still going: a new one waits for it (one per title)
     const closing = this.closing.get(key);
-    if (closing) return closing.then(() => this.ensure(projectId, projectPath, chatId, choice));
+    if (closing) return closing.then(() => this.ensure(projectId, projectPath, chatId, choice, options));
     const existing = this.entries.get(key);
     if (existing?.status === 'open') return Promise.resolve();
-    if (existing?.starting) return existing.starting;
+    if (existing?.starting) {
+      if (options.withUrl) existing.withUrl = true;
+      return existing.starting;
+    }
 
-    const entry: Entry = { projectId, chatId, title: this.titleFor(projectId, chatId), status: 'starting', seenLive: false };
+    const entry: Entry = { projectId, chatId, title: this.titleFor(projectId, chatId), status: 'starting', seenLive: false, withUrl: options.withUrl };
     this.entries.set(key, entry);
     // Left by a crash: the holder starts from it, or removes it when the chat's browser changed
     const restore = this.restorables.get(key);
     this.restorables.delete(key);
-    entry.starting = this.startHolder({ projectPath, title: entry.title, choice, projectId, chatId, restore }).then(
+    // The tabs it had when it last closed (a crash's own tabs come with its folder), kept until it
+    // has started (closed, failed or quit before that, they stay to open again)
+    const tabs = restore ? [] : this.savedTabs.get(projectId, chatId);
+    entry.starting = this.startHolder({
+      projectPath, title: entry.title, choice, projectId, chatId, restore, tabs, withUrl: () => entry.withUrl === true,
+    }).then(
       (holder) => this.started(entry, holder),
       (error: unknown) => this.failed(entry, error, restore),
     );
@@ -275,11 +327,16 @@ export class ChatBrowsers extends EventEmitter {
     }
     entry.holder = holder;
     entry.status = 'open';
+    // Its kept tabs are its own now (its holder reports them when it closes)
+    if (this.savedTabs.get(entry.projectId, entry.chatId).length > 0) this.savedTabs.set(entry.projectId, entry.chatId, []);
     // The New chat page's browser may have moved to its conversation while it started
     holder.updateRecord?.({ chatId: entry.chatId });
     // A holder suspended for a restart exits while the entry waits for the next one
     holder.onExit(() => {
-      if (entry.holder === holder) this.forget(entry);
+      if (entry.holder !== holder) return;
+      // Went away by itself (not closed by Workbench): its tabs open again next time
+      if (this.entries.get(keyOf(entry.projectId, entry.chatId)) === entry) this.keepTabs(entry, holder);
+      this.forget(entry);
     });
     this.emit('change');
   }
@@ -309,11 +366,22 @@ export class ChatBrowsers extends EventEmitter {
     return undefined;
   }
 
-  /** Close a chat's browser (nothing when it has none) */
-  async close(projectId: string, chatId: string): Promise<void> {
+  /**
+   * Close a chat's browser (nothing when it has none). Its tabs are kept to open again next time,
+   * unless `keepTabs` is false (the user closed its last tab)
+   */
+  async close(projectId: string, chatId: string, { keepTabs = true }: { keepTabs?: boolean } = {}): Promise<void> {
     const key = keyOf(projectId, chatId);
     const entry = this.entries.get(key);
+    if (!keepTabs) {
+      // Nothing to open again, whether or not it is open now (a deleted chat's saved tabs go too)
+      if (this.savedTabs.get(projectId, chatId).length > 0) {
+        this.savedTabs.set(projectId, chatId, []);
+        this.emit('change');
+      }
+    }
     if (!entry) return;
+    if (entry.holder && keepTabs) this.keepTabs(entry, entry.holder);
     this.forget(entry);
     if (entry.starting) {
       // Still starting: it closes itself once started; until then the chat can't open another
@@ -337,7 +405,7 @@ export class ChatBrowsers extends EventEmitter {
       void this.discard(restorable);
       this.emit('change');
     }
-    await Promise.all(chatIds.map((chatId) => this.close(projectId, chatId)));
+    await Promise.all(chatIds.map((chatId) => this.close(projectId, chatId, { keepTabs: false })));
     for (const chatId of chatIds) this.titles.delete(keyOf(projectId, chatId));
   }
 
@@ -346,8 +414,12 @@ export class ChatBrowsers extends EventEmitter {
     if (toChatId === fromChatId) return;
     const from = keyOf(projectId, fromChatId);
     const to = keyOf(projectId, toChatId);
+    this.savedTabs.move(projectId, fromChatId, toChatId);
     const title = this.titles.get(from);
-    if (!title || this.titles.has(to)) return;
+    if (!title || this.titles.has(to)) {
+      this.emit('change');
+      return;
+    }
     this.titles.set(to, title);
     this.titles.delete(from);
     const entry = this.entries.get(from);
@@ -380,8 +452,17 @@ export class ChatBrowsers extends EventEmitter {
   async shutdown(): Promise<void> {
     this.stopped = true;
     const entries = [...this.entries.values()];
+    // Their tabs open again with the next start (written now: the app is going)
+    for (const entry of entries) if (entry.holder) this.keepTabs(entry, entry.holder);
+    this.savedTabs.flushSync();
     this.entries.clear();
     await Promise.all(entries.map((entry) => entry.holder?.close()));
+  }
+
+  /** Keep the tabs a chat's browser has, to open them again when it next opens */
+  private keepTabs(entry: Entry, holder: ChatBrowserHolder): void {
+    if (!holder.tabs) return;
+    this.savedTabs.set(entry.projectId, entry.chatId, tabsToRestore(holder.tabs()));
   }
 
   private forget(entry: Entry): void {
@@ -537,8 +618,16 @@ export function homepageUrl(homepage: string | undefined): string | undefined {
 /** How long reopening one saved tab may take */
 const RESTORE_TAB_TIMEOUT_MS = 30_000;
 
-/** Open pages in a started browser (a crashed one's tabs, or the homepage): the first in the tab it opened with (best effort) */
-async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]): Promise<void> {
+/**
+ * Open pages in a started browser (its tabs from before, or the homepage): the first in the tab it
+ * opened with, unless that tab is left for a turn's address (`leaveFirstTab`) (best effort)
+ */
+async function restoreTabs(
+  client: HolderClient,
+  tabs: readonly ChatBrowserTab[],
+  leaveFirstTab = false,
+  onTried: (tab: ChatBrowserTab) => void = () => undefined,
+): Promise<void> {
   // Gone (closed or crashed): nothing more to open. Told by its exit, not its error's text (the
   // holder's last stderr line, which can say anything)
   let gone = false;
@@ -547,7 +636,7 @@ async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]
   });
   for (const [index, tab] of tabs.entries()) {
     if (gone) return;
-    const call = index === 0
+    const call = index === 0 && !leaveFirstTab
       ? { name: 'browser_navigate', arguments: { url: tab.url } }
       : { name: 'browser_tabs', arguments: { action: 'new', url: tab.url } };
     try {
@@ -556,6 +645,8 @@ async function restoreTabs(client: HolderClient, tabs: readonly ChatBrowserTab[]
     } catch (error) {
       if (gone) return;
       appLog.info(`[BrowserDrawer] Could not open ${tab.url}:`, error);
+    } finally {
+      onTried(tab);
     }
   }
 }
@@ -653,7 +744,7 @@ async function firefoxExtensions(browserId: string, profileDir: string): Promise
  * browser left by a crash (`restore`) for the same browser, its folder and profile copy are used
  * again and its tabs reopened; for another browser it is removed and the chat's browser starts anew
  */
-const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice, projectId, chatId, restore }) => {
+const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice, projectId, chatId, restore, tabs: savedTabs, withUrl }) => {
   const startedAt = Date.now();
   const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
   const settings = appSettings?.mcpConnectors;
@@ -730,7 +821,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       chatId: chatId ?? reuse?.record.chatId ?? '',
       browserId,
       profileCopyDir: browserProfileDir ?? null,
-      tabs: reuse?.record.tabs ?? [],
+      tabs: reuse?.record.tabs ?? [...(savedTabs ?? [])],
       updatedAt: Date.now(),
     });
     void record.writeNow();
@@ -775,13 +866,26 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
         appLog.warn('[BrowserDrawer] Could not switch the extensions of a chat browser:', error);
       });
     }
-    const tabs = reuse ? tabsToRestore(reuse.record.tabs) : [];
-    if (tabs.length > 0) void restoreTabs(client, tabs);
-    else {
-      // A new browser opens on the homepage (Settings > Browser); one that doesn't load leaves it blank
+    // Its tabs from before (a crash's, or the ones it had when it last closed), else the homepage
+    // (Settings > Browser; one that doesn't load leaves it blank). Opened for a turn's address, the
+    // first tab is the turn's: tabs from before open beside it, and no homepage
+    const tabs = tabsToRestore(reuse ? reuse.record.tabs : savedTabs ?? []);
+    // Tabs not opened yet still count as its tabs (a close or crash meanwhile keeps them)
+    let pending = [...tabs];
+    const forUrl = withUrl?.() === true;
+    if (tabs.length > 0) {
+      void restoreTabs(client, tabs, forUrl, (tab) => {
+        pending = pending.filter((waiting) => waiting !== tab);
+      });
+    } else if (!forUrl) {
       const homepage = homepageUrl(appSettings?.browser?.homepage);
       if (homepage) void restoreTabs(client, [{ url: homepage, title: '' }]);
     }
+    /** The tabs the drawer reports, with the ones still to open */
+    const withPending = (open: readonly ChatBrowserTab[]) => {
+      const urls = new Set(open.map((tab) => tab.url));
+      return [...open, ...pending.filter((tab) => !urls.has(tab.url))];
+    };
 
     const listeners: Array<() => void> = [];
     // Gone (closed, crashed or stopped): its folder, profile copy and registration go too
@@ -802,7 +906,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       onExit: (listener) => {
         listeners.push(listener);
       },
-      updateRecord: (patch) => record.update(patch),
+      updateRecord: (patch) => record.update(patch.tabs ? { ...patch, tabs: withPending(patch.tabs) } : patch),
+      tabs: () => withPending(record.current().tabs),
       extensions: async (changes) => {
         if (!hasExtensions || !browser || !browserProfileDir) return null;
         if (browser.engine === 'chromium') {

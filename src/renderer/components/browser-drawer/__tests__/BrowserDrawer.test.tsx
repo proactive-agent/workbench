@@ -94,7 +94,8 @@ describe('BrowserDrawer', () => {
     fireEvent.submit(screen.getByLabelText('browserDrawer.address').closest('form')!);
     expect(api.navigateBrowserPage).toHaveBeenCalledWith('p2', 'goto', 'https://example.com');
 
-    fireEvent.click(screen.getByRole('button', { name: 'browserDrawer.close' }));
+    // No chat browser here: it only hides the drawer
+    fireEvent.click(screen.getByRole('button', { name: 'browserDrawer.hide' }));
     expect(useBrowserDrawerStore.getState().open).toBe(false);
   });
 

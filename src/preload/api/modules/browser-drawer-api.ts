@@ -57,8 +57,8 @@ export interface BrowserDrawerAPI {
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   /** Open a chat's own browser with this browser (undefined: Settings > Browser) */
   openChatBrowser: (projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
-  /** Close a chat's own browser */
-  closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
+  /** Close a chat's own browser; its tabs open again next time unless `keepTabs` is false */
+  closeChatBrowser: (projectId: string, chatId: string, keepTabs?: boolean) => Promise<IPCResult>;
   /** The sessions or pages changed */
   onBrowserDrawerState: (callback: (state: BrowserDrawerState) => void) => IpcListenerCleanup;
   /** A frame of the page this window views */
@@ -92,7 +92,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   restartChatBrowser: (sessionId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_RESTART_CHAT_BROWSER, sessionId),
   setBrowserColorScheme: (scheme) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, scheme),
   openChatBrowser: (projectId, chatId, choice) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_OPEN_CHAT_BROWSER, projectId, chatId, choice),
-  closeChatBrowser: (projectId, chatId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId),
+  closeChatBrowser: (projectId, chatId, keepTabs) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId, keepTabs),
   onBrowserDrawerState: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_STATE, callback),
   onBrowserFrame: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_FRAME, callback),
   getChatBrowserRuntimeStatus: (refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, refresh === true),

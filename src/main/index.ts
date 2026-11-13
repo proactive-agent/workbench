@@ -65,7 +65,8 @@ import { whenChatBrowserRuntimeReady } from './browser-drawer/browser-runtime';
 import { detectBrowserProfiles } from './browser-profiles/detect';
 import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
 import { removeLeftoverTempFolders, TEMP_FOLDER_PREFIXES } from './temp-folders';
-import { scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
+import { conversationExists, scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
+import { NEW_CHAT_BROWSER_ID } from '../shared/types/browser-drawer';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -345,6 +346,14 @@ async function removeCrashLeftovers(): Promise<void> {
   } catch (error) {
     appLog.warn('[Startup] Could not look at the chat browsers left by an earlier run:', error);
   }
+  // Kept tabs of chats that are gone (their project removed, their chat deleted outside the app)
+  await browserDrawer.chatBrowsers.savedTabs.prune(async (projectId, chatId) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return false;
+    return chatId === NEW_CHAT_BROWSER_ID || conversationExists(project.path, chatId);
+  }).catch((error: unknown) => {
+    appLog.warn('[Startup] Could not look at the chat browsers\' kept tabs:', error);
+  });
   await removeLeftoverTempFolders({ skip: [TEMP_FOLDER_PREFIXES.chatBrowser] }).catch((error: unknown) => {
     appLog.warn('[Startup] Could not remove the temp folders left by an earlier run:', error);
   });

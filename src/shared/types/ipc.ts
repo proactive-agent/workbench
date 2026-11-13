@@ -555,7 +555,7 @@ export interface ElectronAPI {
   restartChatBrowser: (sessionId: string) => Promise<IPCResult>;
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
-  closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
+  closeChatBrowser: (projectId: string, chatId: string, keepTabs?: boolean) => Promise<IPCResult>;
   onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
   onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
   getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;

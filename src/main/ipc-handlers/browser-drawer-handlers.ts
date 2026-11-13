@@ -136,10 +136,14 @@ export function registerBrowserDrawerHandlers(): void {
     }
   );
 
-  ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, async (_event, projectId: unknown, chatId: unknown): Promise<IPCResult> => {
-    if (typeof projectId === 'string' && typeof chatId === 'string') await browserDrawer.closeChatBrowser(projectId, chatId);
-    return { success: true };
-  });
+  // Closed from the drawer (its tabs kept to open again), or by closing its last tab (none kept)
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER,
+    async (_event, projectId: unknown, chatId: unknown, keepTabs: unknown): Promise<IPCResult> => {
+      if (typeof projectId === 'string' && typeof chatId === 'string') await browserDrawer.closeChatBrowser(projectId, chatId, keepTabs !== false);
+      return { success: true };
+    }
+  );
 
   // Settings > Browser > Browser runtime (Windows): where chat browsers run, what running them on
   // Windows needs (`refresh` checks again), and its Autoconfigure button

@@ -43,7 +43,7 @@ import { clampPixelScale } from './pixel-scale';
 import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type RegistryDescriptor } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
-import { ChatBrowsers } from './chat-browsers';
+import { ChatBrowsers, type ChatBrowserOpenOptions } from './chat-browsers';
 import { readBookmarksBar } from '../browser-profiles/bookmarks';
 
 /** How often the registry is read */
@@ -349,15 +349,24 @@ export class BrowserDrawerService {
     if (session?.projectId && session.chatId) await this.chatBrowsers.restart(session.projectId, session.chatId);
   }
 
-  /** Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool call) */
-  async openChatBrowser(projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
+  /**
+   * Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool
+   * call, `withUrl` when that call names an address)
+   */
+  async openChatBrowser(
+    projectId: string,
+    chatId: string,
+    choice: PlaywrightBrowserChoice | null | undefined,
+    options: ChatBrowserOpenOptions = {},
+  ): Promise<void> {
     const project = this.options.getProjects().find((p) => p.id === projectId);
     if (!project) throw new Error('The project is not open');
-    await this.chatBrowsers.ensure(projectId, project.path, chatId, choice);
+    await this.chatBrowsers.ensure(projectId, project.path, chatId, choice, options);
   }
 
-  closeChatBrowser(projectId: string, chatId: string): Promise<void> {
-    return this.chatBrowsers.close(projectId, chatId);
+  /** Close a chat's own browser, keeping its tabs to open again unless `keepTabs` is false (its last tab closed) */
+  closeChatBrowser(projectId: string, chatId: string, keepTabs = true): Promise<void> {
+    return this.chatBrowsers.close(projectId, chatId, { keepTabs });
   }
 
   /** Stop watching and stop the bridge (the app is quitting; the browsers stop with their runs) */

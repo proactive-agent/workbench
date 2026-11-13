@@ -12,6 +12,7 @@ import { useSettingsStore } from '../../stores/settings-store';
 import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
 import { AgentLoader } from '../ui/agent-loader';
+import { Button } from '../ui/button';
 import { BrowserBookmarksBar } from './BrowserBookmarksBar';
 import { BrowserDrawerFrame } from './BrowserDrawerFrame';
 import { BrowserExtensionsMenu } from './BrowserExtensionsMenu';
@@ -123,18 +124,36 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     };
   }, [open, state.available]);
 
-  // Closing a chat browser's last tab closes that browser
+  // Closing a chat browser's last tab closes that browser (with no tabs to open again)
   const closeTab = (pageId: string, sessionId: string) => {
     const session = sessions.find((s) => s.id === sessionId);
     const lastTab = pages.filter((page) => page.sessionId === sessionId).length === 1;
-    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId);
+    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId, false);
     else window.electronAPI.closeBrowserPage(pageId);
   };
+
+  // The close button closes the chat's browser, once asked (its tabs open again next time); a
+  // drawer with no browser open just hides
+  const [confirmClose, setConfirmClose] = useState(false);
+  const browserOpen = sessions.length > 0 || chatBrowser?.status === 'open' || chatBrowser?.status === 'starting';
+  // It closes the chat's browser (asking first), else only hides the drawer
+  const closeLabel = chatId !== null && browserOpen ? t('browserDrawer.close') : t('browserDrawer.hide');
+  const onClose = () => {
+    if (chatId !== null && browserOpen) setConfirmClose(true);
+    else setOpen(false);
+  };
+  const closeBrowser = () => {
+    setConfirmClose(false);
+    setOpen(false);
+    if (chatId !== null) void window.electronAPI.closeChatBrowser(projectId, chatId);
+  };
+  useEffect(() => setConfirmClose(false), [chatId, open]);
 
   // The browser's own shortcuts (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1..9, Ctrl+L, Ctrl+R, Alt+Left...;
   // Cmd on macOS) act on the drawer's tabs while it shows one: its browser is headless, so the
   // main process catches them (before the page and the app's menu) and sends them here
-  const shortcutsActive = contextReady && open && !!selected;
+  // Not behind the close question (Ctrl+W would close the tab it asks about)
+  const shortcutsActive = contextReady && open && !!selected && !confirmClose;
   useEffect(() => {
     if (!shortcutsActive) return;
     window.electronAPI.setBrowserShortcuts(true);
@@ -236,15 +255,16 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   else if (selected) body = <BrowserPageView pageId={selected.id} label={pageLabel(selected) || t('browserDrawer.untitled')} />;
   else if (noTabs) body = message(t('browserDrawer.noTabs'), t('browserDrawer.noTabsDescription'));
   else if (sessions.length > 0) body = loader(t('browserDrawer.loading'));
-  else if (chatBrowser && chatBrowser.status !== 'restorable') {
+  else if (chatBrowser && chatBrowser.status !== 'restorable' && chatBrowser.status !== 'saved') {
     body = loader(chatBrowser.status === 'starting' ? t('browserDrawer.opening') : t('browserDrawer.loading'));
   } else if (chatId !== null) {
-    // A browser left by a crash opens again from its profile and tabs
+    // A browser left by a crash opens again from its profile and tabs; one closed with tabs open, with those tabs
     const restorable = chatBrowser?.status === 'restorable' ? { tabs: chatBrowser.tabs ?? 0 } : undefined;
+    const saved = chatBrowser?.status === 'saved' ? { tabs: chatBrowser.tabs ?? 0 } : undefined;
     body = message(
       t('browserDrawer.empty'),
       t('browserDrawer.emptyChatDescription'),
-      <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} />,
+      <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} saved={saved} />,
     );
   } else body = message(t('browserDrawer.empty'), t('browserDrawer.emptyDescription'));
 
@@ -307,9 +327,9 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
           <button
             type="button"
             className={cn(iconButton, 'ml-auto mb-1.5')}
-            onClick={() => setOpen(false)}
-            aria-label={t('browserDrawer.close')}
-            title={t('browserDrawer.close')}
+            onClick={onClose}
+            aria-label={closeLabel}
+            title={closeLabel}
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
@@ -375,6 +395,26 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
             </>
           )}
         </div>
+
+        {/* Close the browser? Over the drawer only */}
+        {confirmClose && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onPointerDown={(e) => e.target === e.currentTarget && setConfirmClose(false)}>
+            <div
+              role="alertdialog"
+              aria-labelledby="browser-close-title"
+              aria-describedby="browser-close-description"
+              className="w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-lg"
+              onKeyDown={(e) => e.key === 'Escape' && setConfirmClose(false)}
+            >
+              <h2 id="browser-close-title" className="text-base font-semibold text-foreground">{t('browserDrawer.closeConfirm.title')}</h2>
+              <p id="browser-close-description" className="mt-1.5 text-sm text-muted-foreground">{t('browserDrawer.closeConfirm.description')}</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{t('browserDrawer.closeConfirm.cancel')}</Button>
+                <Button size="sm" autoFocus onClick={closeBrowser}>{t('browserDrawer.closeConfirm.close')}</Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div
           role="separator"

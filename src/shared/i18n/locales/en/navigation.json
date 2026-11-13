@@ -110,7 +110,16 @@
     "open": "Open browser",
     "openWithSessions_one": "Open browser: {{count}} browser of this project is open",
     "openWithSessions_other": "Open browser: {{count}} browsers of this project are open",
-    "close": "Close browser drawer",
+    "close": "Close browser",
+    "hide": "Hide browser",
+    "closeConfirm": {
+      "title": "Close this chat's browser?",
+      "description": "Its tabs are saved and open again the next time you open this chat's browser.",
+      "cancel": "Cancel",
+      "close": "Close"
+    },
+    "saved_one": "This chat's browser was closed with {{count}} tab open. Opening it brings it back",
+    "saved_other": "This chat's browser was closed with {{count}} tabs open. Opening it brings them back",
     "resize": "Resize browser drawer",
     "closeTab": "Close tab",
     "newTab": "New tab",

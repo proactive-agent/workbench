@@ -158,7 +158,17 @@ function refuse(id, text) {
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text }] } }) + '\n');
 }
 
-const OPEN_CALL = { method: 'tools/call', params: { name: 'open_chat_browser', arguments: {} } };
+/** The call that opens the chat's browser; `withUrl` when the tool call it is for names an address */
+const openCall = (withUrl) => ({ method: 'tools/call', params: { name: 'open_chat_browser', arguments: { withUrl } } });
+
+/**
+ * A tool call that opens an address in the current tab (the browser it opens leaves its first tab
+ * for it, no homepage). A new tab's address doesn't count: the first tab would stay empty
+ */
+function namesAddress(params) {
+  const args = (params && params.arguments) || {};
+  return !!params && params.name === 'browser_navigate' && typeof args.url === 'string' && args.url.length > 0;
+}
 
 /** A tool call's answer as an error text, or null when it worked */
 function answerFailure(answer, fallback) {
@@ -206,7 +216,8 @@ function relay() {
 }
 
 /** Ask Workbench to open the chat's browser (when it isn't open); resolves with an error text or null */
-async function openChatBrowser() {
+async function openChatBrowser(withUrl) {
+  const OPEN_CALL = openCall(withUrl);
   if (chatBrowser.relay) {
     const proc = relay();
     const id = relayNextId++;
@@ -252,7 +263,7 @@ async function forward(line) {
     return;
   }
   if (message && message.method === 'tools/call' && chatBrowser) {
-    const failure = await openChatBrowser();
+    const failure = await openChatBrowser(namesAddress(message.params));
     if (failure) {
       refuse(message.id, failure);
       return;

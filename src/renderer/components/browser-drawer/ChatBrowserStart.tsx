@@ -15,6 +15,8 @@ interface ChatBrowserStartProps {
   chatId: string;
   /** Its browser closed when Workbench stopped unexpectedly: opening it with the same profile brings back its sign-ins and tabs */
   restorable?: { tabs: number };
+  /** It was closed with tabs open, which open again with it */
+  saved?: { tabs: number };
 }
 
 /**
@@ -23,7 +25,7 @@ interface ChatBrowserStartProps {
  * the chat to carry on. Opening switches Playwright on for the chat. Shown only while the chat
  * has no browser: an open browser keeps the profile it opened with
  */
-export function ChatBrowserStart({ projectId, chatId, restorable }: ChatBrowserStartProps) {
+export function ChatBrowserStart({ projectId, chatId, restorable, saved }: ChatBrowserStartProps) {
   const { t } = useTranslation(['navigation']);
   const connectors = useSettingsStore((state) => state.settings.mcpConnectors);
   const session = useInsightsStore((state) => state.session);
@@ -69,6 +71,9 @@ export function ChatBrowserStart({ projectId, chatId, restorable }: ChatBrowserS
             ? t('navigation:browserDrawer.restorable', { count: restorable.tabs })
             : t('navigation:browserDrawer.restorableNoTabs')}
         </p>
+      )}
+      {!restorable && saved && saved.tabs > 0 && (
+        <p className="text-sm text-muted-foreground">{t('navigation:browserDrawer.saved', { count: saved.tabs })}</p>
       )}
       <div className="flex w-full items-center gap-2">
         <div className="min-w-0 flex-1">
