@@ -530,7 +530,8 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   `insights/chat-commands.ts`). A local command's output (`/compact`) is its reply and keeps the session. A chat with a session also shows a Clawd button under the browser
   button that shows its session in an agent window: the one running it already, else a new one resuming it as its own
   (`claude --resume` on its account, `openProjectSession`, recorded in `agent-sessions.json` so it is found and
-  restored; a window back at its shell resumes it only with nothing else running there). The chat and the window then
+  restored; a window back at its shell resumes it only with nothing else running there), its border flashing once in the
+  primary color (`highlightRequest` in `terminal-store.ts`). The chat and the window then
   share one session and take turns (`session-messaging/shared-session.ts`; only windows that recorded the session are
   looked at, one running Claude Code while `claude agents` says it runs that session, busy unless it reports idle):
   every reply that resumes the session checks inside its turn (the executor's `prepare`, so the chat already counts as

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle, lazy, Suspense } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo, forwardRef, useImperativeHandle, lazy, Suspense, type AnimationEvent } from 'react';
 import { useDroppable } from '@dnd-kit/core';
 import { useTranslation } from 'react-i18next';
 import { cn } from '../lib/utils';
@@ -119,6 +119,22 @@ export const Terminal = forwardRef<TerminalHandle, TerminalProps>(function Termi
   const terminal = useTerminalStore((state) => state.terminals.find((t) => t.id === id));
   const setCLIMode = useTerminalStore((state) => state.setCLIMode);
   const updateTerminal = useTerminalStore((state) => state.updateTerminal);
+  // Opened from a chat (its Clawd button): the border flashes once in the primary color. Played on
+  // the element as it shows (a hidden Agents page starts the animation when it appears), then cleared
+  const highlightSeq = useTerminalStore((state) => state.highlightRequest?.terminalId === id ? state.highlightRequest.seq : null);
+  const [highlighting, setHighlighting] = useState<number | null>(null);
+  useEffect(() => {
+    if (highlightSeq === null) return;
+    // Opened again while flashing: the class goes for a frame, so the animation starts over
+    setHighlighting(null);
+    const frame = requestAnimationFrame(() => setHighlighting(highlightSeq));
+    return () => cancelAnimationFrame(frame);
+  }, [highlightSeq]);
+  const endHighlight = useCallback((event: AnimationEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget || highlighting === null) return;
+    useTerminalStore.getState().clearHighlight(highlighting);
+    setHighlighting(null);
+  }, [highlighting]);
   const setAssociatedTask = useTerminalStore((state) => state.setAssociatedTask);
   const setWorktreeConfig = useTerminalStore((state) => state.setWorktreeConfig);
 
@@ -739,8 +755,9 @@ Please confirm you're ready by saying: I'm ready to work on ${selectedTask.title
     <div
       ref={setDropRef}
       // Same background and border as the sidebar (the xterm themes in lib/terminal-theme.ts match it)
-      className="relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-sidebar"
+      className={cn('relative flex h-full flex-col overflow-hidden rounded-xl border border-border bg-sidebar', highlighting !== null && 'agent-window-highlight')}
       onClick={handleClick}
+      onAnimationEnd={endHighlight}
     >
 
       <TerminalHeader

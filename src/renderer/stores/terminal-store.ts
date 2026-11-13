@@ -258,6 +258,8 @@ interface TerminalState {
   maxTerminals: number;
   hasRestoredSessions: boolean;  // Track if we've restored sessions for this project
   agentsViewRequest: AgentsViewRequest | null;  // Latest request to show the Agents page (App switches view)
+  /** A window to flash its border once (the window a chat's Clawd button opened), until it played */
+  highlightRequest: { terminalId: string; seq: number } | null;
 
   // Actions
   addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean; id?: string }) => Terminal | null;
@@ -268,6 +270,8 @@ interface TerminalState {
   setMaxTerminals: (max: number) => void;
   updateTerminal: (id: string, updates: Partial<Terminal>) => void;
   setActiveTerminal: (id: string | null) => void;
+  /** The highlight played (only clears the request it was given, not a newer one) */
+  clearHighlight: (seq: number) => void;
   setTerminalStatus: (id: string, status: TerminalStatus) => void;
   setCLIMode: (id: string, isCLIMode: boolean) => void;
   /** Show a spinner over the window until what it starts is ready (undefined: hide it) */
@@ -363,6 +367,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   maxTerminals: DEFAULT_MAX_TERMINALS,
   hasRestoredSessions: false,
   agentsViewRequest: null,
+  highlightRequest: null,
 
   addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean; id?: string }) => {
     const state = get();
@@ -768,8 +773,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   },
 
   openProjectSession: (request) => {
-    const showAgents = () => set((state) => ({
-      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
+    // The Agents page shows, and the window flashes its border so it stands out among the others
+    const showAgents = (terminalId: string) => set((state) => ({
+      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 },
+      highlightRequest: { terminalId, seq: (state.highlightRequest?.seq ?? 0) + 1 }
     }));
     const existing = request.terminalId ? get().terminals.find((t) => t.id === request.terminalId && t.status !== 'exited') : undefined;
     if (existing) {
@@ -779,7 +786,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         resumeAtShell(existing, { sessionId: request.sessionId, profileId: request.profileId, own: true }, request.projectPath);
       }
       get().setActiveTerminal(existing.id);
-      showAgents();
+      showAgents(existing.id);
       return get().getTerminal(existing.id) ?? existing;
     }
     const terminal = get().addTerminal(request.projectPath, request.projectPath, { launchCLI: true });
@@ -789,12 +796,18 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         // The chat's session becomes the window's own: found as the window's and resumed when restored
         pendingTaskSession: { sessionId: request.sessionId, profileId: request.profileId, own: true }
       });
+      showAgents(terminal.id);
+    } else {
+      set((state) => ({
+        agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
+      }));
     }
-    set((state) => ({
-      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
-    }));
     return terminal ? get().getTerminal(terminal.id) ?? null : null;
   },
+
+  clearHighlight: (seq) => set((state) => (
+    state.highlightRequest?.seq === seq ? { highlightRequest: null } : {}
+  )),
 
   reopenAgentWindow: (request) => {
     const session = { sessionId: request.sessionId, configDir: request.configDir };

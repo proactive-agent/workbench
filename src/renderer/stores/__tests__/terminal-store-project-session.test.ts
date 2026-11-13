@@ -14,7 +14,7 @@ const WINDOW = '8670dcb1-0000-0000-0000-000000000000';
 const request = { projectPath: PROJECT, title: 'Release notes', sessionId: 'chat-session', profileId: 'main' };
 
 beforeEach(() => {
-  useTerminalStore.setState({ terminals: [], activeTerminalId: null, maxTerminals: 3, agentsViewRequest: null });
+  useTerminalStore.setState({ terminals: [], activeTerminalId: null, maxTerminals: 3, agentsViewRequest: null, highlightRequest: null });
 });
 
 afterEach(() => {
@@ -61,6 +61,21 @@ describe("a chat's session in an agent window", () => {
     expect(resume).not.toHaveBeenCalled();
     expect(terminal?.isCLIMode).toBe(false);
     expect(useTerminalStore.getState().activeTerminalId).toBe(WINDOW);
+  });
+
+  it('flashes the window it shows, new or open already, until it played (a newer request stays)', () => {
+    const opened = useTerminalStore.getState().openProjectSession(request);
+    expect(useTerminalStore.getState().highlightRequest).toEqual({ terminalId: opened?.id, seq: 1 });
+
+    useTerminalStore.getState().addTerminal(PROJECT, PROJECT, { id: WINDOW });
+    useTerminalStore.getState().updateTerminal(WINDOW, { status: 'running', isCLIMode: true });
+    useTerminalStore.getState().openProjectSession({ ...request, terminalId: WINDOW });
+    expect(useTerminalStore.getState().highlightRequest).toEqual({ terminalId: WINDOW, seq: 2 });
+
+    useTerminalStore.getState().clearHighlight(1);
+    expect(useTerminalStore.getState().highlightRequest?.seq).toBe(2);
+    useTerminalStore.getState().clearHighlight(2);
+    expect(useTerminalStore.getState().highlightRequest).toBeNull();
   });
 
   it('opens a new window when the one named has exited', () => {
