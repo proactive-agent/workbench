@@ -18,7 +18,8 @@ import type {
   ClaudeProfile,
   ClaudeProfileSettings,
   ClaudeUsageData,
-  ClaudeRateLimitEvent
+  ClaudeRateLimitEvent,
+  UsageSpendLimit
 } from '../shared/types';
 
 // Module imports
@@ -1018,7 +1019,12 @@ export class ClaudeProfileManager {
    * Update usage data for a profile from API response (percentages directly)
    * This is called by the usage monitor after fetching usage via the API
    */
-  updateProfileUsageFromAPI(profileId: string, sessionPercent: number, weeklyPercent: number): ClaudeUsageData | null {
+  updateProfileUsageFromAPI(
+    profileId: string,
+    sessionPercent: number,
+    weeklyPercent: number,
+    spendLimit?: UsageSpendLimit
+  ): ClaudeUsageData | null {
     const profile = this.getProfile(profileId);
     if (!profile) {
       return null;
@@ -1032,7 +1038,8 @@ export class ClaudeProfileManager {
       weeklyUsagePercent: weeklyPercent,
       weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
       opusUsagePercent: existingUsage?.opusUsagePercent,
-      lastUpdated: new Date()
+      lastUpdated: new Date(),
+      ...(spendLimit ? { spendLimit } : {})
     };
     profile.usage = usage;
     this.save();
@@ -1043,15 +1050,15 @@ export class ClaudeProfileManager {
    * Batch update usage data for multiple profiles from API responses.
    * Updates all profiles in memory first, then saves once to avoid race conditions.
    *
-   * @param updates - Array of { profileId, sessionPercent, weeklyPercent } objects
+   * @param updates - Array of { profileId, sessionPercent, weeklyPercent, spendLimit? } objects
    * @returns Number of profiles successfully updated
    */
   batchUpdateProfileUsageFromAPI(
-    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number }>
+    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit }>
   ): number {
     let updatedCount = 0;
 
-    for (const { profileId, sessionPercent, weeklyPercent } of updates) {
+    for (const { profileId, sessionPercent, weeklyPercent, spendLimit } of updates) {
       const profile = this.getProfile(profileId);
       if (!profile) {
         continue;
@@ -1065,7 +1072,8 @@ export class ClaudeProfileManager {
         weeklyUsagePercent: weeklyPercent,
         weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
         opusUsagePercent: existingUsage?.opusUsagePercent,
-        lastUpdated: new Date()
+        lastUpdated: new Date(),
+        ...(spendLimit ? { spendLimit } : {})
       };
       profile.usage = usage;
       updatedCount++;

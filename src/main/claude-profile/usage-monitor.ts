@@ -200,9 +200,10 @@ function moneyAmount(value: any): number | undefined {
 
 /**
  * An account summary's spend limit: the one just fetched, else (the fetch failed, the stored
- * percents stand in) the one it had, so an Enterprise account keeps showing its monthly limit
+ * percents stand in) the one it had (its last summary, else the usage saved with it), so an
+ * Enterprise account keeps showing its monthly limit
  */
-function spendLimitOf(fetched: ClaudeUsageSnapshot | null, previous: ProfileUsageSummary | undefined): { spendLimit?: UsageSpendLimit } {
+function spendLimitOf(fetched: ClaudeUsageSnapshot | null, previous: { spendLimit?: UsageSpendLimit } | undefined): { spendLimit?: UsageSpendLimit } {
   const spendLimit = fetched ? fetched.spendLimit : previous?.spendLimit;
   return spendLimit ? { spendLimit } : {};
 }
@@ -425,6 +426,7 @@ export class UsageMonitor extends EventEmitter {
         profileEmail: profile.email,
         sessionPercent: profile.usage.sessionUsagePercent ?? 0,
         weeklyPercent: profile.usage.weeklyUsagePercent ?? 0,
+        ...(profile.usage.spendLimit ? { spendLimit: profile.usage.spendLimit } : {}),
         fetchedAt: profile.usage.lastUpdated,
         needsReauthentication: this.needsReauthProfiles.has(profileId)
       };
@@ -543,6 +545,7 @@ export class UsageMonitor extends EventEmitter {
         profileEmail: profile.email,
         sessionPercent: profile.usage?.sessionUsagePercent ?? 0,
         weeklyPercent: profile.usage?.weeklyUsagePercent ?? 0,
+        ...(profile.usage?.spendLimit ? { spendLimit: profile.usage.spendLimit } : {}),
         isAuthenticated: profile.isAuthenticated ?? false,
         isRateLimited: false,
         availabilityScore: profile.isAuthenticated ? 100 : 0,
@@ -623,7 +626,7 @@ export class UsageMonitor extends EventEmitter {
     // Parallel fetch for all inactive profiles that need fresh data
     if (profilesToFetch.length > 0) {
       // Collect usage updates for batch save (avoids race condition with concurrent saves)
-      const usageUpdates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number }> = [];
+      const usageUpdates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit }> = [];
 
       // DEDUPLICATION: Group profiles by configDir to avoid fetching the same underlying
       // account multiple times. Multiple ClaudeProfileManager entries can point to the same
@@ -671,7 +674,7 @@ export class UsageMonitor extends EventEmitter {
       // Fetch provider groups in parallel; within each group, stagger sequentially
       type FetchResult = {
         index: number;
-        update: { profileId: string; sessionPercent: number; weeklyPercent: number } | null;
+        update: { profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit } | null;
         profile: FetchItem['profile'];
         inactiveUsage: ClaudeUsageSnapshot | null;
         rateLimitStatus: ReturnType<typeof isProfileRateLimited>;
@@ -692,7 +695,12 @@ export class UsageMonitor extends EventEmitter {
           if (inactiveUsage) {
             groupResults.push({
               index,
-              update: { profileId: profile.id, sessionPercent: inactiveUsage.sessionPercent, weeklyPercent: inactiveUsage.weeklyPercent },
+              update: {
+                profileId: profile.id,
+                sessionPercent: inactiveUsage.sessionPercent,
+                weeklyPercent: inactiveUsage.weeklyPercent,
+                ...(inactiveUsage.spendLimit ? { spendLimit: inactiveUsage.spendLimit } : {}),
+              },
               profile,
               inactiveUsage,
               rateLimitStatus
@@ -750,7 +758,7 @@ export class UsageMonitor extends EventEmitter {
           isActive: profile.id === activeProfileId,
           lastFetchedAt: inactiveUsage?.fetchedAt?.toISOString() ?? profile.usage?.lastUpdated?.toISOString(),
           needsReauthentication: this.needsReauthProfiles.has(profile.id),
-          ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(profile.id)?.usage)
+          ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(profile.id)?.usage ?? profile.usage)
         };
 
         this.allProfilesUsageCache.set(profile.id, { usage: summary, fetchedAt: now });
@@ -784,7 +792,12 @@ export class UsageMonitor extends EventEmitter {
             this.rateLimitedProfiles.set(sibling.profile.id, ts);
           }
 
-          usageUpdates.push({ profileId: sibling.profile.id, sessionPercent, weeklyPercent });
+          usageUpdates.push({
+            profileId: sibling.profile.id,
+            sessionPercent,
+            weeklyPercent,
+            ...(representativeResult.update?.spendLimit ? { spendLimit: representativeResult.update.spendLimit } : {}),
+          });
 
           const summary: ProfileUsageSummary = {
             profileId: sibling.profile.id,
@@ -805,7 +818,7 @@ export class UsageMonitor extends EventEmitter {
             isActive: sibling.profile.id === activeProfileId,
             lastFetchedAt: inactiveUsage?.fetchedAt?.toISOString() ?? sibling.profile.usage?.lastUpdated?.toISOString(),
             needsReauthentication: this.needsReauthProfiles.has(sibling.profile.id),
-            ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(sibling.profile.id)?.usage)
+            ...spendLimitOf(inactiveUsage, this.allProfilesUsageCache.get(sibling.profile.id)?.usage ?? sibling.profile.usage)
           };
 
           this.allProfilesUsageCache.set(sibling.profile.id, { usage: summary, fetchedAt: now });
@@ -1095,7 +1108,7 @@ export class UsageMonitor extends EventEmitter {
 
       // Step 2.5: Persist usage to profile for caching (so other profiles can display cached usage)
       const profileManager = getClaudeProfileManager();
-      profileManager.updateProfileUsageFromAPI(profileId, usage.sessionPercent, usage.weeklyPercent);
+      profileManager.updateProfileUsageFromAPI(profileId, usage.sessionPercent, usage.weeklyPercent, usage.spendLimit);
 
       // Step 3: Emit usage update for UI
       this.emit('usage-updated', usage);
@@ -1789,8 +1802,12 @@ export class UsageMonitor extends EventEmitter {
     let fableModelName: string | undefined;
 
     // Enterprise accounts have no 5-hour or weekly window, only a monthly spend limit: both
-    // percents are the share of it spent, so ranking and the tray follow the one limit there is
-    const spendLimit = data.five_hour == null && data.seven_day == null ? readSpendLimit(data) : undefined;
+    // percents are the share of it spent, so ranking and the tray follow the one limit there is.
+    // Told by the current format's windows sent as null with no window limit listed (the legacy
+    // flat format has no such keys; an account with windows lists them in `limits`)
+    const windowLimits = Array.isArray(data.limits) && data.limits.some((limit: any) => limit?.kind === 'session' || limit?.kind === 'weekly_all');
+    const noWindows = data.five_hour === null && data.seven_day === null && !windowLimits;
+    const spendLimit = noWindows ? readSpendLimit(data) : undefined;
     if (spendLimit) {
       const percent = spendLimit.limit ? Math.min(100, (spendLimit.used / spendLimit.limit) * 100) : 0;
       return {

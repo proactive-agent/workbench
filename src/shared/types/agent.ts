@@ -22,12 +22,10 @@ export interface ClaudeUsageData {
   opusUsagePercent?: number;
   /** When this usage data was last updated */
   lastUpdated: Date;
+  /** The monthly spend limit an Enterprise account has instead of the windows (both percents are its share spent) */
+  spendLimit?: UsageSpendLimit;
 }
 
-/**
- * Real-time usage snapshot for proactive monitoring
- * Returned from API or CLI usage check
- */
 /**
  * A monthly spend limit, in the currency's major units (136.22 USD). Enterprise accounts have it
  * instead of the 5-hour and weekly windows: no time restriction, only what may be spent in a month
@@ -40,6 +38,10 @@ export interface UsageSpendLimit {
   currency: string;
 }
 
+/**
+ * Real-time usage snapshot for proactive monitoring
+ * Returned from API or CLI usage check
+ */
 export interface ClaudeUsageSnapshot {
   /** Session usage percentage (0-100) - represents 5-hour window for most providers */
   sessionPercent: number;

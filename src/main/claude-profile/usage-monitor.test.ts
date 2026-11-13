@@ -1138,6 +1138,20 @@ describe('usage-monitor', () => {
         expect(usage.spendLimit).toEqual({ used: 136.22, limit: 250, currency: 'USD' });
       });
 
+      it('leaves the legacy format and accounts listing window limits as they are', () => {
+        const { five_hour: _f, seven_day: _s, ...flat } = enterpriseData;
+        const legacy = getUsageMonitor()['normalizeAnthropicResponse']({ ...flat, five_hour_utilization: 0.4, seven_day_utilization: 0.1 }, 'p', 'Legacy');
+        expect(legacy.spendLimit).toBeUndefined();
+        expect(legacy.sessionPercent).toBe(40);
+
+        const listed = getUsageMonitor()['normalizeAnthropicResponse'](
+          { ...enterpriseData, limits: [{ kind: 'session', percent: 0 }, { kind: 'weekly_all', percent: 0 }] },
+          'p',
+          'Pro'
+        );
+        expect(listed.spendLimit).toBeUndefined();
+      });
+
       it('leaves accounts with windows as they are, extra usage or not', () => {
         const usage = getUsageMonitor()['normalizeAnthropicResponse'](
           { ...enterpriseData, five_hour: { utilization: 9, resets_at: '2026-10-19T15:30:00Z' }, seven_day: { utilization: 10 } },
