@@ -584,6 +584,8 @@ export interface ElectronAPI {
   openProjectWindow: (projectId: string) => Promise<IPCResult<{ focused: boolean }>>;
   closeProjectWindow: (projectId: string) => Promise<IPCResult>;
   onProjectWindowsChanged: (callback: (windows: import('./window').ProjectWindowInfo[]) => void) => () => void;
+  onWindowCloseRequested: (callback: (request: import('./window').WindowCloseRequest) => void) => () => void;
+  chooseWindowClose: (choice: import('./window').WindowCloseChoice) => Promise<IPCResult>;
 
   // Windows shell setting (Settings > General)
   /** The value the app started with, the one it runs with, and the last WSL availability check */

@@ -149,5 +149,9 @@ export const projectMock = {
 
   closeProjectWindow: async () => ({ success: true }),
 
-  onProjectWindowsChanged: () => () => {}
+  onProjectWindowsChanged: () => () => {},
+
+  onWindowCloseRequested: () => () => {},
+
+  chooseWindowClose: async () => ({ success: true })
 };

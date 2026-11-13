@@ -6,9 +6,9 @@
  * window also reports the project it shows, which is what the tray menu lists.
  */
 
-import { BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/ipc';
-import type { IPCResult, ProjectWindowInfo } from '../../shared/types';
+import type { IPCResult, ProjectWindowInfo, WindowCloseChoice } from '../../shared/types';
 import { projectStore } from '../project-store';
 import {
   findWindowForProject,
@@ -90,4 +90,26 @@ export function registerWindowHandlers({ createProjectWindow }: WindowHandlerDep
     window.close();
     return { success: true };
   });
+
+  // The close button's question answered (index.ts asks it): keep running in the background hides
+  // the window to the tray; quit closes this window, or quits the app when no other is open
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE_CHOICE, (event, choice: WindowCloseChoice): IPCResult => {
+    const windowId = senderWindowId(event);
+    const window = windowId !== undefined ? BrowserWindow.fromId(windowId) : null;
+    if (!window || window.isDestroyed()) return { success: false, error: 'No window to close' };
+    if (choice === 'background') {
+      window.hide();
+    } else if (hasOtherWindows(window.id)) {
+      markClosingForReal(window.id);
+      window.close();
+    } else {
+      app.quit();
+    }
+    return { success: true };
+  });
+}
+
+/** Whether windows other than this one are open (closing it then leaves the app running) */
+export function hasOtherWindows(windowId: number): boolean {
+  return listProjectWindows().some((other) => other.windowId !== windowId);
 }

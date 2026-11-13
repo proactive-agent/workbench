@@ -19,6 +19,7 @@ import { KanbanBoard } from './components/KanbanBoard';
 import { TaskDetailModal } from './components/task-detail/TaskDetailModal';
 import { TaskCreationWizard } from './components/TaskCreationWizard';
 import { AppSettingsDialog, type AppSection } from './components/settings/AppSettings';
+import { CloseWindowDialog } from './components/CloseWindowDialog';
 import type { ProjectSettingsSection } from './components/settings/ProjectSettingsContent';
 import { TerminalGrid } from './components/TerminalGrid';
 import { Insights } from './components/Insights';
@@ -889,6 +890,9 @@ export function App() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* The close button: keep running in the background or quit */}
+        <CloseWindowDialog />
 
         {/* Open a project: this window or a new one */}
         <Dialog

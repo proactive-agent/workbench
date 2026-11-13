@@ -191,6 +191,8 @@ export const IPC_CHANNELS = {
   WINDOW_OPEN_PROJECT: 'window:openProject',         // Open a project in a new window (or focus the one showing it)
   WINDOW_CLOSE_PROJECT: 'window:closeProject',       // Close the window showing a project ("Quit window")
   WINDOW_PROJECTS_CHANGED: 'window:projectsChanged', // Event: the open windows changed (main -> renderer)
+  WINDOW_CLOSE_REQUESTED: 'window:closeRequested',   // Event: the window's close button was pressed (main -> renderer: ask)
+  WINDOW_CLOSE_CHOICE: 'window:closeChoice',         // What the user chose: keep running in the background or quit
   PROJECT_LIST_CHANGED: 'project:listChanged',       // Event: a project was added or removed (main -> renderer)
 
   // Shell operations
