@@ -19,6 +19,7 @@ import type {
   ClaudeProfileSettings,
   ClaudeUsageData,
   ClaudeRateLimitEvent,
+  UsageDetails,
   UsageSpendLimit
 } from '../shared/types';
 
@@ -94,6 +95,31 @@ function mergeDuplicateProfile(kept: ClaudeProfile, duplicate: ClaudeProfile): C
 /** Display names compared the way a person would read them */
 function sameName(a: string | undefined, b: string | undefined): boolean {
   return !!a && !!b && a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
+/**
+ * A profile's usage from a fetched snapshot: its percents, spend limit, resets and model-scoped
+ * weekly limit (the reset times the earlier usage had when the fetch names none)
+ */
+function usageFromAPI(
+  existing: ClaudeUsageData | undefined,
+  sessionPercent: number,
+  weeklyPercent: number,
+  spendLimit: UsageSpendLimit | undefined,
+  details: UsageDetails | undefined,
+): ClaudeUsageData {
+  return {
+    sessionUsagePercent: sessionPercent,
+    sessionResetTime: details?.sessionResetTimestamp ?? existing?.sessionResetTime ?? '',
+    weeklyUsagePercent: weeklyPercent,
+    weeklyResetTime: details?.weeklyResetTimestamp ?? existing?.weeklyResetTime ?? '',
+    opusUsagePercent: existing?.opusUsagePercent,
+    lastUpdated: new Date(),
+    ...(spendLimit ? { spendLimit } : {}),
+    ...(details?.fablePercent !== undefined ? { fablePercent: details.fablePercent } : {}),
+    ...(details?.fableResetTimestamp ? { fableResetTimestamp: details.fableResetTimestamp } : {}),
+    ...(details?.fableModelName ? { fableModelName: details.fableModelName } : {}),
+  };
 }
 
 /**
@@ -1023,24 +1049,15 @@ export class ClaudeProfileManager {
     profileId: string,
     sessionPercent: number,
     weeklyPercent: number,
-    spendLimit?: UsageSpendLimit
+    spendLimit?: UsageSpendLimit,
+    details?: UsageDetails
   ): ClaudeUsageData | null {
     const profile = this.getProfile(profileId);
     if (!profile) {
       return null;
     }
 
-    // Preserve existing reset times if available, otherwise use empty string
-    const existingUsage = profile.usage;
-    const usage: ClaudeUsageData = {
-      sessionUsagePercent: sessionPercent,
-      sessionResetTime: existingUsage?.sessionResetTime ?? '',
-      weeklyUsagePercent: weeklyPercent,
-      weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
-      opusUsagePercent: existingUsage?.opusUsagePercent,
-      lastUpdated: new Date(),
-      ...(spendLimit ? { spendLimit } : {})
-    };
+    const usage = usageFromAPI(profile.usage, sessionPercent, weeklyPercent, spendLimit, details);
     profile.usage = usage;
     this.save();
     return usage;
@@ -1054,28 +1071,17 @@ export class ClaudeProfileManager {
    * @returns Number of profiles successfully updated
    */
   batchUpdateProfileUsageFromAPI(
-    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit }>
+    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit; details?: UsageDetails }>
   ): number {
     let updatedCount = 0;
 
-    for (const { profileId, sessionPercent, weeklyPercent, spendLimit } of updates) {
+    for (const { profileId, sessionPercent, weeklyPercent, spendLimit, details } of updates) {
       const profile = this.getProfile(profileId);
       if (!profile) {
         continue;
       }
 
-      // Preserve existing reset times if available
-      const existingUsage = profile.usage;
-      const usage: ClaudeUsageData = {
-        sessionUsagePercent: sessionPercent,
-        sessionResetTime: existingUsage?.sessionResetTime ?? '',
-        weeklyUsagePercent: weeklyPercent,
-        weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
-        opusUsagePercent: existingUsage?.opusUsagePercent,
-        lastUpdated: new Date(),
-        ...(spendLimit ? { spendLimit } : {})
-      };
-      profile.usage = usage;
+      profile.usage = usageFromAPI(profile.usage, sessionPercent, weeklyPercent, spendLimit, details);
       updatedCount++;
     }
 

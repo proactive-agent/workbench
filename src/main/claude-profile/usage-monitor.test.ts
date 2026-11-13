@@ -8,8 +8,12 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { detectProvider, getUsageEndpoint, UsageMonitor, getUsageMonitor } from './usage-monitor';
 import type { ApiProvider } from './usage-monitor';
 import { hasHardcodedText } from '../../shared/utils/format-time';
+import { appLog } from '../app-logger';
 
 // Mock getClaudeProfileManager
+// Usage fetch failures are written to the app's log
+vi.mock('../app-logger', () => ({ appLog: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } }));
+
 vi.mock('../claude-profile-manager', () => ({
   getClaudeProfileManager: vi.fn(() => ({
     getActiveProfile: vi.fn(() => ({
@@ -219,6 +223,36 @@ describe('usage-monitor', () => {
       // Verify types of critical properties
       expect(typeof usage?.sessionPercent).toBe('number');
       expect(typeof usage?.weeklyPercent).toBe('number');
+    });
+
+    it("shows an account's saved resets and Fable limit with its stored usage until a fetch arrives", async () => {
+      const { getClaudeProfileManager } = await import('../claude-profile-manager');
+      const getProfile = vi.fn((id: string) => ({
+        id,
+        name: 'Team',
+        usage: {
+          sessionUsagePercent: 16,
+          sessionResetTime: '2026-11-14T08:00:00Z',
+          weeklyUsagePercent: 11,
+          weeklyResetTime: '2026-11-18T10:00:00Z',
+          fablePercent: 40,
+          fableResetTimestamp: '2026-11-18T10:00:00Z',
+          fableModelName: 'Fable',
+          lastUpdated: new Date('2026-11-14T03:00:00Z'),
+        },
+      }));
+      vi.mocked(getClaudeProfileManager).mockReturnValueOnce({ getProfile } as never);
+      const monitor = getUsageMonitor();
+      const stored = monitor['getStoredUsageSnapshot']('team-profile');
+      expect(stored).toMatchObject({
+        sessionPercent: 16,
+        weeklyPercent: 11,
+        sessionResetTimestamp: '2026-11-14T08:00:00Z',
+        weeklyResetTimestamp: '2026-11-18T10:00:00Z',
+        fablePercent: 40,
+        fableResetTimestamp: '2026-11-18T10:00:00Z',
+        fableModelName: 'Fable',
+      });
     });
 
     it('should emit events when listeners are attached', () => {
@@ -714,7 +748,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       // 401 errors should throw
       await expect(
@@ -745,7 +780,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       // 403 errors should throw
       await expect(
@@ -767,7 +803,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       const usage = await monitor['fetchUsageViaAPI']('valid-token', 'test-profile-1', 'Test Profile', undefined);
 
@@ -782,7 +819,8 @@ describe('usage-monitor', () => {
       mockFetch.mockRejectedValueOnce(new Error('Network timeout'));
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       const usage = await monitor['fetchUsageViaAPI']('valid-token', 'test-profile-1', 'Test Profile', undefined);
 
@@ -804,7 +842,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       const usage = await monitor['fetchUsageViaAPI']('valid-token', 'test-profile-1', 'Test Profile', undefined);
 
@@ -825,7 +864,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       // 401 errors should throw with proper message
       await expect(
@@ -924,7 +964,8 @@ describe('usage-monitor', () => {
       });
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       const usage = await monitor['fetchUsageViaAPI']('zai-api-key', 'zai-profile-1', 'z.ai Profile', undefined);
 
@@ -956,7 +997,8 @@ describe('usage-monitor', () => {
       });
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
 
       const usage = await monitor['fetchUsageViaAPI']('zhipu-api-key', 'zhipu-profile-1', 'ZHIPU Profile', undefined);
 
@@ -1407,7 +1449,8 @@ describe('usage-monitor', () => {
       } as unknown as Response);
 
       const monitor = getUsageMonitor();
-      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const consoleSpy = vi.mocked(appLog.warn);
+      consoleSpy.mockClear();
       const profileId = 'test-profile-cooldown';
 
       // Call fetchUsageViaAPI which should fail and record timestamp

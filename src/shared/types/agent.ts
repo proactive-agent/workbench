@@ -24,6 +24,22 @@ export interface ClaudeUsageData {
   lastUpdated: Date;
   /** The monthly spend limit an Enterprise account has instead of the windows (both percents are its share spent) */
   spendLimit?: UsageSpendLimit;
+  /** The model-scoped weekly limit (Fable) as last fetched: its percent, reset and model name */
+  fablePercent?: number;
+  fableResetTimestamp?: string;
+  fableModelName?: string;
+}
+
+/**
+ * What a fetched usage snapshot has beyond its percents (its resets and the model-scoped weekly
+ * limit), saved with the profile so its stored usage shows them too
+ */
+export interface UsageDetails {
+  sessionResetTimestamp?: string;
+  weeklyResetTimestamp?: string;
+  fablePercent?: number;
+  fableResetTimestamp?: string;
+  fableModelName?: string;
 }
 
 /**

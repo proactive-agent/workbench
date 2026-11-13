@@ -12,7 +12,7 @@
 import { EventEmitter } from 'events';
 import { expandClaudeHome } from '../platform/claude-home';
 import { getClaudeProfileManager } from '../claude-profile-manager';
-import { ClaudeUsageSnapshot, ProfileUsageSummary, AllProfilesUsage, type UsageSpendLimit } from '../../shared/types/agent';
+import { ClaudeUsageSnapshot, ProfileUsageSummary, AllProfilesUsage, type ClaudeUsageData, type UsageDetails, type UsageSpendLimit } from '../../shared/types/agent';
 import { loadProfilesFile } from '../services/profile/profile-manager';
 import type { APIProfile } from '../../shared/types/profile';
 import { detectProvider as sharedDetectProvider, type ApiProvider } from '../../shared/utils/provider-detection';
@@ -189,6 +189,34 @@ interface ActiveProfileResult {
   isAPIProfile: boolean;
   baseUrl: string;
   credential?: string;
+}
+
+/** What a fetched snapshot has beyond its percents, to save with the profile */
+function usageDetails(usage: ClaudeUsageSnapshot): UsageDetails {
+  return {
+    sessionResetTimestamp: usage.sessionResetTimestamp,
+    weeklyResetTimestamp: usage.weeklyResetTimestamp,
+    fablePercent: usage.fablePercent,
+    fableResetTimestamp: usage.fableResetTimestamp,
+    fableModelName: usage.fableModelName,
+  };
+}
+
+/** A saved reset time as a timestamp (older saves may hold a description such as "11:59pm") */
+function savedTimestamp(value: string | undefined): string | undefined {
+  return value && !Number.isNaN(Date.parse(value)) ? value : undefined;
+}
+
+/** What the usage saved with a profile has beyond its percents (resets, the model-scoped weekly limit) */
+function savedUsageDetails(saved: ClaudeUsageData | undefined): UsageDetails {
+  if (!saved) return {};
+  return {
+    sessionResetTimestamp: savedTimestamp(saved.sessionResetTime),
+    weeklyResetTimestamp: savedTimestamp(saved.weeklyResetTime),
+    fablePercent: saved.fablePercent,
+    fableResetTimestamp: saved.fableResetTimestamp,
+    fableModelName: saved.fableModelName,
+  };
 }
 
 /** An amount of money as the usage API sends it: minor units and their exponent */
@@ -400,20 +428,25 @@ export class UsageMonitor extends EventEmitter {
     });
   }
 
-  /** The last usage known for a profile: its cached summary, else the usage saved with it */
+  /**
+   * The last usage known for a profile: its cached summary, else the usage saved with it, with the
+   * resets and model-scoped weekly limit saved with its last fetch (shown until a fetch arrives)
+   */
   private getStoredUsageSnapshot(profileId: string): ClaudeUsageSnapshot | null {
     const profile = getClaudeProfileManager().getProfile(profileId);
     if (!profile || !usesClaudeSubscription(profile)) return null;
     const cached = this.allProfilesUsageCache.get(profileId)?.usage;
+    const details = savedUsageDetails(profile.usage);
     if (cached?.lastFetchedAt) {
       return {
+        ...details,
         profileId,
         profileName: profile.name,
         profileEmail: profile.email ?? cached.profileEmail,
         sessionPercent: cached.sessionPercent,
         weeklyPercent: cached.weeklyPercent,
-        sessionResetTimestamp: cached.sessionResetTimestamp,
-        weeklyResetTimestamp: cached.weeklyResetTimestamp,
+        sessionResetTimestamp: cached.sessionResetTimestamp ?? details.sessionResetTimestamp,
+        weeklyResetTimestamp: cached.weeklyResetTimestamp ?? details.weeklyResetTimestamp,
         spendLimit: cached.spendLimit,
         fetchedAt: new Date(cached.lastFetchedAt),
         needsReauthentication: this.needsReauthProfiles.has(profileId)
@@ -421,6 +454,7 @@ export class UsageMonitor extends EventEmitter {
     }
     if (profile.usage?.lastUpdated) {
       return {
+        ...details,
         profileId,
         profileName: profile.name,
         profileEmail: profile.email,
@@ -502,7 +536,7 @@ export class UsageMonitor extends EventEmitter {
   checkNow(): void {
     this.debugLog('[UsageMonitor] Immediate check triggered');
     this.checkUsage().catch(error => {
-      console.error('[UsageMonitor] Immediate check failed:', error);
+      appLog.error('[UsageMonitor] Immediate check failed:', error);
     });
   }
 
@@ -626,7 +660,7 @@ export class UsageMonitor extends EventEmitter {
     // Parallel fetch for all inactive profiles that need fresh data
     if (profilesToFetch.length > 0) {
       // Collect usage updates for batch save (avoids race condition with concurrent saves)
-      const usageUpdates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit }> = [];
+      const usageUpdates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit; details?: UsageDetails }> = [];
 
       // DEDUPLICATION: Group profiles by configDir to avoid fetching the same underlying
       // account multiple times. Multiple ClaudeProfileManager entries can point to the same
@@ -674,7 +708,7 @@ export class UsageMonitor extends EventEmitter {
       // Fetch provider groups in parallel; within each group, stagger sequentially
       type FetchResult = {
         index: number;
-        update: { profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit } | null;
+        update: { profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit; details?: UsageDetails } | null;
         profile: FetchItem['profile'];
         inactiveUsage: ClaudeUsageSnapshot | null;
         rateLimitStatus: ReturnType<typeof isProfileRateLimited>;
@@ -700,6 +734,7 @@ export class UsageMonitor extends EventEmitter {
                 sessionPercent: inactiveUsage.sessionPercent,
                 weeklyPercent: inactiveUsage.weeklyPercent,
                 ...(inactiveUsage.spendLimit ? { spendLimit: inactiveUsage.spendLimit } : {}),
+                details: usageDetails(inactiveUsage),
               },
               profile,
               inactiveUsage,
@@ -797,6 +832,7 @@ export class UsageMonitor extends EventEmitter {
             sessionPercent,
             weeklyPercent,
             ...(representativeResult.update?.spendLimit ? { spendLimit: representativeResult.update.spendLimit } : {}),
+            ...(representativeResult.update?.details ? { details: representativeResult.update.details } : {}),
           });
 
           const summary: ProfileUsageSummary = {
@@ -1108,7 +1144,7 @@ export class UsageMonitor extends EventEmitter {
 
       // Step 2.5: Persist usage to profile for caching (so other profiles can display cached usage)
       const profileManager = getClaudeProfileManager();
-      profileManager.updateProfileUsageFromAPI(profileId, usage.sessionPercent, usage.weeklyPercent, usage.spendLimit);
+      profileManager.updateProfileUsageFromAPI(profileId, usage.sessionPercent, usage.weeklyPercent, usage.spendLimit, usageDetails(usage));
 
       // Step 3: Emit usage update for UI
       this.emit('usage-updated', usage);
@@ -1135,7 +1171,7 @@ export class UsageMonitor extends EventEmitter {
         }
       }
 
-      console.error('[UsageMonitor] Check failed:', error);
+      appLog.error('[UsageMonitor] Check failed:', error);
     } finally {
       this.isChecking = false;
       if (this.recheckPending) {
@@ -1594,7 +1630,7 @@ export class UsageMonitor extends EventEmitter {
       });
 
       if (!response.ok) {
-        console.error('[UsageMonitor] API error:', response.status, response.statusText, {
+        appLog.warn(`[UsageMonitor] Usage API error for profile ${profileId}: ${response.status} ${response.statusText}`, {
           provider,
           endpoint: usageEndpoint
         });
@@ -1604,7 +1640,7 @@ export class UsageMonitor extends EventEmitter {
         if (response.status === 429) {
           const now = Date.now();
           const siblingIds = this.getProfileIdFamily(profileId);
-          console.warn('[UsageMonitor] Rate limited (429) by provider, backing off for 10 minutes:', {
+          appLog.warn(`[UsageMonitor] Rate limited (429) for profile ${profileId}, backing off for 10 minutes (its stored usage shows meanwhile):`, {
             provider,
             endpoint: usageEndpoint,
             cooldownMs: UsageMonitor.RATE_LIMIT_COOLDOWN_MS,
@@ -1752,7 +1788,7 @@ export class UsageMonitor extends EventEmitter {
         throw error;
       }
 
-      console.error('[UsageMonitor] API fetch failed:', error);
+      appLog.warn(`[UsageMonitor] Usage fetch failed for profile ${profileId}:`, error);
       // Record failure timestamp for cooldown retry (network/other errors)
       this.apiFailureTimestamps.set(profileId, Date.now());
       return null;
