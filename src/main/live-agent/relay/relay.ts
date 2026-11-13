@@ -183,7 +183,13 @@ function handleSessionOwner({ sessionId, terminalId }: SessionOwner) {
   if (sessionOwners.get(sessionId) === terminalId) return
   sessionOwners.set(sessionId, terminalId)
   broadcast(sessionId, JSON.stringify({ type: 'session-owner', sessionId, owner: terminalId }))
+  // A session not watched yet that a window runs (a chat's, resumed in an agent window) is
+  // looked for now rather than at the next scan
+  if (!sessions.has(sessionId)) onUnwatchedOwner?.()
 }
+
+/** Set while the relay runs: scans every workspace for sessions */
+let onUnwatchedOwner: (() => void) | null = null
 
 // ─── Session watcher ────────────────────────────────────────────────────────
 
@@ -678,9 +684,10 @@ function scanForActiveSessions(workspace: Workspace) {
           // been quiet for a moment (until then it waits). A headless run writes its
           // name and queue entries just before the record that says how it was run.
           if ((cwdSearched.get(filePath) ?? 0) < stat.size || Date.now() - stat.mtimeMs < CWDLESS_SESSION_WAIT_MS) continue
-        } else if (!isWorkspaceDir(cwd, workspace) || (headlessSessions.has(filePath) && !isTaskWorktree(workspace))) {
+        } else if (!isWorkspaceDir(cwd, workspace) || (headlessSessions.has(filePath) && !isTaskWorktree(workspace) && !sessionOwners.has(sessionId))) {
           // Run elsewhere, or a headless run here (a Claude page chat, `claude -p`):
-          // never an agent window's session, except a task's run in its worktree
+          // never an agent window's session, except a task's run in its worktree and
+          // a chat's session an agent window resumed (its hooks report the window)
           continue
         }
         if (hasActivitySinceDisposed(filePath)) found.push({ sessionId, filePath, newestMtime })
@@ -807,6 +814,9 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
   const scanInterval = setInterval(() => {
     for (const workspace of workspaces.values()) scanForActiveSessions(workspace)
   }, SCAN_INTERVAL_MS)
+  onUnwatchedOwner = () => {
+    for (const workspace of workspaces.values()) scanForActiveSessions(workspace)
+  }
 
   let relayDisposed = false
 
@@ -862,6 +872,7 @@ export async function createRelay(options: RelayOptions): Promise<Relay> {
       workspaces.clear()
       hookServer.dispose()
       clearInterval(scanInterval)
+      onUnwatchedOwner = null
       for (const watcher of projectDirWatchers.values()) watcher.close()
       projectDirWatchers.clear()
       for (const id of [...sessions.keys()]) disposeSession(id)
