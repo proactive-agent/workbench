@@ -530,11 +530,17 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   `insights/chat-commands.ts`). A local command's output (`/compact`) is its reply and keeps the session. A chat with a session also shows a Clawd button under the browser
   button that shows its session in an agent window: the one running it already, else a new one resuming it as its own
   (`claude --resume` on its account, `openProjectSession`, recorded in `agent-sessions.json` so it is found and
-  restored). The chat and the window then share one session and take turns (`session-messaging/shared-session.ts`):
-  while the chat replies the window is read-only (`holdForChatReply` in `receiving.ts`, with Take over) and resumes
-  the session again afterwards, so its Claude Code has the chat's turn; while the window works (`claude agents`
-  status) the chat doesn't send, edit or regenerate, and when its turn ends the chat takes it from the transcript
-  (whole turns only, `useSharedSessionWindow`, `syncSharedSession`), so neither branches the session.
+  restored; a window back at its shell resumes it only with nothing else running there). The chat and the window then
+  share one session and take turns (`session-messaging/shared-session.ts`; only windows that recorded the session are
+  looked at, one running Claude Code while `claude agents` says it runs that session, busy unless it reports idle):
+  every reply that resumes the session checks inside its turn (the executor's `prepare`, so the chat already counts as
+  replying): the window working in it ends the turn (`agent_window_busy`; the user's message goes back to the composer,
+  another session's message waits for the user), what was said in the window comes in from the transcript (whole
+  turns only, before the messages the chat holds, one sync at a time per chat, `mergeSessionTurns`), and the window is
+  read-only meanwhile (`holdForChatReply` in `receiving.ts`, a hold per reply, with Take over) and resumes the session
+  again once no reply holds it, so its Claude Code has the chat's turn. The chat page follows the window
+  (`useSharedSessionWindow`, also asked again before a send): while it works the chat doesn't send, edit or
+  regenerate; while it is idle its turns come in (`syncSharedSession`). Neither branches the session.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,

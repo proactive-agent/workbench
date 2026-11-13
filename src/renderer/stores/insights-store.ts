@@ -15,6 +15,7 @@ import type {
   SessionMessageOrigin
 } from '../../shared/types';
 import { DEFAULT_AGENT_PROFILES } from '../../shared/constants';
+import { INSIGHTS_ERROR_CODES, parseInsightsError } from '../../shared/constants/insights';
 import { NEW_CHAT_BROWSER_ID } from '../../shared/types/browser-drawer';
 import { useBrowserDrawerStore } from './browser-drawer-store';
 
@@ -535,6 +536,12 @@ function cacheSentAttachments(images: ImageAttachment[] | undefined): void {
   }
 }
 
+/**
+ * The message last sent, until its reply starts: given back to the composer when it is refused
+ * because an agent window sharing the chat's session works in it (agent_window_busy)
+ */
+let lastSent: { chatId: string | undefined; text: string; images?: ImageAttachment[] } | null = null;
+
 export function sendMessage(
   projectId: string,
   message: string,
@@ -542,6 +549,7 @@ export function sendMessage(
   images?: ImageAttachment[],
   to?: SessionMessageOrigin
 ): void {
+  lastSent = { chatId: useInsightsStore.getState().session?.id, text: message, images };
   useInsightsStore.getState().setProjectId(projectId);
   cacheSentAttachments(images);
   const store = useInsightsStore.getState();
@@ -870,6 +878,13 @@ export function setupInsightsListeners(): () => void {
   // Listen for errors
   const unsubError = window.electronAPI.onInsightsError((projectId, error, sessionId) => {
     if (!isCurrentProject(projectId)) return;
+    // Not sent (an agent window works in the chat's session): the message goes back to the composer
+    if (parseInsightsError(error).code === INSIGHTS_ERROR_CODES.agentWindowBusy && lastSent && lastSent.chatId === sessionId && isShown(sessionId)) {
+      const { text, images } = lastSent;
+      lastSent = null;
+      if (!store().composerText.trim()) store().setComposerText(text);
+      if (images?.length && store().pendingImages.length === 0) store().setPendingImages(images);
+    }
     if (!isShown(sessionId)) {
       store().updateBackgroundRun(sessionId!, (run) => ({ ...run, currentTool: null, status: { phase: 'error', error } }));
       return;

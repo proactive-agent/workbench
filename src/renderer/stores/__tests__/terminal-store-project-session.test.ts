@@ -42,14 +42,25 @@ describe("a chat's session in an agent window", () => {
     expect(useTerminalStore.getState().agentsViewRequest).toMatchObject({ projectPath: PROJECT });
   });
 
-  it('resumes the session in that window when it is back at its shell', () => {
+  it('resumes the session in that window when it is back at its shell with nothing else running', () => {
     const resume = vi.fn();
     vi.stubGlobal('window', { electronAPI: { resumeTaskSessionInTerminal: resume } });
     useTerminalStore.getState().addTerminal(PROJECT, PROJECT, { id: WINDOW });
     useTerminalStore.getState().updateTerminal(WINDOW, { status: 'running', isCLIMode: false });
-    const terminal = useTerminalStore.getState().openProjectSession({ ...request, terminalId: WINDOW });
-    expect(resume).toHaveBeenCalledWith(WINDOW, { sessionId: 'chat-session', profileId: 'main', cwd: PROJECT, own: true });
+    const terminal = useTerminalStore.getState().openProjectSession({ ...request, terminalId: WINDOW, resume: true });
+    expect(resume).toHaveBeenCalledWith(WINDOW, { sessionId: 'chat-session', profileId: 'main', own: true, cwd: PROJECT });
     expect(terminal?.isCLIMode).toBe(true);
+  });
+
+  it('only shows a window running another program at its shell (nothing is typed into it)', () => {
+    const resume = vi.fn();
+    vi.stubGlobal('window', { electronAPI: { resumeTaskSessionInTerminal: resume } });
+    useTerminalStore.getState().addTerminal(PROJECT, PROJECT, { id: WINDOW });
+    useTerminalStore.getState().updateTerminal(WINDOW, { status: 'running', isCLIMode: false });
+    const terminal = useTerminalStore.getState().openProjectSession({ ...request, terminalId: WINDOW, resume: false });
+    expect(resume).not.toHaveBeenCalled();
+    expect(terminal?.isCLIMode).toBe(false);
+    expect(useTerminalStore.getState().activeTerminalId).toBe(WINDOW);
   });
 
   it('opens a new window when the one named has exited', () => {

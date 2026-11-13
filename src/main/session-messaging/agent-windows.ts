@@ -65,7 +65,7 @@ const SHELLS = new Set(['bash', 'zsh', 'fish', 'sh', 'dash', 'ksh', 'mksh', 'tcs
  * Whether a window's shell is what runs in its foreground (not vim, a dev server or another
  * program the resume command would be typed into); unknown counts as idle
  */
-function shellIsIdle(terminal: TerminalProcess): boolean {
+export function shellIsIdle(terminal: TerminalProcess): boolean {
   let foreground = '';
   try {
     foreground = terminal.pty?.process ?? '';

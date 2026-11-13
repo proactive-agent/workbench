@@ -63,6 +63,11 @@ export interface InsightsTurnOptions {
    */
   beforeRun?: () => Promise<unknown>;
   /**
+   * Done after beforeRun, also while the turn counts as the chat's reply; unlike it, an error ends
+   * the turn with that error (an agent window sharing the chat's session is working in it)
+   */
+  prepare?: () => Promise<void>;
+  /**
    * The turn reaches an agent window: the user's message goes to one, or answers one. A read-only
    * turn gets Claude Code's ListAgents and SendMessage only then (or with the Kanban button)
    */
@@ -278,6 +283,7 @@ export class InsightsExecutor extends EventEmitter {
           throw abort;
         }
       }
+      if (turn.prepare) await turn.prepare();
       const projectSettings = projectStore.getProject(projectId)?.settings;
       // The project's memory graph, searchable from the chat when the project uses Graphify
       const graphify = (await isGraphifyEnabled(projectPath))

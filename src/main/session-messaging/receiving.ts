@@ -34,8 +34,18 @@ interface Receiving {
 }
 
 const receiving = new Map<string, Receiving>();
-/** Windows running the session a chat is replying in, by window: the chat (read-only until the reply ends) */
-const chatHolds = new Map<string, SessionMessageOrigin>();
+/**
+ * Windows running the session a chat is replying in: each reply's hold (read-only until every
+ * reply holding the window has ended), the latest last
+ */
+const chatHolds = new Map<string, Map<number, SessionMessageOrigin>>();
+let nextHold = 1;
+
+/** The chat replying in the window's session, of the latest reply holding it */
+function latestHold(terminalId: string): SessionMessageOrigin | undefined {
+  const holds = chatHolds.get(terminalId);
+  return holds ? [...holds.values()].pop() : undefined;
+}
 
 let notify: (terminalId: string, from: SessionMessageOrigin | null) => void = () => {};
 let busyNow: (terminalId: string) => boolean = () => false;
@@ -153,27 +163,51 @@ export function stopReceiving(terminalId: string): void {
   if (!entry) return;
   clearTimers(entry);
   receiving.delete(terminalId);
-  const hold = chatHolds.get(terminalId);
+  const hold = latestHold(terminalId);
   if (!hold) cursorAsked.delete(terminalId);
   notify(terminalId, hold ? { ...hold, sharing: true } : null);
 }
 
-/** A chat replies in the session the window runs: read-only until releaseChatReply */
-export function holdForChatReply(terminalId: string, from: SessionMessageOrigin): void {
-  chatHolds.set(terminalId, from);
+/**
+ * A chat replies in the session the window runs: read-only until that reply's releaseChatReply
+ * (a hold of its own, so a reply that starts as another ends keeps the window read-only).
+ * Returns the hold
+ */
+export function holdForChatReply(terminalId: string, from: SessionMessageOrigin): number {
+  const hold = nextHold++;
+  const holds = chatHolds.get(terminalId) ?? new Map<number, SessionMessageOrigin>();
+  holds.set(hold, from);
+  chatHolds.set(terminalId, holds);
   // A message it is answering shows first: the window is read-only either way
   if (!receiving.has(terminalId)) notify(terminalId, { ...from, sharing: true });
+  return hold;
 }
 
-/** The chat's reply in the window's session ended */
-export function releaseChatReply(terminalId: string): void {
-  if (!chatHolds.delete(terminalId)) return;
+/** Whether a chat's reply holds the window read-only */
+export function heldForChatReply(terminalId: string): boolean {
+  return chatHolds.has(terminalId);
+}
+
+/** A chat's reply in the window's session ended; whether another reply still holds the window */
+export function releaseChatReply(terminalId: string, hold: number): boolean {
+  const holds = chatHolds.get(terminalId);
+  if (!holds?.delete(hold)) return !!holds?.size;
+  if (holds.size > 0) {
+    if (!receiving.has(terminalId)) notify(terminalId, { ...latestHold(terminalId)!, sharing: true });
+    return true;
+  }
+  chatHolds.delete(terminalId);
   const entry = receiving.get(terminalId);
   if (!entry) cursorAsked.delete(terminalId);
   notify(terminalId, entry ? entry.from : null);
+  return false;
 }
 
-/** Give the window back at once, whatever made it read-only: taken over, Claude Code exited or the window closed */
+/**
+ * Give the window back at once, whatever made it read-only: taken over or the window closed.
+ * (Claude Code exiting only ends the message it answered: a chat replying in its session still
+ * holds it, the window resuming the session after the reply goes through an exit)
+ */
 export function releaseWindow(terminalId: string): void {
   chatHolds.delete(terminalId);
   if (receiving.has(terminalId)) stopReceiving(terminalId);

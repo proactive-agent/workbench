@@ -348,10 +348,22 @@ export function Insights({ projectId }: InsightsProps) {
     setCreatingTask(new Set());
   }, [session?.id]);
 
-  const handleSend = () => {
+  // A send waiting for the window's state (Enter again meanwhile does nothing)
+  const checkingRef = useRef(false);
+  const handleSend = async () => {
     const message = inputValue.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!message && !hasImages) || isLoading || windowBusy) return;
+    if ((!message && !hasImages) || isLoading || windowBusy || checkingRef.current) return;
+    // An agent window sharing the session may have started working since it was last looked at:
+    // asked now, so the message stays in the composer rather than being refused after it left
+    if (session?.claudeHead) {
+      checkingRef.current = true;
+      try {
+        if ((await sharedWindow.check())?.busy) return;
+      } finally {
+        checkingRef.current = false;
+      }
+    }
 
     setInputValue('');
     const to = sendTo ? { kind: sendTo.kind, name: sendTo.name, ...(sendTo.title ? { title: sendTo.title } : {}) } : undefined;
@@ -368,7 +380,7 @@ export function Insights({ projectId }: InsightsProps) {
     if (slashMenu.handleKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
@@ -841,7 +853,7 @@ export function Insights({ projectId }: InsightsProps) {
               ) : canSend && (
                 <button
                   type="button"
-                  onClick={handleSend}
+                  onClick={() => void handleSend()}
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
                   aria-label={t('insights.send')}
                   title={t('insights.send')}
@@ -868,7 +880,7 @@ export function Insights({ projectId }: InsightsProps) {
           ) : (
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => void handleSend()}
             disabled={!canSend}
             className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             aria-label={t('insights.send')}

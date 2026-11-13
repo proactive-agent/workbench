@@ -55,16 +55,19 @@ export type ChatCommandsError = 'projectNotFound' | 'timeout' | 'notListed' | 'f
 /** Why an agent window couldn't be opened as a chat (the error of `openWindowAsChat`) */
 export type OpenWindowAsChatError = 'projectNotFound' | 'windowNotFound' | 'noSession' | 'failed';
 
+/** The agent window running a chat's Claude Code session too, and what it is doing */
+export interface SharedSessionWindow {
+  terminalId: string;
+  /** Its Claude Code works on something: the chat waits */
+  busy: boolean;
+  /** Back at its shell, with nothing else running there: the chat's Clawd button resumes the session in it */
+  resumable: boolean;
+}
+
 /**
  * Where a chat message from another of the user's sessions came from (a chat or an agent window
  * of the project, by its stable name: shared/utils/session-names.ts)
  */
-/** The agent window running a chat's Claude Code session too, and whether its Claude Code is working */
-export interface SharedSessionWindow {
-  terminalId: string;
-  busy: boolean;
-}
-
 export interface SessionMessageOrigin {
   kind: 'chat' | 'agent';
   name: string;
@@ -155,6 +158,8 @@ export interface InsightsSessionSummary {
   archivedAt?: Date;
   /** The agent window session the chat was opened from (InsightsSession.fromSessionId) */
   fromSessionId?: string;
+  /** The Claude Code session the chat goes on in (InsightsSession.claudeHead's) */
+  claudeSessionId?: string;
 }
 
 export interface InsightsChatStatus {

@@ -493,7 +493,10 @@ export function registerInsightsHandlers(getMainWindow: () => BrowserWindow | nu
       const project = projectStore.getProject(projectId);
       if (!project || typeof claudeSessionId !== "string") return { success: false, error: "Project not found" };
       const found = await sessionWindow(project.path, claudeSessionId).catch(() => undefined);
-      return { success: true, data: found ? { terminalId: found.terminal.id, busy: found.busy } : null };
+      return {
+        success: true,
+        data: found ? { terminalId: found.terminal.id, busy: found.busy, resumable: found.atShell && found.shellIdle } : null,
+      };
     }
   );
 

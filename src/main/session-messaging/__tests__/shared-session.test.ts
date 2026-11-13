@@ -1,8 +1,8 @@
 /**
- * A chat's Claude Code session open in an agent window too (shared-session.ts): the window running
- * it is found by its live session or the one it last ran, its working state comes from
- * `claude agents` before its output, and a chat's reply holds the window read-only, then has it
- * resume the session with the chat's turn
+ * A chat's Claude Code session open in an agent window too (shared-session.ts): only windows that
+ * recorded the session are looked at, one running Claude Code counts while `claude agents` says it
+ * runs that session (busy unless Claude Code reports it idle), and a chat's reply holds the window
+ * read-only, then has it resume the session unless another reply holds it by then
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TerminalProcess } from '../../terminal/types';
@@ -10,11 +10,13 @@ import type { TerminalProcess } from '../../terminal/types';
 const state = vi.hoisted(() => ({
   windows: [] as Array<Partial<TerminalProcess>>,
   live: new Map<string, { sessionId: string; status?: string }>(),
+  liveAsked: [] as string[],
   own: new Map<string, string>(),
+  started: new Map<string, string>(),
   outputBusy: new Set<string>(),
+  idleShells: new Set<string>(),
   reopened: [] as Array<[string, string]>,
-  holds: [] as string[],
-  released: [] as string[],
+  holds: new Map<string, number>(),
 }));
 
 vi.mock('../directory', () => ({
@@ -23,17 +25,31 @@ vi.mock('../directory', () => ({
     state.reopened.push([terminalId, sessionId]);
   },
 }));
-vi.mock('../live-sessions', () => ({ windowLiveSession: async (terminal: TerminalProcess) => state.live.get(terminal.id) }));
+vi.mock('../live-sessions', () => ({
+  windowLiveSession: async (terminal: TerminalProcess) => {
+    state.liveAsked.push(terminal.id);
+    return state.live.get(terminal.id);
+  },
+}));
+vi.mock('../../agent-session-store', () => ({ windowOfSession: (sessionId: string) => state.started.get(sessionId) }));
 vi.mock('../../terminal/cli-integration-handler', () => ({
   windowSessionAccount: async (terminal: TerminalProcess) => ({ own: state.own.has(terminal.id) ? { sessionId: state.own.get(terminal.id) } : undefined, configDir: undefined }),
 }));
 vi.mock('../../terminal/terminal-event-handler', () => ({ isClaudeBusyNow: (id: string) => state.outputBusy.has(id) }));
+vi.mock('../agent-windows', () => ({ shellIsIdle: (terminal: TerminalProcess) => state.idleShells.has(terminal.id) }));
 vi.mock('../receiving', () => ({
-  holdForChatReply: (id: string) => state.holds.push(id),
-  releaseChatReply: (id: string) => state.released.push(id),
+  holdForChatReply: (id: string) => {
+    state.holds.set(id, (state.holds.get(id) ?? 0) + 1);
+    return state.holds.get(id)!;
+  },
+  heldForChatReply: (id: string) => (state.holds.get(id) ?? 0) > 0,
+  releaseChatReply: (id: string) => {
+    state.holds.set(id, (state.holds.get(id) ?? 1) - 1);
+    return state.holds.get(id)! > 0;
+  },
 }));
 
-import { busyWindowOfSession, sessionWindow, shareSessionForReply } from '../shared-session';
+import { sessionWindow, shareSessionForReply } from '../shared-session';
 
 const chat = { kind: 'chat' as const, name: 'chat-abc', title: 'Release notes' };
 const window = (id: string, extra: Partial<TerminalProcess> = {}): Partial<TerminalProcess> => ({ id, projectPath: '/p', isCLIMode: true, ...extra });
@@ -42,70 +58,90 @@ describe('a chat session shared with an agent window', () => {
   beforeEach(() => {
     state.windows = [];
     state.live.clear();
+    state.liveAsked = [];
     state.own.clear();
+    state.started.clear();
     state.outputBusy.clear();
+    state.idleShells.clear();
     state.reopened = [];
-    state.holds = [];
-    state.released = [];
+    state.holds.clear();
   });
 
-  it("finds the window by the session its Claude Code runs, else the one it last ran, a task follower's never", async () => {
-    state.windows = [window('follower', { follower: { handleInput() {}, stop() {} } }), window('shell', { isCLIMode: false }), window('live')];
-    state.own.set('follower', 's1');
-    state.own.set('shell', 's1');
-    state.live.set('live', { sessionId: 's2', status: 'idle' });
+  it("looks only at windows that recorded the session, without asking `claude agents` about others", async () => {
+    state.windows = [window('other'), window('mine')];
+    state.live.set('other', { sessionId: 's', status: 'idle' });
+    state.live.set('mine', { sessionId: 's', status: 'idle' });
+    state.own.set('mine', 's');
+    expect((await sessionWindow('/p', 's'))?.terminal.id).toBe('mine');
+    expect(state.liveAsked).toEqual(['mine']);
 
-    expect((await sessionWindow('/p', 's2'))?.terminal.id).toBe('live');
-    // Back at its shell, the window that last ran it can resume it
-    expect((await sessionWindow('/p', 's1'))?.terminal.id).toBe('shell');
-    expect(await sessionWindow('/p', 'other')).toBeUndefined();
-    expect(await sessionWindow('/elsewhere', 's2')).toBeUndefined();
+    // Started or resumed in this run (the run's own record)
+    state.own.clear();
+    state.started.set('s', 'other');
+    expect((await sessionWindow('/p', 's'))?.terminal.id).toBe('other');
+    expect(await sessionWindow('/p', 'unknown')).toBeUndefined();
   });
 
-  it("takes Claude Code's own status over the window's output, which can miss a turn's end", async () => {
+  it('leaves a window that moved on to another session (/clear, /resume), and a task follower', async () => {
+    state.windows = [window('w'), window('follower', { follower: { handleInput() {}, stop() {} } })];
+    state.own.set('w', 's');
+    state.own.set('follower', 's');
+    state.live.set('w', { sessionId: 'after-clear', status: 'idle' });
+    expect(await sessionWindow('/p', 's')).toBeUndefined();
+  });
+
+  it("is busy unless Claude Code reports it idle (waiting on a permission prompt too), its output only without a status", async () => {
     state.windows = [window('w')];
+    state.own.set('w', 's');
     state.live.set('w', { sessionId: 's', status: 'idle' });
     state.outputBusy.add('w');
-    expect(await busyWindowOfSession('/p', 's')).toBeUndefined();
-
-    state.live.set('w', { sessionId: 's', status: 'busy' });
-    expect((await busyWindowOfSession('/p', 's'))?.id).toBe('w');
-
-    // No status reported: the output says
+    expect((await sessionWindow('/p', 's'))?.busy).toBe(false);
+    state.live.set('w', { sessionId: 's', status: 'waiting' });
+    expect((await sessionWindow('/p', 's'))?.busy).toBe(true);
     state.live.set('w', { sessionId: 's' });
-    expect((await busyWindowOfSession('/p', 's'))?.id).toBe('w');
+    expect((await sessionWindow('/p', 's'))?.busy).toBe(true);
+  });
+
+  it('finds a window back at its shell, which can resume the session only with nothing else running there', async () => {
+    state.windows = [window('w', { isCLIMode: false })];
+    state.own.set('w', 's');
+    expect(await sessionWindow('/p', 's')).toMatchObject({ busy: false, atShell: true, shellIdle: false });
+    state.idleShells.add('w');
+    expect(await sessionWindow('/p', 's')).toMatchObject({ atShell: true, shellIdle: true });
   });
 
   it("holds the window read-only for a chat's reply, then has it resume the session with the chat's turn", async () => {
     state.windows = [window('w')];
+    state.own.set('w', 's');
     state.live.set('w', { sessionId: 's', status: 'idle' });
-    const release = await shareSessionForReply('/p', 's', chat);
-    expect(state.holds).toEqual(['w']);
+    const release = shareSessionForReply('/p', (await sessionWindow('/p', 's'))!, 's', chat);
+    expect(state.holds.get('w')).toBe(1);
     await release();
-    expect(state.released).toEqual(['w']);
+    expect(state.holds.get('w')).toBe(0);
     expect(state.reopened).toEqual([['w', 's']]);
   });
 
-  it('leaves a window that moved on to another session, or works on something the user took it over for', async () => {
+  it('leaves the window to a reply that holds it by then, and one that moved on or works', async () => {
     state.windows = [window('w')];
+    state.own.set('w', 's');
     state.live.set('w', { sessionId: 's', status: 'idle' });
-    let release = await shareSessionForReply('/p', 's', chat);
-    state.live.set('w', { sessionId: 'other', status: 'idle' });
-    await release();
+    const found = (await sessionWindow('/p', 's'))!;
+    const first = shareSessionForReply('/p', found, 's', chat);
+    const second = shareSessionForReply('/p', found, 's', chat);
+    await first();
     expect(state.reopened).toEqual([]);
 
-    state.live.set('w', { sessionId: 's', status: 'idle' });
-    release = await shareSessionForReply('/p', 's', chat);
     state.live.set('w', { sessionId: 's', status: 'busy' });
-    await release();
+    await second();
     expect(state.reopened).toEqual([]);
-    expect(state.released).toEqual(['w', 'w']);
   });
 
-  it('holds nothing without a window running the session', async () => {
-    const release = await shareSessionForReply('/p', 's', chat);
+  it("holds no window back at its shell (the user may be working there)", async () => {
+    state.windows = [window('w', { isCLIMode: false })];
+    state.own.set('w', 's');
+    const release = shareSessionForReply('/p', (await sessionWindow('/p', 's'))!, 's', chat);
     await release();
-    expect(state.holds).toEqual([]);
+    expect(state.holds.size).toBe(0);
     expect(state.reopened).toEqual([]);
   });
 });

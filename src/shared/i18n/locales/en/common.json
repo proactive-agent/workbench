@@ -211,7 +211,8 @@
     },
     "errors": {
       "subscription_rejected": "Anthropic rejected this request for your Claude subscription account (HTTP 429), even though your usage is within limits. Subscription accounts must go through Claude Code. Make sure the Claude Code CLI is installed and signed in, or add an Anthropic API key account in Settings → Accounts.",
-      "claude_code_missing": "Claude subscription accounts answer through Claude Code, but the Claude Code CLI isn't installed. Install it from claude.ai/download (or via Settings → Developer Tools), then try again."
+      "claude_code_missing": "Claude subscription accounts answer through Claude Code, but the Claude Code CLI isn't installed. Install it from claude.ai/download (or via Settings → Developer Tools), then try again.",
+      "agent_window_busy": "The agent window sharing this chat's session is working in it. Your message is back in the composer: send it once the window is done."
     },
     "taskTools": {
       "list_tasks": "Listing tasks",

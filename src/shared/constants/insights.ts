@@ -15,7 +15,9 @@ export const INSIGHTS_ERROR_CODES = {
    */
   subscriptionRejected: 'subscription_rejected',
   /** Subscription accounts run Insights through the Claude Code CLI, which isn't installed */
-  claudeCodeMissing: 'claude_code_missing'
+  claudeCodeMissing: 'claude_code_missing',
+  /** An agent window sharing the chat's Claude Code session works in it: the chat waits (details: the window's name) */
+  agentWindowBusy: 'agent_window_busy'
 } as const;
 
 export type InsightsErrorCode = (typeof INSIGHTS_ERROR_CODES)[keyof typeof INSIGHTS_ERROR_CODES];

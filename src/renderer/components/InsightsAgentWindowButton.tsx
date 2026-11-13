@@ -7,6 +7,7 @@
  * the chat replies (its turn is writing the session) or, without a window running it, when the
  * project has no room for another window.
  */
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from './ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
@@ -28,6 +29,8 @@ export function InsightsAgentWindowButton({ projectId, session, replying, window
   const { t } = useTranslation('common');
   const projectPath = useProjectStore((state) => state.projects.find((project) => project.id === projectId)?.path);
   const canAddWindow = useTerminalStore((state) => (projectPath ? state.canAddTerminal(projectPath) : false));
+  // A click waiting for the window lookup: a second one opens nothing more
+  const openingRef = useRef(false);
 
   // The session the chat's latest reply ended in (edits and regenerations fork into a new one)
   const ref = [...(session?.messages ?? [])].reverse().find((message) => message.claudeRef)?.claudeRef;
@@ -41,18 +44,25 @@ export function InsightsAgentWindowButton({ projectId, session, replying, window
   const label = t('insights.agentWindow.open');
 
   const handleOpen = async () => {
-    if (reason) return;
-    // The window running the session now (it may have changed since the chat last looked)
-    const found = await window.electronAPI.getSessionWindow(projectId, ref.sessionId).catch(() => null);
-    const terminalId = found?.success ? found.data?.terminalId ?? null : windowId;
-    if (!terminalId && !useTerminalStore.getState().canAddTerminal(projectPath)) return;
-    useTerminalStore.getState().openProjectSession({
-      projectPath,
-      title: session.title || label,
-      sessionId: ref.sessionId,
-      profileId: ref.profileId,
-      terminalId,
-    });
+    if (reason || openingRef.current) return;
+    openingRef.current = true;
+    try {
+      // The window running the session now (it may have changed since the chat last looked)
+      const found = await window.electronAPI.getSessionWindow(projectId, ref.sessionId).catch(() => null);
+      const shared = found?.success ? found.data ?? null : null;
+      const terminalId = found?.success ? shared?.terminalId ?? null : windowId;
+      if (!terminalId && !useTerminalStore.getState().canAddTerminal(projectPath)) return;
+      useTerminalStore.getState().openProjectSession({
+        projectPath,
+        title: session.title || label,
+        sessionId: ref.sessionId,
+        profileId: ref.profileId,
+        terminalId,
+        resume: shared?.resumable === true,
+      });
+    } finally {
+      openingRef.current = false;
+    }
   };
 
   return (

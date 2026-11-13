@@ -17,8 +17,15 @@ vi.mock('../insights/insights-executor', async () => {
     cancelSession() { return false; }
     isSessionActive(_projectId: string, chatId?: string) { return !!chatId && replying.has(chatId); }
     async execute(...args: unknown[]) {
-      const turn = args[6] as { beforeRun?: () => Promise<unknown> } | undefined;
+      const turn = args[6] as { beforeRun?: () => Promise<unknown>; prepare?: () => Promise<void>; chatSessionId?: string } | undefined;
       await turn?.beforeRun?.();
+      // As the real executor: a failed prepare ends the turn with its error
+      try {
+        await turn?.prepare?.();
+      } catch (error) {
+        this.emit('error', args[0], (error as Error).message, turn?.chatSessionId);
+        throw error;
+      }
       return execute(...args);
     }
   }
@@ -29,14 +36,14 @@ const ensureWindow = vi.fn(async () => true);
 vi.mock('../session-messaging/agent-windows', () => ({ ensureAgentWindowRunning: (...args: unknown[]) => ensureWindow(...(args as [])) }));
 /** An agent window running a chat's session too (shared-session.ts), and the session's transcript */
 const shared = vi.hoisted(() => ({
-  busy: undefined as { id: string } | undefined,
+  window: undefined as { terminal: { id: string }; busy: boolean; atShell: boolean; shellIdle: boolean } | undefined,
   transcript: null as string | null,
   held: [] as string[],
   released: 0,
 }));
 vi.mock('../session-messaging/shared-session', () => ({
-  busyWindowOfSession: async () => shared.busy,
-  shareSessionForReply: async (_projectPath: string, sessionId: string) => {
+  sessionWindow: async () => shared.window,
+  shareSessionForReply: (_projectPath: string, _found: unknown, sessionId: string) => {
     shared.held.push(sessionId);
     return async () => {
       shared.released++;
@@ -58,7 +65,7 @@ beforeEach(() => {
   pid = `project-${++run}`;
   execute.mockReset();
   replying.clear();
-  shared.busy = undefined;
+  shared.window = undefined;
   shared.transcript = null;
   shared.held = [];
   shared.released = 0;
@@ -440,6 +447,7 @@ describe('an agent window opened as a chat', () => {
 describe('a chat sharing its session with an agent window', () => {
   const line = (value: Record<string, unknown>) => JSON.stringify(value);
   const ref = (messageUuid: string) => ({ sessionId: 'shared', messageUuid, profileId: 'main' });
+  const idleWindow = () => ({ terminal: { id: 'abcdef12-0000-0000-0000-000000000000' }, busy: false, atShell: false, shellIdle: false });
 
   /** A chat with one reply in the session `shared` (its last point: a1) */
   async function chatInSharedSession(): Promise<string> {
@@ -448,11 +456,12 @@ describe('a chat sharing its session with an agent window', () => {
     return service.loadSession(pid, projectDir)!.id;
   }
 
-  /** The session's transcript, written after the chat's last change */
+  /** The session's transcript */
   function transcript(lines: Array<Record<string, unknown>>): void {
     const file = join(projectDir, 'shared.jsonl');
     writeFileSync(file, lines.map(line).join('\n'));
-    const later = new Date(Date.now() + 60_000);
+    // A new time for each write (the sync reads a transcript that changed)
+    const later = new Date(Date.now() + 60_000 + lines.length * 1000);
     utimesSync(file, later, later);
     shared.transcript = file;
   }
@@ -461,14 +470,15 @@ describe('a chat sharing its session with an agent window', () => {
     { type: 'user', uuid: 'u1', parentUuid: null, message: { content: 'hi' } },
     { type: 'assistant', uuid: 'a1', parentUuid: 'u1', message: { content: [{ type: 'text', text: 'Hello' }] } },
   ];
+  const windowTurn = [
+    { type: 'user', uuid: 'u2', parentUuid: 'a1', message: { content: 'typed in the window' } },
+    { type: 'assistant', uuid: 'a2', parentUuid: 'u2', message: { content: [{ type: 'text', text: 'window reply' }] } },
+  ];
 
   it("goes on from what was said in the window, resuming the session past it (no branch)", async () => {
     await chatInSharedSession();
-    transcript([
-      ...chatTurn,
-      { type: 'user', uuid: 'u2', parentUuid: 'a1', message: { content: 'typed in the window' } },
-      { type: 'assistant', uuid: 'a2', parentUuid: 'u2', message: { content: [{ type: 'text', text: 'window reply' }] } },
-    ]);
+    shared.window = idleWindow();
+    transcript([...chatTurn, ...windowTurn]);
     execute.mockResolvedValueOnce({ fullResponse: 'Next reply', toolsUsed: [], claudeRef: ref('a3') });
     await service.sendMessage(pid, projectDir, 'next');
 
@@ -482,16 +492,39 @@ describe('a chat sharing its session with an agent window', () => {
     expect(shared.released).toBe(1);
   });
 
-  it('takes whole turns only: a turn the window is still writing comes in once it ends', async () => {
-    const chatId = await chatInSharedSession();
-    transcript([...chatTurn, { type: 'user', uuid: 'u2', parentUuid: 'a1', message: { content: 'still being answered' } }]);
-    await expect(service.syncSharedSession(pid, projectDir, chatId)).resolves.toBe(false);
-    expect(service.loadSession(pid, projectDir)!.messages).toHaveLength(2);
+  it('takes the window\'s turns in before messages held for the user, which are still passed on', async () => {
+    await chatInSharedSession();
+    const chat = service.loadSession(pid, projectDir)!;
+    chat.messages.push({ id: 'held-1', role: 'user', content: 'held for you', timestamp: new Date(), from });
+    shared.window = idleWindow();
+    transcript([...chatTurn, ...windowTurn]);
+    execute.mockResolvedValueOnce({ fullResponse: 'Next reply', toolsUsed: [], claudeRef: ref('a3') });
+    await service.sendMessage(pid, projectDir, 'next');
+
+    expect(service.loadSession(pid, projectDir)!.messages.map((m) => m.content)).toEqual([
+      'hi', 'Hello', 'typed in the window', 'window reply', 'held for you', 'next', 'Next reply',
+    ]);
+    const [, , message] = execute.mock.calls.at(-1)!;
+    expect(message).toContain('held for you');
   });
 
-  it("doesn't send while the window works in the session", async () => {
+  it('takes whole turns only: a turn the window is still writing comes in once it ends, once', async () => {
+    const chatId = await chatInSharedSession();
+    shared.window = idleWindow();
+    transcript([...chatTurn, windowTurn[0]]);
+    await expect(service.syncSharedSession(pid, projectDir, chatId)).resolves.toBe(false);
+    expect(service.loadSession(pid, projectDir)!.messages).toHaveLength(2);
+
+    transcript([...chatTurn, ...windowTurn]);
+    // Two looks at once take the turn in once
+    const both = await Promise.all([service.syncSharedSession(pid, projectDir, chatId), service.syncSharedSession(pid, projectDir, chatId)]);
+    expect(both.filter(Boolean)).toHaveLength(1);
+    expect(service.loadSession(pid, projectDir)!.messages.map((m) => m.content)).toEqual(['hi', 'Hello', 'typed in the window', 'window reply']);
+  });
+
+  it("doesn't send while the window works in the session: the message is taken back", async () => {
     await chatInSharedSession();
-    shared.busy = { id: 'abcdef12-0000-0000-0000-000000000000' };
+    shared.window = { ...idleWindow(), busy: true };
     const errors: string[] = [];
     const onError = (_projectId: string, error: string) => errors.push(error);
     service.on('error', onError);
@@ -499,17 +532,22 @@ describe('a chat sharing its session with an agent window', () => {
     service.off('error', onError);
 
     expect(service.loadSession(pid, projectDir)!.messages.map((m) => m.content)).toEqual(['hi', 'Hello']);
-    expect(errors).toEqual(["The agent window agent-abcdef12 is working in this chat's session: send once it is done"]);
+    expect(errors).toEqual(['[agent_window_busy] agent-abcdef12']);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("doesn't answer another session's message while the window works: it waits for the user", async () => {
+    const chatId = await chatInSharedSession();
+    shared.window = { ...idleWindow(), busy: true };
+    await service.receiveMessage(pid, projectDir, chatId, from, 'from a window');
+    await flush();
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(service.loadSession(pid, projectDir)!.messages.at(-1)).toMatchObject({ content: 'from a window', from });
   });
 
   it('opens the window\'s session as the chat it belongs to, not a new one', async () => {
     const chatId = await chatInSharedSession();
-    transcript([
-      ...chatTurn,
-      { type: 'user', uuid: 'u2', parentUuid: 'a1', message: { content: 'typed in the window' } },
-      { type: 'assistant', uuid: 'a2', parentUuid: 'u2', message: { content: [{ type: 'text', text: 'window reply' }] } },
-    ]);
+    transcript([...chatTurn, ...windowTurn]);
     await expect(service.openSessionAsChat(pid, projectDir, { sessionId: 'shared', transcriptPath: shared.transcript! })).resolves.toBe(chatId);
     expect(service.listSessions(projectDir)).toHaveLength(1);
     expect(service.loadSession(pid, projectDir)!.messages.map((m) => m.content)).toEqual(['hi', 'Hello', 'typed in the window', 'window reply']);

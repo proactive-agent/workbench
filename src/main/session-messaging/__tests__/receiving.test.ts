@@ -111,15 +111,33 @@ describe('agent window answering a message', () => {
   });
 
   it("is read-only while a chat replies in the session it runs too, until the reply ends", () => {
-    holdForChatReply('window-1', from);
+    const hold = holdForChatReply('window-1', from);
     expect(notify).toHaveBeenLastCalledWith('window-1', { ...from, sharing: true });
     expect(acceptsWindowInput('window-1', 'a')).toBe(false);
     // Nothing of the busy and idle timing applies: only the reply's end gives it back
     vi.advanceTimersByTime(60 * 60_000);
     expect(acceptsWindowInput('window-1', 'a')).toBe(false);
-    releaseChatReply('window-1');
+    expect(releaseChatReply('window-1', hold)).toBe(false);
     expect(acceptsWindowInput('window-1', 'a')).toBe(true);
     expect(notify).toHaveBeenLastCalledWith('window-1', null);
+  });
+
+  it('stays read-only while a reply that started as another ended still holds it', () => {
+    const first = holdForChatReply('window-1', from);
+    const second = holdForChatReply('window-1', { ...from, title: 'Second' });
+    expect(releaseChatReply('window-1', first)).toBe(true);
+    expect(acceptsWindowInput('window-1', 'a')).toBe(false);
+    // Releasing the first twice changes nothing
+    expect(releaseChatReply('window-1', first)).toBe(true);
+    expect(releaseChatReply('window-1', second)).toBe(false);
+    expect(acceptsWindowInput('window-1', 'a')).toBe(true);
+  });
+
+  it("keeps a chat's hold when its Claude Code exits (the window resuming the session goes through an exit)", () => {
+    holdForChatReply('window-1', from);
+    startReceiving('window-1', { kind: 'agent', name: 'agent-other' });
+    stopReceiving('window-1');
+    expect(acceptsWindowInput('window-1', 'a')).toBe(false);
   });
 
   it('stays read-only for the chat replying when a message it answered is done, and is given back by Take over', () => {

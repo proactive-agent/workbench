@@ -300,7 +300,15 @@ interface TerminalState {
    * Show a Claude chat's session in an agent window: the window running it already (`terminalId`,
    * resumed there when it is back at its shell), else a new window resuming it as its own
    */
-  openProjectSession: (request: { projectPath: string; title: string; sessionId: string; profileId?: string; terminalId?: string | null }) => Terminal | null;
+  openProjectSession: (request: {
+    projectPath: string;
+    title: string;
+    sessionId: string;
+    profileId?: string;
+    terminalId?: string | null;
+    /** The window is back at its shell with nothing else running there: the session resumes in it */
+    resume?: boolean;
+  }) => Terminal | null;
   /**
    * Open a closed agent window again under its own id (so its name stays the same), resuming its
    * last session, without leaving the page the user is on: a chat messages it. A window restored at
@@ -337,6 +345,12 @@ export function isProjectTerminal(terminal: Terminal, projectPath?: string): boo
  */
 export function getActiveProjectTerminalCount(terminals: Terminal[], projectPath?: string): number {
   return terminals.filter(t => t.status !== 'exited' && isProjectTerminal(t, projectPath)).length;
+}
+
+/** Resume a Claude Code session in a window back at its shell (in `cwd`, else the window's own folder) */
+function resumeAtShell(terminal: Terminal, session: PendingTaskSession, cwd: string | undefined): void {
+  useTerminalStore.getState().setCLIMode(terminal.id, true);
+  window.electronAPI.resumeTaskSessionInTerminal(terminal.id, { ...session, cwd: cwd || terminal.cwd });
 }
 
 export const useTerminalStore = create<TerminalState>((set, get) => ({
@@ -759,15 +773,10 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }));
     const existing = request.terminalId ? get().terminals.find((t) => t.id === request.terminalId && t.status !== 'exited') : undefined;
     if (existing) {
-      // Back at its shell (Claude Code exited): the session resumes in it
-      if (!existing.isCLIMode && existing.status === 'running') {
-        get().setCLIMode(existing.id, true);
-        window.electronAPI.resumeTaskSessionInTerminal(existing.id, {
-          sessionId: request.sessionId,
-          profileId: request.profileId,
-          cwd: existing.cwd || request.projectPath,
-          own: true,
-        });
+      // Back at its shell (Claude Code exited), with nothing else running there: the session
+      // resumes in it (never typed into vim or a dev server: it is only shown then)
+      if (request.resume && !existing.isCLIMode && existing.status === 'running') {
+        resumeAtShell(existing, { sessionId: request.sessionId, profileId: request.profileId, own: true }, request.projectPath);
       }
       get().setActiveTerminal(existing.id);
       showAgents();
@@ -809,8 +818,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
         });
       } else if (!existing.isCLIMode) {
         // Running its shell (Claude Code exited): the session resumes in it
-        get().setCLIMode(existing.id, true);
-        window.electronAPI.resumeTaskSessionInTerminal(existing.id, { ...session, cwd: request.cwd ?? existing.cwd });
+        resumeAtShell(existing, session, request.cwd ?? existing.cwd);
       }
       return get().getTerminal(existing.id) ?? existing;
     }
