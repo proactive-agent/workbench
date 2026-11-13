@@ -40,6 +40,7 @@ import { extractTaskSuggestions, stripTaskSuggestions } from '../../shared/utils
 import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
 import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
+import { windowsNode } from '../browser-drawer/browser-runtime';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { registerChatBrowserWorkspace } from '../browser-drawer/project-match';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
@@ -460,7 +461,10 @@ export type TaskToolsRoute = 'direct' | 'bridge' | 'off';
 
 /** The guard's variables for the chat's browser: Workbench's tools server, and (WSL2 with the bridge) the relay to it */
 export const CHAT_BROWSER_URL_ENV = 'WORKBENCH_CHAT_BROWSER_URL';
+export const CHAT_BROWSER_TOKEN_ENV = 'WORKBENCH_CHAT_BROWSER_TOKEN';
 export const CHAT_BROWSER_RELAY_ENV = 'WORKBENCH_CHAT_BROWSER_RELAY';
+/** The guard's map from the Windows paths its server reports to the ones Claude Code reads (WSL) */
+const PATH_MAP_ENV = 'WORKBENCH_PATH_MAP';
 
 /** Set once the bridge failed to start, so later turns don't offer tools Claude can't reach */
 let taskToolsBridgeFailed = false;
@@ -511,6 +515,28 @@ export async function guardChatPlaywright(
   await mkdir(dir, { recursive: true });
   const script = join(tempDir, 'playwright-guard.cjs');
   await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
+  // The chat's browser runs on Windows while Claude Code runs in WSL (browser-runtime.ts): its
+  // Playwright attaches there through Windows' registry, which the distribution can't reach, so
+  // the guard and the server run on Windows (Workbench's executable as Node, started through
+  // interop), in the turn's folder on Windows; the paths they report are translated for WSL
+  const wsl = getWslInfo();
+  const windows = wsl && entry.env?.[CHAT_BROWSER_URL_ENV] ? windowsNode() : null;
+  if (wsl && windows && entry.args) {
+    const forwarded = ['ELECTRON_RUN_AS_NODE', CHAT_BROWSER_URL_ENV, CHAT_BROWSER_TOKEN_ENV, PATH_MAP_ENV];
+    const onWindows: McpServerEntry = {
+      type: 'stdio',
+      command: toRuntimePath(process.execPath),
+      args: [script, dir, windows.npx, ...entry.args, '--output-dir', dir, '--file-paths', 'absolute'],
+      env: {
+        ...entry.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        // Both ways: the server's Windows paths for Claude Code, Claude Code's Linux paths for the server
+        [PATH_MAP_ENV]: JSON.stringify({ from: dir, to: toRuntimePath(dir), distro: wsl.distro, mountRoot: wsl.mountRoot }),
+        WSLENV: forwarded.join(':'),
+      },
+    };
+    return { servers: { ...servers, playwright: onWindows }, dir };
+  }
   const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
   // The chat's browser is opened through Workbench's local tools server; inside WSL2 (NAT or
   // mirrored networking) the guard reaches it through the task tools bridge, a Windows process it

@@ -85,6 +85,9 @@ const wslRef = vi.hoisted(() => ({
   info: null as null | { distro: string; networkingMode: string | null; interop?: boolean; tools: { claude: { path: string | null; version?: string | null } } },
   version: 2,
 }));
+/** Node.js on Windows while chat browsers run there (browser-runtime.ts) */
+const windowsRef = vi.hoisted(() => ({ node: null as null | { node: string; npx: string; version: string } }));
+vi.mock('../../browser-drawer/browser-runtime', () => ({ windowsNode: () => windowsRef.node }));
 vi.mock('../../platform/shell-runtime', () => ({
   whenShellRuntimeReady: async () => ({}),
   isWslRuntime: () => false,
@@ -727,6 +730,46 @@ describe('runInsights', () => {
         expect(direct.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
         expect(mirrored.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
       } finally {
+        rmSync(turnDir, { recursive: true, force: true });
+      }
+    });
+
+    it("runs the guard and its server on Windows when the chat's browser runs there, its paths translated for WSL", async () => {
+      const playwright = {
+        type: 'stdio' as const,
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1'],
+        env: { WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp', WORKBENCH_CHAT_BROWSER_TOKEN: 'secret' },
+      };
+      const turnDir = mkdtempSync(join(tmpdir(), 'guard-windows-test-'));
+      try {
+        wslRef.info = { distro: 'Ubuntu', mountRoot: '/mnt/', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } } as typeof wslRef.info;
+        windowsRef.node = { node: 'C:\\Program Files\\nodejs\\node.exe', npx: 'C:\\Program Files\\nodejs\\npx.cmd', version: 'v22.0.0' };
+        const result = await guardChatPlaywright({ playwright }, turnDir);
+        const guarded = result.servers.playwright as { command: string; args: string[]; env: Record<string, string> };
+        const dir = join(turnDir, 'playwright');
+        // Workbench's executable as Node, started through interop; the guard and folders by their Windows paths
+        expect(guarded.command).toBe(`/runtime${process.execPath.replace(/\\/g, '/')}`);
+        expect(guarded.args).toEqual([
+          join(turnDir, 'playwright-guard.cjs'), dir, windowsRef.node.npx,
+          '-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1', '--output-dir', dir, '--file-paths', 'absolute',
+        ]);
+        expect(guarded.env).toMatchObject({
+          ELECTRON_RUN_AS_NODE: '1',
+          WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp',
+          WORKBENCH_CHAT_BROWSER_TOKEN: 'secret',
+          WSLENV: 'ELECTRON_RUN_AS_NODE:WORKBENCH_CHAT_BROWSER_URL:WORKBENCH_CHAT_BROWSER_TOKEN:WORKBENCH_PATH_MAP',
+        });
+        // Reaches Workbench directly: no relay
+        expect(guarded.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(JSON.parse(guarded.env.WORKBENCH_PATH_MAP)).toEqual({ from: dir, to: `/runtime${dir.replace(/\\/g, '/')}`, distro: 'Ubuntu', mountRoot: '/mnt/' });
+        expect(result.dir).toBe(dir);
+
+        // A server that isn't the chat browser's (no chat browser URL) runs in WSL as before
+        const own = (await guardChatPlaywright({ playwright: { ...playwright, env: {} } }, turnDir)).servers.playwright as { command: string };
+        expect(own.command).toBe('node');
+      } finally {
+        windowsRef.node = null;
         rmSync(turnDir, { recursive: true, force: true });
       }
     });

@@ -26,7 +26,9 @@
  *
  * In WSL mode the holder runs inside the distribution (spawnTool, like every MCP server there),
  * its folder in the distribution's own temp folder (runtimeTempParent), so the browser's profile
- * isn't on a Windows drive.
+ * isn't on a Windows drive. Settings > Browser > Browser runtime can run chat browsers on Windows
+ * instead (browser-runtime.ts): the holder then starts natively (runNatively), with Windows'
+ * Node.js and the chat's choice as its Windows profile.
  */
 
 import { EventEmitter } from 'events';
@@ -44,7 +46,7 @@ import { readSettingsFileAsync } from '../settings-utils';
 import { resolveCommand } from '../mcp-commands';
 import { getToolEnvAsync } from '../cli-utils';
 import { isWindows } from '../platform';
-import { getWslInfo } from '../platform/shell-runtime';
+import { getWslInfo, runInSessionRuntime } from '../platform/shell-runtime';
 import { registryAccess, registryOs, removeClosedSessions } from './registry';
 import { killRuntimeProcessTree, spawnTool } from '../platform/runtime-exec';
 import { prepareBrowserProfileCopy, removeBrowserProfileCopy, setBrowserProfileCopyExtensions, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
@@ -68,6 +70,7 @@ import {
 } from './chat-browser-restore';
 import { browserChoicesInUse } from '../browser-profiles/choices-in-use';
 import { registerChatBrowserWorkspace } from './project-match';
+import { inChatBrowserRuntime, whenChatBrowserRuntimeReady, windowsBrowserChoice, windowsNode, withWindowsNodeOnPath } from './browser-runtime';
 
 /** The bind titles of chat browsers start with this */
 const CHAT_BROWSER_TITLE_PREFIX = 'Workbench chat ';
@@ -135,7 +138,7 @@ export class ChatBrowsers extends EventEmitter {
   private stopped = false;
 
   constructor(
-    private readonly startHolder: StartChatBrowserHolder = startPlaywrightHolder,
+    private readonly startHolder: StartChatBrowserHolder = startChatBrowserHolder,
     private readonly discard: (restorable: RestorableChatBrowser) => Promise<void> = discardRestorable,
   ) {
     super();
@@ -651,9 +654,13 @@ async function firefoxExtensions(browserId: string, profileDir: string): Promise
  * again and its tabs reopened; for another browser it is removed and the chat's browser starts anew
  */
 const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, title, choice, projectId, chatId, restore }) => {
+  const startedAt = Date.now();
   const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
   const settings = appSettings?.mcpConnectors;
   const runSettings = chatRunSettings(settings, choice);
+  // On Windows while the shell is WSL: the Windows profile of the choice (made from WSL's list)
+  const node = windowsNode();
+  if (node) runSettings.playwrightBrowser = await windowsBrowserChoice(runSettings.playwrightBrowser);
   const browser = runSettings.playwrightBrowser;
   const browserId = browser?.id ?? null;
   const reuse = restore && restore.record.browserId === browserId ? restore : undefined;
@@ -714,6 +721,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       }
     }
     if (!reuse) cleanups.push(...removals.splice(0));
+    const copiedAt = Date.now();
 
     // Its record, for a restart after a crash (a close or quit removes it with the folder)
     const record = recordWriter(dir, {
@@ -730,14 +738,16 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
 
     const entry = buildMcpConfig(['playwright'], runSettings, { browserProfileDir }).mcpServers.playwright;
     if (entry?.type !== 'stdio') throw new Error('Playwright is not available');
-    const command = await resolveCommand(entry.command);
+    // Windows' Node.js while chat browsers run there (the shell's lookups are WSL's)
+    const command = node ? node.npx : await resolveCommand(entry.command);
     if (!command) throw new Error(`${entry.command} was not found`);
+    const baseEnv = node ? withWindowsNodeOnPath(process.env, node) : getWslInfo() ? process.env : await getToolEnvAsync();
     const proc = spawnTool('python', holderArgs(entry.args ?? [], dir), {
       command,
       cwd: dir,
       stdio: ['pipe', 'pipe', 'pipe'],
       // In WSL the distribution's login environment applies (only changed variables are passed in)
-      env: { ...(getWslInfo() ? process.env : await getToolEnvAsync()), ...entry.env },
+      env: { ...baseEnv, ...entry.env },
       windowsHide: true,
       // Its own process group, so the server npx starts (and its browser) can be stopped with it
       detached: !isWindows(),
@@ -750,6 +760,11 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       await closeHolderProcess(proc);
       throw error;
     }
+    // How long a start takes where (Windows and WSL starts differ a lot)
+    appLog.info(
+      `[BrowserDrawer] Chat browser started in ${Date.now() - startedAt} ms (profile copy ${copiedAt - startedAt} ms, `
+      + `server and browser ${Date.now() - copiedAt} ms; ${node ? 'on Windows' : getWslInfo() ? 'in WSL' : 'natively'}, ${browser?.id ?? 'chromium'})`
+    );
     // Started: a reused folder and copy go when it closes (or on quit), like a new one's
     if (keptCopy) useKeptBrowserProfileCopy(keptCopy);
     cleanups.push(...removals.splice(0));
@@ -775,7 +790,8 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       // Its closed browser's entry in Playwright's registry (kept there because it had a profile folder)
       const registry = registryAccess(registryOs());
       await removeClosedSessions(registry.dir, title, registry.connect);
-      for (const listener of listeners) listener();
+      // Out of a native start's scope (runNatively): what the listeners set off is the app's
+      for (const listener of listeners) runInSessionRuntime(listener);
     });
     return {
       browser: browser ?? null,
@@ -809,4 +825,13 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     await cleanup();
     throw error;
   }
+};
+
+/**
+ * Start a holder where chat browsers run: on Windows (natively throughout, runNatively) when
+ * Settings > Browser runs them there while the shell is WSL, else where the shell runs tools
+ */
+const startChatBrowserHolder: StartChatBrowserHolder = async (options) => {
+  await whenChatBrowserRuntimeReady();
+  return inChatBrowserRuntime(() => startPlaywrightHolder(options));
 };

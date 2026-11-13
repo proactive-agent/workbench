@@ -22,7 +22,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '../../lib/utils';
 import { useSettings } from './hooks/useSettings';
 import { ThemeSettings } from './ThemeSettings';
-import { SettingsFlushProvider } from './WindowsShellSelector';
+import { SettingsFlushProvider } from './settings-flush';
 import { GeneralSettings } from './GeneralSettings';
 import { ClaudeCodeTaskSettings } from './ClaudeCodeTaskSettings';
 import { AdvancedSettings } from './AdvancedSettings';

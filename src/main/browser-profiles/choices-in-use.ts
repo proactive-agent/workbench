@@ -86,7 +86,17 @@ export async function browserChoicesInUse(
   })));
   const own = perProject.filter((entry) => entry.path === projectPath).flatMap((entry) => entry.choices);
   return {
-    project: [...settings, ...own],
-    all: [...settings, ...perProject.flatMap((entry) => entry.choices)],
+    project: withWindowsTwins([...settings, ...own]),
+    all: withWindowsTwins([...settings, ...perProject.flatMap((entry) => entry.choices)]),
   };
+}
+
+/**
+ * Choices with, for each Windows profile picked from WSL's list (`windows-<id>`), the same profile
+ * as chat browsers running on Windows copy it (`<id>`, browser-drawer/browser-runtime.ts): sweeps
+ * from either side keep both sides' copies
+ */
+function withWindowsTwins(choices: PlaywrightBrowserChoice[]): PlaywrightBrowserChoice[] {
+  return choices.flatMap((choice) =>
+    choice.id.startsWith('windows-') ? [choice, { ...choice, id: choice.id.slice('windows-'.length) }] : [choice]);
 }

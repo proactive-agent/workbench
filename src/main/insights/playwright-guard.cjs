@@ -19,8 +19,16 @@
 // reach Workbench's 127.0.0.1: WORKBENCH_CHAT_BROWSER_RELAY names the task tools bridge (a
 // Windows program, its executable and script), which the guard starts through interop once and
 // sends those calls through.
+//
+// When the chat's browser runs on Windows while Claude Code runs in WSL (Settings > Browser >
+// Browser runtime), the guard and the server run on Windows (started through interop): the server
+// reports files by their Windows paths, which WORKBENCH_PATH_MAP ({ from, to, distro, mountRoot })
+// turns into the paths Claude Code reads them by (`C:\...\playwright\page.yml` ->
+// `/mnt/c/.../playwright/page.yml`), and the Linux paths Claude Code names in file arguments
+// (`filename`, `paths`) into Windows ones (`/home/me/a.png` -> `\\wsl.localhost\<distro>\home\me\a.png`).
 'use strict';
 const { spawn } = require('child_process');
+const path = require('path');
 
 const [workspace, command, ...args] = process.argv.slice(2);
 const BLOCKED_TOOLS = new Set(['browser_run_code_unsafe']);
@@ -30,9 +38,80 @@ delete env.ELECTRON_RUN_AS_NODE;
 const chatBrowser = env.WORKBENCH_CHAT_BROWSER_URL && env.WORKBENCH_CHAT_BROWSER_TOKEN
   ? { url: env.WORKBENCH_CHAT_BROWSER_URL, token: env.WORKBENCH_CHAT_BROWSER_TOKEN, relay: parseRelay(env.WORKBENCH_CHAT_BROWSER_RELAY) }
   : null;
+const pathMap = parsePathMap(env.WORKBENCH_PATH_MAP);
 delete env.WORKBENCH_CHAT_BROWSER_URL;
 delete env.WORKBENCH_CHAT_BROWSER_TOKEN;
 delete env.WORKBENCH_CHAT_BROWSER_RELAY;
+delete env.WORKBENCH_PATH_MAP;
+// npx's shims start `node` from the PATH: a full npx path brings its folder (a Node.js installed
+// since the PATH was read is on it then)
+if (process.platform === 'win32' && path.isAbsolute(command)) {
+  const key = Object.keys(env).find((name) => name.toUpperCase() === 'PATH') || 'PATH';
+  env[key] = [path.dirname(command), env[key]].filter(Boolean).join(';');
+}
+
+function parsePathMap(text) {
+  try {
+    const map = text ? JSON.parse(text) : null;
+    return map && typeof map.from === 'string' && map.from && typeof map.to === 'string' && map.to ? map : null;
+  } catch {
+    return null;
+  }
+}
+
+const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The map's `from` folder in text, with either separator and any case, and the path after it */
+const mappedPath = pathMap
+  ? new RegExp(
+    pathMap.from.replace(/[\\/]+$/, '').split(/[\\/]+/).map(escapeRegExp).join('[\\\\/]')
+      + '((?:[\\\\/][^\\s"\'`<>|*?)\\]]*)?)',
+    'gi'
+  )
+  : null;
+/** The folder's own name: a message without it has no path to translate (it isn't parsed) */
+const mappedName = pathMap ? pathMap.from.replace(/[\\/]+$/, '').split(/[\\/]/).pop().toLowerCase() : '';
+
+/** Every string in a value with the map's paths translated (a tool result: its text and links; not image data) */
+function translatePaths(value, key) {
+  if (typeof value === 'string') {
+    if (key === 'data' || key === 'blob') return value;
+    return value.replace(mappedPath, (_whole, rest) => pathMap.to.replace(/\/+$/, '') + rest.replace(/\\/g, '/'));
+  }
+  if (Array.isArray(value)) return value.map((item) => translatePaths(item));
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, translatePaths(item, name)]));
+  }
+  return value;
+}
+
+/** Tool arguments that name files (a screenshot's or PDF's `filename`, an upload's `paths`) */
+const PATH_ARGUMENTS = new Set(['filename', 'path', 'paths']);
+
+/** A Linux path Claude Code names, as the server on Windows reads it (anything else as it is) */
+function toWindowsPath(value) {
+  if (typeof value !== 'string' || !value.startsWith('/')) return value;
+  const to = pathMap.to.replace(/\/+$/, '');
+  if (value === to || value.startsWith(to + '/')) {
+    return pathMap.from.replace(/[\\/]+$/, '') + value.slice(to.length).replace(/\//g, '\\');
+  }
+  const mount = (typeof pathMap.mountRoot === 'string' && pathMap.mountRoot ? pathMap.mountRoot : '/mnt/').replace(/\/?$/, '/');
+  const drive = new RegExp('^' + escapeRegExp(mount) + '([a-z])(?=/|$)', 'i').exec(value);
+  if (drive) return `${drive[1].toUpperCase()}:${(value.slice(drive[0].length) || '/').replace(/\//g, '\\')}`;
+  if (typeof pathMap.distro === 'string' && pathMap.distro) return `\\\\wsl.localhost\\${pathMap.distro}${value.replace(/\//g, '\\')}`;
+  return value;
+}
+
+/** A tool call's file arguments as the server on Windows reads them */
+function translateArguments(args) {
+  if (!args || typeof args !== 'object') return args;
+  const result = { ...args };
+  for (const key of Object.keys(result)) {
+    if (!PATH_ARGUMENTS.has(key)) continue;
+    result[key] = Array.isArray(result[key]) ? result[key].map(toWindowsPath) : toWindowsPath(result[key]);
+  }
+  return result;
+}
 
 function parseRelay(text) {
   try {
@@ -179,6 +258,11 @@ async function forward(line) {
       return;
     }
   }
+  if (pathMap && message && message.method === 'tools/call' && message.params && message.params.arguments) {
+    message.params.arguments = translateArguments(message.params.arguments);
+    child.stdin.write(JSON.stringify(message) + '\n');
+    return;
+  }
   child.stdin.write(line + '\n');
 }
 process.stdin.on('end', () => {
@@ -188,11 +272,22 @@ process.stdin.on('end', () => {
   });
 });
 
-// Server -> Claude Code: the tool list without the blocked tools
+// Server -> Claude Code: the tool list without the blocked tools, results with the map's paths
 readLines(child.stdout, (line) => {
+  // Only a tool list, or a message naming the mapped folder, is parsed (a screenshot's is megabytes)
+  const mentionsFolder = !!mappedPath && line.toLowerCase().includes(mappedName);
+  if (!mentionsFolder && !line.includes('"tools"')) {
+    process.stdout.write(line + '\n');
+    return;
+  }
   const message = parse(line);
   if (message && message.result && Array.isArray(message.result.tools)) {
     message.result.tools = message.result.tools.filter((tool) => !BLOCKED_TOOLS.has(tool && tool.name));
+    process.stdout.write(JSON.stringify(message) + '\n');
+    return;
+  }
+  if (mentionsFolder && message && message.result) {
+    message.result = translatePaths(message.result);
     process.stdout.write(JSON.stringify(message) + '\n');
     return;
   }

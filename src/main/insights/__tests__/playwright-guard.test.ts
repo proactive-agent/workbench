@@ -25,7 +25,7 @@ process.stdin.on('data', (data) => {
     const reply = (result) => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result }) + '\\n');
     if (message.method === 'initialize') reply({ capabilities: message.params.capabilities, cwd: process.cwd() });
     else if (message.method === 'tools/list') reply({ tools: [{ name: 'browser_navigate' }, { name: 'browser_run_code_unsafe' }] });
-    else if (message.method === 'tools/call') reply({ content: [{ type: 'text', text: 'called ' + message.params.name }] });
+    else if (message.method === 'tools/call') reply({ content: [{ type: 'text', text: (message.params.arguments && message.params.arguments.echo) || 'called ' + message.params.name }] });
   }
 });
 `);
@@ -72,6 +72,85 @@ describe('Playwright guard', () => {
     expect(replies.get(2)).toEqual({ tools: [{ name: 'browser_navigate' }] });
     expect(replies.get(3)).toMatchObject({ isError: true });
     expect(replies.get(4)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+  });
+
+  it("translates the Windows paths its server reports into the ones Claude Code reads (chat browsers on Windows, Claude Code in WSL)", async () => {
+    const workspace = mkdtempSync(join(root, 'turn-'));
+    const from = 'C:\\Users\\A B\\AppData\\Local\\Temp\\workbench-insights-x\\playwright';
+    const to = '/mnt/c/Users/A B/AppData/Local/Temp/workbench-insights-x/playwright';
+    const proc = spawn(process.execPath, [GUARD, workspace, process.execPath, fakeServer], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, WORKBENCH_PATH_MAP: JSON.stringify({ from, to }) },
+    });
+    let output = '';
+    proc.stdout.on('data', (data: Buffer) => {
+      output += data.toString();
+    });
+    const echo = `Snapshot: [page](${from}\\page-1.yml) and c:/users/a b/appdata/local/temp/workbench-insights-x/playwright/shot.png, not C:\\Other\\x.png`;
+    proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'browser_snapshot', arguments: { echo } } }) + '\n');
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no answer')), 10_000);
+      const poll = setInterval(() => {
+        if (!output.includes('\n')) return;
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve();
+      }, 20);
+    });
+    proc.stdin.end();
+
+    const reply = JSON.parse(output.split('\n')[0]) as { result: { content: Array<{ text: string }> } };
+    expect(reply.result.content[0].text).toBe(`Snapshot: [page](${to}/page-1.yml) and ${to}/shot.png, not C:\\Other\\x.png`);
+  });
+
+  it('gives the server on Windows the Linux paths Claude Code names in file arguments as Windows paths', async () => {
+    const workspace = mkdtempSync(join(root, 'turn-'));
+    // A server that answers with the arguments it got
+    const echoServer = join(root, 'echo-server.cjs');
+    writeFileSync(echoServer, `
+let buffer = '';
+process.stdin.on('data', (data) => {
+  buffer += data;
+  let end;
+  while ((end = buffer.indexOf('\\n')) >= 0) {
+    const message = JSON.parse(buffer.slice(0, end));
+    buffer = buffer.slice(end + 1);
+    process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: message.id, result: { content: [{ type: 'text', text: JSON.stringify(message.params.arguments) }] } }) + '\\n');
+  }
+});
+`);
+    const from = 'C:\\Temp\\workbench-insights-y\\playwright';
+    const to = '/mnt/c/Temp/workbench-insights-y/playwright';
+    const proc = spawn(process.execPath, [GUARD, workspace, process.execPath, echoServer], {
+      stdio: ['pipe', 'pipe', 'inherit'],
+      env: { ...process.env, WORKBENCH_PATH_MAP: JSON.stringify({ from, to, distro: 'Ubuntu', mountRoot: '/mnt/' }) },
+    });
+    let output = '';
+    proc.stdout.on('data', (data: Buffer) => {
+      output += data.toString();
+    });
+    const args = { filename: `${to}/shot.png`, paths: ['/home/me/a b.png', '/mnt/d/x.txt', 'relative.png'], text: '/help' };
+    proc.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'browser_file_upload', arguments: args } }) + '\n');
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error('no answer')), 10_000);
+      const poll = setInterval(() => {
+        if (!output.includes('\n')) return;
+        clearInterval(poll);
+        clearTimeout(timer);
+        resolve();
+      }, 20);
+    });
+    proc.stdin.end();
+
+    const reply = JSON.parse(output.split('\n')[0]) as { result: { content: Array<{ text: string }> } };
+    // What the server got (echoed as JSON in the text, its backslashes doubled, so not a path
+    // translated back): the turn's own file by its Windows path
+    expect(JSON.parse(reply.result.content[0].text)).toEqual({
+      filename: `${from}\\shot.png`,
+      paths: ['\\\\wsl.localhost\\Ubuntu\\home\\me\\a b.png', 'D:\\x.txt', 'relative.png'],
+      // Not a file argument: typed as it is
+      text: '/help',
+    });
   });
 
   it("asks Workbench to open the chat's browser before each tool call, and keeps it open", async () => {

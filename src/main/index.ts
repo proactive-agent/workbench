@@ -61,6 +61,7 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
+import { whenChatBrowserRuntimeReady } from './browser-drawer/browser-runtime';
 import { detectBrowserProfiles } from './browser-profiles/detect';
 import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
 import { removeLeftoverTempFolders, TEMP_FOLDER_PREFIXES } from './temp-folders';
@@ -663,6 +664,8 @@ app.whenReady().then(async () => {
   // Decide where tools run on Windows (native, or WSL with the windowsShell setting) before the
   // tool cache and Claude accounts are read; detection runs in the background, windows don't wait
   void initShellRuntime(readSettingsFile()?.windowsShell);
+  // Where chat browsers run (Windows: also with the WSL shell, Settings > Browser), once the shell is known
+  void whenChatBrowserRuntimeReady();
   // Browser profiles for the Playwright connector, looked for once (after the shell runtime is known)
   void detectBrowserProfiles();
   // The browser drawer: Playwright's headless browsers (task runs, chats), watched for every window

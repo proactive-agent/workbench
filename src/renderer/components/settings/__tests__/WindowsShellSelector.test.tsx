@@ -10,7 +10,8 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import '../../../../shared/i18n';
 import { TooltipProvider } from '../../ui/tooltip';
-import { SettingsFlushProvider, WindowsShellSelector } from '../WindowsShellSelector';
+import { WindowsShellSelector } from '../WindowsShellSelector';
+import { SettingsFlushProvider } from '../settings-flush';
 import type { AppSettings, ShellRuntimeStatus, WslAvailability } from '../../../../shared/types';
 
 // jsdom has no matchMedia or ResizeObserver (used by SegmentedControl)

@@ -14,6 +14,7 @@ import type {
   BrowserExtensions,
 } from '../../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
+import type { ChatBrowserRuntimeStatus } from '../../../shared/types/settings';
 import { createIpcListener, invokeIpc, sendIpc, type IpcListenerCleanup } from './ipc-utils';
 
 export interface BrowserDrawerAPI {
@@ -61,6 +62,12 @@ export interface BrowserDrawerAPI {
   onBrowserDrawerState: (callback: (state: BrowserDrawerState) => void) => IpcListenerCleanup;
   /** A frame of the page this window views */
   onBrowserFrame: (callback: (frame: BrowserDrawerFrame) => void) => IpcListenerCleanup;
+  /** Windows: where chat browsers run and what running them on Windows needs (`refresh`: checked again) */
+  getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
+  /** Windows: a PowerShell window installs what running chat browsers on Windows needs */
+  autoconfigureChatBrowserRuntime: () => Promise<IPCResult<ChatBrowserRuntimeStatus>>;
+  /** The status changed (an autoconfigure window closed) */
+  onChatBrowserRuntimeStatus: (callback: (status: ChatBrowserRuntimeStatus) => void) => IpcListenerCleanup;
 }
 
 export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
@@ -83,4 +90,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   closeChatBrowser: (projectId, chatId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId),
   onBrowserDrawerState: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_STATE, callback),
   onBrowserFrame: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_DRAWER_FRAME, callback),
+  getChatBrowserRuntimeStatus: (refresh) => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, refresh === true),
+  autoconfigureChatBrowserRuntime: () => invokeIpc(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE),
+  onChatBrowserRuntimeStatus: (callback) => createIpcListener(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, callback),
 });

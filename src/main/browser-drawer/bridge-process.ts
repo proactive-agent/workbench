@@ -18,7 +18,7 @@ import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-
 import path from 'path';
 import { EventEmitter } from 'events';
 import { appLog } from '../app-logger';
-import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
+import { chatBrowserWsl, inChatBrowserRuntime, whenChatBrowserRuntimeReady } from './browser-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
 import { resolveCommand } from '../mcp-commands';
 import type { BrowserDrawerInput, BrowserDrawerNavigation, BrowserDrawerPage } from '../../shared/types/browser-drawer';
@@ -142,9 +142,11 @@ export class BrowserBridgeProcess extends EventEmitter {
   }
 
   private async spawn(): Promise<void> {
-    await whenShellRuntimeReady();
-    // Looked up before the script's folder is made: without node in WSL every probe would make one
-    const wsl = getWslInfo();
+    // After the shell runtime (it waits for that)
+    await whenChatBrowserRuntimeReady();
+    // Where the chat browsers run (WSL, or Windows: browser-runtime.ts). Looked up before the
+    // script's folder is made: without node in WSL every probe would make one
+    const wsl = chatBrowserWsl();
     const command = wsl ? await resolveCommand('node') : this.options.execPath ?? process.execPath;
     if (!command) {
       throw new Error(`Node.js was not found in WSL (${wsl?.distro ?? 'unknown'}), which the browser drawer needs`);
@@ -161,12 +163,12 @@ export class BrowserBridgeProcess extends EventEmitter {
       await this.removeTempDir();
       throw new Error('The browser bridge was stopped');
     }
-    const child = spawnTool('node', [script], {
+    const child = inChatBrowserRuntime(() => spawnTool('node', [script!], {
       command,
       stdio: ['pipe', 'pipe', 'pipe'],
       ...(wsl ? {} : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }),
       windowsHide: true,
-    });
+    }));
     this.child = child;
     const read = createBridgeMessageReader(
       (message) => this.onMessage(message as BridgeMessage),

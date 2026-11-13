@@ -10,6 +10,10 @@ import type {
   BrowserProfileDisabledReason,
   PlaywrightBrowserChoice,
 } from '../../../shared/types/browser-profiles';
+import { toBrowserChoice } from '../../../shared/utils/browser-choice';
+
+/** What gets stored when a profile is picked (shared with the main process) */
+export { toBrowserChoice };
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -52,24 +56,6 @@ export function browserProfileLabel(t: Translate, profile: Pick<BrowserProfile, 
   return profile.browser === 'safari' ? browser : `${browser} · ${profile.profileName}`;
 }
 
-/** What gets stored when a profile is picked (undefined for profiles that can't be used) */
-export function toBrowserChoice(profile: BrowserProfile): PlaywrightBrowserChoice | undefined {
-  // WebKit only as Playwright's own build (Safari can't be driven)
-  if (!profile.usable || !profile.executablePath || (profile.engine === 'webkit' && !profile.managed)) return undefined;
-  return {
-    id: profile.id,
-    browser: profile.browser,
-    engine: profile.engine,
-    profileName: profile.profileName,
-    ...(profile.variant ? { variant: profile.variant } : {}),
-    ...(profile.managed ? { managed: true } : {}),
-    ...(profile.email ? { email: profile.email } : {}),
-    executablePath: profile.executablePath,
-    userDataDir: profile.userDataDir,
-    ...(profile.profileDirectory ? { profileDirectory: profile.profileDirectory } : {}),
-    profilePath: profile.profilePath,
-  };
-}
 
 /** A user data folder as a key: Windows paths (drive or UNC) compare without case and slash style */
 function folderKey(dir: string): string {

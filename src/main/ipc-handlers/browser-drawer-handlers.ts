@@ -8,8 +8,11 @@ import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult } from '../../shared/types';
 import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState, BrowserExtensions } from '../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
+import type { ChatBrowserRuntimeStatus } from '../../shared/types/settings';
 import { appLog } from '../app-logger';
 import { browserDrawer } from '../browser-drawer';
+import { autoconfigureChatBrowserRuntime, getChatBrowserRuntimeStatus, onChatBrowserRuntimeStatus } from '../browser-drawer/browser-runtime';
+import { getAllWindows } from '../window-manager';
 
 export function registerBrowserDrawerHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_GET_STATE, (): IPCResult<BrowserDrawerState> => ({
@@ -129,6 +132,31 @@ export function registerBrowserDrawerHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, async (_event, projectId: unknown, chatId: unknown): Promise<IPCResult> => {
     if (typeof projectId === 'string' && typeof chatId === 'string') await browserDrawer.closeChatBrowser(projectId, chatId);
     return { success: true };
+  });
+
+  // Settings > Browser > Browser runtime (Windows): where chat browsers run, what running them on
+  // Windows needs (`refresh` checks again), and its Autoconfigure button
+  ipcMain.handle(IPC_CHANNELS.BROWSER_RUNTIME_STATUS, async (_event, refresh: unknown): Promise<IPCResult<ChatBrowserRuntimeStatus>> => {
+    try {
+      return { success: true, data: await getChatBrowserRuntimeStatus({ refresh: refresh === true }) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_RUNTIME_AUTOCONFIGURE, async (): Promise<IPCResult<ChatBrowserRuntimeStatus>> => {
+    try {
+      return { success: true, data: await autoconfigureChatBrowserRuntime() };
+    } catch (error) {
+      appLog.error('[BrowserDrawer] Autoconfigure failed:', error);
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  onChatBrowserRuntimeStatus((status) => {
+    for (const window of getAllWindows()) {
+      if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.BROWSER_RUNTIME_STATUS_CHANGED, status);
+    }
   });
 }
 

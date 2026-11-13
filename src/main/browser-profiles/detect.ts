@@ -392,6 +392,31 @@ export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Prom
   return detection;
 }
 
+let windowsDetection: Promise<BrowserProfile[]> | null = null;
+
+/**
+ * Windows only: the profiles as they run natively, whatever the shell (detectBrowserProfiles lists
+ * WSL's view in WSL mode). Chat browsers that run on Windows while the shell is WSL
+ * (browser-drawer/browser-runtime.ts) pick their profile from these. Looked for once; `refresh`
+ * looks again
+ */
+export function detectWindowsBrowserProfiles(options: { refresh?: boolean } = {}): Promise<BrowserProfile[]> {
+  if (!windowsDetection || options.refresh) {
+    windowsDetection = scanBrowserProfiles({
+      os: 'windows',
+      home: os.homedir(),
+      env: process.env,
+      toHost: (p) => p,
+      lookUpCommands: false,
+      refresh: options.refresh === true,
+    }).catch((error: unknown) => {
+      appLog.warn('[BrowserProfiles] Detection of the Windows profiles failed:', error);
+      return [];
+    });
+  }
+  return windowsDetection;
+}
+
 /** Running watches by browser, with when each gives up (each new download moves it to WATCH_LIMIT_MS from then) */
 const watches = new Map<DownloadableBrowser, { deadline: number; promise: Promise<BrowserProfile[] | null> }>();
 

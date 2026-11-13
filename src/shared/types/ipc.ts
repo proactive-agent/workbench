@@ -550,6 +550,9 @@ export interface ElectronAPI {
   closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
   onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
   onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
+  getChatBrowserRuntimeStatus: (refresh?: boolean) => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
+  autoconfigureChatBrowserRuntime: () => Promise<IPCResult<import('./settings').ChatBrowserRuntimeStatus>>;
+  onChatBrowserRuntimeStatus: (callback: (status: import('./settings').ChatBrowserRuntimeStatus) => void) => () => void;
 
   // MCP Server health check operations
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;

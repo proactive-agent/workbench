@@ -10,7 +10,8 @@ import type {
   ClaudeSessionRef
 } from '../../shared/types';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
-import { CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { CHAT_BROWSER_TOKEN_ENV, CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { chatBrowsersOnWindows, whenChatBrowserRuntimeReady } from '../browser-drawer/browser-runtime';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
 import { openChatToolsSession, openMcpToolsSession, type TaskToolsSession } from './task-tools-server';
@@ -99,7 +100,7 @@ async function attachedPlaywright(
       args: ['-y', PLAYWRIGHT_MCP_PACKAGE, '--endpoint', title],
       env: {
         [CHAT_BROWSER_URL_ENV]: server.url,
-        WORKBENCH_CHAT_BROWSER_TOKEN: server.headers.Authorization.replace(/^Bearer /, ''),
+        [CHAT_BROWSER_TOKEN_ENV]: server.headers.Authorization.replace(/^Bearer /, ''),
       },
     },
     session,
@@ -123,10 +124,14 @@ async function chatMcpServers(
   const connectorSettings = appSettings?.mcpConnectors;
   const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
   // In WSL the guard reaches Workbench directly or through the Windows relay; with interop off it
-  // can't, and each turn opens a browser of its own as before
-  const chatBrowser = target && (!getWslInfo() || getTaskToolsRoute() !== 'off') ? target : undefined;
-  // An open chat browser is usable whatever the chosen browser's check says now
-  const open = chatBrowser && browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId);
+  // can't, and each turn opens a browser of its own as before. With chat browsers on Windows the
+  // guard runs there and reaches Workbench directly
+  await whenChatBrowserRuntimeReady();
+  const onWindows = chatBrowsersOnWindows();
+  const chatBrowser = target && (!getWslInfo() || onWindows || getTaskToolsRoute() !== 'off') ? target : undefined;
+  // An open chat browser is usable whatever the chosen browser's check says now; one that runs on
+  // Windows isn't what the check (where Claude Code runs, WSL) looks at: its start says what fails
+  const open = chatBrowser && (onWindows || browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId));
   const usable = await usableMcpConnectorIds(open ? wanted.filter((id) => id !== 'playwright') : wanted, connectorSettings, undefined, chatChoice);
   const chosen = open && wanted.includes('playwright') ? [...usable, 'playwright'] : usable;
   if (chatBrowser && chosen.includes('playwright')) {

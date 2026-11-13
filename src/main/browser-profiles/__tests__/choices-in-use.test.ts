@@ -67,6 +67,12 @@ describe('browserChoicesInUse', () => {
     expect(inUse.all.map((c) => c.id).sort()).toEqual(['edge:Other', 'firefox:Chat']);
   });
 
+  it('keeps a Windows profile picked from WSL\'s list under its native id too (chat browsers on Windows copy it so)', async () => {
+    const inUse = await browserChoicesInUse(path.join(root, 'a'), choice('windows-edge:Default') as never);
+    expect(inUse.all.map((c) => c.id)).toEqual(['windows-edge:Default', 'edge:Default']);
+    expect(inUse.project.map((c) => c.id)).toEqual(['windows-edge:Default', 'edge:Default']);
+  });
+
   it('chooses nothing for a project without tasks', async () => {
     expect(await browserChoicesInUse(path.join(root, 'a'), undefined)).toEqual({ project: [], all: [] });
   });

@@ -316,6 +316,9 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser
   BROWSER_DRAWER_STATE: 'browserDrawer:state',             // main -> renderer: sessions or pages changed
   BROWSER_DRAWER_FRAME: 'browserDrawer:frame',             // main -> renderer: a frame of the viewed page
+  BROWSER_RUNTIME_STATUS: 'browserRuntime:status',               // Where chat browsers run on Windows, and what running them there needs
+  BROWSER_RUNTIME_AUTOCONFIGURE: 'browserRuntime:autoconfigure', // A PowerShell window installs what chat browsers on Windows need
+  BROWSER_RUNTIME_STATUS_CHANGED: 'browserRuntime:statusChanged', // main -> renderer: an autoconfigure finished
 
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check

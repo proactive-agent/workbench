@@ -429,6 +429,21 @@ runs there with the distribution's node (`spawnTool`, script read through `/mnt`
 Workbench holds open count as live), and workspace folders are matched to projects as Windows paths
 (`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
 (`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
+Settings > Browser > Browser runtime (Windows, `AppSettings.browser.windowsRuntime`, read at startup like the shell;
+`browser-drawer/browser-runtime.ts`) can run chat browsers on Windows while the shell is WSL: much of a WSL start is
+crossing into the distribution (wsl.exe, a profile copied through `\\wsl.localhost`, a Windows Chromium through the
+launcher and relay). Their code then runs inside `runNatively()` (`platform/shell-runtime.ts`: an AsyncLocalStorage scope
+in which `isWslRuntime()` is false, so every native path applies): the holder with Windows' Node.js (`npx`), its profile
+copied on Windows (the chat's choice, made from WSL's list, mapped to its Windows profile: `windows-<id>` -> `<id>`,
+`detectWindowsBrowserProfiles`), the bridge and the registry native. A chat turn's Playwright attaches through Windows'
+registry, so its guard runs on Windows too (Workbench's executable as Node through interop, `guardChatPlaywright`), in
+the turn's Windows folder, and translates paths both ways (`WORKBENCH_PATH_MAP`: the server's Windows paths for Claude
+Code in WSL, Claude Code's Linux paths in file arguments for the server). It needs Node.js 20+ on Windows, Playwright's
+build when the default profile is one of Playwright's browsers, a default profile Windows has, and interop (looked at
+only with the setting at PWSH, or when the row shows); until then the PWSH option is off and its Autoconfigure button
+opens PowerShell running a script that installs Node.js LTS with winget and fetches the server (and the build). Sweeps
+keep a `windows-<id>` choice's native `<id>` copies too (`choices-in-use.ts`), and the caches the two runtimes share
+(`resolveCommand`, sweep times) are kept per runtime. Each start logs how long it took and where.
 
 **Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
 by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in

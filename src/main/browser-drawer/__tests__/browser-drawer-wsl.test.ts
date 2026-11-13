@@ -18,6 +18,9 @@ vi.mock('../../platform/shell-runtime', () => ({
   whenShellRuntimeReady: async () => ({}),
   isWslRuntime: () => true,
   getWslInfo: () => wsl,
+  // Chat browsers run in WSL here (the Browser runtime setting isn't 'pwsh')
+  getSessionWslInfo: () => wsl,
+  runNatively: <T,>(fn: () => T) => fn(),
   getShellRuntimeStatus: () => ({ wsl: { version: 2 } }),
   // The distribution's folders under the test's folder (standing in for \\wsl.localhost\Ubuntu)
   toHostPath: (p: string) => path.join(root, 'wsl', p),
