@@ -757,7 +757,7 @@
   "browser": {
     "runtime": {
       "label": "Browser runtime",
-      "description": "Where chat browsers run while the shell is WSL. PowerShell runs them on Windows, which starts them faster and keeps Windows profiles as they are; Claude Code stays in WSL",
+      "description": "Where chat browsers run while the shell is WSL",
       "pwsh": "PWSH",
       "wsl": "WSL",
       "pwshShell": "With the PowerShell shell, chat browsers run on Windows",
