@@ -20,6 +20,8 @@ export type BrowserShortcut =
 
 /** A key press as Electron's before-input-event gives it */
 export interface ShortcutInput {
+  /** The character the layout types (letters are read by it: Ctrl+Z on AZERTY sits where W is on QWERTY) */
+  key?: string;
   code: string;
   control: boolean;
   shift: boolean;
@@ -36,9 +38,27 @@ function only(input: ShortcutInput, mods: { control?: boolean; shift?: boolean; 
 const DIGIT = /^Digit([1-9])$/;
 
 /**
- * The browser shortcut a key press is, as Chrome binds them (macOS with Cmd), or null. Held keys
- * repeat only switching tabs (a held Ctrl+W doesn't close every tab)
+ * The letter a key press types, as Chrome reads shortcuts: the layout's own character (a-z), else,
+ * on a layout of another script (Cyrillic, Greek...), the letter at the key's place on a US
+ * keyboard
  */
+function letterOf(input: ShortcutInput): string | null {
+  const typed = input.key?.length === 1 ? input.key.toLowerCase() : '';
+  if (/^[a-z]$/.test(typed)) return typed;
+  if (!/^\p{L}$/u.test(typed)) return null;
+  return /^Key([A-Z])$/.exec(input.code)?.[1].toLowerCase() ?? null;
+}
+
+/**
+ * Whether a shortcut acts again while its keys are held (switching tabs, going back); a held
+ * Ctrl+W or Ctrl+R acts once, its repeats only swallowed (so they reach neither the page nor the
+ * app's menu, which would reload the app or close its window)
+ */
+export function actsWhileHeld(shortcut: BrowserShortcut): boolean {
+  return shortcut.kind === 'nextTab' || shortcut.kind === 'previousTab' || shortcut.kind === 'back' || shortcut.kind === 'forward';
+}
+
+/** The browser shortcut a key press is, as Chrome binds them (macOS with Cmd), or null */
 export function browserShortcut(input: ShortcutInput, mac: boolean): BrowserShortcut | null {
   const { code } = input;
   // Tabs go round with Ctrl+Tab on every platform
@@ -57,17 +77,17 @@ export function browserShortcut(input: ShortcutInput, mac: boolean): BrowserShor
   } else {
     if (only(input, { control: true }) && code === 'PageDown') return { kind: 'nextTab' };
     if (only(input, { control: true }) && code === 'PageUp') return { kind: 'previousTab' };
-    if (only(input, { control: true }) && code === 'F4') return input.isAutoRepeat ? null : { kind: 'closeTab' };
+    if (only(input, { control: true }) && code === 'F4') return { kind: 'closeTab' };
     if (only(input, { alt: true }) && code === 'ArrowLeft') return { kind: 'back' };
     if (only(input, { alt: true }) && code === 'ArrowRight') return { kind: 'forward' };
-    if (only(input, { alt: true }) && code === 'KeyD') return { kind: 'address' };
     if (only(input, {}) && code === 'F6') return { kind: 'address' };
     if ((only(input, {}) || only(input, { control: true })) && code === 'F5') return { kind: 'reload' };
   }
-  if (input.isAutoRepeat) return null;
-  if (only(input, mod) && code === 'KeyT') return { kind: 'newTab' };
-  if (only(input, mod) && code === 'KeyW') return { kind: 'closeTab' };
-  if (only(input, mod) && code === 'KeyL') return { kind: 'address' };
-  if ((only(input, mod) || only(input, { ...mod, shift: true })) && code === 'KeyR') return { kind: 'reload' };
+  const letter = letterOf(input);
+  if (!mac && only(input, { alt: true }) && letter === 'd') return { kind: 'address' };
+  if (only(input, mod) && letter === 't') return { kind: 'newTab' };
+  if (only(input, mod) && letter === 'w') return { kind: 'closeTab' };
+  if (only(input, mod) && letter === 'l') return { kind: 'address' };
+  if ((only(input, mod) || only(input, { ...mod, shift: true })) && letter === 'r') return { kind: 'reload' };
   return null;
 }

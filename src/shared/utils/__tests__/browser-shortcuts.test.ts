@@ -3,10 +3,12 @@
  * and Linux, Cmd on macOS
  */
 import { describe, it, expect } from 'vitest';
-import { browserShortcut, type ShortcutInput } from '../browser-shortcuts';
+import { actsWhileHeld, browserShortcut, type ShortcutInput } from '../browser-shortcuts';
 
+/** A key press; a letter key types its own letter unless `key` says otherwise (another layout) */
 const key = (code: string, mods: Partial<Omit<ShortcutInput, 'code'>> = {}): ShortcutInput => ({
   code,
+  key: /^Key([A-Z])$/.exec(code)?.[1].toLowerCase() ?? code,
   control: false,
   shift: false,
   alt: false,
@@ -59,9 +61,22 @@ describe('browserShortcut', () => {
     expect(browserShortcut(key('KeyC', { control: true }), false)).toBeNull();
   });
 
-  it('repeats only switching tabs while a key is held', () => {
-    expect(browserShortcut(key('Tab', { control: true, isAutoRepeat: true }), false)).toEqual({ kind: 'nextTab' });
-    expect(browserShortcut(key('KeyW', { control: true, isAutoRepeat: true }), false)).toBeNull();
-    expect(browserShortcut(key('KeyT', { control: true, isAutoRepeat: true }), false)).toBeNull();
+  it('reads letters as the layout types them (AZERTY, Dvorak), and by their place on other scripts', () => {
+    // AZERTY: Ctrl+Z (undo) sits where QWERTY has W
+    expect(browserShortcut(key('KeyW', { control: true, key: 'z' }), false)).toBeNull();
+    expect(browserShortcut(key('KeyZ', { control: true, key: 'w' }), false)).toEqual({ kind: 'closeTab' });
+    // Dvorak: Ctrl+Y (redo) sits where QWERTY has T
+    expect(browserShortcut(key('KeyT', { control: true, key: 'y' }), false)).toBeNull();
+    // Cyrillic: Ctrl+Ц is Ctrl+W, as in Chrome
+    expect(browserShortcut(key('KeyW', { control: true, key: 'ц' }), false)).toEqual({ kind: 'closeTab' });
+  });
+
+  it('acts once for a held Ctrl+W, T or R (its repeats are only swallowed), on and on for switching tabs', () => {
+    expect(browserShortcut(key('KeyW', { control: true, isAutoRepeat: true }), false)).toEqual({ kind: 'closeTab' });
+    expect(actsWhileHeld({ kind: 'closeTab' })).toBe(false);
+    expect(actsWhileHeld({ kind: 'reload' })).toBe(false);
+    expect(actsWhileHeld({ kind: 'newTab' })).toBe(false);
+    expect(actsWhileHeld({ kind: 'nextTab' })).toBe(true);
+    expect(actsWhileHeld({ kind: 'back' })).toBe(true);
   });
 });

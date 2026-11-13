@@ -14,7 +14,7 @@ import { browserDrawer } from '../browser-drawer';
 import { autoconfigureChatBrowserRuntime, getChatBrowserRuntimeStatus, onChatBrowserRuntimeStatus } from '../browser-drawer/browser-runtime';
 import { getAllWindows } from '../window-manager';
 import { isMacOS } from '../platform';
-import { browserShortcut } from '../../shared/utils/browser-shortcuts';
+import { actsWhileHeld, browserShortcut } from '../../shared/utils/browser-shortcuts';
 
 /** Windows whose drawer is open with tabs: their browser shortcuts are caught */
 const shortcutWindows = new Set<number>();
@@ -180,8 +180,14 @@ export function registerBrowserDrawerHandlers(): void {
       if (!shortcut) return;
       inputEvent.preventDefault();
       caught.add(input.code);
+      // A held key's repeats are only swallowed, unless the shortcut goes on (switching tabs)
+      if (input.isAutoRepeat && !actsWhileHeld(shortcut)) return;
       contents.send(IPC_CHANNELS.BROWSER_DRAWER_SHORTCUT, shortcut);
     });
+    // The page reloaded or crashed: its drawer is gone until it says so again
+    const forget = () => shortcutWindows.delete(contents.id);
+    contents.on('did-navigate', forget);
+    contents.on('render-process-gone', forget);
     contents.once('destroyed', () => {
       shortcutWindows.delete(contents.id);
       watchedForShortcuts.delete(contents.id);
