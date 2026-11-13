@@ -14,7 +14,9 @@ import {
   type BrowserDrawerPage,
   type BrowserDrawerSession,
   type BrowserDrawerState,
+  type BrowserExtensions,
 } from '../../shared/types/browser-drawer';
+import { saveSettings, useSettingsStore } from './settings-store';
 
 export const BROWSER_DRAWER_MIN_WIDTH = 420;
 const BROWSER_DRAWER_DEFAULT_WIDTH = 760;
@@ -53,7 +55,8 @@ export function projectSessions(
 /** The pages (tabs) of the sessions a drawer shows */
 export function projectPages(state: BrowserDrawerState, projectId: string | null | undefined, chatId: string | null = null): BrowserDrawerPage[] {
   const sessionIds = new Set(projectSessions(state.sessions, projectId, chatId).map((session) => session.id));
-  return state.pages.filter((page) => sessionIds.has(page.sessionId));
+  // Extensions' popups show over their page, not as tabs
+  return state.pages.filter((page) => !page.popup && sessionIds.has(page.sessionId));
 }
 
 /** Sessions a drawer shows in `next` that weren't in `previous` (the newest last) */
@@ -143,6 +146,15 @@ interface BrowserDrawerStore extends DrawerView {
   /** Each browser's bookmarks bar (its profile's), read once per browser */
   bookmarks: Record<string, BrowserBookmark[]>;
   loadBookmarks: (sessionId: string) => void;
+  /** Each chat browser's extensions (absent: not read yet, or it ran none when asked) */
+  extensions: Record<string, BrowserExtensions>;
+  /** Read a browser's extensions (again) */
+  loadExtensions: (sessionId: string) => void;
+  /**
+   * Switch a browser's extension on or off: kept in Settings for every chat browser of its profile,
+   * applied at once where the browser can (Chromium; Firefox's wait for it to start again)
+   */
+  switchExtension: (sessionId: string, extensionId: string, enabled: boolean) => Promise<void>;
   /**
    * The drawer collapsed the app's sidebar to keep the chat wide enough (Insights.tsx): collapsed
    * while set, on top of the user's own choice (never saved), and expanded again by the drawer
@@ -192,6 +204,36 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
         set((s) => ({ bookmarks: { ...s.bookmarks, [sessionId]: result.data ?? [] } }));
       }
     }, () => undefined);
+  },
+  extensions: {},
+  loadExtensions: (sessionId) => {
+    void window.electronAPI.getBrowserExtensions(sessionId).then((result) => {
+      if (!result.success) return;
+      const { [sessionId]: _previous, ...others } = get().extensions;
+      set({ extensions: result.data ? { ...others, [sessionId]: result.data } : others });
+    }, () => undefined);
+  },
+  switchExtension: async (sessionId, extensionId, enabled) => {
+    const current = get().extensions[sessionId];
+    if (!current) return;
+    // Shown at once; the browser's answer replaces it
+    const shown = (info: BrowserExtensions) => ({
+      ...info,
+      extensions: info.extensions.map((extension) => (extension.id === extensionId ? { ...extension, enabled } : extension)),
+    });
+    set((s) => ({ extensions: { ...s.extensions, [sessionId]: shown(current) } }));
+    const browser = useSettingsStore.getState().settings.browser ?? {};
+    const switches = browser.extensionSwitches ?? {};
+    await saveSettings({
+      browser: {
+        ...browser,
+        extensionSwitches: { ...switches, [current.browserId]: { ...switches[current.browserId], [extensionId]: enabled } },
+      },
+    });
+    const result = await window.electronAPI.getBrowserExtensions(sessionId, { [extensionId]: enabled }).catch(() => null);
+    if (result?.success && result.data && sessionId in get().extensions) {
+      set((s) => ({ extensions: { ...s.extensions, [sessionId]: result.data as BrowserExtensions } }));
+    }
   },
   appSidebarCollapsedByDrawer: false,
   setAppSidebarCollapsedByDrawer: (appSidebarCollapsedByDrawer) => set({ appSidebarCollapsedByDrawer }),
@@ -263,12 +305,14 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
       : chooseSelectedPage(pages, selectedPageId, newest?.id ?? pending);
     // Browsers that closed forget their bookmarks (another browser of the chat reads its own)
     const live = new Set(state.sessions.map((session) => session.id));
-    const { bookmarks } = get();
+    const { bookmarks, extensions } = get();
     const gone = Object.keys(bookmarks).filter((id) => !live.has(id));
+    const goneExtensions = Object.keys(extensions).some((id) => !live.has(id));
     set({
       state,
       loaded: true,
       ...(gone.length ? { bookmarks: Object.fromEntries(Object.entries(bookmarks).filter(([id]) => live.has(id))) } : {}),
+      ...(goneExtensions ? { extensions: Object.fromEntries(Object.entries(extensions).filter(([id]) => live.has(id))) } : {}),
       ...selection,
       ...(asked || (newTabSessionId && !wantsNewTab) ? { newTabSessionId: null } : {}),
       ...(newTab ? { focusPageId: newTab.id, focusRequestedByUser: !!asked } : {}),

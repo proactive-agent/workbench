@@ -168,6 +168,15 @@ describe('built-in MCP servers', () => {
         },
       },
     });
+    // With extensions, Playwright's switch against them is dropped too, and their buttons can be clicked over CDP
+    expect(playwrightProfileConfig(chrome, '/data/copy', { extensions: true })).toMatchObject({
+      browser: {
+        launchOptions: {
+          args: expect.arrayContaining(['--enable-unsafe-extension-debugging']),
+          ignoreDefaultArgs: ['--password-store=basic', '--use-mock-keychain', '--disable-extensions'],
+        },
+      },
+    });
   });
 
   it('launches the installed Firefox over WebDriver BiDi with its copy as the profile and Sync off', () => {

@@ -36,7 +36,7 @@ import { realpath, stat, writeFile } from 'fs/promises';
 import type { ChildProcess } from 'child_process';
 import type { AppSettings, McpConnectorSettings } from '../../shared/types/settings';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
-import { NEW_CHAT_BROWSER_ID, type ChatBrowserInfo } from '../../shared/types/browser-drawer';
+import { NEW_CHAT_BROWSER_ID, type BrowserExtension, type BrowserExtensions, type ChatBrowserInfo } from '../../shared/types/browser-drawer';
 import { getTaskPlaywrightBrowser } from '../../shared/utils/mcp-connectors';
 import { appLog } from '../app-logger';
 import { buildMcpConfig, MCP_STARTUP_TIMEOUT_MS } from '../claude-code/mcp-config';
@@ -47,7 +47,16 @@ import { isWindows } from '../platform';
 import { getWslInfo } from '../platform/shell-runtime';
 import { registryAccess, registryOs, removeClosedSessions } from './registry';
 import { killRuntimeProcessTree, spawnTool } from '../platform/runtime-exec';
-import { prepareBrowserProfileCopy, removeBrowserProfileCopy, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import { prepareBrowserProfileCopy, removeBrowserProfileCopy, setBrowserProfileCopyExtensions, useKeptBrowserProfileCopy } from '../browser-profiles/profile-copy';
+import {
+  applyFirefoxExtensionSwitches,
+  chromiumExtensionsCode,
+  firefoxExtensionTarget,
+  type FirefoxExtensionTarget,
+  parseChromiumExtensions,
+  readFirefoxExtensions,
+  type ExtensionSwitches,
+} from '../browser-profiles/extensions';
 import { makeTempFolder, removeTempFolder, runtimeTempParent, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import {
   CHAT_BROWSER_RECORD,
@@ -78,6 +87,15 @@ export interface ChatBrowserHolder {
   updateRecord?: (patch: Partial<Pick<ChatBrowserRecord, 'chatId' | 'tabs'>>) => void;
   /** The browser it opened (null: Playwright's own Chromium), whose icon the drawer's tabs show */
   browser?: PlaywrightBrowserChoice | null;
+  /**
+   * Its profile's extensions (null: it runs none), after switching on or off the ones `switches`
+   * names where the browser can while it runs (Chromium; Firefox reads them at start)
+   */
+  extensions?: (switches?: ExtensionSwitches) => Promise<BrowserExtensions | null>;
+  /** Firefox: where an extension's toolbar button leads (its popup's page, else its homepage) */
+  extensionTarget?: (extensionId: string) => Promise<FirefoxExtensionTarget>;
+  /** Close the browser but keep its folder, profile copy and tabs, to start it again from them */
+  suspend?: () => Promise<RestorableChatBrowser>;
 }
 
 /** Starts a holder whose browser is bound under `title` (rejects with a readable message) */
@@ -207,37 +225,85 @@ export class ChatBrowsers extends EventEmitter {
     const restore = this.restorables.get(key);
     this.restorables.delete(key);
     entry.starting = this.startHolder({ projectPath, title: entry.title, choice, projectId, chatId, restore }).then(
-      async (holder) => {
-        entry.starting = undefined;
-        // Closed (or the chat deleted, or the app quitting) while it started
-        if (this.entries.get(keyOf(entry.projectId, entry.chatId)) !== entry) {
-          await holder.close().catch(() => undefined);
-          throw new Error('The browser was closed');
-        }
-        entry.holder = holder;
-        entry.status = 'open';
-        // The New chat page's browser may have moved to its conversation while it started
-        holder.updateRecord?.({ chatId: entry.chatId });
-        holder.onExit(() => this.forget(entry));
-        this.emit('change');
-      },
-      (error: unknown) => {
-        entry.starting = undefined;
-        // A failed start keeps what it was to open again (its folder is left as it was)
-        if (restore && !this.stopped && !this.restorables.has(key)) {
-          void stat(restore.dir).then(() => {
-            if (!this.restorables.has(key) && !this.entries.has(key)) {
-              this.restorables.set(key, restore);
-              this.emit('change');
-            }
-          }, () => undefined);
-        }
-        this.forget(entry);
-        throw error instanceof Error ? error : new Error(String(error));
-      },
+      (holder) => this.started(entry, holder),
+      (error: unknown) => this.failed(entry, error, restore),
     );
     this.emit('change');
     return entry.starting;
+  }
+
+  /**
+   * Start a chat's open browser again from its profile copy and tabs (what it reads at start, such
+   * as Firefox's extension switches, then applies). Nothing when it isn't open
+   */
+  restart(projectId: string, chatId: string): Promise<void> {
+    const entry = this.entries.get(keyOf(projectId, chatId));
+    const holder = entry?.holder;
+    if (!entry || entry.status !== 'open' || !holder?.suspend) return Promise.resolve();
+    const suspend = holder.suspend;
+    entry.holder = undefined;
+    entry.status = 'starting';
+    entry.seenLive = false;
+    let restore: RestorableChatBrowser | undefined;
+    entry.starting = suspend()
+      .then((kept) => {
+        restore = kept;
+        return this.startHolder({
+          projectPath: kept.record.projectPath,
+          title: entry.title,
+          choice: holder.browser,
+          projectId: entry.projectId,
+          chatId: entry.chatId,
+          restore: kept,
+        });
+      })
+      .then((next) => this.started(entry, next), (error: unknown) => this.failed(entry, error, restore));
+    this.emit('change');
+    return entry.starting;
+  }
+
+  /** A holder started for the entry */
+  private async started(entry: Entry, holder: ChatBrowserHolder): Promise<void> {
+    entry.starting = undefined;
+    // Closed (or the chat deleted, or the app quitting) while it started
+    if (this.entries.get(keyOf(entry.projectId, entry.chatId)) !== entry) {
+      await holder.close().catch(() => undefined);
+      throw new Error('The browser was closed');
+    }
+    entry.holder = holder;
+    entry.status = 'open';
+    // The New chat page's browser may have moved to its conversation while it started
+    holder.updateRecord?.({ chatId: entry.chatId });
+    // A holder suspended for a restart exits while the entry waits for the next one
+    holder.onExit(() => {
+      if (entry.holder === holder) this.forget(entry);
+    });
+    this.emit('change');
+  }
+
+  /** The entry's holder didn't start: a browser it was to open again stays to open again */
+  private failed(entry: Entry, error: unknown, restore: RestorableChatBrowser | undefined): never {
+    entry.starting = undefined;
+    const key = keyOf(entry.projectId, entry.chatId);
+    // A failed start keeps what it was to open again (its folder is left as it was)
+    if (restore && !this.stopped && !this.restorables.has(key)) {
+      void stat(restore.dir).then(() => {
+        if (!this.restorables.has(key) && !this.entries.has(key)) {
+          this.restorables.set(key, restore);
+          this.emit('change');
+        }
+      }, () => undefined);
+    }
+    this.forget(entry);
+    throw error instanceof Error ? error : new Error(String(error));
+  }
+
+  /** The holder of a chat browser bound under a title (open ones only) */
+  holderOfTitle(title: string): ChatBrowserHolder | undefined {
+    for (const entry of this.entries.values()) {
+      if (entry.title === title && entry.status === 'open') return entry.holder;
+    }
+    return undefined;
   }
 
   /** Close a chat's browser (nothing when it has none) */
@@ -454,6 +520,11 @@ async function initializeHolder(client: HolderClient, title: string, timeoutMs =
   if (failure !== undefined) throw new Error(holderError(failure));
 }
 
+/** Whether chat browsers run the extensions installed in their browser profile (Settings > Browser) */
+export function chatBrowserExtensions(settings: Partial<AppSettings> | undefined): boolean {
+  return settings?.browser?.extensions === true;
+}
+
 /** The homepage a new chat browser opens, when it is an address the drawer opens */
 export function homepageUrl(homepage: string | undefined): string | undefined {
   const url = homepage?.trim();
@@ -519,24 +590,59 @@ function recordWriter(dir: string, initial: ChatBrowserRecord) {
   let record = initial;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let closed = false;
-  const write = () => {
+  const write = (): Promise<void> => {
+    clearTimeout(timer);
     timer = undefined;
-    if (closed) return;
-    void writeFile(path.join(dir, CHAT_BROWSER_RECORD), JSON.stringify(record), { mode: 0o600 }).catch(() => undefined);
+    if (closed) return Promise.resolve();
+    return writeFile(path.join(dir, CHAT_BROWSER_RECORD), JSON.stringify(record), { mode: 0o600 }).catch(() => undefined);
   };
   return {
     writeNow: write,
+    current: () => record,
     update: (patch: Partial<Pick<ChatBrowserRecord, 'chatId' | 'tabs'>>) => {
       const next = { ...record, ...patch };
       if (JSON.stringify({ ...next, updatedAt: 0 }) === JSON.stringify({ ...record, updatedAt: 0 })) return;
       record = { ...next, updatedAt: Date.now() };
-      if (!timer && !closed) timer = setTimeout(write, RECORD_WRITE_DELAY_MS);
+      if (!timer && !closed) timer = setTimeout(() => void write(), RECORD_WRITE_DELAY_MS);
     },
     close: () => {
       closed = true;
       clearTimeout(timer);
     },
   };
+}
+
+/** How long listing or switching a Chromium browser's extensions may take */
+const EXTENSIONS_TIMEOUT_MS = 30_000;
+
+/** A Chromium chat browser's extensions, after switching the ones `switches` names (its extensions page, run by the holder) */
+async function runChromiumExtensions(client: HolderClient, switches: ExtensionSwitches): Promise<BrowserExtension[]> {
+  const reply = await client.request(
+    'tools/call',
+    { name: 'browser_run_code_unsafe', arguments: { code: chromiumExtensionsCode(switches) } },
+    EXTENSIONS_TIMEOUT_MS,
+  );
+  const failure = replyFailure(reply);
+  if (failure !== undefined) throw new Error(holderError(failure));
+  return parseChromiumExtensions(reply.result?.content?.map((part) => part.text ?? '').join('\n') ?? '');
+}
+
+/**
+ * A Firefox chat browser's extensions: as it runs them, each shown as its switch is (Settings),
+ * which waits for the browser to start again when it differs
+ */
+async function firefoxExtensions(browserId: string, profileDir: string): Promise<BrowserExtensions> {
+  const running = await readFirefoxExtensions(profileDir);
+  const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+  const wanted = settings?.browser?.extensionSwitches?.[browserId] ?? {};
+  let restartToApply = false;
+  const list = running.map((extension) => {
+    const on = wanted[extension.id];
+    if (on === undefined || on === extension.enabled) return extension;
+    restartToApply = true;
+    return { ...extension, enabled: on };
+  });
+  return { browserId, extensions: list, canOpen: true, ...(restartToApply ? { restartToApply } : {}) };
 }
 
 /**
@@ -560,11 +666,17 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
   // What is removed when the browser closes: at once for a new one; for a reused one only once it
   // started (a failed start leaves it to open again)
   const removals: Array<() => Promise<void> | void> = [];
+  // Suspended for a restart: its folder and profile copy stay for the next start
+  let suspended = false;
+  const unlessSuspended = (fn: () => Promise<void>) => () => (suspended ? undefined : fn());
+  // Chat browsers run the profile's extensions (Settings > Browser), switched as the drawer left them
+  const extensions = chatBrowserExtensions(appSettings);
+  const switches: ExtensionSwitches = (extensions && browser && appSettings?.browser?.extensionSwitches?.[browser.id]) || {};
   try {
     // The holder's own folder: its workspace and output folder, registered for the project
     // Where the browser runs (in WSL inside the distribution: a profile on /mnt/c is slow for it)
     const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser, await runtimeTempParent());
-    removals.push(() => removeTempFolder(dir));
+    removals.push(unlessSuspended(() => removeTempFolder(dir)));
     for (const folder of new Set([dir, await realpath(dir).catch(() => dir)])) {
       cleanups.push(registerChatBrowserWorkspace(folder, projectPath));
     }
@@ -577,18 +689,28 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       if (reuse?.record.profileCopyDir) {
         const copy = reuse.record.profileCopyDir;
         browserProfileDir = keptCopy = copy;
-        removals.push(() => removeBrowserProfileCopy(copy));
+        removals.push(unlessSuspended(() => removeBrowserProfileCopy(copy)));
+        // The switch as it is now, not as it was when the crashed browser started
+        await setBrowserProfileCopyExtensions(browser, copy, extensions).catch((error) => {
+          appLog.warn('[BrowserDrawer] Could not set the extensions of a kept browser profile copy:', error);
+        });
       } else {
         const inUse = await browserChoicesInUse(projectPath, settings?.playwrightBrowser).catch(() => undefined);
-        browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, `chat-${randomUUID().slice(0, 8)}`, inUse).catch((error) => {
+        browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, `chat-${randomUUID().slice(0, 8)}`, inUse, { extensions }).catch((error) => {
           appLog.warn('[BrowserDrawer] Could not copy the browser profile for a chat:', error);
           return null;
         })) ?? undefined;
         // A copy made now goes with a failed start too (the next try makes another)
         if (browserProfileDir) {
           const copy = browserProfileDir;
-          cleanups.push(() => removeBrowserProfileCopy(copy));
+          cleanups.push(unlessSuspended(() => removeBrowserProfileCopy(copy)));
         }
+      }
+      // Firefox reads its extensions' switches at start
+      if (browserProfileDir && extensions && browser.engine === 'firefox') {
+        await applyFirefoxExtensionSwitches(browserProfileDir, switches).catch((error) => {
+          appLog.warn('[BrowserDrawer] Could not switch the extensions of a browser profile copy:', error);
+        });
       }
     }
     if (!reuse) cleanups.push(...removals.splice(0));
@@ -603,7 +725,7 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
       tabs: reuse?.record.tabs ?? [],
       updatedAt: Date.now(),
     });
-    record.writeNow();
+    void record.writeNow();
     cleanups.push(() => record.close());
 
     const entry = buildMcpConfig(['playwright'], runSettings, { browserProfileDir }).mcpServers.playwright;
@@ -631,6 +753,13 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
     // Started: a reused folder and copy go when it closes (or on quit), like a new one's
     if (keptCopy) useKeptBrowserProfileCopy(keptCopy);
     cleanups.push(...removals.splice(0));
+    // Chromium switches its extensions while it runs: before any page opens
+    const hasExtensions = !!browserProfileDir && extensions && (browser?.engine === 'chromium' || browser?.engine === 'firefox');
+    if (hasExtensions && browser?.engine === 'chromium' && Object.keys(switches).length > 0) {
+      await runChromiumExtensions(client, switches).catch((error) => {
+        appLog.warn('[BrowserDrawer] Could not switch the extensions of a chat browser:', error);
+      });
+    }
     const tabs = reuse ? tabsToRestore(reuse.record.tabs) : [];
     if (tabs.length > 0) void restoreTabs(client, tabs);
     else {
@@ -658,6 +787,23 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
         listeners.push(listener);
       },
       updateRecord: (patch) => record.update(patch),
+      extensions: async (changes) => {
+        if (!hasExtensions || !browser || !browserProfileDir) return null;
+        if (browser.engine === 'chromium') {
+          return { browserId: browser.id, extensions: await runChromiumExtensions(client, changes ?? {}), canOpen: true };
+        }
+        return firefoxExtensions(browser.id, browserProfileDir);
+      },
+      extensionTarget: async (extensionId) =>
+        hasExtensions && browser?.engine === 'firefox' && browserProfileDir ? firefoxExtensionTarget(browserProfileDir, extensionId) : {},
+      suspend: async () => {
+        suspended = true;
+        await record.writeNow();
+        const kept = { dir, record: record.current() };
+        await closeHolderProcess(proc);
+        await done;
+        return kept;
+      },
     };
   } catch (error) {
     await cleanup();

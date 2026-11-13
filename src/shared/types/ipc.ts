@@ -534,7 +534,7 @@ export interface ElectronAPI {
   getBrowserDrawerState: () => Promise<IPCResult<import('./browser-drawer').BrowserDrawerState>>;
   subscribeBrowserDrawer: () => Promise<IPCResult>;
   unsubscribeBrowserDrawer: () => Promise<IPCResult>;
-  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
+  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number, popup?: boolean) => void;
   sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
   browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
@@ -542,6 +542,9 @@ export interface ElectronAPI {
   closeBrowserPage: (pageId: string) => void;
   newBrowserPage: (sessionId: string) => void;
   getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<import('./browser-drawer').BrowserBookmark[]>>;
+  getBrowserExtensions: (sessionId: string, switches?: Record<string, boolean>) => Promise<IPCResult<import('./browser-drawer').BrowserExtensions | null>>;
+  runBrowserExtension: (pageId: string, extensionId: string, name: string) => Promise<IPCResult<{ popupId?: string }>>;
+  restartChatBrowser: (sessionId: string) => Promise<IPCResult>;
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
   closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;

@@ -308,6 +308,9 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser
   BROWSER_DRAWER_COPY: 'browserDrawer:copy',               // The copy/cut shortcut: the page's selection to the clipboard
   BROWSER_DRAWER_BOOKMARKS: 'browserDrawer:bookmarks',     // The bookmarks bar of a session's browser profile
+  BROWSER_DRAWER_EXTENSIONS: 'browserDrawer:extensions',   // A chat browser's extensions, switching some on or off
+  BROWSER_DRAWER_EXTENSION_ACTION: 'browserDrawer:extensionAction', // Click an extension's toolbar button for a page (its popup opens)
+  BROWSER_DRAWER_RESTART_CHAT_BROWSER: 'browserDrawer:restartChatBrowser', // Start a chat browser again (its extension switches apply)
   BROWSER_DRAWER_COLOR_SCHEME: 'browserDrawer:colorScheme', // Workbench's theme, for the chat browsers' pages
   BROWSER_DRAWER_OPEN_CHAT_BROWSER: 'browserDrawer:openChatBrowser',   // Open a chat's own browser
   BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser

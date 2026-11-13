@@ -194,6 +194,58 @@ describe('chat browsers', () => {
   });
 });
 
+describe('restarting a chat browser', () => {
+  /** Holders that start at once and can be suspended: closed, keeping what they were */
+  function restartableHolders() {
+    const kept = (n: number) => ({
+      dir: os.tmpdir(),
+      record: { projectId: 'p', projectPath: '/proj', chatId: 'session-1', browserId: 'firefox:x', profileCopyDir: `/copy-${n}`, tabs: [], updatedAt: n },
+    });
+    const starts: Array<{ restore: unknown; choice: unknown }> = [];
+    let fail = false;
+    const start: StartChatBrowserHolder = async ({ restore, choice }) => {
+      starts.push({ restore, choice });
+      if (fail) throw new Error('Firefox did not start');
+      const n = starts.length;
+      const listeners: Array<() => void> = [];
+      return {
+        browser: { id: 'firefox:x' } as never,
+        close: async () => listeners.forEach((l) => l()),
+        onExit: (l) => { listeners.push(l); },
+        suspend: async () => {
+          listeners.forEach((l) => l());
+          return kept(n);
+        },
+      };
+    };
+    return { start, starts, kept, failNext: () => { fail = true; } };
+  }
+
+  it('starts it again from its folder, copy and tabs with the same browser, open for its chat throughout', async () => {
+    const { start, starts, kept } = restartableHolders();
+    const chats = new ChatBrowsers(start);
+    await chats.ensure('p', '/proj', 'session-1', undefined);
+    const restarting = chats.restart('p', 'session-1');
+    // Its old holder exited meanwhile: the chat's browser is starting, not gone
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'starting' }]);
+    await restarting;
+    expect(starts[1]).toEqual({ restore: kept(1), choice: { id: 'firefox:x' } });
+    expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'open' }]);
+    // A chat without an open browser has nothing to restart
+    await chats.restart('p', 'other');
+    expect(starts).toHaveLength(2);
+  });
+
+  it('keeps what a failed restart was to open again', async () => {
+    const { start, failNext } = restartableHolders();
+    const chats = new ChatBrowsers(start);
+    await chats.ensure('p', '/proj', 'session-1', undefined);
+    failNext();
+    await expect(chats.restart('p', 'session-1')).rejects.toThrow('Firefox did not start');
+    await vi.waitFor(() => expect(chats.list()).toEqual([{ projectId: 'p', chatId: 'session-1', status: 'restorable', tabs: 0 }]));
+  });
+});
+
 describe('the homepage a new chat browser opens', () => {
   it('opens an address the drawer opens, and nothing for a blank or other one', () => {
     expect(homepageUrl(' https://start.test/ ')).toBe('https://start.test/');

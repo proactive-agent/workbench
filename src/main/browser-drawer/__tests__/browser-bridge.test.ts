@@ -66,7 +66,9 @@ const page = {
   keyboard: { down: async (key) => log({ key }), up: async () => {}, insertText: async () => {} },
   close: async () => {},
 };
-const context = { pages: () => [page], on() {}, newPage: async () => page };
+// Workbench's own extensions page (opened in the background, never listed)
+const helper = { ...page, url: () => 'chrome://extensions/#workbench-extensions' };
+const context = { pages: () => [helper, page], on() {}, newPage: async () => page };
 module.exports = { chromium: { connect: async () => ({ contexts: () => [context], on() {}, close: async () => {} }) } };
 `;
 
@@ -102,13 +104,16 @@ describe('browser bridge script', () => {
     bridge = new BrowserBridgeProcess({ execPath: process.execPath });
     const frames: number[] = [];
     let pageId: string | undefined;
+    const listed: string[] = [];
     bridge.on('message', (message: BridgeMessage) => {
       if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'pages') listed.push(...message.pages.map((p) => p.url));
       if (message.type === 'frame') frames.push(message.data[0]);
     });
     await bridge.start();
     bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
     await until(() => !!pageId);
+    expect(new Set(listed)).toEqual(new Set(['about:blank']));
 
     bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 700, height: 500, scale: 1 });
     await until(() => frames.length === 1);

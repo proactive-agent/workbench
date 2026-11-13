@@ -20,6 +20,8 @@ const MODIFIERS = [['Control', 'ctrlKey'], ['Shift', 'shiftKey'], ['Alt', 'altKe
 interface BrowserPageViewProps {
   pageId: string;
   label: string;
+  /** An extension's popup, shown over the tab (the window views both at once) */
+  popup?: boolean;
 }
 
 /**
@@ -36,7 +38,7 @@ function alignCanvas(canvas: HTMLCanvasElement, container: HTMLElement) {
   if (canvas.style.transform !== transform) canvas.style.transform = transform;
 }
 
-export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
+export function BrowserPageView({ pageId, label, popup = false }: BrowserPageViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   /** The viewport of the last frame drawn (input is mapped to it) */
@@ -55,7 +57,7 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       // and a viewport of whole device pixels, so they are drawn without resampling
       const scale = frameScale();
       if (width > 0 && height > 0) {
-        window.electronAPI.viewBrowserPage(pageId, alignedViewportLength(width, scale), alignedViewportLength(height, scale), window.devicePixelRatio || 1);
+        window.electronAPI.viewBrowserPage(pageId, alignedViewportLength(width, scale), alignedViewportLength(height, scale), window.devicePixelRatio || 1, popup);
       }
     };
     report();
@@ -86,9 +88,9 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       window.removeEventListener('resize', onWindowResize);
       density?.removeEventListener('change', onDensity);
       clearTimeout(timer);
-      window.electronAPI.viewBrowserPage(null, 0, 0);
+      window.electronAPI.viewBrowserPage(null, 0, 0, undefined, popup);
     };
-  }, [pageId]);
+  }, [pageId, popup]);
 
   // Frames: the newest one is drawn, older ones waiting meanwhile are dropped. Each one drawn (or
   // dropped) is acknowledged: the next frame waits for it, so frames never pile up

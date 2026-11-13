@@ -25,6 +25,7 @@ import { clipboard, type WebContents } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
   BrowserBookmark,
+  BrowserExtensions,
   BrowserDrawerInput,
   BrowserDrawerNavigation,
   BrowserDrawerPage,
@@ -216,14 +217,17 @@ export class BrowserDrawerService {
       sender.once('destroyed', () => {
         this.unsubscribe(id);
         this.views.delete(id);
+        this.views.delete(-id);
       });
     }
     await this.bridge.start();
     this.syncBridgeSessions(true);
     // The view asked for before subscribing (unless the drawer closed again meanwhile)
-    const pending = this.views.get(sender.id);
-    if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
-      this.view(sender, pending.pageId, pending.width, pending.height, pending.scale);
+    for (const popup of [false, true]) {
+      const pending = this.views.get(popup ? -sender.id : sender.id);
+      if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
+        this.view(sender, pending.pageId, pending.width, pending.height, pending.scale, popup);
+      }
     }
   }
 
@@ -238,18 +242,25 @@ export class BrowserDrawerService {
   /** A window's drawer closed: its page is no longer streamed */
   unsubscribe(viewerId: number): void {
     this.views.delete(viewerId);
+    this.views.delete(-viewerId);
     if (!this.subscribers.delete(viewerId)) return;
     this.bridge.send({ type: 'view', viewerId, pageId: null, width: 0, height: 0 });
+    this.bridge.send({ type: 'view', viewerId: -viewerId, pageId: null, width: 0, height: 0 });
   }
 
-  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown, scale?: unknown): void {
+  /**
+   * Stream a page to a window. A window views two pages at most: its tab, and the extension popup
+   * shown over it (`popup`, viewer id negated)
+   */
+  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown, scale?: unknown, popup?: unknown): void {
     if (this.stopped) return;
-    this.views.set(sender.id, { pageId, width, height, scale });
+    const viewerId = popup === true ? -sender.id : sender.id;
+    this.views.set(viewerId, { pageId, width, height, scale });
     if (!this.subscribers.has(sender.id)) return;
     const known = pageId !== null && this.pages.some((page) => page.id === pageId);
     this.bridge.send({
       type: 'view',
-      viewerId: sender.id,
+      viewerId,
       pageId: known ? pageId : null,
       width: viewportDimension(width),
       height: viewportDimension(height),
@@ -306,6 +317,35 @@ export class BrowserDrawerService {
     return readBookmarksBar(this.chatBrowsers.chatOfTitle(session.title)?.browser);
   }
 
+  /**
+   * A chat browser's extensions (null: it runs none), after switching the ones `switches` names
+   * where the browser can while it runs (Chromium; Firefox's wait for it to start again)
+   */
+  async extensions(sessionId: string, switches?: Record<string, boolean>): Promise<BrowserExtensions | null> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (!session) return null;
+    return (await this.chatBrowsers.holderOfTitle(session.title)?.extensions?.(switches)) ?? null;
+  }
+
+  /**
+   * Click an extension's toolbar button for a chat browser's page: its popup's page id when one
+   * opened (the drawer shows it over the page), nothing when its click handler ran (Chromium) or
+   * its homepage opened in a new tab (Firefox, for an extension without a popup)
+   */
+  async extensionAction(pageId: string, extensionId: string, name: string): Promise<string | undefined> {
+    const page = this.pages.find((p) => p.id === pageId && !p.popup);
+    const session = page && this.sessions.find((s) => s.id === page.sessionId && s.chatId);
+    if (!session || !/^[\w.@{}+-]{1,200}$/.test(extensionId)) throw new Error('The extension cannot be opened here');
+    const target = await this.chatBrowsers.holderOfTitle(session.title)?.extensionTarget?.(extensionId);
+    return this.bridge.extensionAction(pageId, extensionId, name.slice(0, 200), target);
+  }
+
+  /** Start a chat browser again from its profile copy and tabs (its extension switches apply) */
+  async restartChatBrowser(sessionId: string): Promise<void> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (session?.projectId && session.chatId) await this.chatBrowsers.restart(session.projectId, session.chatId);
+  }
+
   /** Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool call) */
   async openChatBrowser(projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
     const project = this.options.getProjects().find((p) => p.id === projectId);
@@ -338,7 +378,8 @@ export class BrowserDrawerService {
       this.broadcast();
     } else if (message.type === 'frame') {
       for (const viewerId of message.viewers) {
-        const target = this.subscribers.get(viewerId);
+        // A window's popup view is its id negated
+        const target = this.subscribers.get(Math.abs(viewerId));
         if (target && !target.isDestroyed()) {
           target.send(IPC_CHANNELS.BROWSER_DRAWER_FRAME, {
             pageId: message.pageId,
@@ -359,7 +400,7 @@ export class BrowserDrawerService {
     for (const session of this.sessions) {
       if (!session.chatId || !session.projectId || !connected.has(session.id)) continue;
       const tabs = this.pages
-        .filter((page) => page.sessionId === session.id)
+        .filter((page) => page.sessionId === session.id && !page.popup)
         .map((page) => ({ url: page.url, title: page.title }));
       this.chatBrowsers.noteTabs(session.projectId, session.chatId, tabs);
     }

@@ -11,6 +11,7 @@ import type {
   BrowserDrawerInput,
   BrowserDrawerNavigation,
   BrowserDrawerState,
+  BrowserExtensions,
 } from '../../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../../shared/types/browser-profiles';
 import { createIpcListener, invokeIpc, sendIpc, type IpcListenerCleanup } from './ipc-utils';
@@ -26,7 +27,7 @@ export interface BrowserDrawerAPI {
    * Stream a page (null: none) to this window, its viewport sized to width x height CSS pixels,
    * its frames at `scale` device pixels per CSS pixel (the window's devicePixelRatio)
    */
-  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
+  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number, popup?: boolean) => void;
   sendBrowserInput: (pageId: string, input: BrowserDrawerInput) => void;
   /** This window drew a frame of the page (the next frame waits for it) */
   browserFrameDrawn: (pageId: string) => void;
@@ -38,6 +39,18 @@ export interface BrowserDrawerAPI {
   newBrowserPage: (sessionId: string) => void;
   /** The bookmarks bar of a session's browser profile (empty without one) */
   getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<BrowserBookmark[]>>;
+  /**
+   * A chat browser's extensions (null: it runs none), after switching the ones `switches` names
+   * (extension id -> on) where the browser can while it runs
+   */
+  getBrowserExtensions: (sessionId: string, switches?: Record<string, boolean>) => Promise<IPCResult<BrowserExtensions | null>>;
+  /**
+   * Click an extension's toolbar button for a page, as the browser's own does (Chromium): the id of
+   * its popup when one opened (a page shown over the tab), none when its click handler ran
+   */
+  runBrowserExtension: (pageId: string, extensionId: string, name: string) => Promise<IPCResult<{ popupId?: string }>>;
+  /** Start a chat browser again from its profile and tabs (extension switches waiting for it apply) */
+  restartChatBrowser: (sessionId: string) => Promise<IPCResult>;
   /** Workbench's theme, which the chat browsers' pages get as their color scheme */
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   /** Open a chat's own browser with this browser (undefined: Settings > Browser) */
@@ -54,7 +67,7 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   getBrowserDrawerState: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_GET_STATE),
   subscribeBrowserDrawer: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_SUBSCRIBE),
   unsubscribeBrowserDrawer: () => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_UNSUBSCRIBE),
-  viewBrowserPage: (pageId, width, height, scale) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_VIEW, pageId, width, height, scale),
+  viewBrowserPage: (pageId, width, height, scale, popup) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_VIEW, pageId, width, height, scale, popup),
   sendBrowserInput: (pageId, input) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_INPUT, pageId, input),
   browserFrameDrawn: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_FRAME_DRAWN, pageId),
   navigateBrowserPage: (pageId, action, url) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NAVIGATE, pageId, action, url),
@@ -62,6 +75,9 @@ export const createBrowserDrawerAPI = (): BrowserDrawerAPI => ({
   closeBrowserPage: (pageId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_PAGE, pageId),
   newBrowserPage: (sessionId) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_NEW_PAGE, sessionId),
   getBrowserBookmarks: (sessionId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_BOOKMARKS, sessionId),
+  getBrowserExtensions: (sessionId, switches) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_EXTENSIONS, sessionId, switches),
+  runBrowserExtension: (pageId, extensionId, name) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_EXTENSION_ACTION, pageId, extensionId, name),
+  restartChatBrowser: (sessionId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_RESTART_CHAT_BROWSER, sessionId),
   setBrowserColorScheme: (scheme) => sendIpc(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, scheme),
   openChatBrowser: (projectId, chatId, choice) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_OPEN_CHAT_BROWSER, projectId, chatId, choice),
   closeChatBrowser: (projectId, chatId) => invokeIpc(IPC_CHANNELS.BROWSER_DRAWER_CLOSE_CHAT_BROWSER, projectId, chatId),

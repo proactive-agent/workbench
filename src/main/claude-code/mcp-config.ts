@@ -91,6 +91,18 @@ export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
  * password store (Linux) and a mock keychain (macOS) instead of the ones the profile was saved with
  */
 const CHROMIUM_KEYCHAIN_ARGS = ['--password-store=basic', '--use-mock-keychain'];
+/** Playwright's switch that keeps Chromium from running the profile's extensions */
+const CHROMIUM_NO_EXTENSIONS_ARG = '--disable-extensions';
+/**
+ * Lets a CDP client over the browser's pipe click an extension's toolbar button
+ * (`Extensions.triggerAction`): the browser drawer opens extensions' popups with it
+ */
+const CHROMIUM_EXTENSION_DEBUGGING_ARG = '--enable-unsafe-extension-debugging';
+
+export interface PlaywrightProfileOptions {
+  /** The browser runs the extensions in the copy (Settings > Browser, chat browsers only) */
+  extensions?: boolean;
+}
 
 /** The run's Playwright config inside its profile copy (written by profile-copy.ts) */
 export const PLAYWRIGHT_CONFIG_FILE = '.workbench-playwright.json';
@@ -159,9 +171,14 @@ const FIREFOX_ALLOW_DOWNGRADE = '--allow-downgrade';
  * folder inside the copied user data folder, with the sandbox on (Playwright's default off is for
  * its own build) and without Playwright's switches that keep it from decrypting the copied
  * sign-ins. Firefox runs over WebDriver BiDi (the `moz-firefox` channel; Playwright's own build,
- * which runs Windows profiles in WSL, over its own protocol) with Sync kept off
+ * which runs Windows profiles in WSL, over its own protocol) with Sync kept off. Firefox runs the
+ * extensions the copy holds; Chromium only with `extensions` (Playwright switches them off)
  */
-export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browserProfileDir: string): Record<string, unknown> {
+export function playwrightProfileConfig(
+  choice: PlaywrightBrowserChoice,
+  browserProfileDir: string,
+  options: PlaywrightProfileOptions = {}
+): Record<string, unknown> {
   const userDataDir = toRuntimePath(browserProfileDir);
   const executablePath = launchExecutable(choice);
   const scale = playwrightScale?.scale;
@@ -188,8 +205,12 @@ export function playwrightProfileConfig(choice: PlaywrightBrowserChoice, browser
       launchOptions: {
         executablePath,
         chromiumSandbox: true,
-        args: [`--profile-directory=${choice.profileDirectory ?? 'Default'}`, ...(scale ? [chromiumScaleSwitch(scale)] : [])],
-        ignoreDefaultArgs: CHROMIUM_KEYCHAIN_ARGS,
+        args: [
+          `--profile-directory=${choice.profileDirectory ?? 'Default'}`,
+          ...(scale ? [chromiumScaleSwitch(scale)] : []),
+          ...(options.extensions ? [CHROMIUM_EXTENSION_DEBUGGING_ARG] : []),
+        ],
+        ignoreDefaultArgs: options.extensions ? [...CHROMIUM_KEYCHAIN_ARGS, CHROMIUM_NO_EXTENSIONS_ARG] : CHROMIUM_KEYCHAIN_ARGS,
       },
       ...contextOptions,
     },

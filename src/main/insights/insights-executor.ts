@@ -19,6 +19,7 @@ import { buildMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { getWslInfo } from '../platform/shell-runtime';
 import { browserDrawer } from '../browser-drawer';
+import { chatBrowserExtensions } from '../browser-drawer/chat-browsers';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
@@ -118,7 +119,8 @@ async function chatMcpServers(
   chatChoice: PlaywrightBrowserChoice | null | undefined,
   target: ChatBrowserTarget | undefined,
 ) {
-  const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
+  const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+  const connectorSettings = appSettings?.mcpConnectors;
   const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
   // In WSL the guard reaches Workbench directly or through the Windows relay; with interop off it
   // can't, and each turn opens a browser of its own as before
@@ -139,7 +141,7 @@ async function chatMcpServers(
     const slot = `chat-${randomUUID().slice(0, 8)}`;
     // Copies of profiles tasks still choose are kept by its sweep
     const inUse = await browserChoicesInUse(projectPath, browser).catch(() => undefined);
-    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot, inUse).catch((error) => {
+    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot, inUse, { extensions: chatBrowserExtensions(appSettings) }).catch((error) => {
       appLog.warn('[Insights] Could not copy the browser profile:', error);
       return null;
     })) ?? undefined;

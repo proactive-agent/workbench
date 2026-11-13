@@ -40,6 +40,29 @@ export interface BrowserBookmark {
   children?: BrowserBookmark[];
 }
 
+/** An extension of a chat browser's profile, which the drawer lists next to its address bar */
+export interface BrowserExtension {
+  id: string;
+  name: string;
+  /** Switched on (Firefox: as its switch is, which may wait for the browser to start again) */
+  enabled: boolean;
+  /** Pinned to the browser's toolbar: shown beside the address bar */
+  pinned: boolean;
+  /** Its icon, as a data: URL */
+  icon?: string;
+}
+
+/** A chat browser's extensions (none: it runs without them, Settings > Browser) */
+export interface BrowserExtensions {
+  /** The browser profile's id, which the switches are kept by (BrowserSettings.extensionSwitches) */
+  browserId: string;
+  extensions: BrowserExtension[];
+  /** Some switches take effect only once the browser starts again (Firefox reads them at start) */
+  restartToApply?: boolean;
+  /** Clicking an extension opens its popup or runs its action, as the browser's button does (Chromium) */
+  canOpen?: boolean;
+}
+
 /** A page (tab) of a session's browser */
 export interface BrowserDrawerPage {
   id: string;
@@ -48,6 +71,11 @@ export interface BrowserDrawerPage {
   url: string;
   /** A navigation of the page is loading (from its request until the page's load event) */
   loading?: boolean;
+  /**
+   * An extension's popup (not a tab): shown over the page it opened for, at its own size (CSS
+   * pixels), as the browser shows it under the extension's button
+   */
+  popup?: { extensionId: string; openerId: string; width: number; height: number };
 }
 
 export interface BrowserDrawerState {

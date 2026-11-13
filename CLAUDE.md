@@ -303,8 +303,10 @@ task metadata in the project store, drafts, chats), so nothing else knows the ol
 
 Playwright is Microsoft's `@playwright/mcp`, pinned (`PLAYWRIGHT_MCP_PACKAGE` in `browser-profiles/managed.ts`, with the
 browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Settings > Browser picks the default browser profile
-(`McpConnectorSettings.playwrightBrowser`, `settings/BrowserSettings.tsx`, with the homepage a new chat browser opens and the
-bookmarks bar switch, `AppSettings.browser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
+(`McpConnectorSettings.playwrightBrowser`, `settings/BrowserSettings.tsx`, with the homepage a new chat browser opens, the
+bookmarks bar switch and the extensions switch, `AppSettings.browser`: chat browsers' copies then keep the profile's
+extensions, Chromium's without Playwright's `--disable-extensions`, otherwise none; saved copies always keep them, so a copy
+made while the browser is open matches its settings; task runs' copies keep Firefox's only, as before): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
 Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a copy of the chosen profile in the
 app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
@@ -367,7 +369,23 @@ its address bar for +, while tabs Claude opens stay in the background; keys and 
 their page when another tab shows or the focus leaves), a toolbar (back, forward,
 reload, address), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
-shows; Settings > Browser can hide it), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
+shows; Settings > Browser can hide it), the profile's extensions at the address bar's end when the chat browser runs them
+(`BrowserExtensionsMenu.tsx`: the pinned ones that run, then a puzzle button listing the others, each with a small switch,
+kept per profile in `AppSettings.browser.extensionSwitches`; a pinned one's switch is in its right-click menu;
+`browser-profiles/extensions.ts`: Chromium's are listed and switched while it runs in its `chrome://extensions` page,
+opened in the background by the holder's `browser_run_code_unsafe` and never listed by the bridge; Playwright's Firefox
+can't reach its add-on manager, so its list is read from the copy's files and a switch is written to the copy's
+`extensions.json` before the next start, offered as Restart browser: `ChatBrowsers.restart` keeps the folder, copy and
+tabs). Clicking a Chromium extension does what its toolbar button does, for the tab shown: the bridge runs CDP's
+`Extensions.triggerAction` (needs `--enable-unsafe-extension-debugging`, added with extensions on, and Playwright's pipe:
+not Windows browsers run over `--cdp-endpoint` in WSL), and a popup that opens (a target Playwright never attaches) is
+attached over a non-flattened CDP session and wrapped as a page (`attachPopup`), so frames and input go through the usual
+paths; it is listed with `popup` (not a tab) and shown over its tab at its own size, as the window's second view
+(viewer id negated), closed by a click beside it or another tab showing. Firefox's toolbar is out of Playwright's reach, so its popup's page
+(`firefoxExtensionTarget`: the manifest's popup at the profile's `moz-extension://<uuid>`) opens in a new tab shown the
+same way at a fixed popup size, mouse only (Juggler ignores `moz-extension://` documents, so their address, title and keys
+are out of reach, while frames and clicks go through the browser window); one without a popup opens its homepage (from
+`addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
 closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
 other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
 until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing

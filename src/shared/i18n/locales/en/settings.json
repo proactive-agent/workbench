@@ -758,6 +758,8 @@
     "homepageDescription": "The page a chat's browser opens on when it starts. Empty opens a blank page",
     "homepagePlaceholder": "about:blank",
     "bookmarksBar": "Show bookmarks bar",
-    "bookmarksBarDescription": "Show the profile's bookmarks under the address bar in the browser drawer"
+    "bookmarksBarDescription": "Show the profile's bookmarks under the address bar in the browser drawer",
+    "extensions": "Browser extensions",
+    "extensionsDescription": "Chat browsers run the extensions installed in their browser profile, from the next browser opened"
   }
 }

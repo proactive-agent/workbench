@@ -43,6 +43,7 @@ export type BridgeRequest =
   | { type: 'newPage'; sessionId: string }
   | { type: 'probe'; id: number; endpoints: string[] }
   | { type: 'copy'; id: number; pageId: string }
+  | { type: 'extensionAction'; id: number; pageId: string; extensionId: string; name: string; target?: { popupUrl?: string; homepageUrl?: string } }
   | { type: 'colorScheme'; scheme: 'light' | 'dark' };
 
 export type BridgeMessage =
@@ -50,7 +51,8 @@ export type BridgeMessage =
   | { type: 'frame'; pageId: string; viewers: number[]; data: Uint8Array; width: number; height: number }
   | { type: 'log'; message: string }
   | { type: 'probed'; id: number; live: string[] }
-  | { type: 'copied'; id: number; text: string };
+  | { type: 'copied'; id: number; text: string }
+  | { type: 'extensionActionDone'; id: number; popupId?: string; error?: string };
 
 export interface BridgeProcessOptions {
   /** The bridge script (written to a temporary folder when not given) */
@@ -63,6 +65,8 @@ export interface BridgeProcessOptions {
 const PROBE_TIMEOUT_MS = 10_000;
 /** How long reading a page's selected text may take (it waits for the input before it) */
 const COPY_TIMEOUT_MS = 5000;
+/** How long an extension's action may take (its popup is waited for) */
+const EXTENSION_ACTION_TIMEOUT_MS = 15_000;
 
 /** Emits 'message' (BridgeMessage) and 'exit' */
 export class BrowserBridgeProcess extends EventEmitter {
@@ -73,6 +77,8 @@ export class BrowserBridgeProcess extends EventEmitter {
   private readonly probes = new Map<number, (live: string[] | null) => void>();
   private nextCopyId = 1;
   private readonly copies = new Map<number, (text: string) => void>();
+  private nextActionId = 1;
+  private readonly actions = new Map<number, (result: { popupId?: string; error?: string }) => void>();
   /** Stopped (the app is quitting): never started again, also not by a probe */
   private stopped = false;
 
@@ -191,7 +197,39 @@ export class BrowserBridgeProcess extends EventEmitter {
     });
   }
 
+  /**
+   * Click an extension's toolbar button for a page (Chromium): its popup's page id when one opened
+   * (streamed like a page, shown over the page), nothing when its click handler ran instead
+   */
+  extensionAction(
+    pageId: string,
+    extensionId: string,
+    name: string,
+    /** Firefox: where its button leads (its popup's page, else its homepage), read from the profile */
+    target?: { popupUrl?: string; homepageUrl?: string },
+  ): Promise<string | undefined> {
+    const id = this.nextActionId++;
+    return new Promise<string | undefined>((resolve, reject) => {
+      const timer = setTimeout(() => settle({ error: 'The extension did not answer' }), EXTENSION_ACTION_TIMEOUT_MS);
+      const settle = (result: { popupId?: string; error?: string }) => {
+        clearTimeout(timer);
+        this.actions.delete(id);
+        if (result.error) reject(new Error(result.error));
+        else resolve(result.popupId);
+      };
+      this.actions.set(id, settle);
+      if (!this.write({ type: 'extensionAction', id, pageId, extensionId, name, ...(target ? { target } : {}) })) settle({ error: 'The browser bridge is not running' });
+    });
+  }
+
   private onMessage(message: BridgeMessage): void {
+    if (message.type === 'extensionActionDone') {
+      this.actions.get(message.id)?.({
+        ...(typeof message.popupId === 'string' ? { popupId: message.popupId } : {}),
+        ...(typeof message.error === 'string' ? { error: message.error } : {}),
+      });
+      return;
+    }
     if (message.type === 'probed') {
       this.probes.get(message.id)?.(Array.isArray(message.live) ? message.live : []);
       return;

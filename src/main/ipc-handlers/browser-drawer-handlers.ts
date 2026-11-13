@@ -6,7 +6,7 @@
 import { ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type { IPCResult } from '../../shared/types';
-import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState } from '../../shared/types/browser-drawer';
+import type { BrowserBookmark, BrowserDrawerNavigation, BrowserDrawerState, BrowserExtensions } from '../../shared/types/browser-drawer';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { appLog } from '../app-logger';
 import { browserDrawer } from '../browser-drawer';
@@ -33,8 +33,8 @@ export function registerBrowserDrawerHandlers(): void {
   });
 
   // Frequent calls (resizes, input): one-way messages
-  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_VIEW, (event, pageId: unknown, width: unknown, height: unknown, scale: unknown) => {
-    browserDrawer.view(event.sender, typeof pageId === 'string' ? pageId : null, width, height, scale);
+  ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_VIEW, (event, pageId: unknown, width: unknown, height: unknown, scale: unknown, popup: unknown) => {
+    browserDrawer.view(event.sender, typeof pageId === 'string' ? pageId : null, width, height, scale, popup);
   });
 
   ipcMain.on(IPC_CHANNELS.BROWSER_DRAWER_COLOR_SCHEME, (_event, scheme: unknown) => {
@@ -77,6 +77,43 @@ export function registerBrowserDrawerHandlers(): void {
   });
 
   ipcMain.handle(
+    IPC_CHANNELS.BROWSER_DRAWER_EXTENSIONS,
+    async (_event, sessionId: unknown, switches: unknown): Promise<IPCResult<BrowserExtensions | null>> => {
+      if (typeof sessionId !== 'string') return { success: false, error: 'Invalid browser' };
+      try {
+        return { success: true, data: await browserDrawer.extensions(sessionId, toSwitches(switches)) };
+      } catch (error) {
+        appLog.warn('[BrowserDrawer] Could not list a chat browser\'s extensions:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.BROWSER_DRAWER_EXTENSION_ACTION,
+    async (_event, pageId: unknown, extensionId: unknown, name: unknown): Promise<IPCResult<{ popupId?: string }>> => {
+      if (typeof pageId !== 'string' || typeof extensionId !== 'string') return { success: false, error: 'Invalid extension' };
+      try {
+        const popupId = await browserDrawer.extensionAction(pageId, extensionId, typeof name === 'string' ? name : '');
+        return { success: true, data: popupId ? { popupId } : {} };
+      } catch (error) {
+        appLog.info('[BrowserDrawer] Could not open an extension:', error);
+        return { success: false, error: error instanceof Error ? error.message : String(error) };
+      }
+    }
+  );
+
+  ipcMain.handle(IPC_CHANNELS.BROWSER_DRAWER_RESTART_CHAT_BROWSER, async (_event, sessionId: unknown): Promise<IPCResult> => {
+    if (typeof sessionId !== 'string') return { success: false, error: 'Invalid browser' };
+    try {
+      await browserDrawer.restartChatBrowser(sessionId);
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+
+  ipcMain.handle(
     IPC_CHANNELS.BROWSER_DRAWER_OPEN_CHAT_BROWSER,
     async (_event, projectId: unknown, chatId: unknown, choice: unknown): Promise<IPCResult> => {
       if (typeof projectId !== 'string' || typeof chatId !== 'string') return { success: false, error: 'Invalid chat' };
@@ -93,6 +130,13 @@ export function registerBrowserDrawerHandlers(): void {
     if (typeof projectId === 'string' && typeof chatId === 'string') await browserDrawer.closeChatBrowser(projectId, chatId);
     return { success: true };
   });
+}
+
+/** Extension switches from the renderer: extension id -> on */
+function toSwitches(value: unknown): Record<string, boolean> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>).filter((entry): entry is [string, boolean] => typeof entry[1] === 'boolean');
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 /** A browser choice from the renderer (undefined: Settings; null: Playwright's own Chromium) */

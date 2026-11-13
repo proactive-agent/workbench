@@ -292,6 +292,13 @@ export interface BrowserSettings {
   showBookmarksBar?: boolean;
   /** The page a chat's browser opens on when it starts (empty: a blank page) */
   homepage?: string;
+  /** Chat browsers run the extensions installed in their browser profile (default off) */
+  extensions?: boolean;
+  /**
+   * Extensions switched on or off in the browser drawer, by browser profile id, then extension id
+   * (unset: as the profile has it)
+   */
+  extensionSwitches?: Record<string, Record<string, boolean>>;
 }
 
 export interface AppSettings {

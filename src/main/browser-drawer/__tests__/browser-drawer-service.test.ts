@@ -120,6 +120,62 @@ describe('browser drawer viewers', () => {
     expect(views(sent)).toEqual([]);
   });
 
+  it("streams an extension's popup to a window beside its tab, as a second view", async () => {
+    const { bridge, emitter, sent } = fakeBridge();
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge });
+    emitter.emit('message', {
+      type: 'pages',
+      pages: [
+        { id: 's#1', sessionId: 's', title: '', url: 'https://a.test/' },
+        { id: 's#2', sessionId: 's', title: 'Ext', url: 'chrome-extension://x/popup.html', popup: { extensionId: 'x', openerId: 's#1', width: 300, height: 200 } },
+      ],
+      connected: ['s'],
+    });
+    const frames: unknown[] = [];
+    const window = Object.assign(sender(7), { send: (_channel: string, frame: unknown) => frames.push(frame) }) as unknown as WebContents;
+    await service.subscribe(window);
+    service.view(window, 's#1', 800, 600, 1);
+    service.view(window, 's#2', 300, 200, 1, true);
+    expect(views(sent)).toEqual([
+      { type: 'view', viewerId: 7, pageId: 's#1', width: 800, height: 600, scale: 1 },
+      { type: 'view', viewerId: -7, pageId: 's#2', width: 300, height: 200, scale: 1 },
+    ]);
+    emitter.emit('message', { type: 'frame', pageId: 's#2', viewers: [-7], data: new Uint8Array([1]), width: 300, height: 200 });
+    expect(frames).toEqual([{ pageId: 's#2', data: new Uint8Array([1]), width: 300, height: 200 }]);
+
+    // Closed: both views end
+    sent.length = 0;
+    service.unsubscribe(7);
+    expect(views(sent)).toEqual([
+      { type: 'view', viewerId: 7, pageId: null, width: 0, height: 0 },
+      { type: 'view', viewerId: -7, pageId: null, width: 0, height: 0 },
+    ]);
+  });
+
+  it("clicks an extension's button only for a chat browser's tab", async () => {
+    const { bridge, emitter } = fakeBridge();
+    const asked: unknown[] = [];
+    Object.assign(bridge, { extensionAction: async (...args: unknown[]) => { asked.push(args); return 's#3'; } });
+    const service = new BrowserDrawerService({ getProjects: () => [], bridge });
+    (service as unknown as { sessions: unknown[] }).sessions = [{ id: 's', title: 'Workbench chat 1', browserName: 'chromium', projectId: 'p', chatId: 'c' }];
+    emitter.emit('message', {
+      type: 'pages',
+      pages: [
+        { id: 's#1', sessionId: 's', title: '', url: 'https://a.test/' },
+        { id: 's#2', sessionId: 's', title: '', url: 'chrome-extension://x/popup.html', popup: { extensionId: 'x', openerId: 's#1', width: 1, height: 1 } },
+      ],
+      connected: ['s'],
+    });
+    const id = 'a'.repeat(32);
+    expect(await service.extensionAction('s#1', id, 'Ext')).toBe('s#3');
+    expect(asked).toEqual([['s#1', id, 'Ext', undefined]]);
+    await expect(service.extensionAction('s#2', id, 'Ext')).rejects.toThrow();
+    await expect(service.extensionAction('s#1', 'not an id', 'Ext')).rejects.toThrow();
+    // Firefox's ids too
+    expect(await service.extensionAction('s#1', 'addon@darkreader.org', 'Dark Reader')).toBe('s#3');
+    await expect(service.extensionAction('gone', id, 'Ext')).rejects.toThrow();
+  });
+
   it("puts a page's selected text on the clipboard for the copy shortcut, and nothing without one", async () => {
     const { bridge, emitter } = fakeBridge();
     const selected = new Map([['s#1', 'Copied text'], ['s#2', '']]);

@@ -73,6 +73,13 @@ export function BrowserSettings({ settings, onSettingsChange }: BrowserSettingsP
             aria-label={t('browser.bookmarksBar')}
           />
         </SettingsRow>
+        <SettingsRow label={t('browser.extensions')} description={t('browser.extensionsDescription')}>
+          <Switch
+            checked={browser.extensions === true}
+            onCheckedChange={(extensions) => updateBrowser({ extensions })}
+            aria-label={t('browser.extensions')}
+          />
+        </SettingsRow>
       </SettingsRows>
     </SettingsSection>
   );
