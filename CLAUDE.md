@@ -312,7 +312,11 @@ Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run g
 app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
 `~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
-cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
+cookies; Chrome 136+ refuses remote debugging on its default data dir). A Chromium copy leaves out the encrypted hashes
+of its protected preferences (`*_encrypted_hash` in Secure Preferences, app-bound like cookies: in a copy they never
+match, and the browser resets those preferences and deletes the extensions it no longer knows), keeping the plain ones,
+and keeps `Service Worker/ScriptCache` (without it extensions' service workers are dropped and never registered again,
+so their popups wait forever). Each copy names its Workbench process
 (`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
 copies. Each copy also holds the run's Playwright config (`.workbench-playwright.json`, `playwrightProfileConfig()`),
 passed with `--config`: Chromium browsers run their executable on the copy with `--profile-directory`, the sandbox on

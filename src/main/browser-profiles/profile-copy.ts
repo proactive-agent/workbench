@@ -72,11 +72,16 @@ const SKIPPED_PATHS = new Set([
   'startupCache', 'thumbnails', 'crashes', 'minidumps', 'datareporting', 'saved-telemetry-pings',
   'parent.lock', '.parentlock', 'lock',
 ]);
-/** Folders left out wherever they are: caches (Firefox's `storage/default/<site>/cache` too) */
+/**
+ * Folders left out wherever they are: caches (Firefox's `storage/default/<site>/cache` too). Not
+ * Chromium's `Service Worker/ScriptCache`: it holds the service workers' scripts, without which the
+ * browser drops their registrations, and an installed extension's worker is never registered again
+ * (its popup waits for a background that never answers)
+ */
 const SKIPPED_FOLDERS = new Set([
   // Chromium
   'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'GrShaderCache',
-  'GraphiteDawnCache', 'ShaderCache', 'CacheStorage', 'ScriptCache',
+  'GraphiteDawnCache', 'ShaderCache', 'CacheStorage',
   // Firefox
   'cache', 'cache2',
 ]);
@@ -321,6 +326,39 @@ async function disableSessionRestore(preferencesFile: string): Promise<void> {
 }
 
 /**
+ * Leave out the encrypted hashes Chromium keeps of a copy's protected preferences (Secure
+ * Preferences' `protection.macs`, `<pref>_encrypted_hash`). They are encrypted with the browser's
+ * app-bound key, which opens only in the browser's own profile folder: in a copy they never match,
+ * so the browser resets the protected preferences as tampered with, its extensions' settings among
+ * them, and then deletes the extensions it no longer knows. Without them it checks the plain hashes
+ * beside them, which hold on the same machine (and writes new encrypted ones for the copy)
+ */
+async function dropEncryptedPreferenceHashes(securePreferencesFile: string): Promise<void> {
+  try {
+    const prefs = JSON.parse(await readFile(securePreferencesFile, 'utf-8')) as Record<string, unknown>;
+    if (withoutEncryptedHashes(prefs.protection)) await writeFile(securePreferencesFile, JSON.stringify(prefs));
+  } catch {
+    // No Secure Preferences (or unreadable): nothing to leave out
+  }
+}
+
+/** Remove `*_encrypted_hash` keys from a tree of hashes in place; whether any was there */
+function withoutEncryptedHashes(tree: unknown): boolean {
+  if (!tree || typeof tree !== 'object') return false;
+  let removed = false;
+  const node = tree as Record<string, unknown>;
+  for (const key of Object.keys(node)) {
+    if (key.endsWith('_encrypted_hash')) {
+      delete node[key];
+      removed = true;
+    } else if (withoutEncryptedHashes(node[key])) {
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+/**
  * Where a profile keeps its extensions (relative, with `/`): in a copy, or in the profile itself
  * (Chromium's profile folder is a folder inside its copies)
  */
@@ -345,6 +383,7 @@ async function copyProfileInto(choice: PlaywrightBrowserChoice, source: string, 
   const profileDirectory = choice.profileDirectory ?? 'Default';
   let skipped = await copyTree(source, path.join(target, profileDirectory), '', options);
   await disableSessionRestore(path.join(target, profileDirectory, 'Preferences'));
+  await dropEncryptedPreferenceHashes(path.join(target, profileDirectory, 'Secure Preferences'));
   try {
     await copyFile(path.join(toHostPath(choice.userDataDir), 'Local State'), path.join(target, 'Local State'));
   } catch {
@@ -532,6 +571,10 @@ export async function prepareBrowserProfileCopy(
       savedReaders.set(saved.dir, (savedReaders.get(saved.dir) ?? 0) + 1);
       try {
         skipped = await copyTree(saved.dir, target, '', extensionsCopyOptions(choice, extensions, true));
+        // Saved before they were left out of saved copies
+        if (choice.engine === 'chromium') {
+          await dropEncryptedPreferenceHashes(path.join(target, choice.profileDirectory ?? 'Default', 'Secure Preferences'));
+        }
       } finally {
         const readers = (savedReaders.get(saved.dir) ?? 1) - 1;
         if (readers > 0) savedReaders.set(saved.dir, readers);

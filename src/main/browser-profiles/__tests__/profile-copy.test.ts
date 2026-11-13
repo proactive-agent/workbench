@@ -332,6 +332,33 @@ describe('browser profile copies', () => {
     }
   });
 
+  it("leaves out the encrypted hashes of a Chromium copy's protected preferences, keeping the plain ones", async () => {
+    const userData = path.join(root, 'edge');
+    const profile = path.join(userData, 'Profile 1');
+    await put(path.join(profile, 'Secure Preferences'), JSON.stringify({
+      extensions: { settings: { abc: { path: 'abc/1.0_0' } } },
+      protection: {
+        macs: {
+          extensions: { settings: { abc: 'MAC', abc_encrypted_hash: 'djIwXX' } },
+          session: { restore_on_startup: 'MAC2', restore_on_startup_encrypted_hash: 'djIwYY' },
+        },
+        super_mac: 'SUPER',
+      },
+    }));
+    const choice: PlaywrightBrowserChoice = {
+      id: 'edge:Profile 1', browser: 'edge', engine: 'chromium', profileName: 'Me',
+      executablePath: '/opt/microsoft/msedge/msedge', userDataDir: userData, profileDirectory: 'Profile 1', profilePath: profile,
+    };
+
+    const copy = (await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat-1'))!;
+
+    const prefs = JSON.parse(await readFile(path.join(copy, 'Profile 1', 'Secure Preferences'), 'utf-8'));
+    expect(prefs).toEqual({
+      extensions: { settings: { abc: { path: 'abc/1.0_0' } } },
+      protection: { macs: { extensions: { settings: { abc: 'MAC' } }, session: { restore_on_startup: 'MAC2' } }, super_mac: 'SUPER' },
+    });
+  });
+
   it("leaves out Firefox's session, Sync account and per-site caches", async () => {
     const profile = path.join(root, 'firefox', 'x.default-release');
     await put(path.join(profile, 'cookies.sqlite'));
