@@ -447,17 +447,18 @@ function handleInsightsEvent(
 /**
  * How Claude Code reaches the turn's task tools, served over HTTP on the host's 127.0.0.1:
  * - 'direct': natively, inside WSL1 (it shares the host's localhost) and inside WSL2 with
- *   mirrored networking when the bridge can't be used
+ *   mirrored networking and interop off (no bridge: a firewall rule may let it through)
  * - 'bridge': inside WSL2, through the stdio bridge (task-tools-bridge.cjs) that Claude Code starts
  *   as a Windows process through WSL interop. NAT networking gives the distribution its own
  *   localhost; with mirrored networking the Hyper-V firewall blocks inbound connections from the
  *   distribution by default (Windows' own loopback ports time out), so the bridge is used there too
- * - 'off': the distribution has WSL interop off (the probe says so), or the bridge failed to
- *   start before; tasks are suggested instead
+ * - 'off': WSL2 with NAT networking and interop off (the probe says so), or the bridge failed to
+ *   start before (whatever the networking: direct connections don't get through either); tasks
+ *   are suggested instead
  */
 export type TaskToolsRoute = 'direct' | 'bridge' | 'off';
 
-/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL NAT) the relay to it */
+/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL2 with the bridge) the relay to it */
 export const CHAT_BROWSER_URL_ENV = 'WORKBENCH_CHAT_BROWSER_URL';
 export const CHAT_BROWSER_RELAY_ENV = 'WORKBENCH_CHAT_BROWSER_RELAY';
 
@@ -468,8 +469,9 @@ export function getTaskToolsRoute(): TaskToolsRoute {
   const wsl = getWslInfo();
   if (!wsl) return 'direct';
   if (getShellRuntimeStatus().wsl?.version === 1) return 'direct';
+  if (taskToolsBridgeFailed) return 'off';
   // The bridge is a Windows program, which the distribution can only run with interop on
-  if (taskToolsBridgeFailed || wsl.interop === false) return wsl.networkingMode === 'mirrored' ? 'direct' : 'off';
+  if (wsl.interop === false) return wsl.networkingMode === 'mirrored' ? 'direct' : 'off';
   return 'bridge';
 }
 
@@ -510,9 +512,9 @@ export async function guardChatPlaywright(
   const script = join(tempDir, 'playwright-guard.cjs');
   await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
   const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
-  // The chat's browser is opened through Workbench's local tools server; inside WSL2 with NAT
-  // networking the guard reaches it through the task tools bridge, a Windows process it starts
-  // through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
+  // The chat's browser is opened through Workbench's local tools server; inside WSL2 (NAT or
+  // mirrored networking) the guard reaches it through the task tools bridge, a Windows process it
+  // starts through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
   let env = entry.env;
   if (getWslInfo() && env?.[CHAT_BROWSER_URL_ENV] && getTaskToolsRoute() === 'bridge') {
     const relayScript = join(tempDir, 'task-tools-bridge.cjs');

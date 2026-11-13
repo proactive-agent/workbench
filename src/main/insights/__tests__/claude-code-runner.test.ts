@@ -643,8 +643,8 @@ describe('runInsights', () => {
       expect(systemPrompt).toContain('mcp__workbench__');
     });
 
-    it('turns the task tools off after the bridge failed to start', async () => {
-      wslRef.info = { distro: 'Ubuntu', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+    it.each(['nat', 'mirrored'])('turns the task tools off after the bridge failed to start (%s networking)', async (networkingMode) => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
       setRun([{ type: 'system', subtype: 'init', tools: [], mcp_servers: [{ name: 'workbench', status: 'failed' }] }, ...conversation.slice(1)]);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig.mcpServers.workbench.type).toBe('stdio');

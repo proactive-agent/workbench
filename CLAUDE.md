@@ -420,7 +420,7 @@ its profile copy, `--idle-timeout 0`, a profile in its folder instead of `--isol
 title (`Workbench chat <uuid>`) and opens `about:blank`, so its browser is bound under that title; a turn's Playwright
 gets `--endpoint <title>` and attaches to it (`contexts()[0]`). The chat's guard asks Workbench to open the browser
 before each tool call (`open_chat_browser`, a token per turn on the task tools server) and refuses `browser_close`;
-inside WSL2 with NAT networking (no way to the app's 127.0.0.1) it sends that call through the task tools bridge
+inside WSL2 (NAT networking has no way to the app's 127.0.0.1, and mirrored networking's Hyper-V firewall blocks it by default) it sends that call through the task tools bridge
 (`task-tools-bridge.cjs`, a Windows process it starts once through interop: `WORKBENCH_CHAT_BROWSER_RELAY`), and with
 interop off chats fall back to a browser per turn. The
 drawer's empty state on the Claude page has the chat's browser profile picker (`InsightsModelConfig.playwrightBrowser`;
@@ -666,7 +666,8 @@ start, the session runs natively and the Settings row says why. These modules ar
 - **Agent windows** know their `shellKind` (`'cmd' | 'powershell' | 'posix'`); command builders in
   `terminal/cli-integration-handler.ts` and `shared/utils/shell-escape.ts` choose syntax from it, not from
   `isWindows()`. WSL windows type bash syntax (wrapped in `bash -c` when the login shell is fish).
-- **WSL2 NAT networking** can't reach the app's `127.0.0.1`: Claude chat's task tools go through a stdio bridge
+- **WSL2** can't reach the app's `127.0.0.1` (NAT networking, or mirrored networking behind the Hyper-V firewall's default):
+  Claude chat's task tools go through a stdio bridge
   (`insights/task-tools-bridge.cjs`) run as a Windows process through interop, and the Live agent hook command has
   a WSL branch. Watchers poll `\\wsl.localhost` paths (`fs.watch` fails there).
 - **Worktrees** use relative links only when both runtimes' git is 2.48 or newer; on a runtime switch,
