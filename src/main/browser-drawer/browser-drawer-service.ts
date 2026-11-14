@@ -54,11 +54,9 @@ export function toDrawerSessions(
   chats: ReadonlyMap<string, string>,
   caseInsensitive: boolean,
   chatOfTitle: (title: string) => { projectId: string; chatId: string; browser?: PlaywrightBrowserChoice | null } | undefined = () => undefined,
-  /** A workspace folder as the app stores paths (WSL mode: the distribution's Linux paths as Windows ones) */
-  hostPath: (dir: string) => string = (dir) => dir,
 ): BrowserDrawerSession[] {
   return descriptors.map((descriptor) => {
-    const workspaceDir = descriptor.workspaceDir ? hostPath(descriptor.workspaceDir) : undefined;
+    const workspaceDir = descriptor.workspaceDir;
     const projectId = sessionProjectId(workspaceDir, projects, chats, caseInsensitive);
     const chat = projectId ? chatOfTitle(descriptor.title) : undefined;
     // A chat's browser shows the browser the chat chose: the registry can't tell, since a profile's

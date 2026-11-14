@@ -130,4 +130,9 @@ export interface ChatBrowserRequirements {
   build?: DownloadableBrowser;
   /** An autoconfigure window is open and its result is awaited */
   configuring?: boolean;
+  /**
+   * Chat browsers run on Windows while the shell is WSL: Playwright's availability check, made in
+   * the distribution, says nothing about them (this check stands in for it)
+   */
+  fromWsl?: boolean;
 }

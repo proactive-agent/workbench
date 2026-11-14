@@ -62,7 +62,7 @@ import {
   readFirefoxExtensions,
   type ExtensionSwitches,
 } from '../browser-profiles/extensions';
-import { makeTempFolder, removeTempFolder, runtimeTempParent, TEMP_FOLDER_PREFIXES } from '../temp-folders';
+import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-folders';
 import {
   CHAT_BROWSER_RECORD,
   discardRestorable,
@@ -789,9 +789,9 @@ const startPlaywrightHolder: StartChatBrowserHolder = async ({ projectPath, titl
   const extensions = chatBrowserExtensions(appSettings);
   const switches: ExtensionSwitches = (extensions && browser && appSettings?.browser?.extensionSwitches?.[browser.id]) || {};
   try {
-    // The holder's own folder: its workspace and output folder, registered for the project
-    // Where the browser runs (in WSL inside the distribution: a profile on /mnt/c is slow for it)
-    const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser, await runtimeTempParent());
+    // The holder's own folder: its workspace and output folder, registered for the project (in
+    // the system's temp folder: chat browsers run natively)
+    const dir = reuse ? reuse.dir : await makeTempFolder(TEMP_FOLDER_PREFIXES.chatBrowser);
     removals.push(unlessSuspended(() => removeTempFolder(dir)));
     for (const folder of new Set([dir, await realpath(dir).catch(() => dir)])) {
       cleanups.push(registerChatBrowserWorkspace(folder, projectPath));

@@ -480,8 +480,10 @@ minutes, `watchChatBrowserRequirements`) and when the window closes, so Open bro
 can open, without a restart. Sweeps
 keep a `windows-<id>` choice's native `<id>` copies too (`choices-in-use.ts`), and the caches the two runtimes share
 (`resolveCommand`, sweep times) are kept per runtime. Each start logs how long it took and where. Chat browsers no longer run
-inside the distribution (no bridge there, no registry read through `\\wsl.localhost`; `chatBrowserWsl()` is always
-null), but the startup sweep still looks in its `~/.cache/workbench/tmp` for holder folders an older version left.
+inside the distribution (no bridge there, no registry read through `\\wsl.localhost`), but the startup sweep still looks
+in its `~/.cache/workbench/tmp` for holder folders an older version left. With the WSL shell, Playwright's availability
+check (made in the distribution) doesn't gate the drawer's Open browser (`ChatBrowserRequirements.fromWsl`); with
+PowerShell, Node.js is looked for as runs find npx (`resolveCommand`).
 
 **Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
 by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in

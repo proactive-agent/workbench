@@ -89,8 +89,9 @@ export function ChatBrowserStart({ projectId, chatId, restorable, saved }: ChatB
   const missingText = missingItems.length > 1
     ? t('navigation:browserDrawer.setup.and', { first: missingItems[0], second: missingItems[1] })
     : missingItems[0];
-  // Availability is checked for the Settings browser: it says something about this one only when the chat follows Settings
-  const unavailable = chatChoice === undefined ? unavailableReason('playwright') : null;
+  // Availability is checked for the Settings browser: it says something about this one only when the chat follows Settings,
+  // and only where it was checked: with the WSL shell it is checked in the distribution, while chat browsers run on Windows
+  const unavailable = chatChoice === undefined && !requirements?.fromWsl ? unavailableReason('playwright') : null;
 
   const pickBrowser = (choice: PlaywrightBrowserChoice | undefined) => {
     setError(null);

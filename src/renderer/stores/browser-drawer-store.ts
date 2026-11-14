@@ -336,12 +336,16 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
       : chooseSelectedPage(pages, selectedPageId, newest?.id ?? pending);
     // Browsers that closed forget their bookmarks (another browser of the chat reads its own)
     const live = new Set(state.sessions.map((session) => session.id));
-    const { bookmarks, extensions } = get();
+    const { bookmarks, extensions, openErrors } = get();
     const gone = Object.keys(bookmarks).filter((id) => !live.has(id));
     const goneExtensions = Object.keys(extensions).some((id) => !live.has(id));
+    // A chat's browser that opened (from the drawer or a chat's turn) has no open error left
+    const openChats = new Set((state.chatBrowsers ?? []).filter((browser) => browser.status === 'open').map((browser) => `${browser.projectId}:${browser.chatId}`));
+    const settled = Object.keys(openErrors).filter((key) => openChats.has(key));
     set({
       state,
       loaded: true,
+      ...(settled.length ? { openErrors: Object.fromEntries(Object.entries(openErrors).filter(([key]) => !openChats.has(key))) } : {}),
       ...(gone.length ? { bookmarks: Object.fromEntries(Object.entries(bookmarks).filter(([id]) => live.has(id))) } : {}),
       ...(goneExtensions ? { extensions: Object.fromEntries(Object.entries(extensions).filter(([id]) => live.has(id))) } : {}),
       ...selection,

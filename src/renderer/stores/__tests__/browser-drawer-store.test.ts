@@ -16,6 +16,18 @@ describe('browser drawer store', () => {
     });
   });
 
+  it("forgets a chat's open error once its browser is open, however it opened", () => {
+    useBrowserDrawerStore.setState({ openErrors: {} });
+    const { setOpenError, receiveState } = useBrowserDrawerStore.getState();
+    setOpenError('app', 'c1', "Node.js isn't installed on Windows");
+    setOpenError('app', 'c2', 'Other');
+    receiveState({ available: true, sessions: [], pages: [], chatBrowsers: [{ projectId: 'app', chatId: 'c1', status: 'starting' }] }, 'app');
+    expect(Object.keys(useBrowserDrawerStore.getState().openErrors)).toEqual(['app:c1', 'app:c2']);
+    // A chat's turn opened it (open_chat_browser), not the drawer's button
+    receiveState({ available: true, sessions: [], pages: [], chatBrowsers: [{ projectId: 'app', chatId: 'c1', status: 'open' }] }, 'app');
+    expect(useBrowserDrawerStore.getState().openErrors).toEqual({ 'app:c2': 'Other' });
+  });
+
   it("opens on a session of the window's project that starts and shows its page once known", () => {
     const { receiveState } = useBrowserDrawerStore.getState();
     receiveState({ available: true, sessions: [session('old', 'app')], pages: [] }, 'app');

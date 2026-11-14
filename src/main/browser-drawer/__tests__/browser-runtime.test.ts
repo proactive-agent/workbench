@@ -19,8 +19,10 @@ vi.mock('../../platform/shell-runtime', () => ({
   runNatively: <T>(fn: () => T) => fn(),
   whenShellRuntimeReady: async () => undefined,
 }));
-// No Node.js on Windows
+// No Node.js on Windows; npx where runs look for it (the PowerShell shell) as the test says
 vi.mock('../../utils/windows-paths', () => ({ findWindowsExecutableViaWhereAsync: async () => null }));
+const npx = vi.hoisted(() => ({ path: null as string | null }));
+vi.mock('../../mcp-commands', () => ({ resolveCommand: vi.fn(async () => npx.path) }));
 const detect = vi.hoisted(() => ({ detectWindowsBrowserProfiles: vi.fn() }));
 vi.mock('../../browser-profiles/detect', () => detect);
 const builds = vi.hoisted(() => ({ downloaded: new Set<string>() }));
@@ -73,6 +75,7 @@ describe('browser runtime', () => {
     builds.downloaded.clear();
     platform.windows = true;
     platform.wsl = true;
+    npx.path = null;
     resetChatBrowserRuntimeForTests();
   });
 
@@ -147,14 +150,20 @@ describe('browser runtime', () => {
   });
 
   it("names what opening a profile needs on Windows, kept until checked again, and nothing elsewhere", async () => {
-    expect(await getChatBrowserRequirements(undefined)).toEqual({ missing: ['node', 'browserBuild'], build: 'chromium' });
-    expect(await getChatBrowserRequirements(choice('edge:Default'))).toEqual({ missing: ['node'] });
+    expect(await getChatBrowserRequirements(undefined)).toEqual({ missing: ['node', 'browserBuild'], build: 'chromium', fromWsl: true });
+    expect(await getChatBrowserRequirements(choice('edge:Default'))).toEqual({ missing: ['node'], fromWsl: true });
     expect(await getChatBrowserRequirements({ ...choice('playwright:firefox'), managed: true, engine: 'firefox' }))
-      .toEqual({ missing: ['node', 'browserBuild'], build: 'firefox' });
+      .toEqual({ missing: ['node', 'browserBuild'], build: 'firefox', fromWsl: true });
 
     builds.downloaded.add('chromium');
     expect((await getChatBrowserRequirements(undefined)).missing).toEqual(['node', 'browserBuild']);
     expect((await getChatBrowserRequirements(undefined, { refresh: true })).missing).toEqual(['node']);
+
+    // The PowerShell shell: npx as runs find it
+    platform.wsl = false;
+    npx.path = 'C:\\fnm\\npx.cmd';
+    expect(await getChatBrowserRequirements(undefined, { refresh: true })).toEqual({ missing: [], build: 'chromium' });
+    npx.path = null;
 
     platform.windows = false;
     expect(await getChatBrowserRequirements(undefined, { refresh: true })).toEqual({ missing: [] });

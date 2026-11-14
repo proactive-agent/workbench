@@ -29,12 +29,12 @@ import { isWindows } from '../platform';
 import { getWindowsShellPaths } from '../platform/paths';
 import { getSessionWslInfo, runNatively, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { runTool } from '../platform/runtime-exec';
-import type { WslProbeResult } from '../platform/wsl-detect';
 import { readSettingsFileAsync } from '../settings-utils';
 import { findWindowsExecutableViaWhereAsync } from '../utils/windows-paths';
 import { getNodeVersionManagerPaths } from '../cli-tool-manager';
 import { detectWindowsBrowserProfiles } from '../browser-profiles/detect';
 import { findManagedBrowser, PLAYWRIGHT_MCP_PACKAGE, playwrightInstallCommand } from '../browser-profiles/managed';
+import { resolveCommand } from '../mcp-commands';
 
 /** The oldest Node.js Playwright's MCP server runs on (playwright-core's engines) */
 const NODE_MIN_MAJOR = 20;
@@ -112,11 +112,6 @@ export async function whenChatBrowserRuntimeReady(): Promise<void> {
   await whenShellRuntimeReady();
 }
 
-/** The distribution chat browsers run in: none, they run on Windows (and natively elsewhere) */
-export function chatBrowserWsl(): WslProbeResult | null {
-  return null;
-}
-
 /** Run chat browser code where chat browsers run: natively (runNatively) while the shell is WSL */
 export function inChatBrowserRuntime<T>(fn: () => T): T {
   return chatBrowsersOnWindows() ? runNatively(fn) : fn();
@@ -139,10 +134,9 @@ export async function chatBrowserNode(): Promise<WindowsNode | null> {
 
 /** The Playwright build a choice sent by a window needs (only its own fields are read) */
 function buildOfChoice(choice: unknown): DownloadableBrowser | null {
-  if (!choice || typeof choice !== 'object') return 'chromium';
+  if (!choice || typeof choice !== 'object') return managedBuildOf(undefined);
   const { managed, engine } = choice as { managed?: unknown; engine?: unknown };
-  if (managed !== true) return null;
-  return engine === 'webkit' ? 'webkit' : engine === 'firefox' ? 'firefox' : 'chromium';
+  return managedBuildOf({ managed: managed === true, engine } as PlaywrightBrowserChoice);
 }
 
 /** Results of the latest checks, by the build looked for ('' for none), until checked again */
@@ -164,11 +158,14 @@ export async function getChatBrowserRequirements(choice: unknown, options: { ref
   let result = options.refresh ? undefined : checked.get(key);
   if (!result) {
     const settings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
-    const node = await findWindowsNode(settings?.nodePath);
+    // Looked for as the holder looks for it: Windows' Node.js with the WSL shell, else npx as runs find it
+    const node = chatBrowsersOnWindows()
+      ? await findWindowsNode(settings?.nodePath)
+      : await resolveCommand('npx', { refresh: options.refresh });
     const missing: ChatBrowserRequirement[] = [];
     if (!node) missing.push('node');
     if (build && !(await findManagedBrowser(build, windowsContext()))) missing.push('browserBuild');
-    result = { missing, ...(build ? { build } : {}) };
+    result = { missing, ...(build ? { build } : {}), ...(chatBrowsersOnWindows() ? { fromWsl: true } : {}) };
     checked.set(key, result);
   }
   return { ...result, ...(configuring ? { configuring: true } : {}) };
