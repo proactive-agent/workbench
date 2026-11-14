@@ -214,7 +214,7 @@ function forgetPage(id) {
 async function closePage(id) {
   const entry = pages.get(id);
   if (!entry) return;
-  if (!entry.privileged) return entry.page.close();
+  if (!entry.extensionPage) return entry.page.close();
   forgetPage(id);
   await bounded(entry.page.goto('about:blank', { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
   await entry.page.close().catch(() => undefined);
@@ -318,6 +318,10 @@ async function startCast(pageId) {
   const entry = pages.get(pageId);
   const cast = casts.get(pageId);
   if (!entry || !cast) return;
+  if (entry.tabCapture) {
+    startTabCast(pageId, entry, cast);
+    return;
+  }
   const viewport = pageViewport(entry) || { width: 1280, height: 720 };
   const scale = Math.max(1, ...cast.viewers.values());
   const size = { width: Math.round(viewport.width * scale), height: Math.round(viewport.height * scale) };
@@ -424,7 +428,7 @@ function retryCast(pageId) {
  */
 function restartSilentCast(pageId) {
   const cast = casts.get(pageId);
-  if (!cast || cast.viewers.size === 0 || !cast.size || cast.framed) return;
+  if (!cast || cast.viewers.size === 0 || !cast.size || cast.size.tab || cast.framed) return;
   const entry = pages.get(pageId);
   enqueue(async () => {
     if (casts.get(pageId) !== cast || cast.framed || !entry) return;
@@ -439,7 +443,7 @@ async function stopCast(pageId) {
   if (!cast || cast.viewers.size > 0) return;
   dropCast(pageId);
   const entry = pages.get(pageId);
-  if (entry && cast.size) await bounded(entry.page.screencast.stop().catch(() => undefined), COMMAND_TIMEOUT_MS);
+  if (entry && cast.size && !cast.size.tab) await bounded(entry.page.screencast.stop().catch(() => undefined), COMMAND_TIMEOUT_MS);
 }
 
 async function view(viewerId, pageId, width, height, scale) {
@@ -747,6 +751,12 @@ async function input(pageId, event) {
     return;
   }
   const button = ['left', 'right', 'middle'].includes(event.button) ? event.button : 'left';
+  // A page the browser won't drive (see firefoxExtensionAction): its input as DOM events in it
+  if (entry.domInput && event.kind !== 'copy') {
+    entry.lastInputAt = Date.now();
+    await page.evaluate(domInput, { ...event, button });
+    return;
+  }
   switch (event.kind) {
     case 'mousemove':
       await page.mouse.move(event.x, event.y);
@@ -785,6 +795,271 @@ async function input(pageId, event) {
   }
 }
 
+/**
+ * The drawer's input as DOM events, in the page (a Firefox extension's popup, whose input the browser
+ * won't take over WebDriver BiDi): pointer and mouse events where the mouse is, with a click when a
+ * button goes up where it went down; keys on the focused element, typing and editing keys done as
+ * the browser would (through its editing commands, so the page sees its usual input events); the
+ * wheel scrolls what is under the mouse
+ */
+function domInput(event) {
+  const state = (window.__workbenchInput ??= { buttons: 0, down: null, hover: null, modifiers: new Set() });
+  const BUTTON = { left: 0, middle: 1, right: 2 };
+  const MASK = { left: 1, middle: 4, right: 2 };
+  /**
+   * What is under the mouse, as the browser finds it: into open shadow trees and same-origin frames
+   * (elementFromPoint stops at their host), with the point in that element's own document
+   */
+  const pick = () => {
+    let doc = document;
+    let px = event.x ?? 0;
+    let py = event.y ?? 0;
+    let element = doc.elementFromPoint(px, py);
+    for (let depth = 0; element && depth < 32; depth++) {
+      const inner = element.shadowRoot?.elementFromPoint(px, py);
+      if (inner && inner !== element) {
+        element = inner;
+        continue;
+      }
+      if (element.localName === 'iframe' || element.localName === 'frame') {
+        let frameDoc = null;
+        try {
+          frameDoc = element.contentDocument;
+        } catch {
+          frameDoc = null;
+        }
+        if (frameDoc?.documentElement) {
+          const box = element.getBoundingClientRect();
+          px -= box.left + element.clientLeft;
+          py -= box.top + element.clientTop;
+          doc = frameDoc;
+          element = doc.elementFromPoint(px, py) || doc.body || doc.documentElement;
+          continue;
+        }
+      }
+      break;
+    }
+    return { target: element || document.body || document.documentElement, x: px, y: py, doc };
+  };
+  /** The focused element, into shadow trees and same-origin frames */
+  const focused = () => {
+    let element = document.activeElement || document.body;
+    for (let depth = 0; element && depth < 32; depth++) {
+      if (element.shadowRoot?.activeElement) {
+        element = element.shadowRoot.activeElement;
+        continue;
+      }
+      if (element.localName === 'iframe' || element.localName === 'frame') {
+        let frameDoc = null;
+        try {
+          frameDoc = element.contentDocument;
+        } catch {
+          frameDoc = null;
+        }
+        if (frameDoc?.activeElement) {
+          element = frameDoc.activeElement;
+          continue;
+        }
+      }
+      break;
+    }
+    return element || document.body;
+  };
+  const mods = () => ({
+    ctrlKey: state.modifiers.has('Control'),
+    shiftKey: state.modifiers.has('Shift'),
+    altKey: state.modifiers.has('Alt'),
+    metaKey: state.modifiers.has('Meta'),
+  });
+  const mouseInit = (point, extra) => ({
+    bubbles: true, cancelable: true, composed: true, view: point.doc.defaultView, clientX: point.x, clientY: point.y,
+    screenX: event.x ?? 0, screenY: event.y ?? 0, button: BUTTON[event.button] ?? 0, buttons: state.buttons, ...mods(), ...extra,
+  });
+  const pointer = (type, target, point) => {
+    const View = point.doc.defaultView;
+    return target.dispatchEvent(new View.PointerEvent(type, { ...mouseInit(point, {}), pointerId: 1, pointerType: 'mouse', isPrimary: true }));
+  };
+  const mouse = (type, target, point, extra = {}) => target.dispatchEvent(new point.doc.defaultView.MouseEvent(type, mouseInit(point, extra)));
+  const focusable = (element) => {
+    for (let node = element; node && node.nodeType !== Node.DOCUMENT_NODE; node = node.parentElement || node.getRootNode()?.host) {
+      if (node.tabIndex >= 0 || node.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(node.tagName)) return node;
+    }
+    return null;
+  };
+  const hoverTo = (target, point) => {
+    if (state.hover === target) return;
+    const previous = state.hover;
+    if (previous?.isConnected) {
+      pointer('pointerout', previous, point);
+      mouse('mouseout', previous, point, { relatedTarget: target });
+    }
+    pointer('pointerover', target, point);
+    mouse('mouseover', target, point, { relatedTarget: previous });
+    state.hover = target;
+  };
+  const editable = (element) => element && (element.isContentEditable || (element.tagName === 'TEXTAREA') || (element.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit', 'reset', 'range', 'color', 'file', 'image'].includes(element.type)));
+  /** The caret moved in a field (fields without a caret API, such as email and number, keep theirs) */
+  const setCaret = (field, start, end, direction) => {
+    try {
+      field.setSelectionRange(start, end, direction);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  /** An editing command, in the document the element is in */
+  const edit = (element, command, value) => (element?.ownerDocument || document).execCommand(command, false, value);
+  switch (event.kind) {
+    case 'mousemove': {
+      const point = pick();
+      hoverTo(point.target, point);
+      pointer('pointermove', point.target, point);
+      mouse('mousemove', point.target, point);
+      break;
+    }
+    case 'mousedown': {
+      const point = pick();
+      const { target } = point;
+      hoverTo(target, point);
+      state.buttons |= MASK[event.button] ?? 1;
+      pointer('pointerdown', target, point);
+      state.down = target;
+      const proceed = mouse('mousedown', target, point, { detail: event.clickCount || 1 });
+      if (proceed) {
+        const next = focusable(target);
+        if (next) next.focus();
+        else focused()?.blur?.();
+        // The caret where the click is, as the browser puts it
+        const caret = event.button === 'left' && editable(next) ? point.doc.caretPositionFromPoint?.(point.x, point.y) : null;
+        if (caret) {
+          if (next.setSelectionRange && (caret.offsetNode === next || next.contains(caret.offsetNode))) {
+            setCaret(next, caret.offset, caret.offset);
+          } else if (next.isContentEditable) {
+            point.doc.getSelection()?.collapse(caret.offsetNode, caret.offset);
+          }
+        }
+      }
+      if (event.button === 'right') mouse('contextmenu', target, point);
+      break;
+    }
+    case 'mouseup': {
+      const point = pick();
+      const { target } = point;
+      state.buttons &= ~(MASK[event.button] ?? 1);
+      pointer('pointerup', target, point);
+      mouse('mouseup', target, point, { detail: event.clickCount || 1 });
+      const down = state.down;
+      state.down = null;
+      // A click goes to what both the press and the release were over (as the browser picks it,
+      // across shadow boundaries)
+      let common = down;
+      const within = (outer, inner) => {
+        for (let node = inner; node; node = node.parentNode || node.host) if (node === outer) return true;
+        return false;
+      };
+      while (common && !within(common, target)) common = common.parentNode?.nodeType === Node.ELEMENT_NODE ? common.parentNode : common.parentNode?.host ?? null;
+      if (common && event.button !== 'right') {
+        mouse(event.button === 'middle' ? 'auxclick' : 'click', common, point, { detail: event.clickCount || 1 });
+        if (event.button === 'left' && (event.clickCount || 1) === 2) mouse('dblclick', common, point, { detail: 2 });
+      }
+      break;
+    }
+    case 'wheel': {
+      const point = pick();
+      const { target } = point;
+      const View = point.doc.defaultView;
+      const proceed = target.dispatchEvent(new View.WheelEvent('wheel', { ...mouseInit(point, {}), deltaX: event.deltaX || 0, deltaY: event.deltaY || 0, deltaMode: 0 }));
+      if (!proceed) break;
+      // Scrolled: the nearest box under the mouse that can scroll that way, else its document
+      for (let node = target; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement || node.getRootNode()?.host) {
+        const style = View.getComputedStyle(node);
+        const canY = (event.deltaY || 0) !== 0 && /(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight;
+        const canX = (event.deltaX || 0) !== 0 && /(auto|scroll)/.test(style.overflowX) && node.scrollWidth > node.clientWidth;
+        if (canY || canX) {
+          node.scrollBy(event.deltaX || 0, event.deltaY || 0);
+          return;
+        }
+      }
+      View.scrollBy(event.deltaX || 0, event.deltaY || 0);
+      break;
+    }
+    case 'keydown':
+    case 'keyup': {
+      const key = String(event.key || '');
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(key)) {
+        if (event.kind === 'keydown') state.modifiers.add(key);
+        else state.modifiers.delete(key);
+      }
+      const target = focused();
+      const View = target.ownerDocument?.defaultView || window;
+      const init = { key, bubbles: true, cancelable: true, composed: true, view: View, ...mods() };
+      const proceed = target.dispatchEvent(new View.KeyboardEvent(event.kind, init));
+      if (event.kind === 'keyup' || !proceed) break;
+      const command = state.modifiers.has('Control') || state.modifiers.has('Meta');
+      const shift = state.modifiers.has('Shift');
+      if (key === ' ' && !command && !editable(target) && ['BUTTON', 'INPUT', 'SUMMARY'].includes(target.tagName)) {
+        // Space presses a button, toggles a checkbox or radio
+        target.click();
+      } else if ([...key].length === 1 && !command) {
+        target.dispatchEvent(new View.KeyboardEvent('keypress', { ...init, charCode: key.codePointAt(0) }));
+        if (editable(target)) edit(target, 'insertText', key);
+      } else if (command && key.toLowerCase() === 'a') {
+        if (editable(target) && target.select) target.select();
+        else edit(target, 'selectAll');
+      } else if (command && key.toLowerCase() === 'z') {
+        edit(target, shift ? 'redo' : 'undo');
+      } else if (command && key.toLowerCase() === 'y') {
+        edit(target, 'redo');
+      } else if (command && key.toLowerCase() === 'x' && editable(target)) {
+        // The selection was copied with the copy shortcut's request: it goes from the field
+        edit(target, 'delete');
+      } else if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(key) && editable(target) && target.setSelectionRange && target.selectionStart !== null) {
+        // The caret moves (Shift extends the selection), as in a text field
+        const length = target.value.length;
+        const start = target.selectionStart ?? 0;
+        const end = target.selectionEnd ?? 0;
+        const backward = target.selectionDirection === 'backward';
+        const focus = backward ? start : end;
+        const anchor = backward ? end : start;
+        const moved = key === 'Home' ? 0 : key === 'End' ? length
+          : key === 'ArrowLeft' ? (start !== end && !shift ? start : Math.max(0, focus - 1))
+          : (start !== end && !shift ? end : Math.min(length, focus + 1));
+        if (shift) setCaret(target, Math.min(anchor, moved), Math.max(anchor, moved), moved < anchor ? 'backward' : 'forward');
+        else setCaret(target, moved, moved);
+      } else if (key.startsWith('Arrow') || key === 'Home' || key === 'End') {
+        // Elsewhere (rich text): the selection moves as the browser moves it
+        const selection = target.ownerDocument?.getSelection();
+        const direction = { ArrowLeft: 'backward', ArrowUp: 'backward', Home: 'backward', ArrowRight: 'forward', ArrowDown: 'forward', End: 'forward' }[key];
+        const granularity = key === 'ArrowUp' || key === 'ArrowDown' ? 'line' : key === 'Home' || key === 'End' ? 'lineboundary' : 'character';
+        if (selection?.rangeCount && target.isContentEditable) selection.modify(shift ? 'extend' : 'move', direction, granularity);
+      } else if (key === 'Backspace' && editable(target)) {
+        edit(target, 'delete');
+      } else if (key === 'Delete' && editable(target)) {
+        edit(target, 'forwardDelete');
+      } else if (key === 'Enter') {
+        if (target.tagName === 'TEXTAREA' || target.isContentEditable) edit(target, 'insertLineBreak');
+        else if (target.tagName === 'INPUT' && target.form) target.form.requestSubmit();
+        else if (['BUTTON', 'A', 'SUMMARY'].includes(target.tagName)) target.click();
+      } else if (key === 'Tab') {
+        // Focus moves to the next (or previous) element that takes it, in the document's order
+        const doc = target.ownerDocument || document;
+        const all = [...doc.querySelectorAll('a[href], button, input, select, textarea, [tabindex], [contenteditable]')]
+          .filter((element) => element.tabIndex >= 0 && !element.disabled && element.getClientRects().length > 0);
+        if (all.length > 0) {
+          const index = all.indexOf(target);
+          all[(index + (shift ? -1 : 1) + all.length) % all.length].focus();
+        }
+      }
+      break;
+    }
+    case 'text': {
+      const target = focused();
+      if (editable(target)) edit(target, 'insertText', String(event.text || ''));
+      break;
+    }
+  }
+}
+
 // =============================================================================
 // Extension actions (Chromium): what a click on an extension's toolbar button does
 // =============================================================================
@@ -813,6 +1088,545 @@ function closePopups(sessionId) {
   }
 }
 
+/**
+ * Whether the browser won't capture the page (newer Firefox, for an extension's page over WebDriver
+ * BiDi: "browsing contexts in privileged scope"). Any failure counts: the page's own capture (or its
+ * drawing) shows it either way, where a screencast the browser refuses would show nothing
+ */
+async function captureRefused(page) {
+  try {
+    await page.screenshot({ timeout: COMMAND_TIMEOUT_MS });
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** How long one capture of a popup's tab may take, and how long the next waits after a frame was drawn */
+const TAB_CAPTURE_TIMEOUT_MS = 2000;
+const TAB_CAPTURE_STEP_MS = 40;
+/** The longest wait between captures while the popup shows the same (a change or input brings it back to the shortest) */
+const TAB_CAPTURE_IDLE_STEP_MS = 400;
+/** Captures failing in a row before the popup is drawn from its document instead */
+const TAB_CAPTURE_FAILURES = 3;
+
+/**
+ * Capture a popup's own tab, in its page, with its extension's `tabs.captureTab` (the browser draws
+ * it as it shows it). Firefox captures an extension's page clearly only for that extension (for
+ * another it gives a grey pixel), and only one holding `<all_urls>` has captureTab
+ */
+async function captureOwnTab({ tabId, width, height, scale }) {
+  const id = tabId ?? (await browser.tabs.getCurrent()).id;
+  const data = await browser.tabs.captureTab(id, { format: 'jpeg', quality: 92, rect: { x: 0, y: 0, width, height }, scale });
+  return { tabId: id, data };
+}
+
+/**
+ * Draw a popup's page into an image, in the page, for one whose extension can't capture it (no
+ * `<all_urls>`). The browser lays it out again from what the page is now, as an SVG image (which
+ * loads nothing of its own, so every resource it names is inlined):
+ * - its documents' style sheets (imported ones too), with the media queries the page matches now
+ *   (its color scheme, its size) resolved here, not in the image
+ * - its elements as they are: form fields' state, canvases and videos as pictures, images as
+ *   loaded, scrolled boxes at their scroll, SVG sprites from other files, same-origin frames drawn
+ *   the same way
+ * - shadow trees flattened into the image (slots filled), their elements with the styles they
+ *   compute (selectors scoped to a shadow tree mean nothing in it), ::before / ::after included
+ * - animations and transitions frozen where they are now (an image would start them over)
+ * Only after the page changed (a mutation, input, scroll...), else at most once a second; null
+ * when nothing changed
+ */
+async function paintSelf({ width, height, scale, quality, force }) {
+  const state = (window.__workbenchPaint ??= { dirty: true, last: 0, resources: new Map(), sprites: new Map(), observed: new WeakSet() });
+  const watch = (root) => {
+    if (state.observed.has(root)) return;
+    state.observed.add(root);
+    new MutationObserver(() => {
+      state.dirty = true;
+    }).observe(root, { attributes: true, childList: true, subtree: true, characterData: true });
+  };
+  if (!state.listening) {
+    state.listening = true;
+    for (const type of ['input', 'change', 'scroll', 'focusin', 'focusout', 'transitionend', 'animationend', 'load']) {
+      document.addEventListener(type, () => {
+        state.dirty = true;
+      }, true);
+    }
+  }
+  watch(document);
+  // One paint at a time: a slow one isn't started over beside itself
+  if (state.painting) return null;
+  // A changed size or scale (another view) paints again too; with nothing changed, only while
+  // something animates (once a second)
+  const key = `${width}x${height}@${scale}`;
+  const animating = () => (document.getAnimations?.() ?? []).some((animation) => animation.playState === 'running');
+  if (!force && !state.dirty && state.key === key && (Date.now() - state.last < 1000 || !animating())) return null;
+  state.key = key;
+  state.dirty = false;
+  state.last = Date.now();
+  state.painting = true;
+  try {
+    return await paintNow();
+  } finally {
+    state.painting = false;
+  }
+
+  async function paintNow() {
+
+    /** A resource as a data: address */
+    const inline = (url, base) => {
+      let absolute;
+      try {
+        absolute = new URL(url, base).href;
+      } catch {
+        return Promise.resolve(url);
+      }
+      if (absolute.startsWith('data:')) return Promise.resolve(absolute);
+      if (!state.resources.has(absolute)) {
+        state.resources.set(absolute, (async () => {
+          try {
+            const blob = await (await fetch(absolute)).blob();
+            return await new Promise((resolve) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result));
+              reader.onerror = () => resolve(absolute);
+              reader.readAsDataURL(blob);
+            });
+          } catch {
+            return absolute;
+          }
+        })());
+      }
+      return state.resources.get(absolute);
+    };
+    const URL_PATTERN = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+    const inlineUrls = async (text, base) => {
+      const found = [...text.matchAll(URL_PATTERN)].filter((match) => !match[2].startsWith('data:') && !match[2].startsWith('#'));
+      if (found.length === 0) return text;
+      const urls = await Promise.all(found.map((match) => inline(match[2], base)));
+      let index = 0;
+      return text.replace(URL_PATTERN, (whole, quote, url) => (url.startsWith('data:') || url.startsWith('#') ? whole : `url("${urls[index++]}")`));
+    };
+
+    /**
+     * A sheet's style rules as text, with media queries resolved as the page matches them and imported
+     * sheets expanded (their addresses resolved against their own)
+     */
+    const rulesText = async (rules, view, base) => {
+      let text = '';
+      let plain = '';
+      const flush = async () => {
+        if (plain) text += await inlineUrls(plain, base);
+        plain = '';
+      };
+      for (const rule of rules) {
+        if (rule instanceof view.CSSImportRule) {
+          await flush();
+          if (rule.styleSheet && (!rule.media.mediaText || view.matchMedia(rule.media.mediaText).matches)) {
+            try {
+              text += await rulesText(rule.styleSheet.cssRules, view, rule.styleSheet.href || base);
+            } catch {
+              // Another origin's sheet: left out
+            }
+          }
+        } else if (rule instanceof view.CSSMediaRule) {
+          await flush();
+          if (view.matchMedia(rule.media.mediaText).matches) text += await rulesText(rule.cssRules, view, base);
+        } else {
+          plain += `${rule.cssText}\n`;
+        }
+      }
+      await flush();
+      return text;
+    };
+    const documentCss = async (doc, view) => {
+      let text = '';
+      for (const sheet of [...doc.styleSheets, ...(doc.adoptedStyleSheets || [])]) {
+        if (sheet.disabled || (sheet.media?.mediaText && !view.matchMedia(sheet.media.mediaText).matches)) continue;
+        try {
+          text += await rulesText(sheet.cssRules, view, sheet.href || doc.baseURI);
+        } catch {
+          // Another origin's sheet: left out
+        }
+      }
+      return text;
+    };
+
+    /** An SVG file's element by id (sprites another file holds), parsed once */
+    const spriteElement = async (href, base) => {
+      let absolute;
+      try {
+        absolute = new URL(href, base);
+      } catch {
+        return null;
+      }
+      const file = absolute.href.split('#')[0];
+      if (!state.sprites.has(file)) {
+        state.sprites.set(file, fetch(file).then((response) => response.text()).then((text) => new DOMParser().parseFromString(text, 'image/svg+xml')).catch(() => null));
+      }
+      const sprite = await state.sprites.get(file);
+      return sprite?.getElementById(decodeURIComponent(absolute.hash.slice(1))) ?? null;
+    };
+
+    /** The styles an element computes, as a style attribute (frozen: no animation or transition) */
+    const computedStyleText = (style) => {
+      let text = '';
+      for (let index = 0; index < style.length; index++) {
+        const name = style[index];
+        if (name.startsWith('animation') || name.startsWith('transition')) continue;
+        text += `${name}:${style.getPropertyValue(name)};`;
+      }
+      return `${text}animation:none;transition:none;`;
+    };
+    const pseudoText = (content) => {
+      if (!content || content === 'none' || content === 'normal') return null;
+      const strings = [...content.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1].replace(/\\(.)/g, '$1'));
+      return strings.join('');
+    };
+
+    // Copies are made in a document of their own: one in the page's would construct its custom elements again
+    const scratch = document.implementation.createHTMLDocument('');
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    /** Copy -> the element it copies (a scrolled box moves its children by their own display) */
+    const originals = new WeakMap();
+
+    /**
+     * A native checkbox or radio button drawn as one (an image draws no native controls): a box or a
+     * circle in the field's colors, checked or not, at its size and place
+     */
+    const drawnToggle = (node, style) => {
+      const width = node.offsetWidth || 13;
+      const height = node.offsetHeight || 13;
+      const accent = style.accentColor && style.accentColor !== 'auto' ? style.accentColor : '#0060df';
+      const on = node.checked || node.indeterminate;
+      const svg = scratch.createElementNS(SVG_NS, 'svg');
+      svg.setAttribute('width', String(width));
+      svg.setAttribute('height', String(height));
+      svg.setAttribute('viewBox', '0 0 16 16');
+      svg.setAttribute('style', `${computedStyleText(style)}appearance:none;`);
+      const shape = node.type === 'radio'
+        ? `<circle cx="8" cy="8" r="7" fill="${on ? accent : '#fff'}" stroke="${on ? accent : '#8f8f9d'}" stroke-width="1.5"/>${on ? '<circle cx="8" cy="8" r="3" fill="#fff"/>' : ''}`
+        : `<rect x="1" y="1" width="14" height="14" rx="3" fill="${on ? accent : '#fff'}" stroke="${on ? accent : '#8f8f9d'}" stroke-width="1.5"/>${
+          node.indeterminate ? '<path d="M4 8h8" stroke="#fff" stroke-width="2"/>' : on ? '<path d="M4 8.5l2.5 2.5L12 5.5" fill="none" stroke="#fff" stroke-width="2"/>' : ''}`;
+      svg.innerHTML = shape;
+      return svg;
+    };
+
+    const paintDocument = async (doc, docWidth, docHeight) => {
+      const view = doc.defaultView;
+      const root = doc.documentElement;
+      // Animated elements keep the values they show now
+      const animated = new Map();
+      for (const animation of doc.getAnimations?.() ?? []) {
+        const target = animation.effect?.target;
+        if (!target || animation.effect.pseudoElement) continue;
+        const names = animated.get(target) ?? new Set();
+        for (const frame of animation.effect.getKeyframes?.() ?? []) {
+          for (const name of Object.keys(frame)) {
+            if (!['offset', 'easing', 'composite', 'computedOffset'].includes(name)) names.add(name.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`));
+          }
+        }
+        if (animation.transitionProperty) names.add(animation.transitionProperty);
+        animated.set(target, names);
+      }
+
+      const copyOf = async (node, flattened) => {
+        if (node.nodeType === Node.TEXT_NODE) return scratch.createTextNode(node.data);
+        if (node.nodeType !== Node.ELEMENT_NODE) return null;
+        const tag = node.localName;
+        // Kept empty (selectors counting siblings still count them); their sheets come from the CSSOM
+        if (['script', 'noscript', 'template', 'style', 'link', 'meta', 'title', 'base'].includes(tag)) {
+          const inert = scratch.importNode(node, false);
+          inert.removeAttribute('href');
+          inert.removeAttribute('src');
+          return inert;
+        }
+        // Same-origin frames: drawn the same way, as a picture of them
+        if (tag === 'iframe' || tag === 'frame' || tag === 'embed' || tag === 'object') {
+          // A picture in its place, with its styles (rules naming its tag no longer would)
+          const picture = scratch.createElement('img');
+          for (const name of ['class', 'id', 'width', 'height']) {
+            if (node.hasAttribute(name)) picture.setAttribute(name, node.getAttribute(name));
+          }
+          picture.setAttribute('style', await inlineUrls(computedStyleText(view.getComputedStyle(node)), doc.baseURI));
+          let inner = null;
+          try {
+            inner = node.contentDocument;
+          } catch {
+            inner = null;
+          }
+          const w = node.clientWidth;
+          const h = node.clientHeight;
+          if (inner?.documentElement && w > 0 && h > 0) {
+            try {
+              picture.setAttribute('src', await paintDocument(inner, w, h));
+            } catch {
+              // Left blank
+            }
+          }
+          return picture;
+        }
+        const copy = scratch.importNode(node, false);
+        originals.set(copy, node);
+        copy.removeAttribute('srcset');
+        copy.removeAttribute('sizes');
+        // Shadow trees and what is slotted into them carry the styles they compute
+        const style = view.getComputedStyle(node);
+        if (flattened || node.shadowRoot) copy.setAttribute('style', await inlineUrls(computedStyleText(style), doc.baseURI));
+        else if (copy.getAttribute('style')?.includes('url(')) copy.setAttribute('style', await inlineUrls(copy.getAttribute('style'), doc.baseURI));
+        const frozen = animated.get(node);
+        if (frozen) {
+          let text = copy.getAttribute('style') || '';
+          for (const name of frozen) text += `;${name}:${style.getPropertyValue(name)} !important`;
+          copy.setAttribute('style', text);
+        }
+        if (tag === 'input' && (node.type === 'checkbox' || node.type === 'radio') && style.appearance !== 'none') {
+          return drawnToggle(node, style);
+        }
+        // Other native controls draw plainer in an image: they keep their size (layout stays) and a
+        // select its arrow
+        if (['input', 'select', 'textarea', 'button'].includes(tag) && style.appearance !== 'none') {
+          copy.style.setProperty('box-sizing', 'border-box');
+          copy.style.setProperty('width', `${node.offsetWidth}px`);
+          copy.style.setProperty('height', `${node.offsetHeight}px`);
+          if (tag === 'select' && !node.multiple && node.size <= 1) {
+            // A raster arrow (an SVG image in the image draws nothing)
+            const arrow = document.createElement('canvas');
+            arrow.width = 20;
+            arrow.height = 12;
+            const pen = arrow.getContext('2d');
+            pen.strokeStyle = style.color;
+            pen.lineWidth = 3;
+            pen.beginPath();
+            pen.moveTo(2, 2);
+            pen.lineTo(10, 10);
+            pen.lineTo(18, 2);
+            pen.stroke();
+            copy.style.setProperty('background-image', `url("${arrow.toDataURL()}")`);
+            copy.style.setProperty('background-size', '10px 6px');
+            copy.style.setProperty('background-repeat', 'no-repeat');
+            copy.style.setProperty('background-position', 'right 6px center');
+            copy.style.setProperty('padding-right', '20px');
+            copy.style.setProperty('appearance', 'none');
+          }
+        }
+        if (tag === 'input') {
+          if (node.type === 'checkbox' || node.type === 'radio') copy.toggleAttribute('checked', node.checked);
+          else if (node.type !== 'file' && node.type !== 'password') copy.setAttribute('value', node.value);
+          else if (node.type === 'password') copy.setAttribute('value', node.value.replace(/./g, '•'));
+        } else if (tag === 'textarea') {
+          copy.textContent = node.value;
+        } else if (tag === 'option') {
+          copy.toggleAttribute('selected', node.selected);
+        } else if (tag === 'img' && node.currentSrc) {
+          copy.setAttribute('src', await inline(node.currentSrc, doc.baseURI));
+        } else if (tag === 'canvas' || tag === 'video') {
+          const picture = scratch.createElement('img');
+          for (const name of ['class', 'width', 'height', 'id']) {
+            if (copy.hasAttribute(name)) picture.setAttribute(name, copy.getAttribute(name));
+          }
+          picture.setAttribute('style', computedStyleText(style));
+          try {
+            if (tag === 'canvas') picture.src = node.toDataURL();
+            else {
+              const canvas = doc.createElement('canvas');
+              canvas.width = node.videoWidth;
+              canvas.height = node.videoHeight;
+              canvas.getContext('2d').drawImage(node, 0, 0);
+              picture.src = canvas.toDataURL();
+            }
+          } catch {
+            // One it can't read stays blank
+          }
+          return picture;
+        } else if (tag === 'image' || tag === 'feImage') {
+          const href = node.getAttribute('href') ?? node.getAttribute('xlink:href');
+          if (href && !href.startsWith('#')) copy.setAttribute('href', await inline(href, doc.baseURI));
+        } else if (tag === 'use') {
+          // A sprite in another file: its symbol in its place (the image can't load the file)
+          const href = node.getAttribute('href') ?? node.getAttribute('xlink:href');
+          if (href && !href.startsWith('#')) {
+            const symbol = await spriteElement(href, doc.baseURI);
+            if (symbol) {
+              const holder = scratch.createElementNS('http://www.w3.org/2000/svg', 'svg');
+              for (const name of ['x', 'y', 'width', 'height', 'class', 'style']) {
+                if (node.hasAttribute(name)) holder.setAttribute(name, node.getAttribute(name));
+              }
+              if (symbol.hasAttribute('viewBox')) holder.setAttribute('viewBox', symbol.getAttribute('viewBox'));
+              for (const child of symbol.childNodes) holder.append(scratch.importNode(child, true));
+              return holder;
+            }
+          }
+        }
+
+        // Its children: its shadow tree's (slots filled with what is slotted), else its own
+        const append = async (child, inShadow) => {
+          if (child.localName === 'slot' && inShadow) {
+            const assigned = child.assignedNodes({ flatten: true });
+            for (const slotted of assigned.length > 0 ? assigned : child.childNodes) {
+              const copied = await copyOf(slotted, true);
+              if (copied) copy.append(copied);
+            }
+            return;
+          }
+          const copied = await copyOf(child, inShadow || flattened);
+          if (copied) copy.append(copied);
+        };
+        if (tag === 'textarea') {
+          // Its value is its text (set above); its default text isn't drawn again
+        } else if (node.shadowRoot) {
+          watch(node.shadowRoot);
+          for (const child of node.shadowRoot.childNodes) await append(child, true);
+        } else {
+          for (const child of node.childNodes) await append(child, flattened);
+        }
+        // Its ::before and ::after where they come from a shadow tree's rules (the document's sheets in
+        // the image draw the rest: a slotted element's or a host's would be drawn twice)
+        if (node.getRootNode() instanceof view.ShadowRoot) {
+          for (const pseudo of ['::before', '::after']) {
+            const pseudoStyle = view.getComputedStyle(node, pseudo);
+            const text = pseudoText(pseudoStyle.content);
+            if (text === null) continue;
+            const span = scratch.createElement('span');
+            span.setAttribute('style', await inlineUrls(computedStyleText(pseudoStyle), doc.baseURI));
+            span.textContent = text;
+            if (pseudo === '::before') copy.prepend(span);
+            else copy.append(span);
+          }
+        }
+        // A scrolled box shows the part scrolled to (its content moved instead: boxes by translate,
+        // inline elements and text, which translate doesn't move, by relative position)
+        if ((node.scrollTop || node.scrollLeft) && node !== root && node !== doc.body) {
+          const dx = -node.scrollLeft;
+          const dy = -node.scrollTop;
+          for (const child of [...copy.childNodes]) {
+            if (child.nodeType === Node.TEXT_NODE) {
+              if (!child.data.trim()) continue;
+              const span = scratch.createElement('span');
+              span.setAttribute('style', `position:relative;left:${dx}px;top:${dy}px`);
+              child.replaceWith(span);
+              span.append(child);
+            } else if (child.nodeType === Node.ELEMENT_NODE) {
+              const original = originals.get(child);
+              const childStyle = original ? view.getComputedStyle(original) : null;
+              if (childStyle?.display === 'inline' && childStyle.position === 'static') {
+                child.style.setProperty('position', 'relative');
+                child.style.setProperty('left', `${dx}px`);
+                child.style.setProperty('top', `${dy}px`);
+              } else {
+                child.style.setProperty('translate', `${dx}px ${dy}px`);
+              }
+            }
+          }
+        }
+        return copy;
+      };
+
+      const clone = await copyOf(root, false);
+      if (view.scrollX || view.scrollY) {
+        clone.querySelector('body')?.style.setProperty('translate', `${-view.scrollX}px ${-view.scrollY}px`);
+      }
+      let head = clone.querySelector('head');
+      if (!head) {
+        head = scratch.createElement('head');
+        clone.prepend(head);
+      }
+      const sheet = scratch.createElement('style');
+      sheet.textContent = `${await documentCss(doc, view)}\n*,*::before,*::after{animation:none!important;transition:none!important}`;
+      head.append(sheet);
+
+      const markup = new XMLSerializer().serializeToString(clone);
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${docWidth}" height="${docHeight}"><foreignObject x="0" y="0" width="100%" height="100%">${markup}</foreignObject></svg>`;
+      const image = new Image();
+      image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+      await image.decode();
+      const canvas = doc.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(docWidth * scale));
+      canvas.height = Math.max(1, Math.round(docHeight * scale));
+      const context = canvas.getContext('2d');
+      context.scale(scale, scale);
+      const background = [view.getComputedStyle(root).backgroundColor, doc.body && view.getComputedStyle(doc.body).backgroundColor]
+        .find((color) => color && color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent');
+      context.fillStyle = background || '#fff';
+      context.fillRect(0, 0, docWidth, docHeight);
+      context.drawImage(image, 0, 0, docWidth, docHeight);
+      return canvas.toDataURL(doc === document ? 'image/jpeg' : 'image/png', quality);
+    };
+
+    return { data: await paintDocument(document, width, height) };
+  }
+}
+
+/** Whether a popup's page can capture itself (its extension holds `<all_urls>`) */
+const canCaptureItself = () => typeof browser !== 'undefined' && typeof browser.tabs?.captureTab === 'function' && typeof browser.tabs.getCurrent === 'function';
+
+/**
+ * Stream a popup the browser won't capture over WebDriver BiDi (see firefoxExtensionAction) while it
+ * is viewed, by its own capture or drawn from its document: a frame at a time, each sent once the
+ * last was drawn (as a screencast's are)
+ */
+function startTabCast(pageId, entry, cast) {
+  if (cast.tabLoop) return;
+  const loop = {};
+  cast.tabLoop = loop;
+  cast.size = { tab: true };
+  const running = () => casts.get(pageId) === cast && cast.tabLoop === loop && cast.viewers.size > 0 && pages.get(pageId) === entry;
+  void (async () => {
+    let tabId = null;
+    let failures = 0;
+    let step = TAB_CAPTURE_STEP_MS;
+    let lastData = '';
+    while (running()) {
+      const { width, height } = entry.popup;
+      const scale = Math.max(1, ...cast.viewers.values());
+      const capture = entry.tabCapture === 'capture';
+      const shot = width > 0 && height > 0
+        ? await bounded(
+          (capture
+            ? entry.page.evaluate(captureOwnTab, { tabId, width, height, scale })
+            : entry.page.evaluate(paintSelf, { width, height, scale, quality: 0.92, force: !cast.framed })
+          ).then((result) => result ?? false, () => null),
+          TAB_CAPTURE_TIMEOUT_MS,
+          null
+        )
+        : false;
+      // A capture that keeps failing (its permission went, the tab isn't ready): drawn instead
+      if (capture && shot === null && ++failures >= TAB_CAPTURE_FAILURES) {
+        entry.tabCapture = 'paint';
+        log('A popup\'s own capture keeps failing: drawn from its document instead');
+      }
+      if (shot) failures = 0;
+      // The same picture as before: the next capture waits longer (until something changes or input comes)
+      const recentInput = Date.now() - (entry.lastInputAt ?? 0) < 1000;
+      if (shot && capture && shot.data === lastData && !recentInput) {
+        step = Math.min(step * 2, TAB_CAPTURE_IDLE_STEP_MS);
+        await sleep(step);
+        continue;
+      }
+      step = TAB_CAPTURE_STEP_MS;
+      if (shot && running()) {
+        tabId = shot.tabId ?? null;
+        lastData = String(shot.data);
+        const data = Buffer.from(lastData.slice(lastData.indexOf(',') + 1), 'base64');
+        cast.framed = true;
+        await new Promise((done) => {
+          const frame = { data, width, height };
+          if (!cast.sending) sendFrame(pageId, cast, frame, done);
+          else {
+            cast.next?.done();
+            cast.next = { frame, done };
+          }
+        });
+      }
+      await sleep(TAB_CAPTURE_STEP_MS);
+    }
+    if (cast.tabLoop === loop) {
+      cast.tabLoop = null;
+      cast.size = null;
+    }
+  })();
+}
+
 /** Open a page in a new tab of the page's browser, for the drawer (not navigated yet) */
 async function openTab(entry) {
   const page = await entry.page.context().newPage();
@@ -827,11 +1641,12 @@ async function openTab(entry) {
  * instead.
  *
  * WebDriver BiDi (the user's own Firefox) opens extension pages thanks to the system access chat
- * browsers get (chat-browsers.ts). The popup loads in front, hidden from the drawer, where it is
- * measured (its size is its content's, as the browser sizes a popup); then the tab it opened for
- * goes back in front and the popup loads again behind it, as under the browser's own popup: the
- * extension acts on the active tab, which its popup asks for as it loads. Juggler (Playwright's
- * Firefox) ignores extension pages, so the tab's address, title, size and keys stay out of reach
+ * browsers get (chat-browsers.ts). The popup loads once behind the tab it opened for, as under the
+ * browser's own popup (the extension acts on the active tab, which its popup asks for as it loads),
+ * hidden from the drawer until measured (its size is its content's, as the browser sizes a popup).
+ * Newer Firefox won't capture or drive such a page over BiDi: it then captures itself with its own
+ * extension's tabs.captureTab (an extension holding `<all_urls>`), else is drawn from its document
+ * (paintSelf), and its input goes in as DOM events (startTabCast, domInput). Juggler (Playwright's Firefox) ignores extension pages, so the tab's address, title, size and keys stay out of reach
  * there: its tab stays in front at a fixed size, driven by the mouse only (its frames and clicks go
  * through the browser window)
  */
@@ -856,57 +1671,38 @@ async function firefoxExtensionAction(entry, pageId, extensionId, name, target) 
     return id;
   }
   added.hidden = true;
-  added.privileged = true;
+  // Closed through a blank page (see closePage)
+  added.extensionPage = true;
   // WebDriver BiDi can't set an extension page's viewport
   added.keepsViewport = true;
   try {
-    // No load event comes for an extension page (WebDriver BiDi reports none of a privileged page).
-    // The first extension page a browser loads may never give Playwright its script context:
-    // loaded once more then
+    await bounded(entry.page.bringToFront().catch(() => undefined), COMMAND_TIMEOUT_MS);
+    // Loaded once, behind the page's tab, as under the browser's own popup: the extension acts on that
+    // tab (it asks for the active tab of the last focused window as it loads). Never loaded again:
+    // WebDriver BiDi reports no event of an extension page, so Playwright keeps the script context
+    // its tab had, and a page loaded again answers nothing more. The first extension page a browser
+    // loads may never give Playwright its script context: loaded once more then
     let measured = false;
     for (let attempt = 0; attempt < 2 && !measured && pages.has(id); attempt++) {
       await bounded(page.goto(popupUrl, { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
       measured = await settlePopupSize(id);
     }
-    await bounded(entry.page.bringToFront().catch(() => undefined), COMMAND_TIMEOUT_MS);
-    if (measured) {
-      await bounded(page.evaluate(() => void setTimeout(() => location.reload())).catch(() => undefined), COMMAND_TIMEOUT_MS);
-      // The reload drops the width it was given (popupContentSize): given again once it answers
-      void pinPopupWidthAgain(id);
-    } else {
-      // Not measured (its page never answered, so it can't reload itself): loaded again behind the
-      // page's tab all the same, so the extension acts on that tab and not on the popup's own
-      await bounded(page.goto(popupUrl, { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
+    // A page that never answered takes no lookups (each would stay pending)
+    added.privileged = !measured;
+    // Newer Firefox refuses to capture or drive an extension's page ("browsing contexts in privileged
+    // scope"): the page then captures itself (tabs.captureTab, the browser's own rendering) and its
+    // input is replayed in it, as DOM events
+    if (measured && (await captureRefused(page))) {
+      added.domInput = true;
+      // Its own capture, the browser's rendering, when its extension holds `<all_urls>`; else drawn
+      // from its document (paintSelf)
+      added.tabCapture = (await bounded(page.evaluate(canCaptureItself).catch(() => false), COMMAND_TIMEOUT_MS, false)) ? 'capture' : 'paint';
     }
   } finally {
     added.hidden = false;
     pushPages();
   }
   return id;
-}
-
-/** How long a Firefox popup reloaded behind its page's tab is given its width again, and how often */
-const POPUP_PIN_AGAIN_MS = 10_000;
-const POPUP_PIN_STEP_MS = 500;
-
-/**
- * Give a Firefox popup reloaded behind its page's tab its measured width again (its document is
- * new): once its page answers, which behind another tab may take a while
- */
-async function pinPopupWidthAgain(pageId) {
-  const until = Date.now() + POPUP_PIN_AGAIN_MS;
-  while (Date.now() < until) {
-    await sleep(POPUP_PIN_STEP_MS);
-    const entry = pages.get(pageId);
-    if (!entry?.popup?.width) return;
-    const pinned = await bounded(entry.page.evaluate(pinPopupWidth, entry.popup.width).then(() => true, () => false), POPUP_MEASURE_TIMEOUT_MS, false);
-    if (pinned) return;
-  }
-}
-
-/** Lay a popup's page out at its measured width, as the browser's popup is (in the page) */
-function pinPopupWidth(width) {
-  document.documentElement.style.setProperty('width', `${width}px`, 'important');
 }
 
 /**

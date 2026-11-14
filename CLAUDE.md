@@ -402,9 +402,26 @@ out of Playwright's reach, so its popup's page (`firefoxExtensionTarget`: the ma
 system access chat browsers running extensions get (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, `chat-browsers.ts`; BiDi refuses
 `moz-extension://` otherwise; the chat's Playwright guard refuses to open the browser's own pages, so only Workbench's
 bridge gets that access), and BiDi still refuses to resize, activate or report events of such a privileged page:
-the popup loads in front, hidden, to be measured, then loads again behind the page's tab (the extension asks for the
-active tab as its popup loads; its width given again once it answers, `pinPopupWidthAgain`; reloaded by navigating
-when it never answered), and closing it first leaves it for `about:blank` (`closePage`), else Playwright keeps it. The
+the popup loads once behind the page's tab, hidden until measured (the extension asks for the active tab of the last
+focused window as it loads; never loaded again: with no events Playwright keeps the script context its tab had, and a
+page loaded again answers nothing more; loaded twice only when the first never answered), and closing it first leaves
+it for `about:blank` (`closePage`), else Playwright keeps it. Newer Firefox (157 here) also refuses to capture or drive
+an extension's page over BiDi ("browsing contexts in privileged scope"; `captureRefused`): the popup then captures
+itself, its extension's `tabs.captureTab` on its own tab (`startTabCast`: the browser's own rendering, a frame at a
+time as a screencast's; Firefox blurs another extension's pages, so only the popup's own extension can, and only one
+holding `<all_urls>` at runtime has captureTab; captures that keep failing switch to drawing, and an unchanged picture
+is asked for less often until it changes or input comes; any failed screenshot counts as refused); one without
+(Grammarly) is drawn from its own document instead
+(`paintSelf`, laid out by the browser as an SVG image, only after the page changed: its sheets with imports expanded
+and media queries resolved as the page matches them, every resource inlined, copies made in a detached document so
+custom elements aren't built again, fields' state, scroll, canvases and videos as pictures, sprites from other SVG
+files, same-origin frames drawn the same way, shadow trees flattened with their computed styles and `::before` /
+`::after`, animations frozen where they are, native checkboxes, radios and select arrows drawn and native fields kept at
+their size), and its input is replayed in the page as DOM events
+(`domInput`: into open shadow trees and same-origin frames as the browser picks the target, pointer and mouse events
+with clicks where the button went down and up, the caret placed where clicked (fields without a caret API keep theirs),
+keys on the focused element with typing and editing keys through the browser's editing commands, the wheel scrolling
+what is under the mouse). The
 main process waits up to 45 seconds for a popup (`EXTENSION_ACTION_TIMEOUT_MS`); cursor lookups skip pages that never
 answer (Juggler's and BiDi's privileged popups).
 The registry's `launchOptions.channel` (`moz-firefox`) tells the bridge a browser runs over BiDi (`bidi`). Under Juggler
