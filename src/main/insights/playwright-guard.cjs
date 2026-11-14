@@ -6,7 +6,10 @@
 // turn's own folder) and leaves `roots` out of the client's capabilities, so the server's root is
 // that folder (Playwright falls back to its working folder without roots): named files, uploads
 // and file:// pages stay inside it. `browser_run_code_unsafe` (Node.js code in the server, with
-// file access) is left out of the tool list and refused. The rest of the command line (argv[3..])
+// file access) is left out of the tool list and refused, and so is opening a page of the browser's
+// own (about:config, chrome:, resource:, an extension's page...): a chat browser running extensions
+// is Firefox with system access over WebDriver BiDi (chat-browsers.ts), where such a page runs with
+// the browser's privileges. The rest of the command line (argv[3..])
 // is the server's command. Plain Node, no packages; run by Workbench's own executable as Node
 // (ELECTRON_RUN_AS_NODE=1), or by the distribution's node in WSL.
 //
@@ -32,6 +35,8 @@ const path = require('path');
 
 const [workspace, command, ...args] = process.argv.slice(2);
 const BLOCKED_TOOLS = new Set(['browser_run_code_unsafe']);
+/** Schemes a tool call may open (an address without one is a web address): never the browser's own pages */
+const ALLOWED_SCHEMES = new Set(['http:', 'https:', 'file:', 'data:', 'blob:']);
 
 const env = { ...process.env };
 delete env.ELECTRON_RUN_AS_NODE;
@@ -158,6 +163,21 @@ function refuse(id, text) {
   process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result: { isError: true, content: [{ type: 'text', text }] } }) + '\n');
 }
 
+/**
+ * Whether a tool call opens one of the browser's own pages (about: other than about:blank, chrome:,
+ * resource:, moz-extension:, chrome-extension:, view-source:...): browser_navigate, or browser_tabs
+ * opening a new tab at an address
+ */
+function opensPrivilegedPage(params) {
+  if (!params || (params.name !== 'browser_navigate' && params.name !== 'browser_tabs')) return false;
+  const url = params.arguments && typeof params.arguments.url === 'string' ? params.arguments.url.trim() : '';
+  const scheme = /^([a-z][a-z0-9+.-]*:)/i.exec(url);
+  if (!scheme) return false;
+  const name = scheme[1].toLowerCase();
+  if (ALLOWED_SCHEMES.has(name)) return false;
+  return !(name === 'about:' && /^about:blank(?:[?#]|$)/i.test(url));
+}
+
 /** The call that opens the chat's browser; `withUrl` when the tool call it is for names an address */
 const openCall = (withUrl) => ({ method: 'tools/call', params: { name: 'open_chat_browser', arguments: { withUrl } } });
 
@@ -256,6 +276,10 @@ async function forward(line) {
   if (message && message.method === 'notifications/roots/list_changed') return;
   if (message && message.method === 'tools/call' && BLOCKED_TOOLS.has(message.params && message.params.name)) {
     refuse(message.id, 'This tool is not available in this chat');
+    return;
+  }
+  if (message && message.method === 'tools/call' && opensPrivilegedPage(message.params)) {
+    refuse(message.id, "This address is one of the browser's own pages, which this chat can't open");
     return;
   }
   if (message && message.method === 'tools/call' && chatBrowser && message.params && message.params.name === 'browser_close') {

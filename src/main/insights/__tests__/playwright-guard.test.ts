@@ -55,10 +55,16 @@ describe('Playwright guard', () => {
     send({ id: 2, method: 'tools/list' });
     send({ id: 3, method: 'tools/call', params: { name: 'browser_run_code_unsafe', arguments: { code: 'process.exit()' } } });
     send({ id: 4, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'about:blank' } } });
+    // The browser's own pages are refused (a chat browser with extensions has system access); web pages aren't
+    send({ id: 5, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'about:config' } } });
+    send({ id: 6, method: 'tools/call', params: { name: 'browser_tabs', arguments: { action: 'new', url: 'chrome://settings' } } });
+    send({ id: 7, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: ' MOZ-EXTENSION://abc/popup.html' } } });
+    send({ id: 8, method: 'tools/call', params: { name: 'browser_navigate', arguments: { url: 'https://example.com/' } } });
+    send({ id: 9, method: 'tools/call', params: { name: 'browser_tabs', arguments: { action: 'new', url: 'example.com' } } });
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('no answers')), 10_000);
       const poll = setInterval(() => {
-        if (replies.size < 4) return;
+        if (replies.size < 9) return;
         clearInterval(poll);
         clearTimeout(timer);
         resolve();
@@ -72,6 +78,9 @@ describe('Playwright guard', () => {
     expect(replies.get(2)).toEqual({ tools: [{ name: 'browser_navigate' }] });
     expect(replies.get(3)).toMatchObject({ isError: true });
     expect(replies.get(4)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+    for (const id of [5, 6, 7]) expect(replies.get(id)).toMatchObject({ isError: true });
+    expect(replies.get(8)).toEqual({ content: [{ type: 'text', text: 'called browser_navigate' }] });
+    expect(replies.get(9)).toEqual({ content: [{ type: 'text', text: 'called browser_tabs' }] });
   });
 
   it("translates the Windows paths its server reports into the ones Claude Code reads (chat browsers on Windows, Claude Code in WSL)", async () => {

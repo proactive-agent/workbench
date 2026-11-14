@@ -399,7 +399,8 @@ window losing the focus, another tab showing or its button again; another extens
 out of Playwright's reach, so its popup's page (`firefoxExtensionTarget`: the manifest's popup at the profile's
 `moz-extension://<uuid>`) opens in a new tab the same way. Over WebDriver BiDi (the user's own Firefox) that needs the
 system access chat browsers running extensions get (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, `chat-browsers.ts`; BiDi refuses
-`moz-extension://` otherwise), and BiDi still refuses to resize, activate or report events of such a privileged page:
+`moz-extension://` otherwise; the chat's Playwright guard refuses to open the browser's own pages, so only Workbench's
+bridge gets that access), and BiDi still refuses to resize, activate or report events of such a privileged page:
 the popup loads in front, hidden, to be measured, then loads again behind the page's tab (the extension asks for the
 active tab as its popup loads), and closing it first leaves it for `about:blank` (`closePage`), else Playwright keeps it.
 The registry's `launchOptions.channel` (`moz-firefox`) tells the bridge a browser runs over BiDi (`bidi`). Under Juggler
@@ -553,7 +554,8 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   `.workbench/compeng/**` (Self-improve on). `--permission-mode dontAsk` denies everything else without asking.
   Playwright runs through `insights/playwright-guard.cjs`, in the turn's own folder without the client's roots, so
   its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
-  leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
+  leaves out `browser_run_code_unsafe` and refuses to open the browser's own pages (`about:` but `about:blank`,
+  `chrome:`, `resource:`, extensions' pages: anything but http(s), file, data and blob addresses). The chat may read that folder (`--add-dir`), where snapshots are linked.
   It attaches to the chat's own browser (see Chat browsers above); in WSL with interop off each turn launches its own.
 - **Clawd button** (`InsightsModelConfig.agentMode`) — the chat's turns get what an agent window has instead: no
   `--tools` or `--strict-mcp-config` (every tool, the user's own MCP servers too) and the agent windows' permissions
