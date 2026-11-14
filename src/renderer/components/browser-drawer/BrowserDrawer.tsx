@@ -380,10 +380,11 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
         {/* Toolbar */}
         {selected && (
           <form className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2" onSubmit={onSubmitAddress}>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'back')} aria-label={t('browserDrawer.back')} title={t('browserDrawer.back')}>
+            {/* Disabled with nowhere to go, as the browser's are */}
+            <button type="button" className={iconButton} disabled={selected.canGoBack === false} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'back')} aria-label={t('browserDrawer.back')} title={t('browserDrawer.back')}>
               <ArrowLeft className="h-4 w-4" strokeWidth={1.75} />
             </button>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'forward')} aria-label={t('browserDrawer.forward')} title={t('browserDrawer.forward')}>
+            <button type="button" className={iconButton} disabled={selected.canGoForward === false} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'forward')} aria-label={t('browserDrawer.forward')} title={t('browserDrawer.forward')}>
               <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
             </button>
             {/* While the page loads, reload turns into stop */}

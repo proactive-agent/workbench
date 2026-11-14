@@ -51,7 +51,8 @@ const managed = (engine: 'firefox' | 'webkit'): PlaywrightBrowserChoice => ({
   executablePath: `/home/me/.cache/ms-playwright/${engine}-1/${engine}`, userDataDir: '', profilePath: '',
 });
 
-const NO_SYNC = { 'identity.fxaccounts.enabled': false, 'services.sync.username': '' };
+/** Sync off, and the back-forward cache off (pages it restores come back without BiDi's navigation events) */
+const NO_SYNC = { 'identity.fxaccounts.enabled': false, 'services.sync.username': '', 'browser.sessionhistory.max_total_viewers': 0 };
 
 describe('built-in MCP servers', () => {
   beforeEach(() => {

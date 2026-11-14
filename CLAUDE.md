@@ -322,7 +322,8 @@ copies. Each copy also holds the run's Playwright config (`.workbench-playwright
 passed with `--config`: Chromium browsers run their executable on the copy with `--profile-directory`, the sandbox on
 and without Playwright's `--password-store=basic` / `--use-mock-keychain` (so copied sign-ins decrypt); the user's
 Firefox runs over WebDriver BiDi (channel `moz-firefox`, which Playwright calls experimental; Playwright's plain
-`firefox` is its own patched build) with Sync prefs off. Without a copy (Playwright's own browsers, the availability
+`firefox` is its own patched build) with Sync prefs off and its back-forward cache off (a page it restored on Back or
+Forward came back without BiDi's navigation events, so Playwright kept the page left: the drawer's address and title). Without a copy (Playwright's own browsers, the availability
 check, a failed copy) the server gets `--browser` / `--executable-path` and `--isolated` (a profile in memory;
 Playwright's own Chromium also `--sandbox`, which Playwright leaves off on Linux). Runs
 pass `--output-dir` to their temporary folder, since Playwright otherwise saves snapshots and screenshots in the
@@ -376,7 +377,9 @@ Ctrl/Cmd+T, W, Tab, 1-9, L, R, Alt+Left... as `shared/utils/browser-shortcuts.ts
 types them: the headless browser has no window to take them, so the main process catches them in `before-input-event`,
 before the page and the app's menu, and the drawer acts on them; a held key's repeats are swallowed and act again only
 for switching tabs, and a reloaded page stops the catching until its drawer says so again), a toolbar (back, forward,
-reload, address; while the tab shown loads, Workbench's loader over its page), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
+reload, address; Back and Forward disabled with nowhere to go, the bridge following each tab's history as it navigates,
+`noteNavigation`: its address against the ones before and after, `history.length` telling a new entry from a replaced
+one, a tab's starting blank page not counted; while the tab shown loads, Workbench's loader over its page), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
 shows; Settings > Browser can hide it), the profile's extensions at the address bar's end when the chat browser runs them
 (`BrowserExtensionsMenu.tsx`: the pinned ones that run, then a puzzle button listing the others, each with a small switch,

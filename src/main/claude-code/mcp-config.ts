@@ -87,6 +87,16 @@ export const FIREFOX_NO_SYNC_PREFS: Record<string, unknown> = {
 };
 
 /**
+ * Firefox's back-forward cache off: a page it restores (Back, Forward) comes back without the
+ * navigation events WebDriver BiDi reports, so Playwright kept the page left as the tab's (its
+ * address and title in the browser drawer, its script context for the agent). Loaded again
+ * instead, as a page with the cache off is
+ */
+const FIREFOX_NO_BFCACHE_PREFS: Record<string, unknown> = {
+  'browser.sessionhistory.max_total_viewers': 0,
+};
+
+/**
  * Playwright's default Chromium switches that keep a copy from decrypting its sign-ins: a basic
  * password store (Linux) and a mock keychain (macOS) instead of the ones the profile was saved with
  */
@@ -192,7 +202,7 @@ export function playwrightProfileConfig(
           ...(isPlaywrightBuild(executablePath) ? {} : { channel: 'moz-firefox' }),
           executablePath,
           ...(isWindowsProfileInWsl(choice) ? { args: [FIREFOX_ALLOW_DOWNGRADE] } : {}),
-          firefoxUserPrefs: FIREFOX_NO_SYNC_PREFS,
+          firefoxUserPrefs: { ...FIREFOX_NO_SYNC_PREFS, ...FIREFOX_NO_BFCACHE_PREFS },
         },
         ...contextOptions,
       },

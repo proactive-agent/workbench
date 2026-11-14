@@ -76,6 +76,9 @@ export interface BrowserDrawerPage {
   url: string;
   /** A navigation of the page is loading (from its request until the page's load event) */
   loading?: boolean;
+  /** Its tab has a page to go back to, or forward to (the toolbar's Back and Forward) */
+  canGoBack?: boolean;
+  canGoForward?: boolean;
   /**
    * An extension's popup (not a tab): shown over the page it opened for, at its own size (CSS
    * pixels), as the browser shows it under the extension's button

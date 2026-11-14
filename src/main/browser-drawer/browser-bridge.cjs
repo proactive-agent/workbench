@@ -126,6 +126,9 @@ function pushPages() {
       url: entry.page.url(),
       title: entry.title ?? (await entry.page.title().catch(() => '')),
       loading: entry.loading === true,
+      // Not back to the blank page a tab starts on (the browser's own Back is disabled there too)
+      canGoBack: entry.history.urls.slice(0, Math.max(0, entry.history.index)).some((url, index) => !(index === 0 && url === 'about:blank')),
+      canGoForward: entry.history.index < entry.history.urls.length - 1,
       // A popup's size: its own (Chromium's sizes itself to its content), else the one it was given
       ...(entry.popup ? { popup: { ...(entry.page.viewportSize() || { width: 0, height: 0 }), ...entry.popup } } : {}),
     })));
@@ -150,7 +153,7 @@ function addPage(page, sessionId, popup) {
   if (pageIds.has(page) || isHelperPage(page)) return;
   const id = `${sessionId}#${nextPageId++}`;
   pageIds.set(page, id);
-  const entry = { page, sessionId, loading: false, loadingTimer: null, ...(popup ? { popup } : {}) };
+  const entry = { page, sessionId, loading: false, loadingTimer: null, history: { urls: [], index: -1 }, ...(popup ? { popup } : {}) };
   pages.set(id, entry);
   applyColorScheme(page);
   // Loading: from the main frame's navigation request until the page's load event (or the request
@@ -187,12 +190,54 @@ function addPage(page, sessionId, popup) {
   });
   page.on('close', () => forgetPage(id));
   page.on('framenavigated', (frame) => {
-    if (frame === page.mainFrame()) pushPages();
+    if (frame === page.mainFrame()) void noteNavigation(entry).catch(() => undefined);
   });
-  page.on('load', pushPages);
-  pushPages();
+  // Not every history step reports a navigation (WebDriver BiDi): its load counts too
+  page.on('load', () => void noteNavigation(entry).catch(() => undefined));
+  void noteNavigation(entry).catch(() => undefined);
   return id;
 }
+
+/**
+ * Follow a tab's history as it navigates (no protocol tells where a tab is in its history): the
+ * address it shows now against the ones before and after it, with the page's `history.length`
+ * telling a new entry from a replaced one. Back and Forward then say whether there is anywhere
+ * to go, whoever navigates (the user, the agent, the page itself)
+ */
+async function noteNavigation(entry) {
+  const url = entry.page.url();
+  // Asked so it can't throw here (a page that is going): unknown then
+  const length = await bounded(Promise.resolve().then(() => entry.page.evaluate(() => history.length)).catch(() => null), HISTORY_LENGTH_TIMEOUT_MS, null);
+  const history = entry.history;
+  const known = history.urls.length;
+  const same = length === null || length === known;
+  if (history.index >= 0 && history.urls[history.index] === url && same) {
+    // Reloaded, or the same address again
+  } else if (history.index > 0 && history.urls[history.index - 1] === url && same) {
+    history.index--;
+  } else if (history.index < known - 1 && history.urls[history.index + 1] === url && same) {
+    history.index++;
+  } else if (same && history.index === known - 1 && history.index >= 0) {
+    // The same number of entries, at the last one: it was replaced (a redirect, replaceState)
+    history.urls[history.index] = url;
+  } else {
+    // A new entry: the ones after it (gone back to earlier) are dropped
+    history.urls = [...history.urls.slice(0, history.index + 1), url];
+    history.index = history.urls.length - 1;
+  }
+  // Entries from before the drawer knew the tab (it was attached later): counted, unknown but for
+  // the first, the blank page a chat browser's tab starts on
+  if (length !== null && length > history.urls.length) {
+    const missing = length - history.urls.length;
+    history.index += missing;
+    history.urls = [...Array(missing).fill(null), ...history.urls];
+    if (history.urls[0] === null) history.urls[0] = 'about:blank';
+  }
+  pushPages();
+}
+
+/** How long a page may take to say its history's length */
+const HISTORY_LENGTH_TIMEOUT_MS = 1000;
 
 /** A page that closed goes from the drawer */
 function forgetPage(id) {
@@ -1886,10 +1931,15 @@ async function navigate(pageId, action, url) {
   if (!page) return;
   if (action === 'stop') return stopLoading(entry);
   const options = { timeout: 30000 };
-  if (action === 'back') await page.goBack(options);
-  else if (action === 'forward') await page.goForward(options);
-  else if (action === 'reload') await page.reload(options);
-  else if (action === 'goto' && url) await page.goto(url, options);
+  try {
+    if (action === 'back') await page.goBack(options);
+    else if (action === 'forward') await page.goForward(options);
+    else if (action === 'reload') await page.reload(options);
+    else if (action === 'goto' && url) await page.goto(url, options);
+  } finally {
+    // Where the tab is in its history now (a step may report no navigation)
+    if (pages.get(pageId) === entry) void noteNavigation(entry).catch(() => undefined);
+  }
 }
 
 function onMessage(message) {
