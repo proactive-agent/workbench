@@ -376,7 +376,7 @@ Ctrl/Cmd+T, W, Tab, 1-9, L, R, Alt+Left... as `shared/utils/browser-shortcuts.ts
 types them: the headless browser has no window to take them, so the main process catches them in `before-input-event`,
 before the page and the app's menu, and the drawer acts on them; a held key's repeats are swallowed and act again only
 for switching tabs, and a reloaded page stops the catching until its drawer says so again), a toolbar (back, forward,
-reload, address), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
+reload, address; while the tab shown loads, Workbench's loader over its page), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
 `Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
 shows; Settings > Browser can hide it), the profile's extensions at the address bar's end when the chat browser runs them
 (`BrowserExtensionsMenu.tsx`: the pinned ones that run, then a puzzle button listing the others, each with a small switch,
@@ -395,7 +395,8 @@ at most 800x600, `popupContentSize`), laid out at that width (`<html>` given it,
 and is listed with `popup` (not a tab), shown over its tab at that size as the window's second view (viewer id negated);
 a click in it measures it again (a newer measuring takes over from one still running). Popup tabs keep their own viewport (`keepsViewport`: a headless Chromium's tabs
 share their window, so resizing one broke the frames of the page behind it), streamed whole, and the drawer shows the
-corner the content takes, with no border or background of its own. A popup closes on a click anywhere beside it, the
+corner the content takes, with no border or background of its own. A clicked extension's popup box shows at once with Workbench's loader (`extensionOpening` in the store, until the popup
+the main process answered with is listed), then the popup's own box keeps the loader until its first frame is drawn. A popup closes on a click anywhere beside it, the
 window losing the focus, another tab showing or its button again; another extension's replaces it. Firefox's toolbar is
 out of Playwright's reach, so its popup's page (`firefoxExtensionTarget`: the manifest's popup at the profile's
 `moz-extension://<uuid>`) opens in a new tab the same way. Over WebDriver BiDi (the user's own Firefox) that needs the

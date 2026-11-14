@@ -26,6 +26,15 @@ const BROWSER_DRAWER_DEFAULT_WIDTH = 760;
  * the composer's buttons need, useChatMinWidth.ts)
  */
 const DEFAULT_CHAT_MIN_WIDTH = 500;
+
+/** An extension's popup asked for and not shown yet (see the store's extensionOpening) */
+export interface ExtensionOpening {
+  token: number;
+  openerId: string;
+  extensionId: string;
+  /** The popup's page, once the browser answered with it */
+  popupId?: string;
+}
 const WIDTH_STORAGE_KEY = 'workbench.browserDrawer.width';
 
 /**
@@ -177,6 +186,13 @@ interface BrowserDrawerStore extends DrawerView {
    * for the app's life, like the history's own state, across visits to the Claude page
    */
   historyClosedByDrawer: boolean;
+  /**
+   * An extension's popup asked for and not shown yet (its page loads, the browser measures it): the
+   * drawer shows its box with a loader meanwhile, until the popup the browser answered with
+   * (`popupId`) is listed. `token` tells one ask from the next
+   */
+  extensionOpening: ExtensionOpening | null;
+  setExtensionOpening: (opening: ExtensionOpening | null) => void;
   setHistoryClosedByDrawer: (closed: boolean) => void;
   setOpen: (open: boolean) => void;
   /** The drawer's width, remembered unless `save` is false (while its edge is dragged) */
@@ -262,6 +278,8 @@ export const useBrowserDrawerStore = create<BrowserDrawerStore>((set, get) => ({
   appSidebarCollapsedByDrawer: false,
   setAppSidebarCollapsedByDrawer: (appSidebarCollapsedByDrawer) => set({ appSidebarCollapsedByDrawer }),
   historyClosedByDrawer: false,
+  extensionOpening: null,
+  setExtensionOpening: (extensionOpening) => set({ extensionOpening }),
   setHistoryClosedByDrawer: (historyClosedByDrawer) => set({ historyClosedByDrawer }),
   chatMinWidth: DEFAULT_CHAT_MIN_WIDTH,
   setChatMinWidth: (chatMinWidth) => {

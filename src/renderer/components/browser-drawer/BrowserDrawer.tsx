@@ -15,6 +15,7 @@ import { AgentLoader } from '../ui/agent-loader';
 import { Button } from '../ui/button';
 import { BrowserBookmarksBar } from './BrowserBookmarksBar';
 import { BrowserDrawerFrame } from './BrowserDrawerFrame';
+import { OPENING_POPUP_SIZE } from './browser-drawer-utils';
 import { BrowserExtensionsMenu } from './BrowserExtensionsMenu';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
@@ -113,6 +114,26 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   // tabs, the rest of the window) or when the window loses the focus. An extension's button
   // handles its own click: its popup toggles, another one's replaces it
   const popupBoxRef = useRef<HTMLDivElement>(null);
+  // A popup asked for and not there yet: its box shows at once, loading (given up by a click beside
+  // it, another tab showing, or the popup itself showing)
+  const opening = useBrowserDrawerStore((s) => s.extensionOpening);
+  const setOpening = useBrowserDrawerStore((s) => s.setExtensionOpening);
+  const openingShown = opening !== null && opening.openerId === selectedId;
+  // The popup the browser answered with is listed (one listed before it answered may still go)
+  const openingArrived = openingShown && !!opening.popupId && popup?.id === opening.popupId;
+  useEffect(() => {
+    if (opening && (opening.openerId !== selectedId || openingArrived)) setOpening(null);
+  }, [opening, selectedId, openingArrived, setOpening]);
+  useEffect(() => {
+    if (!openingShown) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && (popupBoxRef.current?.contains(target) || target.closest('[data-extension-button]'))) return;
+      setOpening(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [openingShown, setOpening]);
   const popupId = popup?.id;
   useEffect(() => {
     if (!popupId) return;
@@ -408,10 +429,30 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
         {/* The page */}
         <div ref={pageAreaRef} className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>
           {body}
+          {/* A page loading in the tab shown: Workbench's loader over it (the page still shows under it
+              and takes the mouse and keys) until it has loaded */}
+          {selected?.loading && (
+            <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-background/60">
+              <AgentLoader size={24} label={t('browserDrawer.pageLoading')} />
+            </div>
+          )}
           {/* An extension's popup under its button, at its own size: only its page shows (no border
               or background of the drawer's around it, just a shadow under it); a click beside it
               closes it (above), and never reaches the page */}
-          {popup?.popup && popup.popup.width > 0 && popup.popup.height > 0 && (
+          {openingShown && !openingArrived ? (
+            // Asked for, not there yet: its box at once, with the loader (sized once it arrives). The
+            // page under it still takes clicks: one there gives up waiting (an extension with no popup
+            // shows nothing more)
+            <>
+              <div
+                ref={popupBoxRef}
+                className="absolute right-2 top-1 z-20 flex max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] items-center justify-center overflow-hidden bg-background shadow-lg"
+                style={{ width: OPENING_POPUP_SIZE.width, height: OPENING_POPUP_SIZE.height }}
+              >
+                <AgentLoader size={24} label={t('browserDrawer.extensionLoading')} />
+              </div>
+            </>
+          ) : popup?.popup && popup.popup.width > 0 && popup.popup.height > 0 && (
             <>
               <div className="absolute inset-0 z-10" aria-hidden />
               <div
@@ -419,7 +460,8 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
                 className="absolute right-2 top-1 z-20 max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] overflow-hidden shadow-lg"
                 style={{ width: popup.popup.width, height: popup.popup.height }}
               >
-                <BrowserPageView pageId={popup.id} label={popup.title || t('browserDrawer.extensions')} popup />
+                {/* The loader until its first frame is drawn */}
+                <BrowserPageView pageId={popup.id} label={popup.title || t('browserDrawer.extensions')} popup loader={t('browserDrawer.extensionLoading')} />
               </div>
             </>
           )}

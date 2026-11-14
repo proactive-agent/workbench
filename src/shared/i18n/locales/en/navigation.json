@@ -135,6 +135,8 @@
     "untitledBookmark": "Untitled",
     "emptyFolder": "(empty)",
     "extensions": "Extensions",
+    "extensionLoading": "Opening the extension...",
+    "pageLoading": "Loading the page...",
     "extensionSwitch": "Turn {{name}} on or off",
     "extensionsAllPinned": "Every extension is pinned to the toolbar. Right-click one to turn it off",
     "extensionsRestartNote": "Firefox switches extensions when it starts. Restart the browser to apply your changes; its tabs open again",

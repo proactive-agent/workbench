@@ -90,3 +90,6 @@ const CURSOR_KEYWORDS = new Set([
 export function pageCursor(cursor: string): string {
   return CURSOR_KEYWORDS.has(cursor) ? cursor : 'default';
 }
+
+/** The box an extension's popup shows in while it loads (its own size is known once it is there) */
+export const OPENING_POPUP_SIZE = { width: 320, height: 240 };

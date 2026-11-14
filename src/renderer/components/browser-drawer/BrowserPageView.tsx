@@ -6,6 +6,7 @@ type BrowserDrawerButton = Extract<BrowserDrawerInput, { kind: 'mousedown' | 'mo
 import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageCursor } from './browser-drawer-utils';
 import { noteDrawerInput } from '../../stores/browser-drawer-store';
 import { cn } from '../../lib/utils';
+import { AgentLoader } from '../ui/agent-loader';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
 const RESIZE_DEBOUNCE_MS = 150;
@@ -23,6 +24,8 @@ interface BrowserPageViewProps {
   label: string;
   /** An extension's popup, shown over the tab (the window views both at once) */
   popup?: boolean;
+  /** Workbench's loader over it, with this label, until its first frame is drawn */
+  loader?: string;
 }
 
 /**
@@ -39,8 +42,10 @@ function alignCanvas(canvas: HTMLCanvasElement, container: HTMLElement) {
   if (canvas.style.transform !== transform) canvas.style.transform = transform;
 }
 
-export function BrowserPageView({ pageId, label, popup = false }: BrowserPageViewProps) {
+export function BrowserPageView({ pageId, label, popup = false, loader }: BrowserPageViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  /** A frame of the page has been drawn (the loader, if any, goes) */
+  const [framed, setFramed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   /** The viewport of the last frame drawn (input is mapped to it) */
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
@@ -106,6 +111,7 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
     let drawing = false;
     let disposed = false;
     viewportRef.current = null;
+    setFramed(false);
     const drawn = () => window.electronAPI.browserFrameDrawn(pageId);
     const draw = async () => {
       if (drawing || !pending) return;
@@ -124,6 +130,7 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
           alignCanvas(canvas, container);
           canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
           viewportRef.current = { width: frame.width, height: frame.height };
+          setFramed(true);
         }
         bitmap.close();
       } catch {
@@ -289,6 +296,11 @@ export function BrowserPageView({ pageId, label, popup = false }: BrowserPageVie
         // Keys still down when the focus leaves are released: their release goes elsewhere
         onBlur={() => releaseHeld(pageId)}
       />
+      {loader && !framed && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background">
+          <AgentLoader size={24} label={loader} />
+        </div>
+      )}
     </div>
   );
 }

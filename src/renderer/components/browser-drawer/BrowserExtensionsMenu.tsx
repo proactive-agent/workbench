@@ -57,6 +57,11 @@ function ExtensionSwitch({ extension, label, onSwitch }: { extension: BrowserExt
   );
 }
 
+/** Tells one extension's ask for its popup from the next */
+let openingToken = 0;
+/** How long a popup the browser opened may take to be listed before its loading box goes */
+const POPUP_LISTED_WAIT_MS = 3000;
+
 /**
  * The browser's extensions beside the address bar, as in the browser's own toolbar (the drawer's
  * browsers are headless): the pinned ones that run, then a button listing the others. Clicking one
@@ -76,6 +81,13 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus, popup 
   const [restarting, setRestarting] = useState(false);
 
   useEffect(() => loadExtensions(sessionId), [sessionId, browserStatus, loadExtensions]);
+
+  // The menu button goes once it would list nothing: its menu closes with it (else it would open
+  // again on its own when something is listed again)
+  const menuShown = !!info && info.extensions.some((extension) => !(extension.pinned && extension.enabled) || info.restartToApply);
+  useEffect(() => {
+    if (!menuShown && open) setOpen(false);
+  }, [menuShown, open]);
 
   if (!info || info.extensions.length === 0) return null;
   // The browser's toolbar shows the pinned ones that run; the menu lists the rest
@@ -100,7 +112,33 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus, popup 
     if (!canOpen || !extension.enabled) return;
     // A tab the extension opens is the user's: shown, as one opened from the page would be
     noteDrawerInput(pageId);
-    void window.electronAPI.runBrowserExtension(pageId, extension.id, extension.name);
+    // Its popup's box shows at once, loading, until the popup is there (BrowserDrawer)
+    const token = ++openingToken;
+    const store = useBrowserDrawerStore.getState();
+    store.setExtensionOpening({ token, openerId: pageId, extensionId: extension.id });
+    void window.electronAPI.runBrowserExtension(pageId, extension.id, extension.name).then(
+      (result) => {
+        const current = useBrowserDrawerStore.getState().extensionOpening;
+        const popupId = result.success ? result.data?.popupId : undefined;
+        // Given up meanwhile (a click beside it, another one asked for): a popup that came anyway goes
+        if (current?.token !== token) {
+          if (popupId && current?.extensionId !== extension.id) window.electronAPI.closeBrowserPage(popupId);
+          return;
+        }
+        const done = () => {
+          if (useBrowserDrawerStore.getState().extensionOpening?.token === token) useBrowserDrawerStore.getState().setExtensionOpening(null);
+        };
+        // No popup (its action ran, or its homepage opened): nothing more to wait for. A popup's own
+        // box takes over once that popup is listed (BrowserDrawer), a moment later
+        if (popupId) {
+          useBrowserDrawerStore.getState().setExtensionOpening({ ...current, popupId });
+          setTimeout(done, POPUP_LISTED_WAIT_MS);
+        } else done();
+      },
+      () => {
+        if (useBrowserDrawerStore.getState().extensionOpening?.token === token) useBrowserDrawerStore.getState().setExtensionOpening(null);
+      }
+    );
   };
 
   const switchLabel = (extension: BrowserExtension) => t('browserDrawer.extensionSwitch', { name: extension.name });
@@ -152,6 +190,8 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus, popup 
           </DropdownMenuContent>
         </DropdownMenu>
       ))}
+      {/* Hidden while it would list nothing (every extension pinned), unless a restart waits there */}
+      {(listed.length > 0 || info.restartToApply) && (
       <DropdownMenu open={open} onOpenChange={onOpenChange}>
         <DropdownMenuTrigger className={buttonClass} title={t('browserDrawer.extensions')} aria-label={t('browserDrawer.extensions')}>
           <ExtensionsIcon className="h-4 w-4" />
@@ -192,6 +232,7 @@ export function BrowserExtensionsMenu({ sessionId, pageId, browserStatus, popup 
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
     </div>
   );
 }
