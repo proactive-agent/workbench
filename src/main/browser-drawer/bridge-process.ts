@@ -62,8 +62,11 @@ export interface BridgeProcessOptions {
 
 /** How long reading a page's selected text may take (it waits for the input before it) */
 const COPY_TIMEOUT_MS = 5000;
-/** How long an extension's action may take (its popup is waited for) */
-const EXTENSION_ACTION_TIMEOUT_MS = 15_000;
+/**
+ * How long an extension's action may take: its popup is waited for, loaded (twice for a Firefox
+ * browser's first extension page), measured and loaded again behind its page's tab
+ */
+const EXTENSION_ACTION_TIMEOUT_MS = 45_000;
 
 /** Emits 'message' (BridgeMessage) and 'exit' */
 export class BrowserBridgeProcess extends EventEmitter {

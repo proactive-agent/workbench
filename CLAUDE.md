@@ -391,8 +391,9 @@ not Windows browsers run over `--cdp-endpoint` in WSL). A headless browser's pop
 other size, so the popup the browser opens only gives its address (the one the extension set for that tab) and is closed:
 that page opens in a tab behind the page's (`chromiumPopupTab`; the page's tab stays active, so the extension acts on it,
 and a background tab still renders headless), is measured (its document's preferred width and its height at that width,
-at most 800x600, `popupContentSize`) and is listed with `popup` (not a tab), shown over its tab at that size as the
-window's second view (viewer id negated). Popup tabs keep their own viewport (`keepsViewport`: a headless Chromium's tabs
+at most 800x600, `popupContentSize`), laid out at that width (`<html>` given it, since its tab's viewport stays wider)
+and is listed with `popup` (not a tab), shown over its tab at that size as the window's second view (viewer id negated);
+a click in it measures it again (a newer measuring takes over from one still running). Popup tabs keep their own viewport (`keepsViewport`: a headless Chromium's tabs
 share their window, so resizing one broke the frames of the page behind it), streamed whole, and the drawer shows the
 corner the content takes, with no border or background of its own. A popup closes on a click anywhere beside it, the
 window losing the focus, another tab showing or its button again; another extension's replaces it. Firefox's toolbar is
@@ -402,7 +403,10 @@ system access chat browsers running extensions get (`MOZ_REMOTE_ALLOW_SYSTEM_ACC
 `moz-extension://` otherwise; the chat's Playwright guard refuses to open the browser's own pages, so only Workbench's
 bridge gets that access), and BiDi still refuses to resize, activate or report events of such a privileged page:
 the popup loads in front, hidden, to be measured, then loads again behind the page's tab (the extension asks for the
-active tab as its popup loads), and closing it first leaves it for `about:blank` (`closePage`), else Playwright keeps it.
+active tab as its popup loads; its width given again once it answers, `pinPopupWidthAgain`; reloaded by navigating
+when it never answered), and closing it first leaves it for `about:blank` (`closePage`), else Playwright keeps it. The
+main process waits up to 45 seconds for a popup (`EXTENSION_ACTION_TIMEOUT_MS`); cursor lookups skip pages that never
+answer (Juggler's and BiDi's privileged popups).
 The registry's `launchOptions.channel` (`moz-firefox`) tells the bridge a browser runs over BiDi (`bidi`). Under Juggler
 (Playwright's Firefox) the tab stays in front at a fixed popup size, mouse only (Juggler ignores `moz-extension://`
 documents, so their address, title and keys are out of reach, while frames and clicks go through the browser window).
@@ -440,7 +444,8 @@ once its page loads) to that window only, one at a time: the window acknowledges
 newer ones, so the browser makes no more frames than the drawer draws. A Chromium page hidden while its screencast runs
 (another tab came to the front: an extension's popup tab, one Claude opened) and shown again sends frames of the window's
 size, not its viewport's, which the drawer would show scaled: such frames are left out and the viewport is set one pixel
-wider and back, which brings them back (`staleChromiumFrame`; after three tries they pass as they come). Frames are drawn on a canvas at their CSS size,
+wider and back, which brings them back (`staleChromiumFrame`; after three tries they pass as they come, and right after
+the drawer itself resized the page they pass too: those are frames of the old size). Frames are drawn on a canvas at their CSS size,
 the viewport a whole, even number of device pixels (`alignedViewportLength`) and the canvas moved onto whole device
 pixels, since at a fractional devicePixelRatio (1.25, 1.5) anything else resamples the frame and blurs its text. The
 canvas's mouse, wheel, keys and pasted text are replayed with `page.mouse` / `page.keyboard` from a queue per page,

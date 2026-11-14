@@ -370,6 +370,8 @@ async function startCast(pageId) {
 
 /** How long after setting a page's viewport again its frames may still be of the window's size */
 const VIEWPORT_RESET_GRACE_MS = 1000;
+/** How long after the drawer set a page's viewport frames of the old size may still come (a resize, not a hidden tab) */
+const VIEWPORT_CHANGE_GRACE_MS = 1500;
 /** How many times in a row it is set again before such frames are shown as they come (it never helped) */
 const VIEWPORT_RESET_TRIES = 3;
 
@@ -389,6 +391,8 @@ function staleChromiumFrame(pageId, entry, viewportWidth, viewportHeight) {
   }
   if ((entry.viewportResets ?? 0) >= VIEWPORT_RESET_TRIES) return false;
   const now = Date.now();
+  // The drawer just resized it: frames of the old size are on their way, shown as they come
+  if (entry.viewportSetAt && now - entry.viewportSetAt < VIEWPORT_CHANGE_GRACE_MS) return false;
   if (!entry.viewportResetAt || now - entry.viewportResetAt > VIEWPORT_RESET_GRACE_MS) {
     entry.viewportResetAt = now;
     entry.viewportResets = (entry.viewportResets ?? 0) + 1;
@@ -465,6 +469,8 @@ async function view(viewerId, pageId, width, height, scale) {
   if (width > 0 && height > 0 && !entry.keepsViewport) {
     const current = entry.page.viewportSize();
     if (!current || current.width !== width || current.height !== height) {
+      // Frames of the old size still on their way aren't the hidden tab's (staleChromiumFrame)
+      entry.viewportSetAt = Date.now();
       const resized = entry.page.setViewportSize({ width, height }).catch((error) => log(error));
       // A resize that stalls: another tab came to the front since (Claude opened or picked one).
       // Never a popup's: the page it opened for stays in front
@@ -472,6 +478,7 @@ async function view(viewerId, pageId, width, height, scale) {
         entry.page.bringToFront().catch(() => undefined);
       }
       await bounded(resized, COMMAND_TIMEOUT_MS);
+      entry.viewportSetAt = Date.now();
     }
   }
   let cast = casts.get(pageId);
@@ -583,7 +590,10 @@ async function replayInput(pageId, queue) {
   while (queue.events.length > 0) {
     const event = queue.events.shift();
     await bounded(input(pageId, event).catch(() => undefined), INPUT_TIMEOUT_MS);
-    if (POINTER_EVENTS.has(event.kind)) noteCursor(pageId, event.x, event.y);
+    // Not over a page that never answers: Juggler ignores an extension page's documents, and WebDriver
+    // BiDi a privileged one's once it loaded behind its tab (each lookup would stay pending)
+    const looked = pages.get(pageId);
+    if (POINTER_EVENTS.has(event.kind) && !looked?.mouseOnly && !looked?.privileged) noteCursor(pageId, event.x, event.y);
     // A click may change what a popup shows (another of its views): as in the browser, it resizes
     // (not a Firefox popup: its tab answers no measuring once behind the page's)
     const entry = pages.get(pageId);
@@ -638,7 +648,13 @@ async function lookUpCursor(pageId, lookup) {
  * fields, the arrow elsewhere. An iframe at the point answers with the point in its own viewport
  */
 function cursorInFrame({ x, y }) {
-  const el = document.elementFromPoint(x, y);
+  let el = document.elementFromPoint(x, y);
+  // Into open shadow roots: the element under the point inside a web component (a link, a button)
+  while (el && el.shadowRoot) {
+    const inner = el.shadowRoot.elementFromPoint(x, y);
+    if (!inner || inner === el) break;
+    el = inner;
+  }
   if (!el) return { cursor: 'default' };
   if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
     const rect = el.getBoundingClientRect();
@@ -687,14 +703,24 @@ async function cursorAt(page, x, y) {
     const result = await bounded(frame.evaluate(cursorInFrame, point).catch(() => null), CURSOR_TIMEOUT_MS, null);
     if (!result) return null;
     if (!result.iframe) return result.cursor;
-    // The child frame whose element is at the point, same-origin or not
+    // The child frame whose element is at the point, same-origin or not (looked for in open
+    // shadow roots too, as cursorInFrame does)
     const target = await bounded(
-      frame.evaluateHandle((p) => document.elementFromPoint(p.x, p.y), point).catch(() => null),
+      frame.evaluateHandle((p) => {
+        let el = document.elementFromPoint(p.x, p.y);
+        while (el && el.shadowRoot) {
+          const inner = el.shadowRoot.elementFromPoint(p.x, p.y);
+          if (!inner || inner === el) break;
+          el = inner;
+        }
+        return el;
+      }, point).catch(() => null),
       CURSOR_TIMEOUT_MS,
       null
     );
-    let next = null;
-    for (const child of frame.childFrames()) {
+    // Its frame in one call; else each child frame's element is compared with it
+    let next = target ? await bounded(target.contentFrame().catch(() => null), CURSOR_TIMEOUT_MS, null) : null;
+    for (const child of next ? [] : frame.childFrames()) {
       const element = await child.frameElement().catch(() => null);
       if (!element) continue;
       const same = target ? await element.evaluate((a, b) => a === b, target).catch(() => false) : false;
@@ -845,12 +871,42 @@ async function firefoxExtensionAction(entry, pageId, extensionId, name, target) 
     await bounded(entry.page.bringToFront().catch(() => undefined), COMMAND_TIMEOUT_MS);
     if (measured) {
       await bounded(page.evaluate(() => void setTimeout(() => location.reload())).catch(() => undefined), COMMAND_TIMEOUT_MS);
+      // The reload drops the width it was given (popupContentSize): given again once it answers
+      void pinPopupWidthAgain(id);
+    } else {
+      // Not measured (its page never answered, so it can't reload itself): loaded again behind the
+      // page's tab all the same, so the extension acts on that tab and not on the popup's own
+      await bounded(page.goto(popupUrl, { waitUntil: 'commit', timeout: COMMAND_TIMEOUT_MS }).catch(() => undefined), COMMAND_TIMEOUT_MS);
     }
   } finally {
     added.hidden = false;
     pushPages();
   }
   return id;
+}
+
+/** How long a Firefox popup reloaded behind its page's tab is given its width again, and how often */
+const POPUP_PIN_AGAIN_MS = 10_000;
+const POPUP_PIN_STEP_MS = 500;
+
+/**
+ * Give a Firefox popup reloaded behind its page's tab its measured width again (its document is
+ * new): once its page answers, which behind another tab may take a while
+ */
+async function pinPopupWidthAgain(pageId) {
+  const until = Date.now() + POPUP_PIN_AGAIN_MS;
+  while (Date.now() < until) {
+    await sleep(POPUP_PIN_STEP_MS);
+    const entry = pages.get(pageId);
+    if (!entry?.popup?.width) return;
+    const pinned = await bounded(entry.page.evaluate(pinPopupWidth, entry.popup.width).then(() => true, () => false), POPUP_MEASURE_TIMEOUT_MS, false);
+    if (pinned) return;
+  }
+}
+
+/** Lay a popup's page out at its measured width, as the browser's popup is (in the page) */
+function pinPopupWidth(width) {
+  document.documentElement.style.setProperty('width', `${width}px`, 'important');
 }
 
 /**
@@ -863,11 +919,17 @@ const POPUP_SETTLE_STEP_MS = 200;
 /** How long one measuring may take */
 const POPUP_MEASURE_TIMEOUT_MS = 1000;
 
-/** Measure a popup until its size holds (its content may render a moment after it loads) */
+/**
+ * Measure a popup until its size holds (its content may render a moment after it loads). A newer
+ * call (another click in it) takes over from one still measuring
+ */
 async function settlePopupSize(pageId) {
+  const token = {};
+  const owner = pages.get(pageId);
+  if (owner) owner.settling = token;
   let last = null;
   let until = Date.now() + POPUP_FIRST_MEASURE_MS;
-  while (Date.now() < until && pages.get(pageId)?.popup) {
+  while (Date.now() < until && pages.get(pageId)?.popup && pages.get(pageId)?.settling === token) {
     const size = await measurePopup(pageId);
     if (size && last && size.width === last.width && size.height === last.height) break;
     if (size && !last) until = Date.now() + POPUP_SETTLE_MS;
@@ -881,7 +943,13 @@ async function settlePopupSize(pageId) {
 async function measurePopup(pageId) {
   const entry = pages.get(pageId);
   if (!entry?.popup) return null;
-  const size = await bounded(entry.page.evaluate(popupContentSize, POPUP_MAX).catch(() => null), POPUP_MEASURE_TIMEOUT_MS, null);
+  // A tab that keeps its viewport is laid out at the width measured, as the browser's popup is (else
+  // its page spreads over the whole tab, of which the drawer shows the corner)
+  const size = await bounded(
+    entry.page.evaluate(popupContentSize, { max: POPUP_MAX, pin: entry.keepsViewport === true }).catch(() => null),
+    POPUP_MEASURE_TIMEOUT_MS,
+    null
+  );
   if (!size || !(size.width > 0 && size.height > 0)) return null;
   let { width, height } = size;
   // A popup's tab keeps its viewport (see keepsViewport), streamed whole: the drawer shows the corner
@@ -904,22 +972,26 @@ async function measurePopup(pageId) {
 
 /**
  * The size a browser gives an extension's popup, in the page: its document's preferred width (the
- * widest its content lays out) and its height at that width, at most `max`
+ * widest its content lays out) and its height at that width, at most `max`. With `pin` the page is
+ * then laid out at that width (its tab's viewport stays wider)
  */
-function popupContentSize(max) {
+function popupContentSize({ max, pin }) {
   const root = document.documentElement;
   const style = root.getAttribute('style');
+  let width = 0;
+  let height = 0;
   try {
     root.style.setProperty('width', 'max-content', 'important');
-    const width = Math.min(Math.ceil(root.getBoundingClientRect().width), max.width);
+    width = Math.min(Math.ceil(root.getBoundingClientRect().width), max.width);
     root.style.setProperty('width', `${width}px`, 'important');
     root.style.setProperty('height', 'max-content', 'important');
-    const height = Math.min(Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight)), max.height);
-    return { width, height, viewport: { width: innerWidth, height: innerHeight } };
+    height = Math.min(Math.ceil(Math.max(root.getBoundingClientRect().height, root.scrollHeight)), max.height);
   } finally {
     if (style === null) root.removeAttribute('style');
     else root.setAttribute('style', style);
   }
+  if (pin && width > 0) root.style.setProperty('width', `${width}px`, 'important');
+  return { width, height, viewport: { width: innerWidth, height: innerHeight } };
 }
 
 /**
