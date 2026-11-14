@@ -656,6 +656,23 @@ describe('relay and headless sessions', { timeout: 20_000 }, () => {
     expect(announced()).toContain(CHAT_SESSION);
   });
 
+  it("shows a chat's session once an agent window resumes it (its hooks report the window)", async () => {
+    fs.writeFileSync(path.join(projectDir, `${CHAT_SESSION}.jsonl`), prompt('sdk-cli'));
+    relay.subscribe('window-a', workspace, flowDir);
+    expect(announced()).not.toContain(CHAT_SESSION);
+
+    // The chat's Clawd button opened it in a window: its SessionStart hook names the window
+    const discovery = fs.readdirSync(flowDir).find((name) => name.endsWith('.json'))!;
+    const { port } = JSON.parse(fs.readFileSync(path.join(flowDir, discovery), 'utf-8'));
+    await fetch(`http://127.0.0.1:${port}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session_id: CHAT_SESSION, hook_event_name: 'SessionStart', cwd: workspace, workbench_terminal_id: 'terminal-1' }),
+    });
+
+    expect(announced()).toContain(CHAT_SESSION);
+  });
+
   it('shows a session whose transcript records no entrypoint (older Claude Code)', () => {
     fs.writeFileSync(path.join(projectDir, `${WINDOW_SESSION}.jsonl`), prompt());
 

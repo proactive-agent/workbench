@@ -20,6 +20,7 @@ import { isWindows } from '../platform';
 import { getWslInfo } from '../platform/shell-runtime';
 import { createRelayWorker } from './create-relay-worker';
 import { getTerminalWriteTime } from './terminal-activity';
+import { windowOfSession } from '../agent-session-store';
 import type { RelayWorkerMessage, RelayWorkerRequest } from './relay-worker-protocol';
 
 /** How long the worker gets to clean up (discovery files, hook server, watchers) before it is terminated */
@@ -225,6 +226,13 @@ export class LiveAgentRelay {
           .map((subscription) => subscription.terminalId)
       ),
     ];
+    // The window Workbench started or resumed the session in knows it for sure (a window a chat
+    // opened again was never typed into)
+    const started = windowOfSession(sessionId);
+    if (started && candidates.includes(started)) {
+      this.remember(this.sessionWindows, sessionId, started);
+      return started;
+    }
     const decided = this.sessionWindows.get(sessionId);
     if (decided && candidates.includes(decided)) return decided;
 

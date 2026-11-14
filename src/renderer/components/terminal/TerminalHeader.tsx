@@ -8,6 +8,7 @@ import { AgentsIcon, TerminalPromptIcon } from '../icons/app-icons';
 import { TaskSelector } from './TaskSelector';
 import { SessionSelector } from './SessionSelector';
 import { WorktreeSelector } from './WorktreeSelector';
+import { WindowSessionButtons } from './WindowSessionButtons';
 
 interface TerminalHeaderProps {
   terminalId: string;
@@ -117,6 +118,8 @@ export function TerminalHeader({
         )}
       </div>
       <div className="flex items-center gap-1">
+        {/* The window's Claude Code session: copy its name for messaging, open it as a chat */}
+        {isCLIMode && projectPath && <WindowSessionButtons terminalId={terminalId} projectPath={projectPath} />}
         {/* Expand/collapse button */}
         {onToggleExpand && (
           <Button

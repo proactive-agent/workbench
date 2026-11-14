@@ -937,6 +937,23 @@ body {
   background: var(--border);
 }
 
+/* An agent window opened from a Claude chat (its Clawd button): the border eases into the primary
+   color, holds it and eases back, so among several windows the chat's session stands out */
+.agent-window-highlight {
+  animation: agent-window-highlight 1.4s ease-in-out;
+}
+
+@keyframes agent-window-highlight {
+  0%, 100% {
+    border-color: var(--border);
+    box-shadow: inset 0 0 0 1px transparent;
+  }
+  30%, 70% {
+    border-color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--primary);
+  }
+}
+
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,

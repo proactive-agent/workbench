@@ -69,7 +69,7 @@ export function isProfileAuthenticated(profile: ClaudeProfile): boolean {
   }
 
   // Check for direct OAuth token first (OAuth-only profiles without configDir)
-  // This enables auto-switch to work with profiles that only have oauthToken set
+  // (profiles that only have oauthToken set)
   if (hasValidToken(profile)) {
     return true;
   }

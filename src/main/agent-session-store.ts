@@ -97,9 +97,21 @@ async function loadSessions(file: string): Promise<AgentSessionRecord[] | null> 
   }
 }
 
+/**
+ * Reads kept for a moment: looking up several windows reads the same file for each. A write
+ * through this module drops its file's
+ */
+const READ_CACHE_MS = 2000;
+const reads = new Map<string, { at: number; sessions: Promise<AgentSessionRecord[]> }>();
+
 /** The sessions this project's agent windows started, oldest first */
-export async function readAgentSessions(projectPath: string): Promise<AgentSessionRecord[]> {
-  return (await loadSessions(storePath(projectPath))) ?? [];
+export function readAgentSessions(projectPath: string): Promise<AgentSessionRecord[]> {
+  const file = storePath(projectPath);
+  const cached = reads.get(file);
+  if (cached && Date.now() - cached.at < READ_CACHE_MS) return cached.sessions;
+  const sessions = loadSessions(file).then((loaded) => loaded ?? []);
+  reads.set(file, { at: Date.now(), sessions });
+  return sessions;
 }
 
 /**
@@ -111,6 +123,7 @@ async function updateSessions(
   change: (sessions: AgentSessionRecord[]) => AgentSessionRecord[]
 ): Promise<void> {
   const file = storePath(projectPath);
+  reads.delete(file);
   const write = (writes.get(file) ?? Promise.resolve()).then(async () => {
     // `.workbench` marks a project as initialized, so this never creates it
     if (!(await isDirectory(path.dirname(file)))) return;
@@ -123,6 +136,7 @@ async function updateSessions(
     const temp = `${file}.tmp`;
     await fsp.writeFile(temp, JSON.stringify(data, null, 2), 'utf-8');
     await fsp.rename(temp, file);
+    reads.delete(file);
   });
   writes.set(file, write.catch(() => undefined));
   await write;
@@ -136,8 +150,25 @@ async function isDirectory(dir: string): Promise<boolean> {
   }
 }
 
+/** The window each session was last started or resumed in, while the app runs (newest last) */
+const sessionWindows = new Map<string, string>();
+const MAX_SESSION_WINDOWS = 500;
+
+/** A window started or resumed this session (the Live agent graph shows it in that window) */
+export function noteWindowSession(sessionId: string, terminalId: string): void {
+  sessionWindows.delete(sessionId);
+  sessionWindows.set(sessionId, terminalId);
+  if (sessionWindows.size > MAX_SESSION_WINDOWS) sessionWindows.delete(sessionWindows.keys().next().value!);
+}
+
+/** The window that last started or resumed a session since the app started, if any */
+export function windowOfSession(sessionId: string): string | undefined {
+  return sessionWindows.get(sessionId);
+}
+
 /** Remember a session an agent window just started; a session already known is updated in place */
 export async function recordAgentSession(projectPath: string, session: AgentSessionRecord): Promise<void> {
+  if (session.terminalId) noteWindowSession(session.sessionId, session.terminalId);
   await updateSessions(projectPath, (sessions) => [
     ...sessions.filter((kept) => kept.sessionId !== session.sessionId),
     { ...sessions.find((kept) => kept.sessionId === session.sessionId), ...session },

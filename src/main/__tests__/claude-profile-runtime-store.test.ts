@@ -100,7 +100,7 @@ describe('profile store per runtime', () => {
 
     const manager = new ClaudeProfileManager();
     const initializing = manager.initialize();
-    manager.updateAutoSwitchSettings({ enabled: true });
+    manager.renameProfile('primary', 'Renamed');
     expect(existsSync(store('claude-profiles.json'))).toBe(false);
 
     finishDetection();

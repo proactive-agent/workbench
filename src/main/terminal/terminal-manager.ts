@@ -23,6 +23,11 @@ import { safeSendToRenderer } from '../ipc-handlers/utils';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { debugLog, debugError } from '../../shared/utils/debug-logger';
 import { SESSION_SAVE_INTERVAL_MS } from '../terminal-session-store';
+import { setWindowSessionReopener, setWindowSource } from '../session-messaging/directory';
+import { closeWindowTools } from '../session-messaging/window-tools';
+import { setReceivingHooks } from '../session-messaging/receiving';
+import { setAgentWindowOpener } from '../session-messaging/agent-windows';
+import { windowLiveSession } from '../session-messaging/live-sessions';
 
 export class TerminalManager {
   private terminals: Map<string, TerminalProcess> = new Map();
@@ -34,13 +39,26 @@ export class TerminalManager {
   constructor(getWindow: WindowGetter) {
     this.getWindow = getWindow;
 
+    // The project's chats and agent windows message each other: the windows are these terminals
+    setWindowSource(() => [...this.terminals.values()]);
+    // A window sharing a chat's session takes up the chat's turns by resuming it again
+    setWindowSessionReopener((terminalId, sessionId) =>
+      this.openClaudeSession(terminalId, sessionId, this.terminals.get(terminalId)?.dangerouslySkipPermissions));
+    // A closed window a chat messages opens again; a window answering a message is read-only
+    setAgentWindowOpener((request) => safeSendToRenderer(this.getWindow, IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, request));
+    setReceivingHooks({
+      notify: (terminalId, from) => safeSendToRenderer(this.getWindow, IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, terminalId, from),
+      isBusy: (terminalId) => TerminalEventHandler.isClaudeBusyNow(terminalId),
+      status: async (terminalId) => {
+        const terminal = this.terminals.get(terminalId);
+        return terminal ? (await windowLiveSession(terminal))?.status : undefined;
+      },
+    });
+
     // Create event callbacks with bound context
     this.eventCallbacks = TerminalEventHandler.createEventCallbacks(
       this.getWindow,
-      this.lastNotifiedRateLimitReset,
-      async (terminalId, profileId) => {
-        await this.switchClaudeProfile(terminalId, profileId);
-      }
+      this.lastNotifiedRateLimitReset
     );
 
     // Periodically save session data. The period is shared with the store, which reads the trail
@@ -103,6 +121,7 @@ export class TerminalManager {
       this.terminals,
       (terminalId) => {
         this.lastNotifiedRateLimitReset.delete(terminalId);
+        closeWindowTools(terminalId);
       }
     );
   }
@@ -111,7 +130,10 @@ export class TerminalManager {
    * Kill all terminal processes
    */
   async killAll(): Promise<void> {
-    for (const id of this.terminals.keys()) this.stopFollowing(id);
+    for (const id of this.terminals.keys()) {
+      this.stopFollowing(id);
+      closeWindowTools(id);
+    }
     this.saveTimer = await TerminalLifecycle.destroyAllTerminals(
       this.terminals,
       this.saveTimer
@@ -174,7 +196,7 @@ export class TerminalManager {
    */
   async resumeTaskSessionAsync(
     id: string,
-    options: { sessionId: string; cwd: string; profileId?: string; configDir?: string },
+    options: { sessionId: string; cwd: string; profileId?: string; configDir?: string; own?: boolean },
     dangerouslySkipPermissions?: boolean
   ): Promise<void> {
     const terminal = this.terminals.get(id);
@@ -188,7 +210,7 @@ export class TerminalManager {
       options.profileId,
       this.getWindow,
       dangerouslySkipPermissions,
-      { resumeSessionId: options.sessionId, configDir: options.configDir }
+      { resumeSessionId: options.sessionId, configDir: options.configDir, own: options.own === true }
     );
   }
 

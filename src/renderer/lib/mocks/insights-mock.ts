@@ -84,6 +84,10 @@ export const insightsMock = {
     success: false,
     error: 'Not available in browser mock'
   }),
+  listInsightsCommands: async (_projectId: string) => ({ success: true, data: [] }),
+  openWindowAsChat: async (_projectId: string, _terminalId: string) => ({ success: false, error: 'failed' }),
+  getSessionWindow: async (_projectId: string, _claudeSessionId: string) => ({ success: true, data: null }),
+  syncSharedSession: async (_projectId: string, _chatId: string) => ({ success: true, data: false }),
   updateInsightsModelConfig: async (_projectId: string, _sessionId: string, _modelConfig: unknown) => {
     console.warn('[Browser Mock] updateInsightsModelConfig called');
     return { success: true };

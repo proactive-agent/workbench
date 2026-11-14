@@ -22,6 +22,36 @@ export interface ClaudeUsageData {
   opusUsagePercent?: number;
   /** When this usage data was last updated */
   lastUpdated: Date;
+  /** The monthly spend limit an Enterprise account has instead of the windows (both percents are its share spent) */
+  spendLimit?: UsageSpendLimit;
+  /** The model-scoped weekly limit (Fable) as last fetched: its percent, reset and model name */
+  fablePercent?: number;
+  fableResetTimestamp?: string;
+  fableModelName?: string;
+}
+
+/**
+ * What a fetched usage snapshot has beyond its percents (its resets and the model-scoped weekly
+ * limit), saved with the profile so its stored usage shows them too
+ */
+export interface UsageDetails {
+  sessionResetTimestamp?: string;
+  weeklyResetTimestamp?: string;
+  fablePercent?: number;
+  fableResetTimestamp?: string;
+  fableModelName?: string;
+}
+
+/**
+ * A monthly spend limit, in the currency's major units (136.22 USD). Enterprise accounts have it
+ * instead of the 5-hour and weekly windows: no time restriction, only what may be spent in a month
+ */
+export interface UsageSpendLimit {
+  used: number;
+  /** The month's limit (null: no limit set) */
+  limit: number | null;
+  /** ISO 4217 code ('USD') */
+  currency: string;
 }
 
 /**
@@ -93,6 +123,11 @@ export interface ClaudeUsageSnapshot {
   weeklyUsageLimit?: number;
   /** True if profile has invalid refresh token and needs re-authentication */
   needsReauthentication?: boolean;
+  /**
+   * The account's monthly spend limit, when it has one instead of the 5-hour and weekly windows
+   * (Enterprise). sessionPercent and weeklyPercent then both hold the share of it spent
+   */
+  spendLimit?: UsageSpendLimit;
 }
 
 /**
@@ -130,6 +165,8 @@ export interface ProfileUsageSummary {
   fetchError?: string;
   /** True if profile has invalid refresh token and needs re-authentication */
   needsReauthentication?: boolean;
+  /** The monthly spend limit it has instead of the 5-hour and weekly windows (Enterprise) */
+  spendLimit?: UsageSpendLimit;
 }
 
 /**
@@ -254,6 +291,11 @@ export interface DetectedClaudeCodeAccount {
   plan?: string;
   /** Settings and variables that configure it (effective first) */
   values: DetectedClaudeCodeValue[];
+  /**
+   * Its provider is set up from outside the config dir (environment variables or managed
+   * settings), so cleaning the dir's own files doesn't remove it
+   */
+  definedOutside?: boolean;
 }
 
 /**
@@ -264,66 +306,4 @@ export interface ClaudeProfileSettings {
   profiles: ClaudeProfile[];
   /** ID of the currently active profile */
   activeProfileId: string;
-  /** Auto-switch settings */
-  autoSwitch?: ClaudeAutoSwitchSettings;
-}
-
-/**
- * Settings for automatic profile switching
- */
-export interface ClaudeAutoSwitchSettings {
-  /** Master toggle - enables all auto-switch features */
-  enabled: boolean;
-
-  // Proactive monitoring settings
-  /** Enable proactive monitoring and swapping before hitting limits */
-  proactiveSwapEnabled: boolean;
-  /** Interval (ms) to check usage (default: 30000 = 30s, 0 = disabled) */
-  usageCheckInterval: number;
-
-  // Threshold settings
-  /** Session usage threshold (0-100) to trigger proactive switch (default: 95) */
-  sessionThreshold: number;
-  /** Weekly usage threshold (0-100) to trigger proactive switch (default: 99) */
-  weeklyThreshold: number;
-
-  // Reactive recovery
-  /** Whether to automatically switch on unexpected rate limit (vs. prompting user) */
-  autoSwitchOnRateLimit: boolean;
-
-  /** Whether to automatically switch on authentication failure (vs. prompting user) */
-  autoSwitchOnAuthFailure: boolean;
-}
-
-// ============================================
-// Queue Routing Types (Rate Limit Recovery)
-// ============================================
-
-/**
- * Reason for profile assignment to a task
- */
-export type ProfileAssignmentReason = 'proactive' | 'reactive' | 'manual';
-
-/**
- * Tracking of running tasks grouped by profile
- */
-export interface RunningTasksByProfile {
-  /** Map of profileId → array of task IDs running on that profile */
-  byProfile: Record<string, string[]>;
-  /** Total number of running tasks across all profiles */
-  totalRunning: number;
-}
-
-/**
- * Profile swap record for tracking history
- */
-export interface ProfileSwapRecord {
-  fromProfileId: string;
-  fromProfileName: string;
-  toProfileId: string;
-  toProfileName: string;
-  swappedAt: string;
-  reason: 'capacity' | 'rate_limit' | 'manual' | 'recovery';
-  sessionId?: string;
-  sessionResumed: boolean;
 }

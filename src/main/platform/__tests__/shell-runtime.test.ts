@@ -14,6 +14,7 @@ const detect = vi.hoisted(() => ({ checkWslAvailable: vi.fn(), probeWsl: vi.fn()
 vi.mock('../wsl-detect', () => detect);
 
 import {
+  getSessionWslInfo,
   getShellRuntimeStatus,
   getWslInfo,
   initShellRuntime,
@@ -21,6 +22,8 @@ import {
   normalizeWindowsShell,
   refreshWslAvailability,
   resetShellRuntimeForTests,
+  runInSessionRuntime,
+  runNatively,
   runtimeUsesPosixShell,
   toHostPath,
   toRuntimePath,
@@ -82,6 +85,19 @@ describe('shell runtime', () => {
     expect(detect.checkWslAvailable).not.toHaveBeenCalled();
     expect(isWslRuntime()).toBe(false);
     expect(getWslInfo()).toBeNull();
+  });
+
+  it('runs natively inside runNatively(), also in what it awaits, while the session stays in WSL', async () => {
+    await initShellRuntime('wsl');
+    const inside = await runNatively(async () => {
+      await Promise.resolve();
+      return { wsl: isWslRuntime(), info: getWslInfo(), session: getSessionWslInfo()?.distro, path: toRuntimePath('C:\\repo') };
+    });
+    expect(inside).toEqual({ wsl: false, info: null, session: 'Ubuntu', path: 'C:\\repo' });
+    // Back in the session's runtime from inside it
+    expect(runNatively(() => runInSessionRuntime(() => isWslRuntime()))).toBe(true);
+    expect(isWslRuntime()).toBe(true);
+    expect(toRuntimePath('C:\\repo')).toBe('/mnt/c/repo');
   });
 
   it('runs in WSL when configured and available', async () => {

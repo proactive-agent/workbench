@@ -31,9 +31,9 @@
  * that starts while the browser is open copies the saved copy instead of the live profile, which
  * the open browser keeps locked and half written; only without a saved copy does an open browser
  * keep Playwright from runs (browserProfileCopyBlocked). The saved copy is kept while anyone
- * chooses the profile: Settings > Connectors or a task's own pick (TaskMetadata.playwrightBrowser,
- * listed by choices-in-use.ts); a project's run copies likewise go at once only when neither
- * Settings nor the project's tasks choose their profile.
+ * chooses the profile: Settings > Browser or a task's or chat's own pick (listed by
+ * choices-in-use.ts); a project's run copies likewise go at once only when neither Settings nor
+ * the project's tasks and chats choose their profile.
  *
  * A Chromium copy keeps the user data folder's layout (`Local State`, which holds the cookie key
  * on Windows, plus the profile's folder), so the same browser can still decrypt its cookies.
@@ -48,7 +48,7 @@ import { execFile } from 'child_process';
 import { createHash } from 'crypto';
 import { homedir } from 'os';
 import { app } from 'electron';
-import { chmod, copyFile, mkdir, readdir, readFile, rm, rmdir, stat, writeFile } from 'fs/promises';
+import { chmod, copyFile, mkdir, readdir, readFile, rename, rm, rmdir, stat, writeFile } from 'fs/promises';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
 import { isLinux, isWindows } from '../platform';
@@ -58,7 +58,7 @@ import { runTool } from '../platform/runtime-exec';
 import { CONFINED_SNAPS, confinedSnapName } from './locations';
 import { isBrowserProfileInUse } from './in-use';
 import { ensureWindowsBrowserScripts, isWindowsBrowserInWsl } from './windows-browser';
-import { PLAYWRIGHT_CONFIG_FILE, playwrightProfileConfig } from '../claude-code/mcp-config';
+import { PLAYWRIGHT_CONFIG_FILE, playwrightProfileConfig, type PlaywrightProfileOptions } from '../claude-code/mcp-config';
 import { appLog } from '../app-logger';
 import { claimFolder, folderClaim, releaseFolder, writeOwner } from '../folder-owner';
 
@@ -72,11 +72,16 @@ const SKIPPED_PATHS = new Set([
   'startupCache', 'thumbnails', 'crashes', 'minidumps', 'datareporting', 'saved-telemetry-pings',
   'parent.lock', '.parentlock', 'lock',
 ]);
-/** Folders left out wherever they are: caches (Firefox's `storage/default/<site>/cache` too) */
+/**
+ * Folders left out wherever they are: caches (Firefox's `storage/default/<site>/cache` too). Not
+ * Chromium's `Service Worker/ScriptCache`: it holds the service workers' scripts, without which the
+ * browser drops their registrations, and an installed extension's worker is never registered again
+ * (its popup waits for a background that never answers)
+ */
 const SKIPPED_FOLDERS = new Set([
   // Chromium
   'Cache', 'Code Cache', 'GPUCache', 'DawnCache', 'DawnGraphiteCache', 'DawnWebGPUCache', 'GrShaderCache',
-  'GraphiteDawnCache', 'ShaderCache', 'CacheStorage', 'ScriptCache',
+  'GraphiteDawnCache', 'ShaderCache', 'CacheStorage',
   // Firefox
   'cache', 'cache2',
 ]);
@@ -271,20 +276,33 @@ async function makeFoldersPrivate(dirs: string[]): Promise<void> {
   for (const dir of dirs) await makePrivate(dir);
 }
 
-/** Copy a folder, leaving out SKIPPED_* and files that can't be read; returns how many were skipped */
-async function copyTree(source: string, target: string, relative = ''): Promise<number> {
+interface CopyTreeOptions {
+  /** A folder (relative, with `/`) copied whole although SKIPPED_* list it: an extensions folder, where every file counts */
+  whole?: string;
+  /** A folder (relative, with `/`) left out */
+  without?: string;
+}
+
+/**
+ * Copy a folder, leaving out SKIPPED_* (inside `whole` only symlinks) and files that can't be read;
+ * returns how many were skipped
+ */
+async function copyTree(source: string, target: string, relative = '', options: CopyTreeOptions = {}, whole = false): Promise<number> {
   await mkdir(target, { recursive: true, mode: PRIVATE_MODE });
   let skipped = 0;
   for (const entry of await readdir(source, { withFileTypes: true })) {
     const rel = relative ? `${relative}/${entry.name}` : entry.name;
-    if (SKIPPED_PATHS.has(rel) || SKIPPED_NAMES.has(entry.name)) continue;
-    if (entry.isDirectory() && SKIPPED_FOLDERS.has(entry.name)) continue;
     // Symlinks are locks (Firefox's `lock`, Chromium's Singleton*) or point outside the profile
     if (entry.isSymbolicLink()) continue;
+    const inWhole = whole || rel === options.whole;
+    if (!inWhole) {
+      if (rel === options.without || SKIPPED_PATHS.has(rel) || SKIPPED_NAMES.has(entry.name)) continue;
+      if (entry.isDirectory() && SKIPPED_FOLDERS.has(entry.name)) continue;
+    }
     const from = path.join(source, entry.name);
     const to = path.join(target, entry.name);
     try {
-      if (entry.isDirectory()) skipped += await copyTree(from, to, rel);
+      if (entry.isDirectory()) skipped += await copyTree(from, to, rel, options, inWhole);
       else if (entry.isFile()) await copyFile(from, to);
     } catch (error) {
       if (!SKIPPABLE_ERRORS.has((error as NodeJS.ErrnoException).code ?? '')) throw error;
@@ -307,12 +325,65 @@ async function disableSessionRestore(preferencesFile: string): Promise<void> {
   }
 }
 
-/** Copy a profile into `target` in the layout runs use; returns how many files were skipped */
-async function copyProfileInto(choice: PlaywrightBrowserChoice, source: string, target: string): Promise<number> {
-  if (choice.engine !== 'chromium') return copyTree(source, target);
+/**
+ * Leave out the encrypted hashes Chromium keeps of a copy's protected preferences (Secure
+ * Preferences' `protection.macs`, `<pref>_encrypted_hash`). They are encrypted with the browser's
+ * app-bound key, which opens only in the browser's own profile folder: in a copy they never match,
+ * so the browser resets the protected preferences as tampered with, its extensions' settings among
+ * them, and then deletes the extensions it no longer knows. Without them it checks the plain hashes
+ * beside them, which hold on the same machine (and writes new encrypted ones for the copy)
+ */
+async function dropEncryptedPreferenceHashes(securePreferencesFile: string): Promise<void> {
+  try {
+    const prefs = JSON.parse(await readFile(securePreferencesFile, 'utf-8')) as Record<string, unknown>;
+    if (withoutEncryptedHashes(prefs.protection)) await writeFile(securePreferencesFile, JSON.stringify(prefs));
+  } catch {
+    // No Secure Preferences (or unreadable): nothing to leave out
+  }
+}
+
+/** Remove `*_encrypted_hash` keys from a tree of hashes in place; whether any was there */
+function withoutEncryptedHashes(tree: unknown): boolean {
+  if (!tree || typeof tree !== 'object') return false;
+  let removed = false;
+  const node = tree as Record<string, unknown>;
+  for (const key of Object.keys(node)) {
+    if (key.endsWith('_encrypted_hash')) {
+      delete node[key];
+      removed = true;
+    } else if (withoutEncryptedHashes(node[key])) {
+      removed = true;
+    }
+  }
+  return removed;
+}
+
+/**
+ * Where a profile keeps its extensions (relative, with `/`): in a copy, or in the profile itself
+ * (Chromium's profile folder is a folder inside its copies)
+ */
+function extensionsPath(choice: PlaywrightBrowserChoice, inCopy: boolean): string {
+  if (choice.engine !== 'chromium') return 'extensions';
+  return inCopy ? `${choice.profileDirectory ?? 'Default'}/Extensions` : 'Extensions';
+}
+
+/** A copy with the profile's extensions, whole, or without them */
+function extensionsCopyOptions(choice: PlaywrightBrowserChoice, extensions: boolean, inCopy: boolean): CopyTreeOptions {
+  const rel = extensionsPath(choice, inCopy);
+  return extensions ? { whole: rel } : { without: rel };
+}
+
+/**
+ * Copy a profile into `target` in the layout runs use, with its extensions or without; returns how
+ * many files were skipped
+ */
+async function copyProfileInto(choice: PlaywrightBrowserChoice, source: string, target: string, extensions: boolean): Promise<number> {
+  const options = extensionsCopyOptions(choice, extensions, false);
+  if (choice.engine !== 'chromium') return copyTree(source, target, '', options);
   const profileDirectory = choice.profileDirectory ?? 'Default';
-  let skipped = await copyTree(source, path.join(target, profileDirectory));
+  let skipped = await copyTree(source, path.join(target, profileDirectory), '', options);
   await disableSessionRestore(path.join(target, profileDirectory, 'Preferences'));
+  await dropEncryptedPreferenceHashes(path.join(target, profileDirectory, 'Secure Preferences'));
   try {
     await copyFile(path.join(toHostPath(choice.userDataDir), 'Local State'), path.join(target, 'Local State'));
   } catch {
@@ -383,7 +454,9 @@ export function refreshSavedBrowserProfileCopy(choice: PlaywrightBrowserChoice):
     try {
       await mkdir(dir, { recursive: true, mode: PRIVATE_MODE });
       await makeFoldersPrivate([path.dirname(path.dirname(parent)), path.dirname(parent), parent, dir]);
-      const skipped = await copyProfileInto(choice, source, dir);
+      // With the extensions, so a run copying it while the browser is open gets the ones its
+      // settings name (the live profile's may have been updated since)
+      const skipped = await copyProfileInto(choice, source, dir, true);
       if (skipped > 0 || (await isBrowserProfileInUse(choice).catch(() => true))) {
         await rm(dir, { recursive: true, force: true });
         return;
@@ -440,9 +513,9 @@ async function removeOtherSavedCopies(keep: PlaywrightBrowserChoice[]): Promise<
 
 /** The profiles still chosen, whose copies a sweep keeps (choices-in-use.ts) */
 export interface BrowserChoicesInUse {
-  /** Chosen for runs in this project: Settings > Connectors and the project's tasks */
+  /** Chosen for runs in this project: Settings > Browser and the project's tasks and chats */
   project: PlaywrightBrowserChoice[];
-  /** Chosen anywhere: Settings and every project's tasks (saved copies are shared by projects) */
+  /** Chosen anywhere: Settings and every project's tasks and chats (saved copies are shared by projects) */
   all: PlaywrightBrowserChoice[];
 }
 
@@ -457,7 +530,8 @@ export async function prepareBrowserProfileCopy(
   projectPath: string,
   choice: PlaywrightBrowserChoice,
   slot: string,
-  inUse: BrowserChoicesInUse = { project: [], all: [] }
+  inUse: BrowserChoicesInUse = { project: [], all: [] },
+  options: PlaywrightProfileOptions = {}
 ): Promise<string | null> {
   // Playwright's own download has no profile: it starts the browser with a new one
   // Not awaited: the run doesn't need it. Without a profile to copy, no copy is kept for this run
@@ -476,6 +550,9 @@ export async function prepareBrowserProfileCopy(
     return null;
   }
   const target = browserProfileCopyDir(projectPath, choice, slot);
+  // A chat browser's copy holds the profile's extensions or none (Settings > Browser); a task run's
+  // as before: Firefox's (Playwright runs them), never Chromium's (Playwright switches them off)
+  const extensions = options.extensions ?? choice.engine !== 'chromium';
   liveCopies.add(target);
   claimFolder(target);
   void removeOldBrowserProfileCopies(projectPath, { keep: [...inUse.project, choice], keepSaved: [...inUse.all, choice] });
@@ -493,7 +570,11 @@ export async function prepareBrowserProfileCopy(
     if (saved) {
       savedReaders.set(saved.dir, (savedReaders.get(saved.dir) ?? 0) + 1);
       try {
-        skipped = await copyTree(saved.dir, target);
+        skipped = await copyTree(saved.dir, target, '', extensionsCopyOptions(choice, extensions, true));
+        // Saved before they were left out of saved copies
+        if (choice.engine === 'chromium') {
+          await dropEncryptedPreferenceHashes(path.join(target, choice.profileDirectory ?? 'Default', 'Secure Preferences'));
+        }
       } finally {
         const readers = (savedReaders.get(saved.dir) ?? 1) - 1;
         if (readers > 0) savedReaders.set(saved.dir, readers);
@@ -501,12 +582,12 @@ export async function prepareBrowserProfileCopy(
       }
       appLog.info(`[BrowserProfiles] ${choice.id} is open; this run uses its copy saved ${new Date(saved.at).toISOString()}`);
     } else {
-      skipped = await copyProfileInto(choice, source, target);
+      skipped = await copyProfileInto(choice, source, target, extensions);
       // Closed now: keep the saved copy fresh for runs that start while it is open
       void refreshSavedBrowserProfileCopy(choice);
     }
     // The run's Playwright config: this copy as the browser's profile
-    await writeFile(path.join(target, PLAYWRIGHT_CONFIG_FILE), JSON.stringify(playwrightProfileConfig(choice, target), null, 2), { mode: 0o600 });
+    await writePlaywrightProfileConfig(choice, target, options);
   } catch (error) {
     // A full disk (ENOSPC, EDQUOT) or another error: no partial copy is left behind
     await removeBrowserProfileCopy(target);
@@ -516,6 +597,57 @@ export async function prepareBrowserProfileCopy(
     appLog.warn(`[BrowserProfiles] ${skipped} file(s) of ${choice.id} could not be copied (is the browser open?)`);
   }
   return target;
+}
+
+async function writePlaywrightProfileConfig(choice: PlaywrightBrowserChoice, target: string, options: PlaywrightProfileOptions): Promise<void> {
+  await writeFile(path.join(target, PLAYWRIGHT_CONFIG_FILE), JSON.stringify(playwrightProfileConfig(choice, target, options), null, 2), { mode: 0o600 });
+}
+
+/**
+ * A kept copy (a crashed chat browser's, started again) follows Settings > Browser's switch as it
+ * is now: without extensions their folder goes (Playwright's Firefox runs a profile's extensions
+ * whatever its prefs say); with them a copy that has none takes them from the closed browser's
+ * profile, or its saved copy while it is open, kept only when every file came across (a half
+ * copied extension is a corrupted one). Rewrites the copy's Playwright config
+ */
+export async function setBrowserProfileCopyExtensions(choice: PlaywrightBrowserChoice, target: string, extensions: boolean): Promise<void> {
+  const folder = path.join(target, ...extensionsPath(choice, true).split('/'));
+  let present = await stat(folder).then(() => true, () => false);
+  if (!extensions && present) {
+    await rm(folder, { recursive: true, force: true });
+    present = false;
+  } else if (extensions && !present) {
+    present = await copyExtensionsInto(choice, folder);
+  }
+  await writePlaywrightProfileConfig(choice, target, { extensions: extensions && present });
+}
+
+/** Copy the profile's extensions folder to `folder`, whole or not at all; whether it was copied */
+async function copyExtensionsInto(choice: PlaywrightBrowserChoice, folder: string): Promise<boolean> {
+  const saved = (await isBrowserProfileInUse(choice).catch(() => true)) ? await newestSavedCopy(choice) : null;
+  if (saved) savedReaders.set(saved.dir, (savedReaders.get(saved.dir) ?? 0) + 1);
+  const source = saved
+    ? path.join(saved.dir, ...extensionsPath(choice, true).split('/'))
+    : path.join(toHostPath(choice.profilePath), extensionsPath(choice, false));
+  const partial = `${folder}.partial`;
+  try {
+    await rm(partial, { recursive: true, force: true });
+    const skipped = await copyTree(source, partial, '', {}, true);
+    if (skipped > 0) throw new Error(`${skipped} file(s) could not be copied`);
+    await rename(partial, folder);
+    return true;
+  } catch (error) {
+    await rm(partial, { recursive: true, force: true }).catch(() => undefined);
+    // A profile without extensions has no such folder
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') appLog.warn(`[BrowserProfiles] Could not copy the extensions of ${choice.id}:`, error);
+    return false;
+  } finally {
+    if (saved) {
+      const readers = (savedReaders.get(saved.dir) ?? 1) - 1;
+      if (readers > 0) savedReaders.set(saved.dir, readers);
+      else savedReaders.delete(saved.dir);
+    }
+  }
 }
 
 /** Whether a sweep may remove this copy: no run of this process uses it and no other running Workbench owns it */
@@ -619,8 +751,9 @@ export async function removeOldBrowserProfileCopies(projectPath: string, options
   const keepSaved = options.keepSaved ?? options.keep;
   const profileKey = (list: PlaywrightBrowserChoice[] | undefined) =>
     list === undefined ? '' : `[${[...new Set(list.map((choice) => slug(choice.id)))].sort().join(',')}]`;
-  // A changed choice is looked at again at once
-  const sweepKey = `${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;
+  // A changed choice is looked at again at once; a sweep in WSL looks at other folders than one
+  // run natively (chat browsers on Windows, runNatively)
+  const sweepKey = `${getWslInfo() ? 'wsl' : 'native'}\0${projectPath}\0${profileKey(options.keep)}\0${profileKey(keepSaved)}`;
   if (!options.force && now - (lastSweep.get(sweepKey) ?? 0) < SWEEP_INTERVAL_MS) return;
   lastSweep.set(sweepKey, now);
   if (keepSaved !== undefined) await removeOtherSavedCopies(keepSaved);

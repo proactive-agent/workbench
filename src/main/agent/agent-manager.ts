@@ -27,7 +27,6 @@ import { getAugmentedEnvAsync } from '../env-utils';
 import { isWslRuntime } from '../platform/shell-runtime';
 import { git } from '../utils/git-exec';
 import { getClaudeProfileManager } from '../claude-profile-manager';
-import { getOperationRegistry } from '../claude-profile/operation-registry';
 import { getAPIProfileEnv } from '../services/profile';
 import { getSpecsDir } from '../../shared/constants';
 import { getTaskWorktreeBranch } from '../../shared/utils/claude-run';
@@ -41,8 +40,6 @@ import { branchMergeBlocker, waitForBranchSync } from '../worktree/merge-guard';
 import { keepsLocalMergeOut, readResyncRequest } from '../task-resync/request';
 
 
-/** Restarts after a rate limit or auth problem before giving up (prevents swap loops) */
-const MAX_SWAPS_PER_TASK = 2;
 /** How long killAll waits for runs to wind down */
 const KILL_ALL_TIMEOUT_MS = 10_000;
 
@@ -61,11 +58,11 @@ interface RunEntry {
   taskId: string;
   /** Set once setup finished and the run was created */
   run?: ClaudeTaskRun;
-  /** Claude profile the run was started on (undefined: best available at start) */
+  /** Claude profile the run was started on (undefined: the account in use at start) */
   profileId?: string;
   /** An API profile (Anthropic-compatible endpoint) is active: Claude profiles are not used */
   apiProfileActive: boolean;
-  /** Stopped by killTask/restartTask: its outcome is not reported */
+  /** Stopped by killTask: its outcome is not reported */
   killed: boolean;
   /** Settles when the run (and its state flush) finished */
   done: Promise<void>;
@@ -85,24 +82,9 @@ interface RunEntry {
  */
 const runKey = (projectId: string, taskId: string): string => `${projectId}\u0000${taskId}`;
 
-/**
- * The id a run is registered under in the operation registry (account swaps). The registry keys
- * its operations by whatever id it is handed, so a bare task id would let the second project's
- * run overwrite the first's registration, and the first run to finish would unregister whichever
- * entry was left - leaving one run without a swap registration and the other with a stale one
- * pointing at a run that has ended. The registry and its other reader (`usage-monitor.ts`, which
- * groups ids by profile and logs them) treat the id as opaque, so naming the project here is
- * free; it is spelled out rather than reusing `runKey` because it is read by people in logs.
- */
-const operationId = (projectId: string, taskId: string): string => `task:${projectId}:${taskId}`;
-
 export class AgentManager extends EventEmitter {
   private state = new AgentState();
   private runs = new Map<string, RunEntry>();
-  /** Options of the latest run per project and task, for restarts after it ended */
-  private lastOptions = new Map<string, StartTaskOptions>();
-  /** Automatic restarts (profile swaps) per project and task since the user last started it */
-  private swapCounts = new Map<string, number>();
   /** Last task event sequence per project and task (monotonic across runs and app restarts) */
   private sequences = new Map<string, number>();
 
@@ -116,14 +98,14 @@ export class AgentManager extends EventEmitter {
    * renderer older than the field it now sends - and for internal callers that never had one.
    *
    * With two projects running the same task id there is no run such a caller can be meaning, and
-   * the arbitrary first match would stop or restart a run the user never touched, so that case is
+   * the arbitrary first match would stop a run the user never touched, so that case is
    * logged and refused: the caller reads it as "not running", which the user can repeat from the
    * project's own board, where the project travels with the request.
    */
   private keyOf(taskId: string, projectId?: string): string | undefined {
     if (projectId) {
       const key = runKey(projectId, taskId);
-      return this.runs.has(key) || this.lastOptions.has(key) ? key : undefined;
+      return this.runs.has(key) ? key : undefined;
     }
     let found: string | undefined;
     for (const [key, entry] of this.runs) {
@@ -148,13 +130,9 @@ export class AgentManager extends EventEmitter {
    * Run state lives in `<specDir>/claude_run.json`, so a started task continues where it
    * stopped (triage, plan and implementation aren't repeated once completed).
    */
-  async startTask(taskId: string, options: StartTaskOptions): Promise<void> {
-    return this.launch(taskId, options, false);
-  }
-
-  private async launch(taskId: string, startOptions: StartTaskOptions, isRestart: boolean): Promise<void> {
-    // The project's Claude account (Settings > Project) unless the run is pinned to another one
-    // (e.g. a restart after an account swap); none: the account in use
+  async startTask(taskId: string, startOptions: StartTaskOptions): Promise<void> {
+    // The project's Claude account (Settings > Project) unless the run is pinned to another one;
+    // none: the account in use
     const options: StartTaskOptions = {
       ...startOptions,
       profileId: startOptions.profileId ?? startOptions.project.settings?.claudeProfileId,
@@ -170,8 +148,6 @@ export class AgentManager extends EventEmitter {
       this.killTask(taskId, projectId);
       await previous.done;
     }
-    if (!isRestart) this.swapCounts.delete(key);
-    this.lastOptions.set(key, options);
 
     let resolveDone!: () => void;
     const entry: RunEntry = {
@@ -260,7 +236,7 @@ export class AgentManager extends EventEmitter {
     });
     entry.run = run;
 
-    this.registerWithOperationRegistry(taskId, entry);
+    this.recordTaskProfile(taskId, entry);
 
     run.run()
       .then((outcome) => this.handleRunFinished(taskId, entry, outcome))
@@ -294,7 +270,6 @@ export class AgentManager extends EventEmitter {
     this.runs.delete(key);
     // The run the key found owns the project, which the caller may not have named
     this.state.removeRunning(taskId, entry.projectId);
-    getOperationRegistry().unregisterOperation(operationId(entry.projectId, taskId));
     return entry.projectId;
   }
 
@@ -328,47 +303,11 @@ export class AgentManager extends EventEmitter {
     return Array.from(this.runs.values()).map((entry) => entry.taskId);
   }
 
-  /**
-   * Restart a task's run on another Claude profile (rate limit or proactive swap). The run
-   * continues from its saved state. Returns false when the task can't be restarted.
-   */
-  restartTask(taskId: string, newProfileId?: string, projectId?: string): boolean {
-    const key = this.keyOf(taskId, projectId);
-    const options = (key ? this.runs.get(key)?.options ?? this.lastOptions.get(key) : undefined);
-    if (!key || !options) {
-      appLog.warn(`[AgentManager] restartTask: no run options for ${taskId}`);
-      return false;
-    }
-    const swaps = this.swapCounts.get(key) ?? 0;
-    if (swaps >= MAX_SWAPS_PER_TASK) {
-      appLog.warn(`[AgentManager] restartTask: ${taskId} already restarted ${swaps} times, not restarting again`);
-      return false;
-    }
-    this.swapCounts.set(key, swaps + 1);
-
-    if (newProfileId) {
-      const profileManager = getClaudeProfileManager();
-      if (profileManager.getActiveProfile()?.id !== newProfileId) {
-        profileManager.setActiveProfile(newProfileId);
-      }
-    }
-
-    const previous = this.runs.get(key);
-    this.killTask(taskId, options.project.id);
-    const restartOptions: StartTaskOptions = { ...options, profileId: newProfileId ?? options.profileId };
-    void (previous?.done ?? Promise.resolve()).then(() =>
-      this.launch(taskId, restartOptions, true).catch((error) =>
-        appLog.error(`[AgentManager] Restarting ${taskId} failed:`, error)
-      )
-    );
-    return true;
-  }
-
   // ============================================
-  // Queue Routing Methods (Rate Limit Recovery)
+  // Profile and session of tasks
   // ============================================
 
-  /** Running tasks grouped by profile (queue routing) */
+  /** Running tasks grouped by profile */
   getRunningTasksByProfile(): { byProfile: Record<string, string[]>; totalRunning: number } {
     return this.state.getRunningTasksByProfile();
   }
@@ -417,7 +356,7 @@ export class AgentManager extends EventEmitter {
     const specDir = path.join(project.path, getSpecsDir(project.autoBuildPath), task.specId);
 
     // A base branch the user chose - on the task, or as the project's main branch - may have been
-    // deleted or renamed since. Nothing stands in for it: this throws, `launch()` turns the message
+    // deleted or renamed since. Nothing stands in for it: this throws, `startTask()` turns the message
     // into a recoverable failure, and the user gives the task a base branch that exists instead of
     // getting a run built on code they never chose. A branch the repository has never heard of is
     // not the same thing as a branch that is gone - a teammate may have pushed it, or it may have
@@ -513,7 +452,7 @@ export class AgentManager extends EventEmitter {
 
     // Connectors the run leaves out, for the start of its task log
     const startNotes: { phase: TaskLogPhase; line: string }[] = [];
-    // The Playwright connector's browser: the task's own choice, else the one in Settings > Connectors
+    // The Playwright connector's browser: the task's own choice, else the one in Settings > Browser
     const taskBrowser = task.metadata?.playwrightBrowser;
     const browser = getTaskPlaywrightBrowser(taskBrowser, settings.mcpConnectors);
     const connectorSettings: McpConnectorSettings | undefined = taskBrowser === undefined
@@ -701,8 +640,8 @@ export class AgentManager extends EventEmitter {
   }
 
   /**
-   * Record a rate limit on the Claude profile the run used, so the next runs (and an
-   * automatic swap) pick another profile. Returns that profile's ID.
+   * Record a rate limit on the Claude profile the run used (shown with the account until its
+   * reset). Returns that profile's ID.
    */
   private recordRateLimit(entry: RunEntry, payload: Record<string, unknown>): string | undefined {
     if (entry.apiProfileActive) return undefined;
@@ -727,7 +666,8 @@ export class AgentManager extends EventEmitter {
     }
   }
 
-  private registerWithOperationRegistry(taskId: string, entry: RunEntry): void {
+  /** Record which Claude profile the task runs on */
+  private recordTaskProfile(taskId: string, entry: RunEntry): void {
     if (entry.apiProfileActive) return;
     try {
       const profileManager = getClaudeProfileManager();
@@ -740,21 +680,8 @@ export class AgentManager extends EventEmitter {
         entry.profileId ? 'reactive' : 'proactive',
         entry.projectId
       );
-      // No stopFn: restartTask stops the run itself. Both the id the run is registered under and
-      // the swap name the project as well as the task, because a task id only tells the projects
-      // apart together with it: left out, the second project's run would replace the first's
-      // registration, and restartTask would take whichever run happens to carry that id, so a
-      // rate-limit swap here could stop and restart another project's run instead of this one
-      getOperationRegistry().registerOperation(
-        operationId(entry.projectId, taskId),
-        'task-execution',
-        profile.id,
-        profile.name,
-        (newProfileId: string) => this.restartTask(taskId, newProfileId, entry.projectId),
-        { metadata: { projectPath: entry.options.project.path, specId: entry.options.task.specId } }
-      );
     } catch (error) {
-      appLog.warn('[AgentManager] Could not register the task for profile swaps:', error);
+      appLog.warn('[AgentManager] Could not record the task\'s profile:', error);
     }
   }
 
@@ -768,7 +695,6 @@ export class AgentManager extends EventEmitter {
     if (this.runs.get(key) === entry) {
       this.runs.delete(key);
       this.state.removeRunning(taskId, entry.projectId);
-      getOperationRegistry().unregisterOperation(operationId(entry.projectId, taskId));
     }
     // Stopped by the user or replaced by a restart: nothing to report
     if (entry.killed || outcome.status === 'stopped') return;

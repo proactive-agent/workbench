@@ -286,6 +286,21 @@ export interface AgentProfile {
   phaseThinking?: PhaseThinkingConfig;
 }
 
+/** The chat browsers' own settings (Settings > Browser); the default profile is McpConnectorSettings.playwrightBrowser */
+export interface BrowserSettings {
+  /** The browser drawer shows the profile's bookmarks bar (default on) */
+  showBookmarksBar?: boolean;
+  /** The page a chat's browser opens on when it starts (empty: a blank page) */
+  homepage?: string;
+  /** Chat browsers run the extensions installed in their browser profile (default off) */
+  extensions?: boolean;
+  /**
+   * Extensions switched on or off in the browser drawer, by browser profile id, then extension id
+   * (unset: as the profile has it)
+   */
+  extensionSwitches?: Record<string, Record<string, boolean>>;
+}
+
 export interface AppSettings {
   theme: 'light' | 'dark' | 'system';
   colorTheme?: ColorTheme;
@@ -311,8 +326,10 @@ export interface AppSettings {
   wslToolPaths?: WslToolPaths;
   // Maximum tasks in progress at once per project; others wait in the Queue (Settings > Claude Code)
   maxParallelTasks?: number;
-  // MCP connector defaults for new tasks (Settings > Connectors)
+  // MCP connector defaults for new tasks (Settings > Connectors; the default browser profile on Settings > Browser)
   mcpConnectors?: McpConnectorSettings;
+  // The chat browsers: bookmarks bar, homepage (Settings > Browser)
+  browser?: BrowserSettings;
   // How tasks run in Claude Code: triage, planning, validation, budget (Settings > Claude Code)
   claudeCodeTasks?: Partial<ClaudeCodeTaskSettings>;
   // Log order setting for task detail view

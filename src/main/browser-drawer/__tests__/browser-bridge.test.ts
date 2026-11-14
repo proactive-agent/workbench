@@ -15,14 +15,38 @@ const path = require('path');
 const log = (entry) => fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify(entry) + '\\n');
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let viewport = { width: 800, height: 600 };
+let front = false;
 const page = {
   on() {},
   url: () => 'about:blank',
   title: async () => 'Blank',
-  mainFrame: () => null,
+  // The main frame, whose focused element is an iframe (it has an old selection of its own), with
+  // a busy frame that never answers and the focused iframe, which holds the selection
+  mainFrame: () => ({
+    evaluate: async () => ({ inFrame: true, text: 'Old selection' }),
+    childFrames: () => [
+      { frameElement: async () => ({ evaluate: () => new Promise(() => {}), dispose: async () => {} }) },
+      {
+        frameElement: async () => ({ evaluate: async () => true, dispose: async () => {} }),
+        evaluate: async () => { log({ read: true }); return { inFrame: false, text: 'Selected text' }; },
+        childFrames: () => [],
+      },
+    ],
+  }),
   emulateMedia: async () => {},
   viewportSize: () => viewport,
-  setViewportSize: async (size) => { viewport = size; },
+  // As in Firefox: a background tab resizes only once it is brought to the front, which answers late
+  // (a 'background' file in this folder: another tab came to the front meanwhile)
+  setViewportSize: async (size) => {
+    if (fs.existsSync(path.join(__dirname, 'background'))) {
+      fs.rmSync(path.join(__dirname, 'background'));
+      front = false;
+    }
+    while (!front) await sleep(20);
+    viewport = size;
+    log({ resized: size.width });
+  },
+  bringToFront: () => { front = true; log({ front: true }); return new Promise(() => {}); },
   screencast: {
     start: async ({ onFrame }) => {
       setTimeout(() => {
@@ -39,10 +63,12 @@ const page = {
     up: async () => {},
     wheel: async (dx, dy) => log({ wheel: dy }),
   },
-  keyboard: { down: async () => {}, up: async () => {}, insertText: async () => {} },
+  keyboard: { down: async (key) => log({ key }), up: async () => {}, insertText: async () => {} },
   close: async () => {},
 };
-const context = { pages: () => [page], on() {}, newPage: async () => page };
+// Workbench's own extensions page (opened in the background, never listed)
+const helper = { ...page, url: () => 'chrome://extensions/#workbench-extensions' };
+const context = { pages: () => [helper, page], on() {}, newPage: async () => page };
 module.exports = { chromium: { connect: async () => ({ contexts: () => [context], on() {}, close: async () => {} }) } };
 `;
 
@@ -78,13 +104,16 @@ describe('browser bridge script', () => {
     bridge = new BrowserBridgeProcess({ execPath: process.execPath });
     const frames: number[] = [];
     let pageId: string | undefined;
+    const listed: string[] = [];
     bridge.on('message', (message: BridgeMessage) => {
       if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'pages') listed.push(...message.pages.map((p) => p.url));
       if (message.type === 'frame') frames.push(message.data[0]);
     });
     await bridge.start();
     bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
     await until(() => !!pageId);
+    expect(new Set(listed)).toEqual(new Set(['about:blank']));
 
     bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 700, height: 500, scale: 1 });
     await until(() => frames.length === 1);
@@ -102,5 +131,190 @@ describe('browser bridge script', () => {
     await until(async () => (await calls()).some((call) => call.down));
     const mouse = (await calls()).filter((call) => 'move' in call || 'down' in call);
     expect(mouse).toEqual([{ move: 1 }, { move: 4 }, { move: 5 }, { down: true }]);
+  });
+
+  it("leaves out a Chromium page's frames of the window's size and sets its viewport again until they fit", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    // Chromium, whose page was hidden and shown again: its frames are of the window's size (1280 wide)
+    // until its viewport changes
+    await writeFile(
+      lib,
+      FAKE_PLAYWRIGHT.replace('let front = false;', 'let front = true;\nlet stale = true;')
+        .replace('    viewport = size;\n', '    if (size.width !== viewport.width) stale = false;\n    viewport = size;\n')
+        .replace(
+          `setTimeout(() => {
+        for (const n of [1, 2, 3]) {
+          Promise.resolve(onFrame({ data: new Uint8Array([n]), viewportWidth: 0, viewportHeight: 0 })).then(() => log({ acked: n }));
+        }
+      }, 50);`,
+          `let n = 0;
+      const timer = setInterval(() => {
+        n++;
+        const width = stale ? 1280 : viewport.width;
+        onFrame({ data: new Uint8Array([n, width === viewport.width ? 1 : 0]), viewportWidth: width, viewportHeight: viewport.height });
+        if (n > 40) clearInterval(timer);
+      }, 30);`
+        )
+        .replace('connect: async () => ({ contexts', 'connect: async () => ({ browserType: () => ({ name: () => "chromium" }), contexts')
+    );
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    const fitting: number[] = [];
+    let pageId: string | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'frame') {
+        fitting.push(message.data[1]);
+        bridge?.send({ type: 'frameAck', pageId: message.pageId });
+      }
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 800, height: 600, scale: 1 });
+
+    await until(() => fitting.length > 0);
+    // Only frames of the page's size reach the drawer, once its viewport was set one pixel wider and back
+    expect(fitting.every((fits) => fits === 1)).toBe(true);
+    const resized = (await calls()).filter((call) => 'resized' in call).map((call) => call.resized);
+    expect(resized).toEqual([801, 800]);
+  });
+
+  it('shows a background tab at once: brought to the front on a switch, not on a resize unless it stalls', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    await writeFile(lib, FAKE_PLAYWRIGHT);
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+    const fronts = async () => (await calls()).filter((call) => call.front).length;
+    const resizedTo = (width: number) => async () => (await calls()).some((call) => call.resized === width);
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let pageId: string | undefined;
+    let framed = false;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+      if (message.type === 'frame') framed = true;
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 700, height: 500, scale: 1 });
+    // Well within the 5 second command timeout a resize waiting for the tab would take
+    await until(() => framed, 1500);
+    expect(await fronts()).toBe(1);
+
+    // The drawer resized: the tab in front stays, nothing is brought forward
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 710, height: 500, scale: 1 });
+    await until(resizedTo(710), 1500);
+    expect(await fronts()).toBe(1);
+
+    // Another tab came to the front meanwhile: the stalled resize brings the viewed one back
+    await writeFile(path.join(dir, 'background'), '');
+    bridge.send({ type: 'view', viewerId: 1, pageId: pageId!, width: 720, height: 500, scale: 1 });
+    await until(resizedTo(720), 1500);
+    expect(await fronts()).toBe(2);
+  });
+
+  it("reads a page's selected text in turn with its input, before the keys after it", async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    await writeFile(lib, FAKE_PLAYWRIGHT);
+    const calls = async () =>
+      (await readFile(path.join(dir!, 'calls.log'), 'utf-8').catch(() => ''))
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line) as Record<string, unknown>);
+
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let pageId: string | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) pageId = message.pages[0].id;
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => !!pageId);
+
+    // A slow move, the copy shortcut's request, then its key (a cut removes the text once it lands)
+    bridge.send({ type: 'input', pageId: pageId!, event: { kind: 'mousemove', x: 1, y: 0 } });
+    const text = bridge.selectedText(pageId!);
+    bridge.send({ type: 'input', pageId: pageId!, event: { kind: 'keydown', key: 'x' } });
+    expect(await text).toBe('Selected text');
+    await until(async () => (await calls()).some((call) => call.key));
+    expect((await calls()).filter((call) => 'move' in call || 'read' in call || 'key' in call)).toEqual([{ move: 1 }, { read: true }, { key: 'x' }]);
+
+    // A page it doesn't know has nothing selected
+    await expect(bridge.selectedText('nope')).resolves.toBe('');
+  });
+
+  it('reports a page loading from its navigation request until it loads, and stops it on request', async () => {
+    dir = await mkdtemp(path.join(os.tmpdir(), 'bridge-script-test-'));
+    const lib = path.join(dir, 'fake-playwright.cjs');
+    // A page that emits its events: a navigation request of its main frame, then load
+    await writeFile(lib, `
+const fs = require('fs');
+const path = require('path');
+const { EventEmitter } = require('events');
+const log = (entry) => fs.appendFileSync(path.join(__dirname, 'calls.log'), JSON.stringify(entry) + '\\n');
+const page = new EventEmitter();
+const mainFrame = {};
+Object.assign(page, {
+  url: () => 'https://example.com/',
+  title: async () => 'Example',
+  mainFrame: () => mainFrame,
+  emulateMedia: async () => {},
+  close: async () => {},
+  context: () => ({ newCDPSession: async () => ({ send: async (method) => log({ cdp: method }), detach: async () => {} }) }),
+});
+const nav = { isNavigationRequest: () => true, frame: () => mainFrame };
+const navB = { isNavigationRequest: () => true, frame: () => mainFrame };
+fs.watch(__dirname, (event, file) => {
+  if (file === 'emit-request') page.emit('request', nav);
+  if (file === 'emit-request-b') page.emit('request', navB);
+  if (file === 'emit-fail-a') page.emit('requestfailed', nav);
+  if (file === 'emit-load') page.emit('load');
+});
+const context = { pages: () => [page], on() {} };
+module.exports = { chromium: { connect: async () => ({ contexts: () => [context], on() {}, close: async () => {} }) } };
+`);
+    bridge = new BrowserBridgeProcess({ execPath: process.execPath });
+    let latest: { id: string; loading?: boolean } | undefined;
+    bridge.on('message', (message: BridgeMessage) => {
+      if (message.type === 'pages' && message.pages[0]) latest = message.pages[0];
+    });
+    await bridge.start();
+    bridge.send({ type: 'sessions', sessions: [{ id: 's1', endpoint: 'fake', browserName: 'chromium', playwrightLib: lib }] });
+    await until(() => latest?.loading === false);
+
+    await writeFile(path.join(dir, 'emit-request'), '');
+    await until(() => latest?.loading === true);
+    await writeFile(path.join(dir, 'emit-load'), '');
+    await until(() => latest?.loading === false);
+
+    // A navigation replaced by another fails (aborted) after the new one started: still loading
+    await writeFile(path.join(dir, 'emit-request'), 'a');
+    await until(() => latest?.loading === true);
+    await writeFile(path.join(dir, 'emit-request-b'), '');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await writeFile(path.join(dir, 'emit-fail-a'), '');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(latest?.loading).toBe(true);
+    await writeFile(path.join(dir, 'emit-load'), 'b');
+    await until(() => latest?.loading === false);
+
+    // Stopped from the drawer: Chromium's own stop, and no longer loading
+    await writeFile(path.join(dir, 'emit-request'), 'again');
+    await until(() => latest?.loading === true);
+    bridge.send({ type: 'navigate', pageId: latest!.id, action: 'stop' });
+    await until(() => latest?.loading === false);
+    expect(await readFile(path.join(dir, 'calls.log'), 'utf-8')).toContain('Page.stopLoading');
   });
 });

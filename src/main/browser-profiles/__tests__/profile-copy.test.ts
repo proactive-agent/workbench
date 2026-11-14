@@ -70,6 +70,7 @@ import {
   removeLiveBrowserProfileCopies,
   removeOldBrowserProfileCopies,
   removeStaleBrowserProfileCopies,
+  setBrowserProfileCopyExtensions,
 } from '../profile-copy';
 
 const isPosix = process.platform !== 'win32';
@@ -222,6 +223,58 @@ describe('browser profile copies', () => {
     expect(existsSync(path.join(copy!, 'cache2'))).toBe(false);
   });
 
+  it("runs a profile's extensions only when asked: Chromium's from the profile, Firefox's left out otherwise", async () => {
+    const userData = path.join(root, 'chrome');
+    const chromeProfile = path.join(userData, 'Default');
+    await put(path.join(chromeProfile, 'Extensions', 'abc', '1.0', 'cache', 'manifest.json'), '{}');
+    await put(path.join(userData, 'Local State'), '{}');
+    const chrome: PlaywrightBrowserChoice = {
+      id: 'chrome:Default', browser: 'chrome', engine: 'chromium', profileName: 'Default',
+      executablePath: '/opt/google/chrome/chrome', userDataDir: userData, profileDirectory: 'Default', profilePath: chromeProfile,
+    };
+    const firefoxProfile = path.join(root, 'firefox', 'x.default-release');
+    await put(path.join(firefoxProfile, 'extensions', 'addon@example.xpi'));
+    const firefox: PlaywrightBrowserChoice = {
+      id: 'firefox:x.default-release', browser: 'firefox', engine: 'firefox', profileName: 'default-release',
+      executablePath: '/usr/lib/firefox/firefox', userDataDir: path.join(root, 'firefox'), profilePath: firefoxProfile,
+    };
+    const project = path.join(root, 'project');
+    const config = async (copy: string) => JSON.parse(await readFile(path.join(copy, '.workbench-playwright.json'), 'utf-8'));
+    const chromeExtension = (copy: string) => path.join(copy, 'Default', 'Extensions', 'abc', '1.0', 'cache', 'manifest.json');
+
+    // Task runs: as before (Chromium without, Firefox with the copied ones)
+    const task = (await prepareBrowserProfileCopy(project, chrome, 'task-1'))!;
+    expect(existsSync(chromeExtension(task))).toBe(false);
+    expect((await config(task)).browser.launchOptions.ignoreDefaultArgs).not.toContain('--disable-extensions');
+    expect(existsSync(path.join((await prepareBrowserProfileCopy(project, firefox, 'task-1'))!, 'extensions', 'addon@example.xpi'))).toBe(true);
+
+    // A chat browser with the switch on: every file of the extension (its own `cache` folder too)
+    const on = (await prepareBrowserProfileCopy(project, chrome, 'chat-on', undefined, { extensions: true }))!;
+    expect(existsSync(chromeExtension(on))).toBe(true);
+    expect((await config(on)).browser.launchOptions.ignoreDefaultArgs).toContain('--disable-extensions');
+    expect(existsSync(path.join((await prepareBrowserProfileCopy(project, firefox, 'chat-on', undefined, { extensions: true }))!, 'extensions'))).toBe(true);
+
+    // Off: none in either copy
+    const off = (await prepareBrowserProfileCopy(project, firefox, 'chat-off', undefined, { extensions: false }))!;
+    expect(existsSync(path.join(off, 'extensions'))).toBe(false);
+
+    // A kept copy follows the switch as it is now: off drops them, on takes them back
+    await setBrowserProfileCopyExtensions(chrome, on, false);
+    expect(existsSync(path.join(on, 'Default', 'Extensions'))).toBe(false);
+    expect((await config(on)).browser.launchOptions.ignoreDefaultArgs).not.toContain('--disable-extensions');
+    await setBrowserProfileCopyExtensions(firefox, off, true);
+    expect(existsSync(path.join(off, 'extensions', 'addon@example.xpi'))).toBe(true);
+    expect(existsSync(path.join(off, 'extensions.partial'))).toBe(false);
+
+    // While the browser is open, runs copy its saved copy, which keeps the extensions its settings name
+    mocks.inUse = false;
+    await refreshSavedBrowserProfileCopy(chrome);
+    mocks.inUse = true;
+    await rm(path.join(chromeProfile, 'Extensions'), { recursive: true });
+    expect(existsSync(chromeExtension((await prepareBrowserProfileCopy(project, chrome, 'chat-saved', undefined, { extensions: true }))!))).toBe(true);
+    expect(existsSync(path.join((await prepareBrowserProfileCopy(project, chrome, 'task-2'))!, 'Default', 'Extensions'))).toBe(false);
+  });
+
   it("removes a task's older copies, keeping the current run's and other tasks'", async () => {
     const profile = path.join(root, 'chrome', 'Default');
     await put(path.join(profile, 'Cookies'));
@@ -277,6 +330,33 @@ describe('browser profile copies', () => {
         expect((await stat(dir)).mode & 0o777).toBe(0o700);
       }
     }
+  });
+
+  it("leaves out the encrypted hashes of a Chromium copy's protected preferences, keeping the plain ones", async () => {
+    const userData = path.join(root, 'edge');
+    const profile = path.join(userData, 'Profile 1');
+    await put(path.join(profile, 'Secure Preferences'), JSON.stringify({
+      extensions: { settings: { abc: { path: 'abc/1.0_0' } } },
+      protection: {
+        macs: {
+          extensions: { settings: { abc: 'MAC', abc_encrypted_hash: 'djIwXX' } },
+          session: { restore_on_startup: 'MAC2', restore_on_startup_encrypted_hash: 'djIwYY' },
+        },
+        super_mac: 'SUPER',
+      },
+    }));
+    const choice: PlaywrightBrowserChoice = {
+      id: 'edge:Profile 1', browser: 'edge', engine: 'chromium', profileName: 'Me',
+      executablePath: '/opt/microsoft/msedge/msedge', userDataDir: userData, profileDirectory: 'Profile 1', profilePath: profile,
+    };
+
+    const copy = (await prepareBrowserProfileCopy(path.join(root, 'project'), choice, 'chat-1'))!;
+
+    const prefs = JSON.parse(await readFile(path.join(copy, 'Profile 1', 'Secure Preferences'), 'utf-8'));
+    expect(prefs).toEqual({
+      extensions: { settings: { abc: { path: 'abc/1.0_0' } } },
+      protection: { macs: { extensions: { settings: { abc: 'MAC' } }, session: { restore_on_startup: 'MAC2' } }, super_mac: 'SUPER' },
+    });
   });
 
   it("leaves out Firefox's session, Sync account and per-site caches", async () => {

@@ -6,7 +6,8 @@ import {
   CircleUserRound,
   CodeXml,
   Download,
-  Blocks
+  Blocks,
+  Globe
 } from 'lucide-react';
 import { AgentNodeIcon, GearIcon, ProjectOutlineIcon, SimulationIcon } from '../icons/app-icons';
 
@@ -21,7 +22,7 @@ import { ScrollArea } from '../ui/scroll-area';
 import { cn } from '../../lib/utils';
 import { useSettings } from './hooks/useSettings';
 import { ThemeSettings } from './ThemeSettings';
-import { SettingsFlushProvider } from './WindowsShellSelector';
+import { SettingsFlushProvider } from './settings-flush';
 import { GeneralSettings } from './GeneralSettings';
 import { ClaudeCodeTaskSettings } from './ClaudeCodeTaskSettings';
 import { AdvancedSettings } from './AdvancedSettings';
@@ -34,6 +35,7 @@ import { LiveAgentSimulatorSettings } from './LiveAgentSimulatorSettings';
 import { GraphifySimulatorSettings } from './GraphifySimulatorSettings';
 import { IS_DEV_BUILD } from '../../lib/title-bar';
 import { ConnectorsSettings } from './ConnectorsSettings';
+import { BrowserSettings } from './BrowserSettings';
 import { useProjectStore } from '../../stores/project-store';
 import type { UseProjectSettingsReturn } from '../project-settings/hooks/useProjectSettings';
 import {
@@ -54,7 +56,7 @@ interface AppSettingsDialogProps {
 }
 
 // App-level settings pages (claude.ai layout: related settings grouped on one page)
-type AppPage = 'general' | 'accounts' | 'agents' | 'connectors' | 'devtools' | 'simulation' | 'updates';
+type AppPage = 'general' | 'accounts' | 'agents' | 'browser' | 'connectors' | 'devtools' | 'simulation' | 'updates';
 
 // Section ids accepted from the rest of the app; older ids map onto the page that now holds them
 export type AppSection = AppPage | 'agent' | 'claude-code' | 'terminal-fonts' | 'appearance' | 'display' | 'notifications' | 'paths' | 'debug' | 'integrations' | 'api-profiles';
@@ -99,6 +101,7 @@ const topNavItemsConfig: TopNavItem[] = [
     kind: 'project', id: 'general', icon: ProjectOutlineIcon,
     iconClassName: 'h-[1.25rem] w-[1.25rem] -mx-px', iconStrokeWidth: 1.35
   },
+  { kind: 'app', id: 'browser', icon: Globe },
   { kind: 'app', id: 'connectors', icon: Blocks },
   { kind: 'app', id: 'devtools', icon: CodeXml },
   // Development builds only (the previews it holds are)
@@ -241,6 +244,8 @@ export function AppSettingsDialog({ open, onOpenChange, initialSection, initialP
         return <AccountSettings settings={settings} onSettingsChange={setSettings} isOpen={open} />;
       case 'agents':
         return <ClaudeCodeTaskSettings settings={settings} onSettingsChange={setSettings} />;
+      case 'browser':
+        return <BrowserSettings settings={settings} onSettingsChange={setSettings} />;
       case 'connectors':
         return <ConnectorsSettings settings={settings} onSettingsChange={setSettings} />;
       case 'devtools':

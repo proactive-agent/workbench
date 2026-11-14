@@ -32,7 +32,7 @@ vi.mock('../../settings-utils', () => ({
 import { mkdtempSync, rmSync } from 'fs';
 import os from 'os';
 import path from 'path';
-import { openTaskToolsSession, closeTaskToolsServer, type TaskToolsSession } from '../task-tools-server';
+import { openChatToolsSession, closeTaskToolsServer, type TaskToolsSession } from '../task-tools-server';
 import { configureTaskMessaging, registerLiveRun, resetTaskMessagingForTests } from '../../task-messaging/broker';
 import { readInbox } from '../../task-messaging/inbox';
 
@@ -60,7 +60,7 @@ async function call(session: TaskToolsSession, name: string, args: Record<string
 }
 
 const onTasksChanged = vi.fn();
-const open = () => openTaskToolsSession({ projectId: 'p1', onTasksChanged });
+const open = () => openChatToolsSession({ tasks: { projectId: 'p1', onTasksChanged } });
 
 beforeEach(() => {
   vi.clearAllMocks();

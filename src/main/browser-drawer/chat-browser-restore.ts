@@ -95,7 +95,7 @@ export function keepsForChat(
 }
 
 /** Whether a chat's conversation is saved in its project */
-async function conversationExists(projectPath: string, chatId: string): Promise<boolean> {
+export async function conversationExists(projectPath: string, chatId: string): Promise<boolean> {
   try {
     return (await stat(new InsightsPaths().getSessionPath(projectPath, chatId))).isFile();
   } catch {

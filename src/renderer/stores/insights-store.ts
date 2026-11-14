@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
+import type { SessionTarget } from '../lib/session-targets';
 import type {
   InsightsSession,
   InsightsSessionSummary,
@@ -10,9 +11,11 @@ import type {
   InsightsModelConfig,
   TaskMetadata,
   Task,
-  ImageAttachment
+  ImageAttachment,
+  SessionMessageOrigin
 } from '../../shared/types';
 import { DEFAULT_AGENT_PROFILES } from '../../shared/constants';
+import { INSIGHTS_ERROR_CODES, parseInsightsError } from '../../shared/constants/insights';
 import { NEW_CHAT_BROWSER_ID } from '../../shared/types/browser-drawer';
 import { useBrowserDrawerStore } from './browser-drawer-store';
 
@@ -52,6 +55,19 @@ interface InsightsState {
   draftModelConfig: InsightsModelConfig | undefined;
   /** Replies of chats not on screen, by conversation id, until they end */
   backgroundRuns: Record<string, ChatRun>;
+  /**
+   * A chat to show on the Claude page (an agent window opened as a chat): the app shows the page,
+   * which opens on this chat instead of a new one. `seq` tells requests apart
+   */
+  openChatRequest: { projectId: string; chatId: string; seq: number } | null;
+  /** Asks the Claude page for a new chat, as its New chat button does (the sidebar's Claude item) */
+  newChatRequest: number;
+  /** The composer's text, kept while the user is on other pages */
+  composerText: string;
+  /** Where the composer's message goes (a pasted name), for the chat it was chosen in ('new': the New chat page) */
+  composerSendTo: { chatKey: string; target: SessionTarget } | null;
+  /** Whether the Claude page shows its chat history */
+  chatHistoryOpen: boolean;
 
   // Actions
   setProjectId: (projectId: string) => void;
@@ -73,6 +89,10 @@ interface InsightsState {
   setShowArchived: (showArchived: boolean) => void;
   setPendingImages: (images: ImageAttachment[]) => void;
   setDraftModelConfig: (config: InsightsModelConfig | undefined) => void;
+  requestNewChat: () => void;
+  setComposerText: (text: string | ((current: string) => string)) => void;
+  /** Show or hide the chat history; `byUser` false (the browser drawer made room): not remembered */
+  setChatHistoryOpen: (open: boolean, byUser?: boolean) => void;
   /**
    * Show another chat (null: the New chat page). A reply the shown chat is writing goes on in the
    * background; the chat shown next comes back with its own reply in flight, if it has one
@@ -92,6 +112,54 @@ const initialStatus: InsightsChatStatus = {
  * reports the conversation it created for it
  */
 export const DRAFT_SESSION_ID = 'draft';
+
+/**
+ * The Claude page as the user left it, kept across restarts: each project's last chat (none: the
+ * New chat page) and whether the chat history shows
+ */
+const LAST_CHATS_KEY = 'workbench.claude.lastChats';
+const CHAT_HISTORY_KEY = 'workbench.claude.historyOpen';
+
+function readChatHistoryOpen(): boolean {
+  try {
+    return localStorage.getItem(CHAT_HISTORY_KEY) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * Each project's last chat, read afresh every time: the app's windows share the storage, and each
+ * writes only its own project's entry
+ */
+let lastChatsFallback: Record<string, string> = {};
+
+function readLastChats(): Record<string, string> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(LAST_CHATS_KEY) ?? '{}') as unknown;
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as Record<string, string>) : {};
+  } catch {
+    return lastChatsFallback;
+  }
+}
+
+/** The chat a project's Claude page showed last (undefined: the New chat page) */
+export function lastChatId(projectId: string): string | undefined {
+  const id = readLastChats()[projectId];
+  return typeof id === 'string' ? id : undefined;
+}
+
+function rememberChat(projectId: string, chatId: string | null): void {
+  const chats = { ...readLastChats() };
+  if (chatId) chats[projectId] = chatId;
+  else delete chats[projectId];
+  lastChatsFallback = chats;
+  try {
+    localStorage.setItem(LAST_CHATS_KEY, JSON.stringify(chats));
+  } catch {
+    // Remembered for this run only
+  }
+}
 
 const IDLE_RUN: ChatRun = { status: { phase: 'idle', message: '' }, streamingContent: '', streamingTasks: [], currentTool: null, toolsUsed: [] };
 
@@ -183,6 +251,11 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
   pendingImages: [],
   draftModelConfig: undefined,
   backgroundRuns: {},
+  openChatRequest: null,
+  newChatRequest: 0,
+  composerText: '',
+  composerSendTo: null,
+  chatHistoryOpen: readChatHistoryOpen(),
 
   // Actions
   // Switching projects drops the previous project's in-flight state; its reply is still
@@ -199,13 +272,32 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
             streamingTasks: [],
             currentTool: null,
             toolsUsed: [],
-            backgroundRuns: {}
+            backgroundRuns: {},
+            // Choices for another project's New chat page, and a recipient among its sessions
+            draftModelConfig: undefined,
+            composerSendTo: null
           }
     ),
 
   setSession: (session) => set({ session }),
 
   setDraftModelConfig: (draftModelConfig) => set({ draftModelConfig }),
+
+  requestNewChat: () => set((state) => ({ newChatRequest: state.newChatRequest + 1 })),
+
+  setComposerText: (text) =>
+    set((state) => ({ composerText: typeof text === 'function' ? text(state.composerText) : text })),
+
+  setChatHistoryOpen: (chatHistoryOpen, byUser = true) => {
+    set({ chatHistoryOpen });
+    // The drawer's own closing is undone by the drawer, not kept as the user's choice
+    if (!byUser) return;
+    try {
+      localStorage.setItem(CHAT_HISTORY_KEY, chatHistoryOpen ? '1' : '0');
+    } catch {
+      // Remembered only where storage works
+    }
+  },
 
   showSession: (session) =>
     set((state) => {
@@ -383,6 +475,15 @@ export const useInsightsStore = create<InsightsState>((set, _get) => ({
 
 // Helper functions
 
+// The chat shown is the one the page opens on next time (a conversation, or the New chat page;
+// not the moment between a new chat's first message and its conversation)
+useInsightsStore.subscribe((state, previous) => {
+  if (!state.projectId || state.projectId !== previous.projectId) return;
+  const id = state.session?.id ?? null;
+  if (id === (previous.session?.id ?? null) || id === DRAFT_SESSION_ID) return;
+  rememberChat(state.projectId, id);
+});
+
 export async function loadInsightsSessions(projectId: string, includeArchived?: boolean): Promise<void> {
   const store = useInsightsStore.getState();
   store.setLoadingSessions(true);
@@ -435,7 +536,20 @@ function cacheSentAttachments(images: ImageAttachment[] | undefined): void {
   }
 }
 
-export function sendMessage(projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]): void {
+/**
+ * The message last sent, until its reply starts: given back to the composer when it is refused
+ * because an agent window sharing the chat's session works in it (agent_window_busy)
+ */
+let lastSent: { chatId: string | undefined; text: string; images?: ImageAttachment[] } | null = null;
+
+export function sendMessage(
+  projectId: string,
+  message: string,
+  modelConfig?: InsightsModelConfig,
+  images?: ImageAttachment[],
+  to?: SessionMessageOrigin
+): void {
+  lastSent = { chatId: useInsightsStore.getState().session?.id, text: message, images };
   useInsightsStore.getState().setProjectId(projectId);
   cacheSentAttachments(images);
   const store = useInsightsStore.getState();
@@ -451,7 +565,8 @@ export function sendMessage(projectId: string, message: string, modelConfig?: In
     role: 'user',
     content: message,
     timestamp: new Date(),
-    ...(displayImages && displayImages.length > 0 ? { images: displayImages } : {})
+    ...(displayImages && displayImages.length > 0 ? { images: displayImages } : {}),
+    ...(to ? { to } : {})
   };
   store.addMessage(userMessage);
 
@@ -469,7 +584,7 @@ export function sendMessage(projectId: string, message: string, modelConfig?: In
   const configToUse = modelConfig || session?.modelConfig;
 
   // Send to main process
-  window.electronAPI.sendInsightsMessage(projectId, message, configToUse, images);
+  window.electronAPI.sendInsightsMessage(projectId, message, configToUse, images, to);
 }
 
 /**
@@ -537,25 +652,70 @@ export function editMessage(projectId: string, messageId: string, content: strin
 }
 
 export async function openInsightsPage(projectId: string, includeArchived?: boolean): Promise<void> {
+  const sameProject = useInsightsStore.getState().projectId === projectId;
   useInsightsStore.getState().setProjectId(projectId);
-  // Choices made before a conversation existed last only while the page is open
-  useInsightsStore.getState().setDraftModelConfig(undefined);
-  const { phase } = useInsightsStore.getState().status;
-  if (phase === 'thinking' || phase === 'streaming') {
+  // Opened for a chat (an agent window opened as a chat): that chat
+  const request = useInsightsStore.getState().openChatRequest;
+  if (request?.projectId === projectId) {
+    useInsightsStore.setState({ openChatRequest: null });
+    await loadInsightsSessions(projectId, includeArchived);
+    await switchSession(projectId, request.chatId);
+    return;
+  }
+  // The page as it was left: the chat it showed last, or the New chat page (with its choices)
+  const last = lastChatId(projectId) ?? null;
+  const shown = useInsightsStore.getState().session;
+  if (sameProject && (shown?.id ?? null) === last) {
     await loadInsightsSessions(projectId, includeArchived);
     return;
   }
+  // A new chat's first message is still on its way to becoming a conversation
+  if (sameProject && shown?.id === DRAFT_SESSION_ID) {
+    await loadInsightsSessions(projectId, includeArchived);
+    return;
+  }
+  if (last) {
+    const [, result] = await Promise.all([
+      loadInsightsSessions(projectId, includeArchived),
+      window.electronAPI.switchInsightsSession(projectId, last),
+    ]);
+    if (result.success && result.data) {
+      useInsightsStore.getState().showSession(result.data);
+      return;
+    }
+    // Gone (deleted): a new chat, the history just listed
+    await newSession(projectId, { listChats: false });
+    return;
+  }
+  // No chat to go back to yet
   await newSession(projectId);
 }
 
-export async function newSession(projectId: string): Promise<void> {
+/** Requests to show a chat made so far (App tells a new one by its number) */
+let openChatRequests = 0;
+
+/**
+ * Open an agent window's Claude Code session as a chat and show it on the Claude page. Resolves
+ * with the error code when it can't (an OpenWindowAsChatError)
+ */
+export async function openWindowAsChat(projectId: string, terminalId: string): Promise<string | null> {
+  const result = await window.electronAPI.openWindowAsChat(projectId, terminalId);
+  if (!result.success || !result.data) return result.error ?? 'failed';
+  // Every request gets a number of its own (a used one is cleared, so it can't count from it)
+  const seq = ++openChatRequests;
+  // The app shows the Claude page, which opens on the chat
+  useInsightsStore.setState({ openChatRequest: { projectId, chatId: result.data, seq } });
+  return null;
+}
+
+export async function newSession(projectId: string, options: { listChats?: boolean } = {}): Promise<void> {
   // The conversation is created when the first message is sent
   const result = await window.electronAPI.newInsightsSession(projectId);
   if (result.success) {
     // A fresh conversation starts clean; a reply the previous chat is writing goes on in it
     useInsightsStore.getState().showSession(null);
-    // Reload sessions list
-    await loadInsightsSessions(projectId);
+    // Reload sessions list (unless the caller just did)
+    if (options.listChats !== false) await loadInsightsSessions(projectId);
   }
 }
 
@@ -718,6 +878,13 @@ export function setupInsightsListeners(): () => void {
   // Listen for errors
   const unsubError = window.electronAPI.onInsightsError((projectId, error, sessionId) => {
     if (!isCurrentProject(projectId)) return;
+    // Not sent (an agent window works in the chat's session): the message goes back to the composer
+    if (parseInsightsError(error).code === INSIGHTS_ERROR_CODES.agentWindowBusy && lastSent && lastSent.chatId === sessionId && isShown(sessionId)) {
+      const { text, images } = lastSent;
+      lastSent = null;
+      if (!store().composerText.trim()) store().setComposerText(text);
+      if (images?.length && store().pendingImages.length === 0) store().setPendingImages(images);
+    }
     if (!isShown(sessionId)) {
       store().updateBackgroundRun(sessionId!, (run) => ({ ...run, currentTool: null, status: { phase: 'error', error } }));
       return;

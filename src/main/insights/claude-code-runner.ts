@@ -6,12 +6,15 @@
  * (`claude -p --output-format stream-json --include-partial-messages`), so text streams
  * into the chat as it is written.
  *
- * The CLI can't change the project's files: only Read/Glob/Grep, WebFetch/WebSearch (plus Bash limited to graphify's
+ * By default the CLI can't change the project's files: only Read/Glob/Grep, WebFetch/WebSearch (plus Bash limited to graphify's
  * read-only searches when the project's memory graph is on, and to read-only `gh` / `glab`
  * commands when the GitHub / GitLab buttons are on) are available, and the MCP servers are
  * Workbench's task tools (`task-tools-server.ts`), so Claude can manage the project's tasks, and
  * the ones chosen for the chat. Anything else is denied without prompting
- * (`--permission-mode dontAsk`). Each chat is a Claude Code session (see InsightsSessionPlan). Credentials come from the best available Claude profile or the active API profile
+ * (`--permission-mode dontAsk`). With the Clawd button on (`agentMode`) a turn gets what an agent
+ * window has instead: every tool, the user's own MCP servers besides the chat's, and the agent
+ * windows' permissions (skipped when Settings skips them, else Claude Code's auto mode, since a
+ * headless turn can't ask). Each chat is a Claude Code session (see InsightsSessionPlan). Credentials come from the best available Claude profile or the active API profile
  * (`resolveClaudeEnv`).
  */
 
@@ -37,6 +40,7 @@ import { extractTaskSuggestions, stripTaskSuggestions } from '../../shared/utils
 import { COMPENG_DIR_NAME } from '../self-improve/paths';
 import type { ClaudeSessionRef } from '../../shared/types';
 import { MCP_STARTUP_TIMEOUT_MS, type ClaudeMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
+import { chatBrowserNode } from '../browser-drawer/browser-runtime';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { registerChatBrowserWorkspace } from '../browser-drawer/project-match';
 import { TASK_TOOLS_SERVER_NAME, toBridgeServer, type TaskToolsMcpServer, type TaskToolsStdioServer } from './task-tools-mcp';
@@ -76,8 +80,15 @@ export interface InsightsRunConfig {
   graphify?: GraphifyAgentContext;
   /** The project's Claude account (Settings > Project); unset = the account in use */
   profileId?: string;
-  /** MCP server entry of the turn's task tools session */
+  /** MCP server entry of the turn's Workbench tools (task tools and/or messaging tools) */
   taskTools?: TaskToolsMcpServer;
+  /** The Workbench tools include the task tools (the Kanban button); unset: they do */
+  kanbanTools?: boolean;
+  /**
+   * The chat's stable name, when its Workbench tools include messaging the project's other chats
+   * and agent windows (session-messaging/tools.ts)
+   */
+  chatName?: string;
   /** MCP servers chosen for the chat (the MCP button), by server name */
   mcpServers?: ClaudeMcpConfig['mcpServers'];
   /** Git hosting CLIs turned on for the chat (the GitHub and GitLab buttons) */
@@ -89,14 +100,19 @@ export interface InsightsRunConfig {
   /** The chat's title, shown in Claude Code's session list for a new session */
   title?: string;
   /**
-   * The user's sessions may message running tasks (Settings > Agents): with the task tools on,
-   * the chat also gets Claude Code's ListAgents and SendMessage for other running sessions
+   * The user's sessions may message each other (Settings > Agents): the chat gets Claude Code's
+   * ListAgents and SendMessage for other running sessions (agent windows, tasks)
    */
   sessionMessages?: boolean;
   /** Task messaging is on (Settings > Agents): the prompt tells the chat about message_task */
   taskMessaging?: boolean;
   /** Playwright attaches to the chat's own browser (shared with the user in the browser drawer) */
   sharedBrowser?: boolean;
+  /**
+   * The Clawd button: the turn gets what an agent window has (see buildInsightsArgs).
+   * `skipPermissions`: agent windows skip permission prompts (Settings)
+   */
+  agentMode?: { skipPermissions: boolean };
 }
 
 /**
@@ -238,7 +254,11 @@ export function sessionArgs(plan: InsightsSessionPlan, newSessionId: string, tit
  * CLI arguments for a headless turn that can't change the project's files.
  * `systemPromptSnapshot`: the CLI knows `--system-prompt-snapshot` (see supportsSystemPromptSnapshot).
  * `sessionMessaging`: ListAgents and SendMessage, to reach other running sessions (agent windows,
- * tasks); they never change the project's files
+ * tasks); they never change the project's files.
+ * `agentMode` (the Clawd button): what an agent window has instead. Every tool (no `--tools`), the
+ * user's own MCP servers too (no `--strict-mcp-config`), and the agent windows' permissions:
+ * skipped when Settings skips them, else Claude Code's auto mode (a classifier reviews each action),
+ * since a headless turn can't ask. The chat's allowed rules still pre-approve its MCP servers
  */
 export function buildInsightsArgs(
   model: string,
@@ -251,6 +271,7 @@ export function buildInsightsArgs(
   session: string[] = [],
   systemPromptSnapshot = false,
   sessionMessaging = false,
+  agentMode?: { skipPermissions: boolean },
 ): string[] {
   const cliRules = [
     ...(cliTools.github ? INSIGHTS_GITHUB_RULES : []),
@@ -282,13 +303,14 @@ export function buildInsightsArgs(
     '--include-partial-messages',
     '--model', model,
     '--effort', effort,
-    '--tools', tools.join(','),
+    ...(agentMode ? [] : ['--tools', tools.join(',')]),
     '--allowedTools', ...allowed,
     // Also left out by the Playwright guard: Node.js code in the server, which could write anywhere
     ...(mcp?.servers.includes('playwright') ? ['--disallowedTools', 'mcp__playwright__browser_run_code_unsafe'] : []),
     ...(mcp?.readDirs ?? []).flatMap((dir) => ['--add-dir', dir]),
-    '--permission-mode', 'dontAsk',
-    '--strict-mcp-config',
+    ...(!agentMode
+      ? ['--permission-mode', 'dontAsk', '--strict-mcp-config']
+      : agentMode.skipPermissions ? ['--dangerously-skip-permissions'] : ['--permission-mode', 'auto']),
     ...(mcp ? ['--mcp-config', mcp.configFile] : []),
     ...session,
     '--append-system-prompt-file', systemPromptFile,
@@ -315,6 +337,24 @@ interface StreamState {
   sessionId?: string;
   /** The turn's last assistant message, where a later fork can cut the session */
   lastAssistantUuid?: string;
+  /**
+   * The last message the turn wrote to its session (a slash command's output, a compact boundary):
+   * the session's point after a turn with no assistant message
+   */
+  lastUuid?: string;
+  /** What a local slash command printed (`/compact`'s "Compacted"), its reply when no text came */
+  localOutput?: string;
+}
+
+/** A local slash command's output, from the user message Claude Code records it in */
+function localCommandOutput(content: unknown): string | undefined {
+  const text = typeof content === 'string'
+    ? content
+    : Array.isArray(content)
+      ? (content as Array<{ type?: string; text?: string }>).map((block) => (block.type === 'text' ? block.text ?? '' : '')).join('')
+      : '';
+  const match = /<local-command-stdout>([\s\S]*?)<\/local-command-stdout>/.exec(text);
+  return match ? match[1].trim() : undefined;
 }
 
 function createStreamState(): StreamState {
@@ -329,6 +369,9 @@ function handleInsightsEvent(
 ): void {
   const raw = event as Record<string, unknown>;
   if (typeof raw.session_id === 'string' && (raw.type === 'system' || raw.type === 'result')) state.sessionId = raw.session_id;
+  if (typeof raw.uuid === 'string' && (raw.type === 'assistant' || raw.type === 'user' || raw.subtype === 'compact_boundary')) {
+    state.lastUuid = raw.uuid;
+  }
   switch (raw.type) {
     case 'assistant': {
       if (typeof raw.uuid === 'string') state.lastAssistantUuid = raw.uuid;
@@ -375,6 +418,8 @@ function handleInsightsEvent(
     }
     case 'user': {
       const content = (raw.message as { content?: unknown } | undefined)?.content;
+      const output = localCommandOutput(content);
+      if (output !== undefined) state.localOutput = output;
       if (Array.isArray(content)) {
         for (const block of content as Array<{ type?: string; tool_use_id?: string }>) {
           if (block.type === 'tool_result') {
@@ -402,19 +447,24 @@ function handleInsightsEvent(
 
 /**
  * How Claude Code reaches the turn's task tools, served over HTTP on the host's 127.0.0.1:
- * - 'direct': natively, and inside WSL1 or WSL2 with mirrored networking (they share the
- *   host's localhost)
- * - 'bridge': inside WSL2 with NAT networking, which gives the distribution its own localhost:
- *   through the stdio bridge (task-tools-bridge.cjs) that Claude Code starts as a Windows
- *   process through WSL interop
- * - 'off': the distribution has WSL interop off (the probe says so), or the bridge failed to
- *   start before; tasks are suggested instead
+ * - 'direct': natively, inside WSL1 (it shares the host's localhost) and inside WSL2 with
+ *   mirrored networking and interop off (no bridge: a firewall rule may let it through)
+ * - 'bridge': inside WSL2, through the stdio bridge (task-tools-bridge.cjs) that Claude Code starts
+ *   as a Windows process through WSL interop. NAT networking gives the distribution its own
+ *   localhost; with mirrored networking the Hyper-V firewall blocks inbound connections from the
+ *   distribution by default (Windows' own loopback ports time out), so the bridge is used there too
+ * - 'off': WSL2 with NAT networking and interop off (the probe says so), or the bridge failed to
+ *   start before (whatever the networking: direct connections don't get through either); tasks
+ *   are suggested instead
  */
 export type TaskToolsRoute = 'direct' | 'bridge' | 'off';
 
-/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL NAT) the relay to it */
+/** The guard's variables for the chat's browser: Workbench's tools server, and (WSL2 with the bridge) the relay to it */
 export const CHAT_BROWSER_URL_ENV = 'WORKBENCH_CHAT_BROWSER_URL';
+export const CHAT_BROWSER_TOKEN_ENV = 'WORKBENCH_CHAT_BROWSER_TOKEN';
 export const CHAT_BROWSER_RELAY_ENV = 'WORKBENCH_CHAT_BROWSER_RELAY';
+/** The guard's map from the Windows paths its server reports to the ones Claude Code reads (WSL) */
+const PATH_MAP_ENV = 'WORKBENCH_PATH_MAP';
 
 /** Set once the bridge failed to start, so later turns don't offer tools Claude can't reach */
 let taskToolsBridgeFailed = false;
@@ -422,9 +472,11 @@ let taskToolsBridgeFailed = false;
 export function getTaskToolsRoute(): TaskToolsRoute {
   const wsl = getWslInfo();
   if (!wsl) return 'direct';
-  if (wsl.networkingMode === 'mirrored' || getShellRuntimeStatus().wsl?.version === 1) return 'direct';
+  if (getShellRuntimeStatus().wsl?.version === 1) return 'direct';
+  if (taskToolsBridgeFailed) return 'off';
   // The bridge is a Windows program, which the distribution can only run with interop on
-  return taskToolsBridgeFailed || wsl.interop === false ? 'off' : 'bridge';
+  if (wsl.interop === false) return wsl.networkingMode === 'mirrored' ? 'direct' : 'off';
+  return 'bridge';
 }
 
 /** Claude Code's init message lists the bridge as failed: task tools are off from the next turn */
@@ -463,10 +515,32 @@ export async function guardChatPlaywright(
   await mkdir(dir, { recursive: true });
   const script = join(tempDir, 'playwright-guard.cjs');
   await writeFile(script, PLAYWRIGHT_GUARD_SOURCE, 'utf-8');
+  // The chat's browser runs on Windows while Claude Code runs in WSL (browser-runtime.ts): its
+  // Playwright attaches there through Windows' registry, which the distribution can't reach, so
+  // the guard and the server run on Windows (Workbench's executable as Node, started through
+  // interop), in the turn's folder on Windows; the paths they report are translated for WSL
+  const wsl = getWslInfo();
+  const windows = wsl && entry.env?.[CHAT_BROWSER_URL_ENV] ? await chatBrowserNode() : null;
+  if (wsl && windows && entry.args) {
+    const forwarded = ['ELECTRON_RUN_AS_NODE', CHAT_BROWSER_URL_ENV, CHAT_BROWSER_TOKEN_ENV, PATH_MAP_ENV];
+    const onWindows: McpServerEntry = {
+      type: 'stdio',
+      command: toRuntimePath(process.execPath),
+      args: [script, dir, windows.npx, ...entry.args, '--output-dir', dir, '--file-paths', 'absolute'],
+      env: {
+        ...entry.env,
+        ELECTRON_RUN_AS_NODE: '1',
+        // Both ways: the server's Windows paths for Claude Code, Claude Code's Linux paths for the server
+        [PATH_MAP_ENV]: JSON.stringify({ from: dir, to: toRuntimePath(dir), distro: wsl.distro, mountRoot: wsl.mountRoot }),
+        WSLENV: forwarded.join(':'),
+      },
+    };
+    return { servers: { ...servers, playwright: onWindows }, dir };
+  }
   const server = [entry.command, ...entry.args, '--output-dir', toRuntimePath(dir), '--file-paths', 'absolute'];
-  // The chat's browser is opened through Workbench's local tools server; inside WSL2 with NAT
-  // networking the guard reaches it through the task tools bridge, a Windows process it starts
-  // through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
+  // The chat's browser is opened through Workbench's local tools server; inside WSL2 (NAT or
+  // mirrored networking) the guard reaches it through the task tools bridge, a Windows process it
+  // starts through interop (CHAT_BROWSER_RELAY_ENV: its executable and script)
   let env = entry.env;
   if (getWslInfo() && env?.[CHAT_BROWSER_URL_ENV] && getTaskToolsRoute() === 'bridge') {
     const relayScript = join(tempDir, 'task-tools-bridge.cjs');
@@ -518,8 +592,12 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     }
     const taskToolsRoute = getTaskToolsRoute();
     const offeredTaskTools = taskToolsRoute === 'off' ? undefined : config.taskTools;
-    // Messaging other running sessions comes with the task tools (the Kanban button)
-    const sessionMessaging = !!offeredTaskTools && config.sessionMessages === true;
+    // Messaging other running sessions (agent windows, tasks) with Claude Code's own tools
+    const sessionMessaging = config.sessionMessages === true;
+    // The Workbench tools hold the task tools unless told otherwise, and the messaging tools when
+    // the chat has a name to send them under
+    const kanban = !!offeredTaskTools && config.kanbanTools !== false;
+    const chatName = offeredTaskTools ? config.chatName : undefined;
 
     // A resumed or forked session runs on the account that holds its transcript; when the
     // project's account is set to another one, or that account can't be used, a new session starts
@@ -571,14 +649,16 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
     // length or shell quoting limits)
     const systemPromptFile = join(tempDir, 'system-prompt.md');
     const basePrompt = buildSystemPrompt({
-      taskTools: !!offeredTaskTools,
+      taskTools: kanban,
+      chatName,
       cliTools: config.cliTools,
       graphify: !!graphify,
       mcpServers: Object.keys(chatServers),
       memory: config.memory,
       sessionMessaging,
-      taskMessaging: !!offeredTaskTools && config.taskMessaging === true,
+      taskMessaging: kanban && config.taskMessaging === true,
       sharedBrowser: config.sharedBrowser,
+      agentMode: !!config.agentMode,
     });
     const systemPrompt = graphify ? `${basePrompt}\n\n${graphify.commandPrompt}` : basePrompt;
     await writeFile(systemPromptFile, systemPrompt, 'utf-8');
@@ -601,6 +681,7 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
           sessionArgs(turnPlan, randomUUID(), config.title),
           supportsSystemPromptSnapshot(cliVersion),
           sessionMessaging,
+          config.agentMode,
         ),
         cwd: projectDir,
         env,
@@ -647,18 +728,23 @@ export async function runInsights(config: InsightsRunConfig, onStream?: Insights
       throw new Error(outcome.stderr.trim() || `Claude Code exited with code ${outcome.exitCode}`);
     }
 
-    const text = state.text.trim() ? state.text : (state.result?.text ?? '');
-    if (!text.trim()) {
+    // A local slash command (`/compact`) has no assistant message: its output (or nothing) is the reply
+    const slashCommand = message.trimStart().startsWith('/');
+    const text = state.text.trim() ? state.text : (state.result?.text || state.localOutput || '');
+    if (!text.trim() && !slashCommand) {
       throw new Error(EMPTY_RESPONSE_ERROR);
     }
+    // Where the session is now: the reply's last assistant message, else (a local command) the
+    // last message the turn wrote
+    const cutAt = state.lastAssistantUuid ?? (slashCommand ? state.lastUuid : undefined);
 
     // Suggestion lines become cards: the reply keeps the rest
     return {
       text: stripTaskSuggestions(text),
       taskSuggestions: extractTaskSuggestions(text),
       toolCalls: state.toolCalls,
-      claudeRef: state.sessionId && state.lastAssistantUuid
-        ? { sessionId: state.sessionId, messageUuid: state.lastAssistantUuid, profileId }
+      claudeRef: state.sessionId && cutAt
+        ? { sessionId: state.sessionId, messageUuid: cutAt, profileId }
         : undefined,
     };
   } catch (error) {

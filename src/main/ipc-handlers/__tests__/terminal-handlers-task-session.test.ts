@@ -47,7 +47,7 @@ interface Run {
  * A stand-in for AgentManager's run lookup that answers the way `keyOf` does: a named project
  * selects that project's run, and a bare task id is answered only while it means one run.
  */
-function fakeAgentManager(runs: Run[]): Pick<AgentManager, 'isRunning' | 'getRunSession'> {
+function fakeAgentManager(runs: Run[]): Pick<AgentManager, 'isRunning' | 'getRunSession' | 'getRunningTasksByProfile'> {
   const find = (taskId: string, projectId?: string): Run | undefined => {
     const matches = runs.filter((run) => run.taskId === taskId && (!projectId || run.projectId === projectId));
     return matches.length === 1 ? matches[0] : undefined;
@@ -57,8 +57,9 @@ function fakeAgentManager(runs: Run[]): Pick<AgentManager, 'isRunning' | 'getRun
     getRunSession: (taskId: string, projectId?: string) => {
       const run = find(taskId, projectId);
       return run ? { sessionId: run.sessionId } : undefined;
-    }
-  } as Pick<AgentManager, 'isRunning' | 'getRunSession'>;
+    },
+    getRunningTasksByProfile: () => ({ byProfile: {}, totalRunning: runs.length })
+  } as Pick<AgentManager, 'isRunning' | 'getRunSession' | 'getRunningTasksByProfile'>;
 }
 
 const followTaskSession = vi.fn();

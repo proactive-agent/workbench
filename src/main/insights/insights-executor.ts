@@ -10,14 +10,17 @@ import type {
   ClaudeSessionRef
 } from '../../shared/types';
 import { detectRateLimit, createSDKRateLimitInfo } from '../rate-limit-detector';
-import { CHAT_BROWSER_URL_ENV, getTaskToolsRoute, runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { CHAT_BROWSER_TOKEN_ENV, CHAT_BROWSER_URL_ENV, runInsights, type InsightsSessionPlan } from './claude-code-runner';
+import { chatBrowsersOnWindows, whenChatBrowserRuntimeReady } from '../browser-drawer/browser-runtime';
 import { getGraphifyPromptContext, isGraphifyEnabled } from '../graphify';
 import { projectStore } from '../project-store';
-import { openMcpToolsSession, openTaskToolsSession, type TaskToolsSession } from './task-tools-server';
+import { openChatToolsSession, openMcpToolsSession, type TaskToolsSession } from './task-tools-server';
+import { chatSessionName } from '../../shared/utils/session-names';
 import { buildMcpConfig, type McpServerEntry } from '../claude-code/mcp-config';
 import { PLAYWRIGHT_MCP_PACKAGE } from '../browser-profiles/managed';
 import { getWslInfo } from '../platform/shell-runtime';
 import { browserDrawer } from '../browser-drawer';
+import { chatBrowserExtensions } from '../browser-drawer/chat-browsers';
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { usableMcpConnectorIds } from '../mcp-availability';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
@@ -30,6 +33,7 @@ import { isSelfImproveEnabled } from '../self-improve/setting';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
 import type { AppSettings } from '../../shared/types';
 import { resolveClaudeCodeTaskSettings } from '../claude-code/settings';
+import { windowMessaged } from '../session-messaging/agent-windows';
 
 /**
  * Message processor result
@@ -52,6 +56,22 @@ export interface InsightsTurnOptions {
   title?: string;
   /** The chat's conversation, sent with each stream chunk so only that chat shows the reply */
   chatSessionId?: string;
+  /**
+   * Done before Claude Code starts, while the turn already counts as the chat's reply (Stop, a
+   * newer message and messages from other sessions see it): opening the agent window the message
+   * goes to. Stop ends the wait at once
+   */
+  beforeRun?: () => Promise<unknown>;
+  /**
+   * Done after beforeRun, also while the turn counts as the chat's reply; unlike it, an error ends
+   * the turn with that error (an agent window sharing the chat's session is working in it)
+   */
+  prepare?: () => Promise<void>;
+  /**
+   * The turn reaches an agent window: the user's message goes to one, or answers one. A read-only
+   * turn gets Claude Code's ListAgents and SendMessage only then (or with the Kanban button)
+   */
+  reachesAgentWindow?: boolean;
 }
 
 /** The chat whose turn runs: its browser is the chat's own (chat-browsers.ts) */
@@ -70,9 +90,14 @@ async function attachedPlaywright(
 ): Promise<{ entry: McpServerEntry; session: TaskToolsSession }> {
   const session = await openMcpToolsSession({
     instructions: "Open the chat's browser.",
-    tools: [{ name: 'open_chat_browser', description: "Open the chat's browser unless it is open", inputSchema: { type: 'object', properties: {} } }],
-    call: async () => {
-      await browserDrawer.openChatBrowser(target.projectId, target.chatId, choice);
+    tools: [{
+      name: 'open_chat_browser',
+      description: "Open the chat's browser unless it is open",
+      inputSchema: { type: 'object', properties: { withUrl: { type: 'boolean' } } },
+    }],
+    // The call it opens for names an address: that takes the first tab (no homepage)
+    call: async (_name, args) => {
+      await browserDrawer.openChatBrowser(target.projectId, target.chatId, choice, { withUrl: args.withUrl === true });
       return 'open';
     },
   });
@@ -85,7 +110,7 @@ async function attachedPlaywright(
       args: ['-y', PLAYWRIGHT_MCP_PACKAGE, '--endpoint', title],
       env: {
         [CHAT_BROWSER_URL_ENV]: server.url,
-        WORKBENCH_CHAT_BROWSER_TOKEN: server.headers.Authorization.replace(/^Bearer /, ''),
+        [CHAT_BROWSER_TOKEN_ENV]: server.headers.Authorization.replace(/^Bearer /, ''),
       },
     },
     session,
@@ -105,13 +130,18 @@ async function chatMcpServers(
   chatChoice: PlaywrightBrowserChoice | null | undefined,
   target: ChatBrowserTarget | undefined,
 ) {
-  const connectorSettings = ((await readSettingsFileAsync()) as Partial<AppSettings> | undefined)?.mcpConnectors;
+  const appSettings = (await readSettingsFileAsync()) as Partial<AppSettings> | undefined;
+  const connectorSettings = appSettings?.mcpConnectors;
   const wanted = ids ?? getDefaultMcpConnectorIds(connectorSettings);
-  // In WSL the guard reaches Workbench directly or through the Windows relay; with interop off it
-  // can't, and each turn opens a browser of its own as before
-  const chatBrowser = target && (!getWslInfo() || getTaskToolsRoute() !== 'off') ? target : undefined;
-  // An open chat browser is usable whatever the chosen browser's check says now
-  const open = chatBrowser && browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId);
+  // Chat browsers run on Windows while the shell is WSL: the turn's guard runs there through
+  // interop and reaches Workbench directly. With interop off it can't, and each turn opens a
+  // browser of its own in the distribution, as before
+  await whenChatBrowserRuntimeReady();
+  const onWindows = chatBrowsersOnWindows() && getWslInfo()?.interop !== false;
+  const chatBrowser = target && (!getWslInfo() || onWindows) ? target : undefined;
+  // An open chat browser is usable whatever the chosen browser's check says now; one that runs on
+  // Windows isn't what the check (where Claude Code runs, WSL) looks at: its start says what fails
+  const open = chatBrowser && (onWindows || browserDrawer.chatBrowsers.isOpen(chatBrowser.projectId, chatBrowser.chatId));
   const usable = await usableMcpConnectorIds(open ? wanted.filter((id) => id !== 'playwright') : wanted, connectorSettings, undefined, chatChoice);
   const chosen = open && wanted.includes('playwright') ? [...usable, 'playwright'] : usable;
   if (chatBrowser && chosen.includes('playwright')) {
@@ -126,7 +156,7 @@ async function chatMcpServers(
     const slot = `chat-${randomUUID().slice(0, 8)}`;
     // Copies of profiles tasks still choose are kept by its sweep
     const inUse = await browserChoicesInUse(projectPath, browser).catch(() => undefined);
-    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot, inUse).catch((error) => {
+    browserProfileDir = (await prepareBrowserProfileCopy(projectPath, browser, slot, inUse, { extensions: chatBrowserExtensions(appSettings) }).catch((error) => {
       appLog.warn('[Insights] Could not copy the browser profile:', error);
       return null;
     })) ?? undefined;
@@ -227,18 +257,38 @@ export class InsightsExecutor extends EventEmitter {
         content: m.content,
       }));
 
-    // With the Kanban button on, Claude can manage the project's tasks; the board reloads when a
-    // tool changes them
-    const taskTools = modelConfig?.kanbanTools
-      ? await openTaskToolsSession({
-        projectId,
-        onTasksChanged: () => this.emit('tasks-changed', projectId),
+    // With the Kanban button on, Claude can manage the project's tasks (the board reloads when a
+    // tool changes them); with messaging on (Settings > Agents), it can message the project's other
+    // chats and agent windows, addressed by their stable names
+    const chatName = turn.chatSessionId ? chatSessionName(turn.chatSessionId) : null;
+    const switches = await messagingSwitches();
+    const messaging = chatName && switches.sessionMessages
+      ? { projectId, projectPath, self: () => ({ kind: 'chat' as const, name: chatName, title: turn.title }) }
+      : undefined;
+    const kanbanTools = modelConfig?.kanbanTools === true;
+    const taskTools = kanbanTools || messaging
+      ? await openChatToolsSession({
+        tasks: kanbanTools ? { projectId, onTasksChanged: () => this.emit('tasks-changed', projectId) } : undefined,
+        messaging,
       }).catch(() => undefined)
       : undefined;
     let browserProfileDir: string | undefined;
     let chatBrowserSession: TaskToolsSession | undefined;
 
     try {
+      if (turn.beforeRun) {
+        // (Stop may already have come while the turn was being set up)
+        const stopped = controller.signal.aborted
+          ? Promise.resolve()
+          : new Promise((resolve) => controller.signal.addEventListener('abort', resolve, { once: true }));
+        await Promise.race([turn.beforeRun().catch(() => undefined), stopped]);
+        if (controller.signal.aborted) {
+          const abort = new Error('Stopped before the turn started');
+          abort.name = 'AbortError';
+          throw abort;
+        }
+      }
+      if (turn.prepare) await turn.prepare();
       const projectSettings = projectStore.getProject(projectId)?.settings;
       // The project's memory graph, searchable from the chat when the project uses Graphify
       const graphify = (await isGraphifyEnabled(projectPath))
@@ -268,6 +318,8 @@ export class InsightsExecutor extends EventEmitter {
           graphify,
           profileId: projectSettings?.claudeProfileId,
           taskTools: taskTools?.mcpServer,
+          kanbanTools,
+          ...(messaging && chatName ? { chatName } : {}),
           // gh and glab with the GitHub and GitLab buttons, when they are installed
           // Project memories can be saved when the project's self-improve switch is on
           memory: isSelfImproveEnabled(projectSettings),
@@ -278,8 +330,15 @@ export class InsightsExecutor extends EventEmitter {
           mcpServers: mcp.mcpServers,
           sharedBrowser: !!mcp.chatBrowserSession,
           // With the task tools: message_task (Task messaging on), and ListAgents and SendMessage
-          // for other running sessions
-          ...(await messagingSwitches()),
+          // for other running sessions: a read-only turn gets those only with the Kanban button
+          // or when it reaches an agent window, so a page it reads can't steer it into messaging one
+          ...switches,
+          sessionMessages: switches.sessionMessages
+            && (kanbanTools || modelConfig?.agentMode === true || turn.reachesAgentWindow === true),
+          // The Clawd button: what an agent window has, with its permission setting
+          ...(modelConfig?.agentMode
+            ? { agentMode: { skipPermissions: (await readSettingsFileAsync())?.dangerouslySkipPermissions === true } }
+            : {}),
         },
         (event) => {
           switch (event.type) {
@@ -293,6 +352,10 @@ export class InsightsExecutor extends EventEmitter {
               break;
             }
             case 'tool-start': {
+              // A message to an agent window: the window is read-only until it has answered
+              if (event.name === 'SendMessage' && messaging && event.input) {
+                void windowMessaged(projectPath, event.input, messaging.self()).catch(() => undefined);
+              }
               toolsUsed.push({
                 name: event.name,
                 input: event.input,

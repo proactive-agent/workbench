@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, ArrowRight, Globe, Plus, RotateCw, X } from 'lucide-react';
@@ -8,12 +8,19 @@ import {
   projectPages,
   projectSessions,
 } from '../../stores/browser-drawer-store';
+import { useSettingsStore } from '../../stores/settings-store';
 import { TITLE_BAR_STRIP_HEIGHT } from '../../lib/title-bar';
 import { cn } from '../../lib/utils';
 import { AgentLoader } from '../ui/agent-loader';
+import { Button } from '../ui/button';
+import { BrowserBookmarksBar } from './BrowserBookmarksBar';
+import { BrowserDrawerFrame } from './BrowserDrawerFrame';
+import { OPENING_POPUP_SIZE } from './browser-drawer-utils';
+import { BrowserExtensionsMenu } from './BrowserExtensionsMenu';
 import { BrowserPageView } from './BrowserPageView';
 import { ChatBrowserStart } from './ChatBrowserStart';
 import { addressToUrl, pageLabel, sessionBrowserIcon } from './browser-drawer-utils';
+import type { BrowserShortcut } from '../../../shared/utils/browser-shortcuts';
 
 interface BrowserDrawerProps {
   /** The window's project: its sessions' pages are the drawer's tabs */
@@ -40,7 +47,6 @@ const iconButton = cn(
 export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) {
   const { t } = useTranslation('navigation');
   const open = useBrowserDrawerStore((s) => s.open);
-  const width = useBrowserDrawerStore((s) => s.width);
   const state = useBrowserDrawerStore((s) => s.state);
   const selectedPageId = useBrowserDrawerStore((s) => s.selectedPageId);
   const setOpen = useBrowserDrawerStore((s) => s.setOpen);
@@ -49,12 +55,12 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   const setContext = useBrowserDrawerStore((s) => s.setContext);
   const openNewTab = useBrowserDrawerStore((s) => s.openNewTab);
   const contextReady = useBrowserDrawerStore((s) => s.projectId === projectId && s.chatId === chatId);
+  const showBookmarksBar = useSettingsStore((s) => s.settings.browser?.showBookmarksBar !== false);
 
   // Each chat (and the other pages together) keeps its own view of the drawer
   useLayoutEffect(() => setContext(projectId, chatId), [projectId, chatId, setContext]);
 
   const [resizing, setResizing] = useState(false);
-  const [windowWidth, setWindowWidth] = useState(() => window.innerWidth);
 
   const sessions = projectSessions(state.sessions, projectId, chatId);
   const pages = projectPages(state, projectId, chatId);
@@ -69,6 +75,88 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   const selectedUrl = selected?.url ?? '';
   useEffect(() => setAddress(selectedUrl), [selectedUrl, selected?.id]);
 
+  // A tab that just opened takes the focus: the address bar of one the + button opened, the page of
+  // one opened from the drawer's page (a link opened in a new tab). Elsewhere (typing in the chat
+  // while Claude opens a tab) the focus stays where it is
+  const asideRef = useRef<HTMLElement>(null);
+  const addressRef = useRef<HTMLInputElement>(null);
+  const pageAreaRef = useRef<HTMLDivElement>(null);
+  const focusPageId = useBrowserDrawerStore((s) => s.focusPageId);
+  const focusRequestedByUser = useBrowserDrawerStore((s) => s.focusRequestedByUser);
+  const clearFocusRequest = useBrowserDrawerStore((s) => s.clearFocusRequest);
+  const selectedId = selected?.id;
+  // The address bar is focused once it shows the new tab's address, so typing replaces it
+  const addressFocusRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!focusPageId || focusPageId !== selectedId) return;
+    clearFocusRequest();
+    if (focusRequestedByUser) addressFocusRef.current = focusPageId;
+    else if (asideRef.current?.contains(document.activeElement)) pageAreaRef.current?.querySelector('canvas')?.focus();
+  }, [focusPageId, focusRequestedByUser, selectedId, clearFocusRequest]);
+  useEffect(() => {
+    if (!addressFocusRef.current || addressFocusRef.current !== selectedId || address !== selectedUrl) return;
+    addressFocusRef.current = null;
+    addressRef.current?.focus();
+    addressRef.current?.select();
+  });
+
+  // An extension's popup shows over the tab it opened for, and closes when another tab shows (as in the browser)
+  const popup = selectedId ? state.pages.find((page) => page.popup?.openerId === selectedId) : undefined;
+  const stalePopups = state.pages
+    .filter((page) => page.popup && page.popup.openerId !== selectedId && pages.some((tab) => tab.sessionId === page.sessionId))
+    .map((page) => page.id)
+    .join(' ');
+  useEffect(() => {
+    for (const id of stalePopups.split(' ').filter(Boolean)) window.electronAPI.closeBrowserPage(id);
+  }, [stalePopups]);
+
+  // As the browser's own popup, it closes on a click anywhere beside it (the page, the toolbar, the
+  // tabs, the rest of the window) or when the window loses the focus. An extension's button
+  // handles its own click: its popup toggles, another one's replaces it
+  const popupBoxRef = useRef<HTMLDivElement>(null);
+  // A popup asked for and not there yet: its box shows at once, loading (given up by a click beside
+  // it, another tab showing, or the popup itself showing)
+  const opening = useBrowserDrawerStore((s) => s.extensionOpening);
+  const setOpening = useBrowserDrawerStore((s) => s.setExtensionOpening);
+  const openingShown = opening !== null && opening.openerId === selectedId;
+  // The popup the browser answered with is listed (one listed before it answered may still go)
+  const openingArrived = openingShown && !!opening.popupId && popup?.id === opening.popupId;
+  useEffect(() => {
+    if (opening && (opening.openerId !== selectedId || openingArrived)) setOpening(null);
+  }, [opening, selectedId, openingArrived, setOpening]);
+  useEffect(() => {
+    if (!openingShown) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && (popupBoxRef.current?.contains(target) || target.closest('[data-extension-button]'))) return;
+      setOpening(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, [openingShown, setOpening]);
+  const popupId = popup?.id;
+  useEffect(() => {
+    if (!popupId) return;
+    const close = () => window.electronAPI.closeBrowserPage(popupId);
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (target && (popupBoxRef.current?.contains(target) || target.closest('[data-extension-button]'))) return;
+      close();
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    window.addEventListener('blur', close);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      window.removeEventListener('blur', close);
+    };
+  }, [popupId]);
+
+  // The tab shown stays in sight in a strip of many
+  useEffect(() => {
+    if (!selectedId) return;
+    asideRef.current?.querySelector('[role=tab][aria-selected=true]')?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+  }, [selectedId]);
+
   // The pages are tracked while the drawer is open
   useEffect(() => {
     if (!open || !state.available) return;
@@ -78,35 +166,109 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
     };
   }, [open, state.available]);
 
+  // Closing a chat browser's last tab closes that browser (with no tabs to open again)
+  const closeTab = (pageId: string, sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    const lastTab = pages.filter((page) => page.sessionId === sessionId).length === 1;
+    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId, false);
+    else window.electronAPI.closeBrowserPage(pageId);
+  };
+
+  // The close button closes the chat's browser, once asked (its tabs open again next time); a
+  // drawer with no browser open just hides
+  const [confirmClose, setConfirmClose] = useState(false);
+  const browserOpen = sessions.length > 0 || chatBrowser?.status === 'open' || chatBrowser?.status === 'starting';
+  // It closes the chat's browser (asking first), else only hides the drawer
+  const closeLabel = chatId !== null && browserOpen ? t('browserDrawer.close') : t('browserDrawer.hide');
+  const onClose = () => {
+    if (chatId !== null && browserOpen) setConfirmClose(true);
+    else setOpen(false);
+  };
+  const closeBrowser = () => {
+    setConfirmClose(false);
+    setOpen(false);
+    if (chatId !== null) void window.electronAPI.closeChatBrowser(projectId, chatId);
+  };
+  useEffect(() => setConfirmClose(false), [chatId, open]);
+
+  // The browser's own shortcuts (Ctrl+T, Ctrl+W, Ctrl+Tab, Ctrl+1..9, Ctrl+L, Ctrl+R, Alt+Left...;
+  // Cmd on macOS) act on the drawer's tabs while it shows one: its browser is headless, so the
+  // main process catches them (before the page and the app's menu) and sends them here
+  // Not behind the close question (Ctrl+W would close the tab it asks about)
+  const shortcutsActive = contextReady && open && !!selected && !confirmClose;
   useEffect(() => {
-    if (!open) return;
-    const onResize = () => setWindowWidth(window.innerWidth);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [open]);
+    if (!shortcutsActive) return;
+    window.electronAPI.setBrowserShortcuts(true);
+    return () => window.electronAPI.setBrowserShortcuts(false);
+  }, [shortcutsActive]);
+  const onShortcutRef = useRef<(shortcut: BrowserShortcut) => void>(() => undefined);
+  onShortcutRef.current = (shortcut) => {
+    if (!selected) return;
+    const index = pages.findIndex((page) => page.id === selected.id);
+    const show = (at: number) => {
+      const page = pages[(at + pages.length) % pages.length];
+      if (page) selectPage(page.id);
+    };
+    switch (shortcut.kind) {
+      case 'newTab':
+        if (newTabSession) openNewTab(newTabSession);
+        break;
+      case 'closeTab':
+        closeTab(selected.id, selected.sessionId);
+        break;
+      case 'nextTab':
+        show(index + 1);
+        break;
+      case 'previousTab':
+        show(index - 1);
+        break;
+      case 'tab':
+        if (shortcut.index < 0) show(pages.length - 1);
+        else if (shortcut.index < pages.length) show(shortcut.index);
+        break;
+      case 'address':
+        addressRef.current?.focus();
+        addressRef.current?.select();
+        break;
+      case 'reload':
+      case 'back':
+      case 'forward':
+        window.electronAPI.navigateBrowserPage(selected.id, shortcut.kind);
+        break;
+    }
+  };
+  useEffect(() => window.electronAPI.onBrowserShortcut((shortcut) => onShortcutRef.current(shortcut)), []);
 
   if (!contextReady) return null;
 
   // Closed: the Claude chat's top bar has the button that opens it (BrowserDrawerButton)
   if (!open) return null;
 
-  const drawerWidth = clampDrawerWidth(width, windowWidth);
-
   // Drag the left edge to resize (the page under the pointer would take the moves, so it ignores
   // the pointer meanwhile)
   const onResizeStart = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
     const startX = event.clientX;
-    const startWidth = drawerWidth;
+    // The width shown (BrowserDrawerFrame): the drawer itself doesn't render again while it is dragged
+    const { width, chatMinWidth } = useBrowserDrawerStore.getState();
+    const startWidth = clampDrawerWidth(width, window.innerWidth, chatMinWidth);
     setResizing(true);
-    const onMove = (move: PointerEvent) => setWidth(clampDrawerWidth(startWidth + startX - move.clientX, window.innerWidth));
+    // Remembered once the edge is let go
+    const onMove = (move: PointerEvent) =>
+      setWidth(clampDrawerWidth(startWidth + startX - move.clientX, window.innerWidth, useBrowserDrawerStore.getState().chatMinWidth), false);
+    // Let go, or the drag ended without a release (cancelled by the system): the width is kept
     const onUp = () => {
       setResizing(false);
+      setWidth(useBrowserDrawerStore.getState().width);
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
+      window.removeEventListener('blur', onUp);
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
+    window.addEventListener('blur', onUp);
   };
 
   const onSubmitAddress = (event: FormEvent) => {
@@ -135,35 +297,28 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
   else if (selected) body = <BrowserPageView pageId={selected.id} label={pageLabel(selected) || t('browserDrawer.untitled')} />;
   else if (noTabs) body = message(t('browserDrawer.noTabs'), t('browserDrawer.noTabsDescription'));
   else if (sessions.length > 0) body = loader(t('browserDrawer.loading'));
-  else if (chatBrowser && chatBrowser.status !== 'restorable') {
+  else if (chatBrowser && chatBrowser.status !== 'restorable' && chatBrowser.status !== 'saved') {
     body = loader(chatBrowser.status === 'starting' ? t('browserDrawer.opening') : t('browserDrawer.loading'));
   } else if (chatId !== null) {
-    // A browser left by a crash opens again from its profile and tabs
+    // A browser left by a crash opens again from its profile and tabs; one closed with tabs open, with those tabs
     const restorable = chatBrowser?.status === 'restorable' ? { tabs: chatBrowser.tabs ?? 0 } : undefined;
+    const saved = chatBrowser?.status === 'saved' ? { tabs: chatBrowser.tabs ?? 0 } : undefined;
     body = message(
       t('browserDrawer.empty'),
       t('browserDrawer.emptyChatDescription'),
-      <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} />,
+      <ChatBrowserStart projectId={projectId} chatId={chatId} restorable={restorable} saved={saved} />,
     );
   } else body = message(t('browserDrawer.empty'), t('browserDrawer.emptyDescription'));
 
-  // Closing a chat browser's last tab closes that browser
-  const closeTab = (pageId: string, sessionId: string) => {
-    const session = sessions.find((s) => s.id === sessionId);
-    const lastTab = pages.filter((page) => page.sessionId === sessionId).length === 1;
-    if (session?.chatId && lastTab) void window.electronAPI.closeChatBrowser(projectId, session.chatId);
-    else window.electronAPI.closeBrowserPage(pageId);
-  };
-
   return (
-    <div className="flex h-full shrink-0 flex-col" style={{ width: drawerWidth }}>
+    <BrowserDrawerFrame>
       {/* Window drag strip, under the Windows/Linux window controls: the drawer starts below it, level
           with the content area's top (the DEVELOPMENT BUILD strip in development builds) */}
       <div className="electron-drag shrink-0" style={{ height: TITLE_BAR_STRIP_HEIGHT }} />
-      <aside className="relative flex min-h-0 flex-1 flex-col border-l border-t border-border bg-background">
+      <aside ref={asideRef} className="relative flex min-h-0 flex-1 flex-col border-l border-t border-border bg-background">
         {/* Tabs */}
         <div className="flex h-10 shrink-0 items-end gap-1 border-b border-border bg-sidebar pl-2 pr-1.5">
-          <div className="flex min-w-0 flex-1 items-end gap-1 overflow-x-auto" role="tablist" aria-label={t('browserDrawer.title')}>
+          <div className="flex min-w-0 items-end gap-1 overflow-x-auto" role="tablist" aria-label={t('browserDrawer.title')}>
             {pages.map((page) => {
               const active = page.id === selected?.id;
               const label = pageLabel(page) || t('browserDrawer.untitled');
@@ -198,24 +353,25 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
                 </div>
               );
             })}
-            {newTabSession && (
-              <button
-                type="button"
-                className={cn(iconButton, 'mb-0.5')}
-                onClick={() => openNewTab(newTabSession)}
-                aria-label={t('browserDrawer.newTab')}
-                title={t('browserDrawer.newTab')}
-              >
-                <Plus className="h-4 w-4" strokeWidth={1.75} />
-              </button>
-            )}
           </div>
+          {/* Beside the tabs, not among them: it stays in sight when they scroll */}
+          {newTabSession && (
+            <button
+              type="button"
+              className={cn(iconButton, 'mb-0.5')}
+              onClick={() => openNewTab(newTabSession)}
+              aria-label={t('browserDrawer.newTab')}
+              title={t('browserDrawer.newTab')}
+            >
+              <Plus className="h-4 w-4" strokeWidth={1.75} />
+            </button>
+          )}
           <button
             type="button"
-            className={cn(iconButton, 'mb-1.5')}
-            onClick={() => setOpen(false)}
-            aria-label={t('browserDrawer.close')}
-            title={t('browserDrawer.close')}
+            className={cn(iconButton, 'ml-auto mb-1.5')}
+            onClick={onClose}
+            aria-label={closeLabel}
+            title={closeLabel}
           >
             <X className="h-4 w-4" strokeWidth={1.75} />
           </button>
@@ -224,16 +380,25 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
         {/* Toolbar */}
         {selected && (
           <form className="flex h-10 shrink-0 items-center gap-1 border-b border-border px-2" onSubmit={onSubmitAddress}>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'back')} aria-label={t('browserDrawer.back')} title={t('browserDrawer.back')}>
+            {/* Disabled with nowhere to go, as the browser's are */}
+            <button type="button" className={iconButton} disabled={selected.canGoBack === false} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'back')} aria-label={t('browserDrawer.back')} title={t('browserDrawer.back')}>
               <ArrowLeft className="h-4 w-4" strokeWidth={1.75} />
             </button>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'forward')} aria-label={t('browserDrawer.forward')} title={t('browserDrawer.forward')}>
+            <button type="button" className={iconButton} disabled={selected.canGoForward === false} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'forward')} aria-label={t('browserDrawer.forward')} title={t('browserDrawer.forward')}>
               <ArrowRight className="h-4 w-4" strokeWidth={1.75} />
             </button>
-            <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'reload')} aria-label={t('browserDrawer.reload')} title={t('browserDrawer.reload')}>
-              <RotateCw className="h-3.5 w-3.5" strokeWidth={1.75} />
-            </button>
+            {/* While the page loads, reload turns into stop */}
+            {selected.loading ? (
+              <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'stop')} aria-label={t('browserDrawer.stop')} title={t('browserDrawer.stop')}>
+                <X className="h-4 w-4" strokeWidth={1.75} />
+              </button>
+            ) : (
+              <button type="button" className={iconButton} onClick={() => window.electronAPI.navigateBrowserPage(selected.id, 'reload')} aria-label={t('browserDrawer.reload')} title={t('browserDrawer.reload')}>
+                <RotateCw className="h-3.5 w-3.5" strokeWidth={1.75} />
+              </button>
+            )}
             <input
+              ref={addressRef}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               onFocus={(event) => event.target.select()}
@@ -245,11 +410,83 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
                 'placeholder:text-muted-foreground focus:border-ring focus:outline-none'
               )}
             />
+            {sessions.find((session) => session.id === selected.sessionId)?.chatId && (
+              <BrowserExtensionsMenu
+                sessionId={selected.sessionId}
+                pageId={selected.id}
+                browserStatus={chatBrowser?.status}
+                popup={popup?.popup ? { id: popup.id, extensionId: popup.popup.extensionId } : undefined}
+              />
+            )}
           </form>
+        )}
+        {selected && showBookmarksBar && (
+          <BrowserBookmarksBar
+            sessionId={selected.sessionId}
+            onOpen={(url) => window.electronAPI.navigateBrowserPage(selected.id, 'goto', url)}
+          />
         )}
 
         {/* The page */}
-        <div className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>{body}</div>
+        <div ref={pageAreaRef} className={cn('relative min-h-0 flex-1', resizing && 'pointer-events-none')}>
+          {body}
+          {/* A page loading in the tab shown: Workbench's loader over it (the page still shows under it
+              and takes the mouse and keys) until it has loaded */}
+          {selected?.loading && (
+            <div className="pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-background/60">
+              <AgentLoader size={24} label={t('browserDrawer.pageLoading')} />
+            </div>
+          )}
+          {/* An extension's popup under its button, at its own size: only its page shows (no border
+              or background of the drawer's around it, just a shadow under it); a click beside it
+              closes it (above), and never reaches the page */}
+          {openingShown && !openingArrived ? (
+            // Asked for, not there yet: its box at once, with the loader (sized once it arrives). The
+            // page under it still takes clicks: one there gives up waiting (an extension with no popup
+            // shows nothing more)
+            <>
+              <div
+                ref={popupBoxRef}
+                className="absolute right-2 top-1 z-20 flex max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] items-center justify-center overflow-hidden bg-background shadow-lg"
+                style={{ width: OPENING_POPUP_SIZE.width, height: OPENING_POPUP_SIZE.height }}
+              >
+                <AgentLoader size={24} label={t('browserDrawer.extensionLoading')} />
+              </div>
+            </>
+          ) : popup?.popup && popup.popup.width > 0 && popup.popup.height > 0 && (
+            <>
+              <div className="absolute inset-0 z-10" aria-hidden />
+              <div
+                ref={popupBoxRef}
+                className="absolute right-2 top-1 z-20 max-h-[calc(100%-0.5rem)] max-w-[calc(100%-1rem)] overflow-hidden shadow-lg"
+                style={{ width: popup.popup.width, height: popup.popup.height }}
+              >
+                {/* The loader until its first frame is drawn */}
+                <BrowserPageView pageId={popup.id} label={popup.title || t('browserDrawer.extensions')} popup loader={t('browserDrawer.extensionLoading')} />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Close the browser? Over the drawer only */}
+        {confirmClose && (
+          <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/40 p-4" onPointerDown={(e) => e.target === e.currentTarget && setConfirmClose(false)}>
+            <div
+              role="alertdialog"
+              aria-labelledby="browser-close-title"
+              aria-describedby="browser-close-description"
+              className="w-full max-w-sm rounded-xl border border-border bg-background p-5 shadow-lg"
+              onKeyDown={(e) => e.key === 'Escape' && setConfirmClose(false)}
+            >
+              <h2 id="browser-close-title" className="text-base font-semibold text-foreground">{t('browserDrawer.closeConfirm.title')}</h2>
+              <p id="browser-close-description" className="mt-1.5 text-sm text-muted-foreground">{t('browserDrawer.closeConfirm.description')}</p>
+              <div className="mt-5 flex justify-end gap-2">
+                <Button variant="ghost" size="sm" onClick={() => setConfirmClose(false)}>{t('browserDrawer.closeConfirm.cancel')}</Button>
+                <Button size="sm" autoFocus onClick={closeBrowser}>{t('browserDrawer.closeConfirm.close')}</Button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div
           role="separator"
@@ -263,6 +500,6 @@ export function BrowserDrawer({ projectId, chatId = null }: BrowserDrawerProps) 
           )}
         />
       </aside>
-    </div>
+    </BrowserDrawerFrame>
   );
 }

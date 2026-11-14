@@ -15,7 +15,7 @@ import path from 'path';
 import { existsSync } from 'fs';
 import { getClaudeCliInvocationAsync } from '../cli-utils';
 import { getToolInfoAsync } from '../cli-tool-manager';
-import { getBestAvailableProfileEnv, getUsableProfileEnv, isDetectedClaudeCodeProfile } from '../rate-limit-detector';
+import { getRunnableProfileEnv, getUsableProfileEnv, isDetectedClaudeCodeProfile } from '../rate-limit-detector';
 import { getAPIProfileEnv } from '../services/profile';
 import { isWindows } from '../platform';
 import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
@@ -63,7 +63,8 @@ function deriveGitBashPath(gitExePath: string): string | null {
 
 /**
  * Resolve the `claude` command and the environment to run it with.
- * Picks the best available Claude profile (rate-limit aware) unless one is given.
+ * Runs on the given Claude profile, else the account in use (never another account because of
+ * rate limits; see getRunnableProfileEnv).
  */
 export async function resolveClaudeEnv(options: ClaudeEnvOptions = {}): Promise<ClaudeEnvResult> {
   // Runs spawned right after startup must know whether Claude Code runs in WSL
@@ -98,16 +99,16 @@ export async function resolveClaudeEnv(options: ClaudeEnvOptions = {}): Promise<
   let profileId: string | undefined;
   let profileName: string | undefined;
   // A requested profile is used while it exists and is signed in; otherwise (removed, or never
-  // signed in) the best available profile runs instead of a run that can only fail
+  // signed in) the account in use runs instead of a run that can only fail
   const pinnedEnv = options.profileId ? getUsableProfileEnv(options.profileId) : null;
   if (options.profileId && pinnedEnv) {
     profileEnv = pinnedEnv;
     profileId = options.profileId;
   } else {
-    const best = getBestAvailableProfileEnv();
-    profileEnv = best.env;
-    profileId = best.profileId;
-    profileName = best.profileName;
+    const runnable = getRunnableProfileEnv();
+    profileEnv = runnable.env;
+    profileId = runnable.profileId;
+    profileName = runnable.profileName;
   }
 
   // Subscription sign-in: never let a shell API key take over billing. A detected Claude Code

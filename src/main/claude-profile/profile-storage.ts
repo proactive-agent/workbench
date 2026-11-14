@@ -7,7 +7,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs';
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { expandClaudeHome, joinClaudeHome } from '../platform/claude-home';
-import type { ClaudeProfile, ClaudeAutoSwitchSettings } from '../../shared/types';
+import type { ClaudeProfile } from '../../shared/types';
 
 /** Claude Code's default ~/.claude (in the Linux home when Claude Code runs in WSL) */
 const getDefaultClaudeConfigDir = () => joinClaudeHome('.claude');
@@ -17,26 +17,12 @@ const getClaudeProfilesDir = () => joinClaudeHome('.claude-profiles');
 const STORE_VERSION = 3;  // Bumped for encrypted token storage
 
 /**
- * Default auto-switch settings
- */
-export const DEFAULT_AUTO_SWITCH_SETTINGS: ClaudeAutoSwitchSettings = {
-  enabled: false,
-  proactiveSwapEnabled: false,  // Proactive monitoring disabled by default
-  sessionThreshold: 95,  // Consider switching at 95% session usage
-  weeklyThreshold: 99,   // Consider switching at 99% weekly usage
-  autoSwitchOnRateLimit: false,  // Prompt user by default
-  autoSwitchOnAuthFailure: false,  // Prompt user by default on auth failures
-  usageCheckInterval: 30000  // Check every 30s when enabled (0 = disabled)
-};
-
-/**
  * Internal storage format for Claude profiles
  */
 export interface ProfileStoreData {
   version: number;
   profiles: ClaudeProfile[];
   activeProfileId: string;
-  autoSwitch?: ClaudeAutoSwitchSettings;
   /**
    * Profile IDs that were migrated from shared ~/.claude to isolated directories.
    * These profiles need re-authentication since their credentials are in the old location.
@@ -135,11 +121,13 @@ function migrateProfileToIsolatedDirectory(profile: ClaudeProfile): string {
  * Shared helper used by both sync and async loaders.
  */
 function parseAndMigrateProfileData(data: Record<string, unknown>): ProfileStoreData | null {
+  // Automatic account switching was removed: stores saved before keep its settings, dropped here
+  delete data.autoSwitch;
+
   // Handle version migration
   if (data.version === 1) {
     // Migrate v1 to v2: add usage and rateLimitEvents fields
     data.version = STORE_VERSION;
-    data.autoSwitch = DEFAULT_AUTO_SWITCH_SETTINGS;
   }
 
   if (data.version === STORE_VERSION) {

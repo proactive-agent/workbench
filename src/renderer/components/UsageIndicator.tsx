@@ -5,7 +5,8 @@
  * - Hover to show breakdown popup (auto-closes on mouse leave)
  * - Click to pin popup open (stays until clicking outside)
  *
- * - Claude accounts (subscription): shows session/weekly usage bars
+ * - Claude accounts (subscription): shows session/weekly usage bars; Enterprise accounts, which
+ *   have a monthly spend limit instead, show the share of it spent
  * - An active API profile (Anthropic-compatible endpoint): shows "API key" (pay as you go)
  */
 
@@ -43,6 +44,7 @@ function summaryUsage(summary: ProfileUsageSummary): ClaudeUsageSnapshot | null 
     profileEmail: summary.profileEmail,
     fetchedAt: new Date(summary.lastFetchedAt),
     needsReauthentication: summary.needsReauthentication,
+    spendLimit: summary.spendLimit,
   };
 }
 
@@ -363,6 +365,14 @@ export function UsageIndicator() {
           {usage.needsReauthentication ? (
             <span className="text-xs font-semibold text-red-500" title={t('common:usage.needsReauth')}>
               !
+            </span>
+          ) : usage.spendLimit ? (
+            // Enterprise: the one limit there is, the share of the month's spend limit used
+            <span
+              className={`text-xs font-semibold font-mono leading-none tabular-nums ${getColorClass(weeklyPercent)}`}
+              title={t('common:usage.spendShort')}
+            >
+              {Math.round(weeklyPercent)}%
             </span>
           ) : (
             <div className="flex items-center justify-center gap-0.5 text-xs font-semibold font-mono leading-none tabular-nums">

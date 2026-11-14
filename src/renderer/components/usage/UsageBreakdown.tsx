@@ -1,6 +1,7 @@
 /**
  * The usage breakdown: the 5-hour limit up top with Clawd walking in the sky beside it, then
- * the weekly rows underneath.
+ * the weekly rows underneath. An Enterprise account has neither window, only a monthly spend
+ * limit: the top shows that instead, with what was spent of it below and no weekly rows.
  *
  * Modelled on the clawd-usage widget (https://github.com/Enhed/clawd-usage-winwidget): the
  * hearts in the header are the session limit left, and the crab's mood follows the app's own
@@ -18,6 +19,7 @@ import { createSkinPicker, skinForUsage, type SkinPicker } from './clawd/skins';
 import { useClawd } from './clawd/useClawd';
 import { holidayDecor } from './clawd/decor';
 import { getBarColorClass, getColorClass } from './usage-colors';
+import { formatSpend } from './spend-limit';
 
 /** The label the main process sends for Anthropic's second window */
 const ANTHROPIC_WEEKLY_WINDOW = 'common:usage.window7Day';
@@ -139,7 +141,7 @@ export function UsageHero({ usage, active, pickSkin = skinForUsage, pinned = nul
         <span className="text-xs font-semibold">
           {t('common:usage.usageBreakdown')}
         </span>
-        <Hearts fraction={render?.shownFraction ?? null} beat={render?.beat ?? 1} />
+        <Hearts fraction={render?.shownFraction ?? null} beat={render?.beat ?? 1} spend={!!usage.spendLimit} />
       </div>
 
       {/* The bar is the ground Clawd stands on, so the two sit flush with no gap between them */}
@@ -242,6 +244,21 @@ export function SessionResets({ usage }: { usage: ClaudeUsageSnapshot }) {
   return <div className="text-[11px] text-muted-foreground">{resets}</div>;
 }
 
+/**
+ * "$136.22 of $250.00 this month" under the hero of an Enterprise account: its monthly spend limit
+ * has no reset time to count down to, so what was spent of it shows instead
+ */
+export function SpendUsed({ usage }: { usage: ClaudeUsageSnapshot }) {
+  const { t } = useTranslation(['common']);
+  const spend = usage.spendLimit;
+  if (!spend) return null;
+  const used = formatSpend(spend.used, spend.currency);
+  const text = spend.limit
+    ? t('common:usage.spendOfLimit', { used, limit: formatSpend(spend.limit, spend.currency) })
+    : t('common:usage.spendNoLimit', { used });
+  return <div className="text-[11px] tabular-nums text-muted-foreground">{text}</div>;
+}
+
 export function UsageBreakdown({ usage, open }: UsageBreakdownProps) {
   const { t } = useTranslation(['common']);
 
@@ -256,6 +273,17 @@ export function UsageBreakdown({ usage, open }: UsageBreakdownProps) {
     && usage.usageWindows.weeklyWindowLabel !== ANTHROPIC_WEEKLY_WINDOW
     ? localizeUsageWindowLabel(usage.usageWindows.weeklyWindowLabel, t, 'common:usage.weekAllModels')
     : t('common:usage.weekAllModels');
+
+  // Enterprise: one monthly spend limit, no windows to reset
+  if (usage.spendLimit) {
+    return (
+      <div className="relative isolate space-y-2.5 p-3">
+        <UsageCardSurface />
+        <UsageHero usage={usage} active={open} />
+        <SpendUsed usage={usage} />
+      </div>
+    );
+  }
 
   return (
     <div className="relative isolate space-y-2.5 p-3">

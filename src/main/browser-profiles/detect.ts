@@ -3,7 +3,7 @@
  * =========================
  *
  * Finds the installed Chromium-family browsers (Chrome, Edge, Brave, Chromium) and Firefox and
- * lists their profiles for the Playwright connector (Settings > Connectors). A profile is usable
+ * lists their profiles for the Playwright connector (Settings > Browser). A profile is usable
  * when Playwright can drive the browser and its executable exists where tools run.
  *
  * When tools run in WSL, Playwright starts inside the distribution: its browsers are read through
@@ -390,6 +390,31 @@ export function detectBrowserProfiles(options: { refresh?: boolean } = {}): Prom
     });
   }
   return detection;
+}
+
+let windowsDetection: Promise<BrowserProfile[]> | null = null;
+
+/**
+ * Windows only: the profiles as they run natively, whatever the shell (detectBrowserProfiles lists
+ * WSL's view in WSL mode). Chat browsers that run on Windows while the shell is WSL
+ * (browser-drawer/browser-runtime.ts) pick their profile from these. Looked for once; `refresh`
+ * looks again
+ */
+export function detectWindowsBrowserProfiles(options: { refresh?: boolean } = {}): Promise<BrowserProfile[]> {
+  if (!windowsDetection || options.refresh) {
+    windowsDetection = scanBrowserProfiles({
+      os: 'windows',
+      home: os.homedir(),
+      env: process.env,
+      toHost: (p) => p,
+      lookUpCommands: false,
+      refresh: options.refresh === true,
+    }).catch((error: unknown) => {
+      appLog.warn('[BrowserProfiles] Detection of the Windows profiles failed:', error);
+      return [];
+    });
+  }
+  return windowsDetection;
 }
 
 /** Running watches by browser, with when each gives up (each new download moves it to WATCH_LIMIT_MS from then) */

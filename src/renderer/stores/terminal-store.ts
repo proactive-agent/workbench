@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createActor } from 'xstate';
 import type { ActorRefFrom } from 'xstate';
 import { arrayMove } from '@dnd-kit/sortable';
-import type { Task, TerminalSession, TerminalTaskSessionOptions, TerminalWorktreeConfig } from '../../shared/types';
+import type { AgentWindowOpenRequest, SessionMessageOrigin, Task, TerminalSession, TerminalTaskSessionOptions, TerminalWorktreeConfig } from '../../shared/types';
 import { getTaskWorktreeBranch } from '../../shared/utils/claude-run';
 import { terminalMachine, type TerminalEvent } from '@shared/state-machines';
 import { terminalBufferManager } from '../lib/terminal-buffer-manager';
@@ -236,6 +236,8 @@ export interface Terminal {
   displayOrder?: number;  // Display order for tab persistence (lower = further left)
   cliNamedOnce?: boolean;  // Whether this Claude terminal has been auto-named based on initial message (prevents repeated naming)
   loading?: TerminalLoadingKind;  // Starting (a shell, or Claude Code): the window shows a spinner until it is ready
+  openedInBackground?: boolean;  // Opened while the Agents page may be hidden (a chat messaged it): starts at a usual size until it can be measured
+  receivingFrom?: SessionMessageOrigin;  // Answering this chat's message: read-only until it is answered (main: session-messaging/receiving.ts)
 }
 
 /** Each loading window's fallback timer (see setTerminalLoading) */
@@ -256,9 +258,11 @@ interface TerminalState {
   maxTerminals: number;
   hasRestoredSessions: boolean;  // Track if we've restored sessions for this project
   agentsViewRequest: AgentsViewRequest | null;  // Latest request to show the Agents page (App switches view)
+  /** A window to flash its border once (the window a chat's Clawd button opened), until it played */
+  highlightRequest: { terminalId: string; seq: number } | null;
 
   // Actions
-  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean }) => Terminal | null;
+  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean; id?: string }) => Terminal | null;
   addRestoredTerminal: (session: TerminalSession) => Terminal | null;
   // Add a terminal with a specific ID (for terminals created in main process, like OAuth login terminals)
   addExternalTerminal: (id: string, title: string, cwd?: string, projectPath?: string) => Terminal | null;
@@ -266,6 +270,8 @@ interface TerminalState {
   setMaxTerminals: (max: number) => void;
   updateTerminal: (id: string, updates: Partial<Terminal>) => void;
   setActiveTerminal: (id: string | null) => void;
+  /** The highlight played (only clears the request it was given, not a newer one) */
+  clearHighlight: (seq: number) => void;
   setTerminalStatus: (id: string, status: TerminalStatus) => void;
   setCLIMode: (id: string, isCLIMode: boolean) => void;
   /** Show a spinner over the window until what it starts is ready (undefined: hide it) */
@@ -273,6 +279,8 @@ interface TerminalState {
   setAssociatedTask: (id: string, taskId: string | undefined) => void;
   setWorktreeConfig: (id: string, config: TerminalWorktreeConfig | undefined) => void;
   setClaudeBusy: (id: string, isBusy: boolean) => void;
+  /** The window answers a chat's message (read-only), or no longer does (null) */
+  setReceivingFrom: (id: string, from: SessionMessageOrigin | null) => void;
   setPendingClaudeResume: (id: string, pending: boolean) => void;
   setClaudeNamedOnce: (id: string, named: boolean) => void;
   clearAllTerminals: () => void;
@@ -286,6 +294,32 @@ interface TerminalState {
    * show the Agents page. Returns null when the project has no room for another window.
    */
   openTaskSession: (request: TaskSessionRequest) => Terminal | null;
+  /**
+   * Open a Claude Code session that ran in the project's own folder (a Claude chat's) in a new
+   * agent window: it resumes the session on the account it ran on and is titled `title`. Also
+   * asks the app to show the Agents page. Returns null when the project has no room for another
+   * window.
+   */
+  /**
+   * Show a Claude chat's session in an agent window: the window running it already (`terminalId`,
+   * resumed there when it is back at its shell), else a new window resuming it as its own
+   */
+  openProjectSession: (request: {
+    projectPath: string;
+    title: string;
+    sessionId: string;
+    profileId?: string;
+    terminalId?: string | null;
+    /** The window is back at its shell with nothing else running there: the session resumes in it */
+    resume?: boolean;
+  }) => Terminal | null;
+  /**
+   * Open a closed agent window again under its own id (so its name stays the same), resuming its
+   * last session, without leaving the page the user is on: a chat messages it. A window restored at
+   * startup but not started yet (the Agents page wasn't shown) starts in the background instead.
+   * Returns null when the project has no room for another window
+   */
+  reopenAgentWindow: (request: AgentWindowOpenRequest) => Terminal | null;
 
   // Selectors
   getTerminal: (id: string) => Terminal | undefined;
@@ -317,6 +351,12 @@ export function getActiveProjectTerminalCount(terminals: Terminal[], projectPath
   return terminals.filter(t => t.status !== 'exited' && isProjectTerminal(t, projectPath)).length;
 }
 
+/** Resume a Claude Code session in a window back at its shell (in `cwd`, else the window's own folder) */
+function resumeAtShell(terminal: Terminal, session: PendingTaskSession, cwd: string | undefined): void {
+  useTerminalStore.getState().setCLIMode(terminal.id, true);
+  window.electronAPI.resumeTaskSessionInTerminal(terminal.id, { ...session, cwd: cwd || terminal.cwd });
+}
+
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   terminals: [],
   layouts: [],
@@ -327,8 +367,9 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
   maxTerminals: DEFAULT_MAX_TERMINALS,
   hasRestoredSessions: false,
   agentsViewRequest: null,
+  highlightRequest: null,
 
-  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean }) => {
+  addTerminal: (cwd?: string, projectPath?: string, options?: { launchCLI?: boolean; id?: string }) => {
     const state = get();
     const activeCount = getActiveProjectTerminalCount(state.terminals, projectPath);
     if (activeCount >= state.maxTerminals) {
@@ -337,7 +378,7 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }
 
     const newTerminal: Terminal = {
-      id: crypto.randomUUID(),
+      id: options?.id ?? crypto.randomUUID(),
       title: `Terminal ${state.terminals.length + 1}`,
       status: 'idle',
       cwd: cwd || process.env.HOME || '~',
@@ -607,6 +648,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     }));
   },
 
+  setReceivingFrom: (id: string, from: SessionMessageOrigin | null) => {
+    set((state) => ({
+      terminals: state.terminals.map((t) => (t.id === id ? { ...t, receivingFrom: from ?? undefined } : t)),
+    }));
+  },
+
   setPendingClaudeResume: (id: string, pending: boolean) => {
     // Send RESUME_REQUESTED or RESUME_COMPLETE to XState machine
     if (pending) {
@@ -722,6 +769,82 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
     set((state) => ({
       agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
     }));
+    return terminal ? get().getTerminal(terminal.id) ?? null : null;
+  },
+
+  openProjectSession: (request) => {
+    // The Agents page shows, and the window flashes its border so it stands out among the others
+    const showAgents = (terminalId: string) => set((state) => ({
+      agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 },
+      highlightRequest: { terminalId, seq: (state.highlightRequest?.seq ?? 0) + 1 }
+    }));
+    const existing = request.terminalId ? get().terminals.find((t) => t.id === request.terminalId && t.status !== 'exited') : undefined;
+    if (existing) {
+      // Back at its shell (Claude Code exited), with nothing else running there: the session
+      // resumes in it (never typed into vim or a dev server: it is only shown then)
+      if (request.resume && !existing.isCLIMode && existing.status === 'running') {
+        resumeAtShell(existing, { sessionId: request.sessionId, profileId: request.profileId, own: true }, request.projectPath);
+      }
+      get().setActiveTerminal(existing.id);
+      showAgents(existing.id);
+      return get().getTerminal(existing.id) ?? existing;
+    }
+    const terminal = get().addTerminal(request.projectPath, request.projectPath, { launchCLI: true });
+    if (terminal) {
+      get().updateTerminal(terminal.id, {
+        title: request.title,
+        // The chat's session becomes the window's own: found as the window's and resumed when restored
+        pendingTaskSession: { sessionId: request.sessionId, profileId: request.profileId, own: true }
+      });
+      showAgents(terminal.id);
+    } else {
+      set((state) => ({
+        agentsViewRequest: { projectPath: request.projectPath, seq: (state.agentsViewRequest?.seq ?? 0) + 1 }
+      }));
+    }
+    return terminal ? get().getTerminal(terminal.id) ?? null : null;
+  },
+
+  clearHighlight: (seq) => set((state) => (
+    state.highlightRequest?.seq === seq ? { highlightRequest: null } : {}
+  )),
+
+  reopenAgentWindow: (request) => {
+    const session = { sessionId: request.sessionId, configDir: request.configDir };
+    const existing = get().terminals.find((t) => t.id === request.terminalId);
+    if (existing?.status === 'exited') {
+      // Its shell is gone (the window is about to be removed): it opens again as a closed one
+      // would, once the old window has unmounted (the same id would keep its component and PTY state)
+      get().removeTerminal(existing.id);
+      setTimeout(() => get().reopenAgentWindow(request), 100);
+      return null;
+    }
+    if (existing) {
+      if (existing.status === 'idle') {
+        // Restored at startup but not started yet (a window starts once the Agents page shows
+        // it): it starts now, in the background, and resumes the session
+        get().updateTerminal(existing.id, {
+          openedInBackground: true,
+          launchCLIOnCreate: true,
+          pendingTaskSession: session,
+          pendingCLIResume: false,
+        });
+      } else if (!existing.isCLIMode) {
+        // Running its shell (Claude Code exited): the session resumes in it
+        resumeAtShell(existing, session, request.cwd ?? existing.cwd);
+      }
+      return get().getTerminal(existing.id) ?? existing;
+    }
+    // In the folder the session ran in (a worktree), else the project's
+    const cwd = request.cwd ?? request.projectPath;
+    const terminal = get().addTerminal(cwd, request.projectPath, { launchCLI: true, id: request.terminalId });
+    if (terminal) {
+      get().updateTerminal(terminal.id, {
+        title: request.title || 'Claude',
+        openedInBackground: true,
+        pendingTaskSession: session,
+      });
+    }
     return terminal ? get().getTerminal(terminal.id) ?? null : null;
   },
 

@@ -15,6 +15,7 @@ import Anthropic, {
 
 import { loadProfilesFile, generateProfileId, atomicModifyProfiles } from './profile-manager';
 import type { APIProfile, TestConnectionResult, ModelInfo, DiscoverModelsResult } from '@shared/types/profile';
+import { apiKeyToSend, isApiKeyOptional } from '../../../shared/utils/api-profile-key';
 
 /**
  * Input type for creating a profile (without id, createdAt, updatedAt)
@@ -70,6 +71,15 @@ export function validateApiKey(apiKey: string): boolean {
 }
 
 /**
+ * Validate a profile's API key for its base URL: a local endpoint (`http://localhost`) takes any
+ * key or none, others need a key in a valid format
+ */
+export function validateProfileApiKey(baseUrl: string, apiKey: string | undefined): boolean {
+  if (isApiKeyOptional(baseUrl)) return !/\s/.test(apiKey?.trim() ?? '');
+  return validateApiKey(apiKey ?? '');
+}
+
+/**
  * Delete a profile with validation
  * Throws errors for validation failures
  * Uses atomic operation to prevent race conditions
@@ -110,8 +120,8 @@ export async function createProfile(input: CreateProfileInput): Promise<APIProfi
     throw new Error('Invalid base URL');
   }
 
-  // Validate API key
-  if (!validateApiKey(input.apiKey)) {
+  // Validate API key (optional for a local endpoint)
+  if (!validateProfileApiKey(input.baseUrl, input.apiKey)) {
     throw new Error('Invalid API key');
   }
 
@@ -135,7 +145,7 @@ export async function createProfile(input: CreateProfileInput): Promise<APIProfi
       id: generateProfileId(),
       name: input.name.trim(),
       baseUrl: input.baseUrl.trim(),
-      apiKey: input.apiKey.trim(),
+      apiKey: (input.apiKey ?? '').trim(),
       models: input.models,
       createdAt: now,
       updatedAt: now
@@ -168,8 +178,8 @@ export async function updateProfile(input: UpdateProfileInput): Promise<APIProfi
     throw new Error('Invalid base URL');
   }
 
-  // Validate API key
-  if (!validateApiKey(input.apiKey)) {
+  // Validate API key (optional for a local endpoint)
+  if (!validateProfileApiKey(input.baseUrl, input.apiKey)) {
     throw new Error('Invalid API key');
   }
 
@@ -200,7 +210,7 @@ export async function updateProfile(input: UpdateProfileInput): Promise<APIProfi
       ...existingProfile,
       name: input.name.trim(),
       baseUrl: input.baseUrl.trim(),
-      apiKey: input.apiKey.trim(),
+      apiKey: (input.apiKey ?? '').trim(),
       models: input.models,
       updatedAt: Date.now()
     };
@@ -255,7 +265,7 @@ export async function getAPIProfileEnv(): Promise<Record<string, string>> {
   // Map profile fields to SDK env vars
   const envVars: Record<string, string> = {
     ANTHROPIC_BASE_URL: profile.baseUrl || '',
-    ANTHROPIC_AUTH_TOKEN: profile.apiKey || '',
+    ANTHROPIC_AUTH_TOKEN: apiKeyToSend(profile.baseUrl || '', profile.apiKey),
     ANTHROPIC_MODEL: profile.models?.default || '',
     ANTHROPIC_DEFAULT_HAIKU_MODEL: profile.models?.haiku || '',
     ANTHROPIC_DEFAULT_SONNET_MODEL: profile.models?.sonnet || '',
@@ -292,7 +302,7 @@ export async function testConnection(
   signal?: AbortSignal
 ): Promise<TestConnectionResult> {
   // Validate API key first (key format doesn't depend on URL normalization)
-  if (!validateApiKey(apiKey)) {
+  if (!validateProfileApiKey(baseUrl, apiKey)) {
     return {
       success: false,
       errorType: 'auth',
@@ -373,7 +383,7 @@ export async function testConnection(
   try {
     // Create Anthropic client with SDK
     const client = new Anthropic({
-      apiKey,
+      apiKey: apiKeyToSend(baseUrl, apiKey),
       baseURL: normalizedUrl,
       timeout: 10000, // 10 seconds
       maxRetries: 0, // Disable retries for immediate feedback
@@ -497,7 +507,7 @@ export async function discoverModels(
   signal?: AbortSignal
 ): Promise<DiscoverModelsResult> {
   // Validate API key first
-  if (!validateApiKey(apiKey)) {
+  if (!validateProfileApiKey(baseUrl, apiKey)) {
     const error: Error & { errorType?: string } = new Error('Authentication failed. Please check your API key.');
     error.errorType = 'auth';
     throw error;
@@ -538,7 +548,7 @@ export async function discoverModels(
   try {
     // Create Anthropic client with SDK
     const client = new Anthropic({
-      apiKey,
+      apiKey: apiKeyToSend(baseUrl, apiKey),
       baseURL: normalizedUrl,
       timeout: 10000, // 10 seconds
       maxRetries: 0, // Disable retries for immediate feedback

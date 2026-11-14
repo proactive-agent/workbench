@@ -17,6 +17,10 @@
       "title": "Display",
       "description": "Adjust the size of UI elements"
     },
+    "browser": {
+      "title": "Browser",
+      "description": "The browser Claude chats and tasks use"
+    },
     "connectors": {
       "title": "Connectors",
       "description": "Default MCP servers for new tasks"
@@ -78,7 +82,8 @@
       "name": "My Custom API",
       "preset": "Choose a provider preset",
       "baseUrl": "https://api.anthropic.com",
-      "apiKey": "sk-ant-..."
+      "apiKey": "sk-ant-...",
+      "apiKeyOptional": "Optional for localhost"
     },
     "hints": {
       "preset": "Presets fill the base URL; you still need to paste your API key.",
@@ -89,7 +94,8 @@
       "baseUrlRequired": "Base URL is required",
       "baseUrlInvalid": "Invalid URL format (must be http:// or https://)",
       "apiKeyRequired": "API Key is required",
-      "apiKeyInvalid": "Invalid API Key format"
+      "apiKeyInvalid": "Invalid API Key format",
+      "defaultModelRequired": "Default model is required"
     },
     "actions": {
       "save": "Save profile",
@@ -105,8 +111,8 @@
       "failure": "Connection failed"
     },
     "models": {
-      "title": "Model name mappings (optional)",
-      "description": "Select models from your API provider. Leave blank to use defaults.",
+      "title": "Model name mappings",
+      "description": "Select models from your API provider. Haiku, Sonnet and Opus use the default model unless you pick another one.",
       "defaultLabel": "Default model",
       "haikuLabel": "Haiku model",
       "sonnetLabel": "Sonnet model",
@@ -134,7 +140,6 @@
     },
     "tooltips": {
       "edit": "Edit profile",
-      "deleteActive": "Switch back to Claude accounts before deleting",
       "deleteInactive": "Delete profile"
     },
     "deleteAriaLabel": "Delete profile {{name}}",
@@ -352,21 +357,6 @@
   "accounts": {
     "title": "Accounts",
     "description": "Manage Claude accounts and API endpoints",
-    "autoSwitching": {
-      "description": "Switch to another Claude account before or when the one in use hits a limit",
-      "enableAutoSwitching": "Enable automatic switching",
-      "masterSwitch": "Master switch for all auto-swap features",
-      "proactiveMonitoring": "Proactive monitoring",
-      "proactiveDescription": "Check usage regularly and swap before hitting limits",
-      "sessionThreshold": "Session usage threshold",
-      "sessionThresholdDescription": "Switch when session usage reaches this level (recommended: 95%)",
-      "weeklyThreshold": "Weekly usage threshold",
-      "weeklyThresholdDescription": "Switch when weekly usage reaches this level (recommended: 99%)",
-      "reactiveRecovery": "Reactive recovery",
-      "reactiveDescription": "Auto-swap when unexpected rate limit is hit",
-      "autoSwitchOnAuthFailure": "Auto-switch on auth failure",
-      "autoSwitchOnAuthFailureDescription": "Automatically switch to another authenticated account when authentication fails"
-    },
     "metrics": {
       "title": "Metrics",
       "tasks_one": "{{count}} task",
@@ -670,21 +660,29 @@
     "signInAgain": "Sign in again",
     "details": "Details",
     "menu": "Actions for {{name}}",
+    "deleteAriaLabel": "Delete {{name}}",
     "notSignedIn": "Not signed in",
     "needsSignIn": "Needs to sign in again",
     "rateLimited": "Rate limited",
     "usage": "Session {{session}}% · Weekly {{weekly}}%",
+    "spendUsage": "{{used}} of {{limit}} this month",
+    "spendNoLimit": "{{used}} spent this month",
     "add": "Add Claude account",
     "addButton": "Add",
     "addDescription": "Opens a terminal with claude auth login",
-    "addDescriptionMore": "Tasks switch to the next account when the one in use hits a limit",
     "dialog": {
       "name": "Account name",
       "save": "Save",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "deleting": "Deleting...",
+      "deleteTitle": "Delete account?",
+      "deleteDescription": "Are you sure you want to delete \"{{name}}\"? It is signed out and its Claude Code configuration ({{dir}}) is removed. This action cannot be undone.",
+      "deleteDescriptionDefault": "Are you sure you want to delete \"{{name}}\"? It is signed out and its sign-in settings are removed from Claude Code's configuration. Your other Claude Code settings, skills and history stay. This action cannot be undone."
     },
     "toast": {
       "renameFailed": "Couldn't rename the account",
+      "deleteFailed": "Couldn't delete the account",
       "switchFailed": "Couldn't switch accounts"
     },
     "providers": {
@@ -725,7 +723,8 @@
       "apiProfile": "No usage endpoint",
       "unavailable": "Usage couldn't be fetched",
       "reauth": "Has to sign in again"
-    }
+    },
+    "spendLimit": "Enterprise"
   },
   "liveAgentSimulator": {
     "title": "Live agent graph",
@@ -754,5 +753,16 @@
     "generate": "Generate",
     "style": "Graph style",
     "styleDescription": "Plain or colored by community"
+  },
+  "browser": {
+    "profile": "Default profile",
+    "profileDescription": "The browser profile chats and tasks open, unless one picks another. Its sign-ins carry over",
+    "homepage": "Homepage",
+    "homepageDescription": "The page a chat's browser opens on when it starts. Empty opens a blank page",
+    "homepagePlaceholder": "about:blank",
+    "bookmarksBar": "Show bookmarks bar",
+    "bookmarksBarDescription": "Show the profile's bookmarks under the address bar in the browser drawer",
+    "extensions": "Browser extensions",
+    "extensionsDescription": "Chat browsers run the extensions installed in their browser profile, from the next browser opened"
   }
 }

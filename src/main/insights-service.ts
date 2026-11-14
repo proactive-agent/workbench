@@ -1,12 +1,16 @@
 import { EventEmitter } from 'events';
 import path from 'path';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { stat } from 'fs/promises';
+import type { ClaudeSessionRef } from '../shared/types';
+import { formatInsightsError, INSIGHTS_ERROR_CODES, parseInsightsError } from '../shared/constants/insights';
 import type {
   InsightsSession,
   InsightsSessionSummary,
   InsightsChatMessage,
   InsightsModelConfig,
-  ImageAttachment
+  ImageAttachment,
+  SessionMessageOrigin
 } from '../shared/types';
 import { MAX_IMAGES_PER_TASK } from '../shared/constants';
 import { InsightsConfig } from './insights/config';
@@ -16,6 +20,27 @@ import { SessionManager } from './insights/session-manager';
 import { InsightsExecutor } from './insights/insights-executor';
 import type { InsightsSessionPlan } from './insights/claude-code-runner';
 import { browserDrawer } from './browser-drawer';
+import { setChatSource, type ChatDelivery, type ChatEntry } from './session-messaging/directory';
+import { incomingMessageText, outgoingMessageText } from './session-messaging/tools';
+import { readTranscriptAsChat } from './insights/session-import';
+import { ensureAgentWindowRunning } from './session-messaging/agent-windows';
+import { sessionWindow, shareSessionForReply, type SessionWindow } from './session-messaging/shared-session';
+import { findTranscript } from './terminal/session-follower';
+import { getClaudeProfileManager } from './claude-profile-manager';
+import { agentSessionName, chatSessionName } from '../shared/utils/session-names';
+import { appLog } from './app-logger';
+
+/** Messages from other sessions a chat answers in a row before it waits for the user */
+const MAX_AUTO_REPLIES = 5;
+
+/**
+ * What a chat's Claude reads for a message: a message from another session is marked as one, a
+ * message the user sent to another chat or agent window says where it goes
+ */
+function messageText(message: Pick<InsightsChatMessage, 'content' | 'from' | 'to'>): string {
+  if (message.from) return incomingMessageText(message.from, message.content);
+  return message.to ? outgoingMessageText(message.to, message.content) : message.content;
+}
 
 /** A message id that stays unique for messages created in the same millisecond */
 function newMessageId(): string {
@@ -23,7 +48,56 @@ function newMessageId(): string {
 }
 
 /**
- * The Claude Code session a new message runs in, from the reply before it:
+ * The messages from other sessions before the conversation's last one that the chat only showed,
+ * without a reply (held for the user): the turn passes them on with its message, since the
+ * session it resumes never saw them. Only those: a message of the user's own that got no reply (a
+ * failed turn) may already be in the session, so a turn after one starts a new session instead
+ */
+function heldBefore(session: InsightsSession): InsightsChatMessage[] {
+  const held: InsightsChatMessage[] = [];
+  for (let i = session.messages.length - 2; i >= 0; i--) {
+    const message = session.messages[i];
+    if (message.role !== 'user' || !message.from) break;
+    held.unshift(message);
+  }
+  return held;
+}
+
+/** Whether the chat shows messages from other sessions that wait for the user (held, unanswered) */
+function waitsForUser(session: InsightsSession): boolean {
+  const last = session.messages.at(-1);
+  return last?.role === 'user' && !!last.from;
+}
+
+/**
+ * A session's turns from its transcript (readTranscriptAsChat) taken into the chat that goes on in
+ * it, after the chat's last point there (its claudeHead): whole turns only, up to the session's
+ * latest reply (a turn still being written comes in once it ends, else its prompt would come in
+ * twice), placed before what the chat holds after that point (the message a reply is starting
+ * for, messages from other sessions held for the user), which then still come last and are
+ * passed on. Whether anything came in
+ */
+function mergeSessionTurns(chat: InsightsSession, messages: InsightsChatMessage[], latest: ClaudeSessionRef | undefined): boolean {
+  const head = chat.claudeHead;
+  if (!head || !latest || latest.sessionId !== head.sessionId) return false;
+  const since = messages.findIndex((message) => message.claudeRef?.messageUuid === head.messageUuid);
+  let end = -1;
+  messages.forEach((message, index) => {
+    if (message.role === 'assistant' && message.claudeRef?.messageUuid === latest.messageUuid) end = index;
+  });
+  if (since < 0 || end <= since) return false;
+  let at = chat.messages.length - 1;
+  chat.messages.forEach((message, index) => {
+    if (message.claudeRef?.messageUuid === head.messageUuid) at = index;
+  });
+  chat.messages.splice(at + 1, 0, ...messages.slice(since + 1, end + 1));
+  chat.claudeHead = latest;
+  return true;
+}
+
+/**
+ * The Claude Code session a new message runs in, from the reply before it (and before the
+ * messages from other sessions held without a reply, see heldBefore):
  * - that reply is the session's latest point: resume the session
  * - an earlier reply of the session (an edit or regenerate dropped what came after it): fork the
  *   session there, so the dropped turns stay out of it and the original session is kept
@@ -31,7 +105,7 @@ function newMessageId(): string {
  *   from before chats had sessions): a new session, with the conversation folded into its prompt
  */
 export function planClaudeSession(session: InsightsSession): InsightsSessionPlan {
-  const previous = session.messages.at(-2);
+  const previous = session.messages.at(-2 - heldBefore(session).length);
   const ref = previous?.role === 'assistant' ? previous.claudeRef : undefined;
   if (!ref) return { mode: 'new' };
   const head = session.claudeHead;
@@ -57,6 +131,21 @@ class InsightsService extends EventEmitter {
   private storage: SessionStorage;
   private sessionManager: SessionManager;
   private executor: InsightsExecutor;
+  /** Messages from other sessions waiting for a chat's reply to end (by project and chat) */
+  private incoming = new Map<string, Array<{ from: SessionMessageOrigin; text: string }>>();
+  /**
+   * How many messages from other sessions each chat answered since the user last wrote there: two
+   * chats answering each other would otherwise go on without end
+   */
+  private autoReplies = new Map<string, number>();
+  /** Chats' syncs with a session an agent window shares, one at a time per chat (by project and chat) */
+  private sharedSyncs = new Map<string, Promise<boolean>>();
+  /** What each chat's last sync read: the session's point and its transcript's time and size (nothing new: not read again) */
+  private sharedChecked = new Map<string, string>();
+  /** Sessions an agent window has run (a chat in one takes in what was said there, also after the window closed) */
+  private sharedSessions = new Set<string>();
+  /** Transcripts found, by Claude Code session */
+  private transcripts = new Map<string, string>();
 
   constructor() {
     super();
@@ -84,6 +173,277 @@ class InsightsService extends EventEmitter {
     this.executor.on('sdk-rate-limit', (info) => {
       this.emit('sdk-rate-limit', info);
     });
+
+    // The project's other chats and agent windows message chats through Workbench
+    setChatSource({
+      list: (projectId, projectPath) => this.listChats(projectId, projectPath),
+      deliver: (projectId, projectPath, chatId, from, text) => this.receiveMessage(projectId, projectPath, chatId, from, text),
+    });
+  }
+
+  /** The project's chats, for the messaging tools */
+  private listChats(projectId: string, projectPath: string): ChatEntry[] {
+    return this.listSessions(projectPath).map((summary) => ({
+      chatId: summary.id,
+      title: summary.title,
+      replying: this.executor.isSessionActive(projectId, summary.id),
+    }));
+  }
+
+  /**
+   * A chat as the app holds it: the open chat's own object (so the next message the user sends
+   * keeps what is added here), any other from disk
+   */
+  private chatById(projectId: string, projectPath: string, chatId: string): InsightsSession | null {
+    const cached = this.sessionManager.getCachedSession(projectId);
+    if (cached?.id === chatId) return cached;
+    return this.storage.loadSessionById(projectPath, chatId);
+  }
+
+  /**
+   * A message from another of the project's chats or agent windows: shown in the chat, marked
+   * with its sender, and answered by a reply of the chat's own (once the reply it is writing ends)
+   */
+  async receiveMessage(
+    projectId: string,
+    projectPath: string,
+    chatId: string,
+    from: SessionMessageOrigin,
+    text: string
+  ): Promise<ChatDelivery> {
+    const session = this.chatById(projectId, projectPath, chatId);
+    if (!session || session.archivedAt) return { status: 'notFound' };
+    // A chat writing a reply takes the message once it ends (its reply's save would drop one
+    // added meanwhile)
+    if (this.executor.isSessionActive(projectId, chatId)) {
+      const key = `${projectId}\u0000${chatId}`;
+      this.incoming.set(key, [...(this.incoming.get(key) ?? []), { from, text }]);
+      return { status: 'queued' };
+    }
+    return this.takeIncoming(projectId, projectPath, chatId, from, text);
+  }
+
+  /**
+   * A message from another session for a chat that isn't replying: answered, or only shown once
+   * the chat answered MAX_AUTO_REPLIES in a row (the user decides how it goes on)
+   */
+  private takeIncoming(projectId: string, projectPath: string, chatId: string, from: SessionMessageOrigin, text: string): ChatDelivery {
+    const session = this.chatById(projectId, projectPath, chatId);
+    if (!session || session.archivedAt) return { status: 'notFound' };
+    const key = `${projectId}\u0000${chatId}`;
+    const answered = this.autoReplies.get(key) ?? 0;
+    // Over the limit, or other messages already wait for the user (an auto-reply must not answer
+    // them unattended): only shown
+    if (answered >= MAX_AUTO_REPLIES || waitsForUser(session)) {
+      this.showIncoming(projectId, projectPath, session, [{ from, text }]);
+      return { status: 'held', answered };
+    }
+    this.autoReplies.set(key, answered + 1);
+    void this.answerIncoming(projectId, projectPath, session, from, text);
+    return { status: 'started' };
+  }
+
+  /**
+   * Add messages from other sessions to a chat, marked with their senders, and save it without
+   * making it the open chat; false when the chat is gone
+   */
+  private showIncoming(projectId: string, projectPath: string, session: InsightsSession, incoming: Array<{ from: SessionMessageOrigin; text: string }>): boolean {
+    for (const { from, text } of incoming) {
+      session.messages.push({ id: newMessageId(), role: 'user', content: text, timestamp: new Date(), from });
+    }
+    session.updatedAt = new Date();
+    if (!this.sessionManager.saveReply(projectId, projectPath, session)) return false;
+    this.emit('session-updated', projectId, session);
+    return true;
+  }
+
+  private async answerIncoming(projectId: string, projectPath: string, session: InsightsSession, from: SessionMessageOrigin, text: string): Promise<void> {
+    if (!this.showIncoming(projectId, projectPath, session, [{ from, text }])) return;
+    // An agent window working in the chat's session: the message waits for the user (shown
+    // without a reply, passed on with their next message), rather than branching the session
+    if (session.claudeHead && (await sessionWindow(projectPath, session.claudeHead.sessionId).catch(() => undefined))?.busy) return;
+    // No one is watching this reply: it runs read-only (a session that was tricked into asking
+    // must get nothing that acts here): not the Clawd button's tools, not the task tools, not gh
+    // or glab
+    const unattended: InsightsModelConfig | undefined = session.modelConfig
+      ? { ...session.modelConfig, agentMode: false, kanbanTools: false, githubTools: false, gitlabTools: false }
+      : undefined;
+    await this.reply(projectId, projectPath, session, incomingMessageText(from, text), unattended);
+  }
+
+  /**
+   * Open an agent window's Claude Code session as a chat: the chat opened from it before (with
+   * what was said since in the window), or a new one, made the open chat. Its next message resumes
+   * the session. Returns the chat's id, or null when the session has no conversation to show
+   */
+  async openSessionAsChat(
+    projectId: string,
+    projectPath: string,
+    source: { sessionId: string; transcriptPath: string; profileId?: string }
+  ): Promise<string | null> {
+    const { messages, head: latest } = await readTranscriptAsChat(source.transcriptPath, source.sessionId, source.profileId);
+    if (messages.length === 0) return null;
+    this.sharedSessions.add(source.sessionId);
+    // The chat of this session (the latest, archived ones too): one opened from it before, or the
+    // chat whose session it is (its Clawd button opened it in the window)
+    const existing = this.chatOfClaudeSession(projectId, projectPath, source.sessionId);
+    const replying = !!existing && this.executor.isSessionActive(projectId, existing.id);
+    // It takes what was said in the window since: the transcript after the chat's own last point.
+    // A chat that went on in another session (a stop, an edit) keeps its conversation, and the
+    // window's opens as a new chat
+    const head = existing?.claudeHead;
+    const sameSession = head?.sessionId === source.sessionId
+      && messages.some((message) => message.claudeRef?.messageUuid === head.messageUuid);
+    // The chat used again comes back from the archive (the object here too, which is saved below)
+    if (existing?.archivedAt && (replying || sameSession)) {
+      this.unarchiveSession(projectPath, existing.id);
+      existing.archivedAt = undefined;
+    }
+    // A chat replying keeps what it holds; it is only shown
+    if (existing && replying) {
+      this.sessionManager.switchSession(projectId, projectPath, existing.id);
+      return existing.id;
+    }
+    if (existing && sameSession) {
+      mergeSessionTurns(existing, messages, latest);
+      existing.updatedAt = new Date();
+      this.storage.saveSession(projectPath, existing);
+      this.sessionManager.switchSession(projectId, projectPath, existing.id);
+      this.emit('session-updated', projectId, existing);
+      return existing.id;
+    }
+    const session = this.sessionManager.createNewSession(projectId, projectPath);
+    const firstPrompt = messages.find((message) => message.role === 'user');
+    if (firstPrompt) session.title = this.storage.generateTitle(firstPrompt.content);
+    session.messages = messages;
+    session.claudeHead = latest;
+    session.fromSessionId = source.sessionId;
+    session.updatedAt = new Date();
+    this.storage.saveSession(projectPath, session);
+    this.sessionManager.switchSession(projectId, projectPath, session.id);
+    this.emit('session-updated', projectId, session);
+    return session.id;
+  }
+
+  /**
+   * The chat a Claude Code session belongs to: opened from it ("Open as chat"), or the chat that
+   * goes on in it now (its last reply's point is in it); the latest such chat, archived ones too
+   */
+  private chatOfClaudeSession(projectId: string, projectPath: string, claudeSessionId: string): InsightsSession | null {
+    const summary = this.listSessions(projectPath, true)
+      .filter((candidate) => candidate.fromSessionId === claudeSessionId || candidate.claudeSessionId === claudeSessionId)
+      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())[0];
+    return summary ? this.chatById(projectId, projectPath, summary.id) : null;
+  }
+
+  /**
+   * What was said in an agent window since the chat's last point in its session (the window runs
+   * the chat's session too, shared-session.ts): taken from the transcript into the chat
+   * (mergeSessionTurns), which goes on from there. One at a time per chat; a transcript unchanged
+   * since the chat's last look isn't read again. Whether the chat changed
+   */
+  private takeSharedTurns(projectId: string, projectPath: string, session: InsightsSession): Promise<boolean> {
+    const key = `${projectId}\u0000${session.id}`;
+    const previous = this.sharedSyncs.get(key) ?? Promise.resolve(false);
+    const next = previous.catch(() => false).then(() => this.readSharedTurns(projectId, projectPath, session, key));
+    this.sharedSyncs.set(key, next);
+    void next.finally(() => {
+      if (this.sharedSyncs.get(key) === next) this.sharedSyncs.delete(key);
+    }).catch(() => undefined);
+    return next;
+  }
+
+  private async readSharedTurns(projectId: string, projectPath: string, session: InsightsSession, key: string): Promise<boolean> {
+    const head = session.claudeHead;
+    if (!head) return false;
+    let transcript = this.transcripts.get(head.sessionId);
+    let info = transcript ? await stat(transcript).catch(() => null) : null;
+    if (!transcript || !info) {
+      const configDir = head.profileId ? getClaudeProfileManager().getProfile(head.profileId)?.configDir : undefined;
+      transcript = (await findTranscript(head.sessionId, configDir)) ?? undefined;
+      if (!transcript) return false;
+      this.transcripts.set(head.sessionId, transcript);
+      info = await stat(transcript);
+    }
+    const mark = (point: string) => `${head.sessionId}:${point}:${info!.mtimeMs}:${info!.size}`;
+    if (this.sharedChecked.get(key) === mark(head.messageUuid)) return false;
+    const { messages, head: latest } = await readTranscriptAsChat(transcript, head.sessionId, head.profileId);
+    const merged = mergeSessionTurns(session, messages, latest);
+    this.sharedChecked.set(key, mark(session.claudeHead?.messageUuid ?? head.messageUuid));
+    if (!merged) return false;
+    session.updatedAt = new Date();
+    this.storage.saveSession(projectPath, session);
+    this.emit('session-updated', projectId, session);
+    return true;
+  }
+
+  /**
+   * The chat is shown: what was said in an agent window sharing its session comes in (not while
+   * the chat replies or the window works). Whether the chat changed
+   */
+  async syncSharedSession(projectId: string, projectPath: string, chatId: string): Promise<boolean> {
+    const session = this.chatById(projectId, projectPath, chatId);
+    if (!session?.claudeHead || this.executor.isSessionActive(projectId, chatId)) return false;
+    const found = await sessionWindow(projectPath, session.claudeHead.sessionId).catch(() => undefined);
+    if (found) this.sharedSessions.add(session.claudeHead.sessionId);
+    if (found?.busy || !this.sharedSessions.has(session.claudeHead.sessionId)) return false;
+    return this.takeSharedTurns(projectId, projectPath, session).catch(() => false);
+  }
+
+  /**
+   * Before a reply resumes the chat's session (inside the turn, so the chat counts as replying):
+   * an agent window working in it ends the turn (agent_window_busy, the window's name); what was
+   * said in a window comes in; a window running it is read-only until the returned function is
+   * called, when the reply ended
+   */
+  private async prepareSharedTurn(
+    projectId: string,
+    projectPath: string,
+    session: InsightsSession,
+    claudeSessionId: string
+  ): Promise<(() => Promise<void>) | undefined> {
+    const found: SessionWindow | undefined = await sessionWindow(projectPath, claudeSessionId).catch(() => undefined);
+    if (found?.busy) throw new Error(formatInsightsError(INSIGHTS_ERROR_CODES.agentWindowBusy, agentSessionName(found.terminal.id)));
+    if (found) this.sharedSessions.add(claudeSessionId);
+    if (this.sharedSessions.has(claudeSessionId)) {
+      await this.takeSharedTurns(projectId, projectPath, session).catch((error) => {
+        appLog.warn("[Insights] Could not read what an agent window said in the chat's session:", error);
+        return false;
+      });
+    }
+    if (!found) return undefined;
+    const chat = { kind: 'chat' as const, name: chatSessionName(session.id) ?? session.id, ...(session.title ? { title: session.title } : {}) };
+    return shareSessionForReply(projectPath, found, claudeSessionId, chat);
+  }
+
+  /**
+   * The messages waiting for a chat, after a reply that was stopped or failed: shown in the chat
+   * without a reply (a stop must not start one), so the user sees them and decides
+   */
+  private holdQueued(projectId: string, projectPath: string, chatId: string): void {
+    const key = `${projectId}\u0000${chatId}`;
+    const queue = this.incoming.get(key);
+    this.incoming.delete(key);
+    if (!queue?.length) return;
+    // A chat archived meanwhile keeps them too (they show once it is unarchived)
+    const session = this.chatById(projectId, projectPath, chatId);
+    if (!session || !this.showIncoming(projectId, projectPath, session, queue)) {
+      appLog.warn(`[Insights] ${queue.length} message(s) from other sessions were not delivered: chat ${chatId} is gone`);
+    }
+  }
+
+  /**
+   * The messages waiting for a chat, once its reply ended: the next one is answered (those over the
+   * limit only shown), the rest wait for that reply
+   */
+  private answerQueued(projectId: string, projectPath: string, chatId: string): void {
+    const key = `${projectId}\u0000${chatId}`;
+    const queue = this.incoming.get(key);
+    while (queue?.length && !this.executor.isSessionActive(projectId, chatId)) {
+      const next = queue.shift()!;
+      if (this.takeIncoming(projectId, projectPath, chatId, next.from, next.text).status === 'started') break;
+    }
+    if (queue && queue.length === 0) this.incoming.delete(key);
   }
 
   /**
@@ -223,10 +583,13 @@ class InsightsService extends EventEmitter {
     projectPath: string,
     message: string,
     modelConfig?: InsightsModelConfig,
-    images?: ImageAttachment[]
+    images?: ImageAttachment[],
+    to?: SessionMessageOrigin
   ): Promise<void> {
     // Load or create session
     let session = this.sessionManager.loadSession(projectId, projectPath);
+    // The user wrote: the chat answers other sessions again
+    if (session) this.autoReplies.delete(`${projectId}\u0000${session.id}`);
     // The chat's own reply stops (other chats' go on)
     if (session) this.executor.cancelSession(projectId, session.id);
     if (!session) {
@@ -258,7 +621,8 @@ class InsightsService extends EventEmitter {
       role: 'user',
       content: message,
       timestamp: new Date(),
-      images: persistImages && persistImages.length > 0 ? persistImages : undefined
+      images: persistImages && persistImages.length > 0 ? persistImages : undefined,
+      ...(to ? { to } : {})
     };
     session.messages.push(userMessage);
     if (modelConfig) session.modelConfig = modelConfig;
@@ -267,7 +631,8 @@ class InsightsService extends EventEmitter {
     // The chat (and the history list) learn the conversation now, a new one included
     this.emit('session-updated', projectId, session);
 
-    await this.reply(projectId, projectPath, session, message, modelConfig, images);
+
+    await this.reply(projectId, projectPath, session, messageText(userMessage), modelConfig, images);
   }
 
   /**
@@ -277,6 +642,7 @@ class InsightsService extends EventEmitter {
   async regenerate(projectId: string, projectPath: string, modelConfig?: InsightsModelConfig, sessionId?: string): Promise<void> {
     const session = this.loadShownSession(projectId, projectPath, sessionId);
     if (session) this.executor.cancelSession(projectId, session.id);
+    if (session) this.autoReplies.delete(`${projectId}\u0000${session.id}`);
     while (session?.messages.at(-1)?.role === 'assistant') session.messages.pop();
     const userMessage = session?.messages.at(-1);
     if (!session || !userMessage) {
@@ -289,7 +655,7 @@ class InsightsService extends EventEmitter {
     this.sessionManager.saveSession(projectPath, session);
     this.emit('session-updated', projectId, session);
 
-    await this.reply(projectId, projectPath, session, userMessage.content, modelConfig, this.loadAttachments(projectPath, userMessage));
+    await this.reply(projectId, projectPath, session, messageText(userMessage), modelConfig, this.loadAttachments(projectPath, userMessage));
   }
 
   /**
@@ -306,6 +672,7 @@ class InsightsService extends EventEmitter {
   ): Promise<void> {
     const session = this.loadShownSession(projectId, projectPath, sessionId);
     if (session) this.executor.cancelSession(projectId, session.id);
+    if (session) this.autoReplies.delete(`${projectId}\u0000${session.id}`);
     const index = session?.messages.findIndex((m) => m.id === messageId && m.role === 'user') ?? -1;
     if (!session || index < 0) {
       this.failTurn(projectId, session, 'The edited message is no longer in this chat', sessionId);
@@ -317,11 +684,13 @@ class InsightsService extends EventEmitter {
     if (index === 0 && session.title === this.storage.generateTitle(original.content)) {
       session.title = this.storage.generateTitle(content);
     }
+    // An edited message is the user's own, whoever sent it first
     const userMessage: InsightsChatMessage = {
       ...original,
       id: newMessageId(),
       content,
-      timestamp: new Date()
+      timestamp: new Date(),
+      from: undefined
     };
     session.messages = [...session.messages.slice(0, index), userMessage];
     if (modelConfig) session.modelConfig = modelConfig;
@@ -329,7 +698,7 @@ class InsightsService extends EventEmitter {
     this.sessionManager.saveSession(projectPath, session);
     this.emit('session-updated', projectId, session);
 
-    await this.reply(projectId, projectPath, session, content, modelConfig, this.loadAttachments(projectPath, userMessage));
+    await this.reply(projectId, projectPath, session, messageText(userMessage), modelConfig, this.loadAttachments(projectPath, userMessage));
   }
 
   /**
@@ -354,35 +723,76 @@ class InsightsService extends EventEmitter {
     modelConfig?: InsightsModelConfig,
     images?: ImageAttachment[]
   ): Promise<void> {
-    // The conversation before this message, for a turn that starts a new Claude Code session
-    // (replies stopped before any text are left out; the message itself is sent separately, with
-    // its attachments)
+    // A message to an agent window that isn't running (closed, or not started since the app
+    // started): it opens first, so list_sessions finds it running. Also on a regenerate or an edit
+    const last = session.messages.at(-1);
+    const to = last?.to;
+    const openWindow = to?.kind === 'agent'
+      ? () => ensureAgentWindowRunning(projectPath, to.name)
+      : undefined;
+    // Messages from other sessions the chat only showed (held for the user) go with this one, once:
+    // the resumed session never saw them, and a new session's history leaves them out
+    const held = heldBefore(session);
+    const turnMessage = held.length > 0
+      ? `${held.map((m) => messageText(m)).join('\n\n')}\n\n${message}`
+      : message;
+
+    // The conversation before this message (and the held ones), for a turn that starts a new
+    // Claude Code session (replies stopped before any text are left out; the message itself is
+    // sent separately, with its attachments)
     const messages = session.messages
-      .slice(0, -1)
+      .slice(0, -1 - held.length)
       .filter((m) => !(m.role === 'assistant' && m.stopped && !m.content));
     const conversationHistory = messages.map((m) => {
       const imageCount = m.images?.length ?? 0;
       const imageNotation = imageCount > 0 && m.role === 'user'
         ? `\n[User previously attached ${imageCount} file(s) - not visible in this context]`
         : '';
-      return { role: m.role, content: m.content + imageNotation };
+      return { role: m.role, content: messageText(m) + imageNotation };
     });
 
     // Use provided modelConfig or fall back to session's config
     const configToUse = modelConfig || session.modelConfig;
 
+    let answeredFully = false;
+    let replaced = false;
+    // An agent window running the session this reply goes on in is read-only meanwhile, and
+    // resumes the session afterwards with this turn in it (shared-session.ts)
+    let releaseWindow: (() => Promise<void>) | undefined;
     try {
+      const plan = planClaudeSession(session);
+      // Resuming the chat's session, which an agent window may share (shared-session.ts): checked
+      // and taken in inside the turn, so the chat already counts as replying meanwhile
+      const prepare = plan.mode === 'resume'
+        ? async () => {
+          releaseWindow = await this.prepareSharedTurn(projectId, projectPath, session, plan.sessionId);
+        }
+        : undefined;
       const result = await this.executor.execute(
         projectId,
         projectPath,
-        message,
+        turnMessage,
         conversationHistory,
         configToUse,
         images,
-        { session: planClaudeSession(session), title: session.title, chatSessionId: session.id }
+        {
+          session: plan,
+          title: session.title,
+          chatSessionId: session.id,
+          beforeRun: openWindow,
+          prepare,
+          // It sends to an agent window, or answers one (this message or one it passes on)
+          reachesAgentWindow: to?.kind === 'agent' || [...held, last].some((m) => m?.from?.kind === 'agent'),
+        }
       );
 
-      if (result.replaced) return;
+      if (result.replaced) {
+        replaced = true;
+        return;
+      }
+      // A reply the user stopped leaves the messages other sessions sent waiting (Stop must not
+      // start the next reply); they are answered after the chat's next reply
+      answeredFully = !result.stopped;
 
       // A reply that ended with nothing leaves no message; a stopped one says it was stopped
       const isEmpty = !result.fullResponse && result.toolsUsed.length === 0 && !result.suggestedTasks;
@@ -414,6 +824,21 @@ class InsightsService extends EventEmitter {
     } catch (error) {
       // Error already emitted by executor
       console.error('[InsightsService] Error executing insights:', error);
+      // An agent window works in the chat's session: the user's message wasn't sent (their
+      // composer gets it back); a message from another session stays shown, held for the user
+      const refused = error instanceof Error && parseInsightsError(error.message).code === INSIGHTS_ERROR_CODES.agentWindowBusy;
+      if (refused && last?.role === 'user' && !last.from && session.messages.at(-1) === last) {
+        session.messages.pop();
+        session.updatedAt = new Date();
+        if (this.sessionManager.saveReply(projectId, projectPath, session)) this.emit('session-updated', projectId, session);
+      }
+    } finally {
+      void releaseWindow?.();
+      // A message another session sent meanwhile is answered now; after a stop or a failure it is
+      // only shown, for the user to take up
+      // (A newer reply took this one's place: the waiting messages are its own)
+      if (answeredFully) this.answerQueued(projectId, projectPath, session.id);
+      else if (!replaced) this.holdQueued(projectId, projectPath, session.id);
     }
   }
 

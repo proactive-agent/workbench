@@ -243,6 +243,17 @@ describe('ProfileList - Delete Confirmation Dialog', () => {
     expect(mockStore.deleteProfile).not.toHaveBeenCalled();
   });
 
+  it('shows no delete button for the profile in use', () => {
+    vi.mocked(useSettingsStore).mockReturnValue(
+      createSettingsStoreMock({ activeProfileId: 'profile-2' })
+    );
+
+    renderWithWrapper(<ProfileList />);
+
+    expect(screen.queryByTestId('profile-delete-button-profile-2')).not.toBeInTheDocument();
+    expect(screen.getByTestId('profile-delete-button-profile-1')).toBeInTheDocument();
+  });
+
   // Test 6: Delete confirmation dialog has delete action button
   it('should show delete action button in confirmation dialog', () => {
     vi.mocked(useSettingsStore).mockReturnValue(

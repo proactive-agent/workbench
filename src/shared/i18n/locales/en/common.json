@@ -109,12 +109,6 @@
     "notFound": "Not found",
     "unauthorized": "Unauthorized"
   },
-  "notification": {
-    "accountSwitched": "Account Switched",
-    "swapFrom": "Switched from",
-    "swapTo": "to",
-    "swapReason": "({{reason}} swap)"
-  },
   "insights": {
     "suggestedTask": "Suggested Task",
     "creating": "Creating...",
@@ -171,7 +165,9 @@
     "copyMessage": "Copy",
     "copied": "Copied",
     "tools": {
-      "readingFile": "Reading file",
+      "sendMessage": "Sending a message",
+        "listAgents": "Listing running sessions",
+        "readingFile": "Reading file",
       "searchingFiles": "Searching files",
       "searchingCode": "Searching code",
       "searchingGraph": "Searching the code graph",
@@ -215,7 +211,8 @@
     },
     "errors": {
       "subscription_rejected": "Anthropic rejected this request for your Claude subscription account (HTTP 429), even though your usage is within limits. Subscription accounts must go through Claude Code. Make sure the Claude Code CLI is installed and signed in, or add an Anthropic API key account in Settings → Accounts.",
-      "claude_code_missing": "Claude subscription accounts answer through Claude Code, but the Claude Code CLI isn't installed. Install it from claude.ai/download (or via Settings → Developer Tools), then try again."
+      "claude_code_missing": "Claude subscription accounts answer through Claude Code, but the Claude Code CLI isn't installed. Install it from claude.ai/download (or via Settings → Developer Tools), then try again.",
+      "agent_window_busy": "The agent window sharing this chat's session is working in it. Your message is back in the composer: send it once the window is done."
     },
     "taskTools": {
       "list_tasks": "Listing tasks",
@@ -233,13 +230,54 @@
       "archive_tasks": "Archiving tasks",
       "unarchive_tasks": "Unarchiving tasks",
       "delete_task": "Deleting a task",
-      "message_task": "Messaging a task"
+      "message_task": "Messaging a task",
+      "list_sessions": "Listing chats and agent windows",
+      "message_chat": "Messaging a chat"
     },
     "mcp": {
       "label": "MCP servers"
     },
     "githubTools": "GitHub",
     "gitlabTools": "GitLab",
+    "agentMode": {
+      "label": "Claude Code",
+      "off": "Let Claude work like an agent window: change files, run commands and use slash commands and skills",
+      "on": "Claude works like an agent window: it can change files, run commands and use slash commands and skills"
+    },
+    "chatName": {
+      "copy": "Copy session name",
+      "copied": "Copied {{name}}"
+    },
+    "incoming": {
+      "fromChat": "From the chat {{title}} ({{name}})",
+      "fromAgent": "From the agent window {{title}} ({{name}})"
+    },
+    "outgoing": {
+      "toChat": "To the chat {{title}} ({{name}})",
+      "toAgent": "To the agent window {{title}} ({{name}})"
+    },
+    "sendTo": {
+      "chat": "Sends this message to the chat {{title}}",
+      "agent": "Sends this message to the agent window {{title}}",
+      "remove": "Don't send to this session"
+    },
+    "agentWindow": {
+      "open": "Open agent",
+      "replying": "Wait for the reply to finish",
+      "noRoom": "This project has no room for another agent window",
+      "working": "The agent window {{name}} is working in this chat's session: send once it is done"
+    },
+    "slashCommands": {
+      "label": "Slash commands and skills",
+      "loading": "Loading commands...",
+      "noOutput": "The command ran without output",
+      "errors": {
+        "projectNotFound": "Couldn't list Claude Code's commands: the project isn't open",
+        "timeout": "Claude Code didn't list its commands in time. Type / again to retry",
+        "notListed": "This Claude Code version doesn't list its commands",
+        "failed": "Couldn't list Claude Code's commands. Type / again to retry"
+      }
+    },
     "cliNotFound": "{{name}} CLI not detected",
     "kanbanTools": {
       "label": "Kanban",
@@ -282,7 +320,11 @@
     "resetsInLowerDays": "resets in {{days}}d {{hours}}h",
     "sessionNotStarted": "starts when a message is sent",
     "heartsLeft": "{{percent}}% of the 5-hour limit left",
-    "weekScoped": "{{model}} · Week"
+    "weekScoped": "{{model}} · Week",
+    "heartsLeftSpend": "{{percent}}% of the monthly spend limit left",
+    "spendOfLimit": "{{used}} of {{limit}} this month",
+    "spendNoLimit": "{{used}} spent this month, no limit set",
+    "spendShort": "Monthly spend limit"
   },
   "oauth": {
     "enterCode": "Manual Code Entry (Fallback)",
@@ -414,6 +456,7 @@
     "searchPlaceholder": "Search projects…",
     "closeSearch": "Close search",
     "sortBy": {
+      "recent": "Sort by last opened",
       "nameAsc": "Sort by name (A–Z)",
       "nameDesc": "Sort by name (Z–A)"
     },

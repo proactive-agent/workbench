@@ -70,6 +70,7 @@ out/
 build/
 .vite/
 *.tsbuildinfo
+.playwright-mcp/
 
 # Compiled TypeScript (sources are .ts)
 src/**/*.js

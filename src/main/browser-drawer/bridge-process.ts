@@ -2,9 +2,8 @@
  * The browser bridge process
  * ==========================
  *
- * browser-bridge.cjs, started where the browsers run: natively with Workbench's executable as
- * Node (ELECTRON_RUN_AS_NODE), in WSL mode with the distribution's node (spawnTool), since the
- * browsers, their registry and their Unix sockets are inside the distribution. Messages go over
+ * browser-bridge.cjs, started where the browsers run (natively, also on Windows while the shell is
+ * WSL: browser-runtime.ts) with Workbench's executable as Node (ELECTRON_RUN_AS_NODE). Messages go over
  * its stdin/stdout as JSON headers with bytes (bridge-framing.ts), so JPEG frames arrive as
  * bytes. It loads each browser's own playwright-core from the session's registry descriptor:
  * nothing of Playwright ships with the app, and the client always matches the server that
@@ -18,9 +17,8 @@ import { makeTempFolder, removeTempFolder, TEMP_FOLDER_PREFIXES } from '../temp-
 import path from 'path';
 import { EventEmitter } from 'events';
 import { appLog } from '../app-logger';
-import { getWslInfo, whenShellRuntimeReady } from '../platform/shell-runtime';
+import { inChatBrowserRuntime, whenChatBrowserRuntimeReady } from './browser-runtime';
 import { killRuntimeProcess, spawnTool } from '../platform/runtime-exec';
-import { resolveCommand } from '../mcp-commands';
 import type { BrowserDrawerInput, BrowserDrawerNavigation, BrowserDrawerPage } from '../../shared/types/browser-drawer';
 import { createBridgeMessageReader, encodeBridgeMessage } from './bridge-framing';
 import BRIDGE_SOURCE from './browser-bridge.cjs?raw';
@@ -31,6 +29,8 @@ export interface BridgeSession {
   endpoint: string;
   browserName: string;
   playwrightLib: string;
+  /** Driven over WebDriver BiDi (registry.ts) */
+  bidi?: boolean;
 }
 
 export type BridgeRequest =
@@ -41,14 +41,17 @@ export type BridgeRequest =
   | { type: 'navigate'; pageId: string; action: BrowserDrawerNavigation; url?: string }
   | { type: 'closePage'; pageId: string }
   | { type: 'newPage'; sessionId: string }
-  | { type: 'probe'; id: number; endpoints: string[] }
+  | { type: 'copy'; id: number; pageId: string }
+  | { type: 'extensionAction'; id: number; pageId: string; extensionId: string; name: string; target?: { popupUrl?: string; homepageUrl?: string } }
   | { type: 'colorScheme'; scheme: 'light' | 'dark' };
 
 export type BridgeMessage =
   | { type: 'pages'; pages: BrowserDrawerPage[]; connected?: string[] }
   | { type: 'frame'; pageId: string; viewers: number[]; data: Uint8Array; width: number; height: number }
+  | { type: 'cursor'; pageId: string; viewers: number[]; cursor: string }
   | { type: 'log'; message: string }
-  | { type: 'probed'; id: number; live: string[] };
+  | { type: 'copied'; id: number; text: string }
+  | { type: 'extensionActionDone'; id: number; popupId?: string; error?: string };
 
 export interface BridgeProcessOptions {
   /** The bridge script (written to a temporary folder when not given) */
@@ -57,17 +60,24 @@ export interface BridgeProcessOptions {
   execPath?: string;
 }
 
-/** How long a liveness probe may take (each endpoint is given a second) */
-const PROBE_TIMEOUT_MS = 10_000;
+/** How long reading a page's selected text may take (it waits for the input before it) */
+const COPY_TIMEOUT_MS = 5000;
+/**
+ * How long an extension's action may take: its popup is waited for, loaded (twice for a Firefox
+ * browser's first extension page), measured and loaded again behind its page's tab
+ */
+const EXTENSION_ACTION_TIMEOUT_MS = 45_000;
 
 /** Emits 'message' (BridgeMessage) and 'exit' */
 export class BrowserBridgeProcess extends EventEmitter {
   private child: ChildProcess | null = null;
   private starting: Promise<void> | null = null;
   private tempDir: string | null = null;
-  private nextProbeId = 1;
-  private readonly probes = new Map<number, (live: string[] | null) => void>();
-  /** Stopped (the app is quitting): never started again, also not by a probe */
+  private nextCopyId = 1;
+  private readonly copies = new Map<number, (text: string) => void>();
+  private nextActionId = 1;
+  private readonly actions = new Map<number, (result: { popupId?: string; error?: string }) => void>();
+  /** Stopped (the app is quitting): never started again */
   private stopped = false;
 
   constructor(private readonly options: BridgeProcessOptions = {}) {
@@ -89,39 +99,30 @@ export class BrowserBridgeProcess extends EventEmitter {
   }
 
   /**
-   * Which of these endpoints answer, asked from where the browsers run (WSL mode: the main
-   * process can't reach their sockets). Null when the bridge couldn't tell (not running, no answer)
+   * The text selected in a page ('' for none). Asked at once, without waiting for anything first:
+   * input sent after this call is replayed after the text was read
    */
-  async probe(endpoints: string[]): Promise<Set<string> | null> {
-    await this.start().catch(() => undefined);
-    if (!this.child) return null;
-    const id = this.nextProbeId++;
-    const live = await new Promise<string[] | null>((resolve) => {
-      const timer = setTimeout(() => {
-        this.probes.delete(id);
-        resolve(null);
-      }, PROBE_TIMEOUT_MS);
-      this.probes.set(id, (result) => {
+  selectedText(pageId: string): Promise<string> {
+    const id = this.nextCopyId++;
+    return new Promise<string>((resolve) => {
+      const timer = setTimeout(() => settle(''), COPY_TIMEOUT_MS);
+      const settle = (text: string) => {
         clearTimeout(timer);
-        this.probes.delete(id);
-        resolve(result);
-      });
-      if (!this.write({ type: 'probe', id, endpoints })) this.probes.get(id)?.(null);
+        this.copies.delete(id);
+        resolve(text);
+      };
+      this.copies.set(id, settle);
+      if (!this.write({ type: 'copy', id, pageId })) settle('');
     });
-    return live ? new Set(live) : null;
   }
 
   private async spawn(): Promise<void> {
-    await whenShellRuntimeReady();
-    // Looked up before the script's folder is made: without node in WSL every probe would make one
-    const wsl = getWslInfo();
-    const command = wsl ? await resolveCommand('node') : this.options.execPath ?? process.execPath;
-    if (!command) {
-      throw new Error(`Node.js was not found in WSL (${wsl?.distro ?? 'unknown'}), which the browser drawer needs`);
-    }
+    // After the shell runtime (it waits for that)
+    await whenChatBrowserRuntimeReady();
+    // Where the chat browsers run (natively: on Windows also while the shell is WSL, browser-runtime.ts)
+    const command = this.options.execPath ?? process.execPath;
     let script = this.options.scriptPath;
     if (!script) {
-      // On the Windows side in WSL mode too: the distribution's node reads it through /mnt
       this.tempDir = await makeTempFolder(TEMP_FOLDER_PREFIXES.browserBridge);
       script = path.join(this.tempDir, 'browser-bridge.cjs');
       await writeFile(script, BRIDGE_SOURCE, 'utf-8');
@@ -131,12 +132,12 @@ export class BrowserBridgeProcess extends EventEmitter {
       await this.removeTempDir();
       throw new Error('The browser bridge was stopped');
     }
-    const child = spawnTool('node', [script], {
+    const child = inChatBrowserRuntime(() => spawnTool('node', [script!], {
       command,
       stdio: ['pipe', 'pipe', 'pipe'],
-      ...(wsl ? {} : { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } }),
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
       windowsHide: true,
-    });
+    }));
     this.child = child;
     const read = createBridgeMessageReader(
       (message) => this.onMessage(message as BridgeMessage),
@@ -152,7 +153,7 @@ export class BrowserBridgeProcess extends EventEmitter {
     const gone = () => {
       if (this.child !== child) return;
       this.child = null;
-      for (const settle of [...this.probes.values()]) settle(null);
+      for (const settle of [...this.copies.values()]) settle('');
       void this.removeTempDir();
       this.emit('exit');
     };
@@ -166,9 +167,41 @@ export class BrowserBridgeProcess extends EventEmitter {
     });
   }
 
+  /**
+   * Click an extension's toolbar button for a page (Chromium): its popup's page id when one opened
+   * (streamed like a page, shown over the page), nothing when its click handler ran instead
+   */
+  extensionAction(
+    pageId: string,
+    extensionId: string,
+    name: string,
+    /** Firefox: where its button leads (its popup's page, else its homepage), read from the profile */
+    target?: { popupUrl?: string; homepageUrl?: string },
+  ): Promise<string | undefined> {
+    const id = this.nextActionId++;
+    return new Promise<string | undefined>((resolve, reject) => {
+      const timer = setTimeout(() => settle({ error: 'The extension did not answer' }), EXTENSION_ACTION_TIMEOUT_MS);
+      const settle = (result: { popupId?: string; error?: string }) => {
+        clearTimeout(timer);
+        this.actions.delete(id);
+        if (result.error) reject(new Error(result.error));
+        else resolve(result.popupId);
+      };
+      this.actions.set(id, settle);
+      if (!this.write({ type: 'extensionAction', id, pageId, extensionId, name, ...(target ? { target } : {}) })) settle({ error: 'The browser bridge is not running' });
+    });
+  }
+
   private onMessage(message: BridgeMessage): void {
-    if (message.type === 'probed') {
-      this.probes.get(message.id)?.(Array.isArray(message.live) ? message.live : []);
+    if (message.type === 'extensionActionDone') {
+      this.actions.get(message.id)?.({
+        ...(typeof message.popupId === 'string' ? { popupId: message.popupId } : {}),
+        ...(typeof message.error === 'string' ? { error: message.error } : {}),
+      });
+      return;
+    }
+    if (message.type === 'copied') {
+      this.copies.get(message.id)?.(typeof message.text === 'string' ? message.text : '');
       return;
     }
     this.emit('message', message);
@@ -195,7 +228,7 @@ export class BrowserBridgeProcess extends EventEmitter {
     this.stopped = true;
     const child = this.child;
     this.child = null;
-    for (const settle of [...this.probes.values()]) settle(null);
+    for (const settle of [...this.copies.values()]) settle('');
     if (!child || child.exitCode !== null) return this.removeTempDir();
     return new Promise<void>((resolve) => {
       const timer = setTimeout(() => {

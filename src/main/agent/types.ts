@@ -28,7 +28,7 @@ export interface StartTaskOptions {
   feedback?: string;
   /** Absolute paths of images attached to the feedback */
   feedbackImagePaths?: string[];
-  /** Claude profile to run on (undefined = best available) */
+  /** Claude profile to run on (undefined = the project's account, else the account in use) */
   profileId?: string;
 }
 

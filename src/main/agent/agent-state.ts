@@ -39,7 +39,7 @@ const stateKey = (taskId: string, projectId?: string): string => `${projectId ??
 export class AgentState {
   private running: Map<string, RunningTask> = new Map();
 
-  // Queue routing state (rate limit recovery)
+  // The Claude profile and session of each task
   private taskProfileAssignments: Map<string, AssignedTask> = new Map();
 
   /**
@@ -124,17 +124,16 @@ export class AgentState {
   }
 
   // ============================================
-  // Queue Routing Methods (Rate Limit Recovery)
+  // Profile and session of tasks
   // ============================================
 
   /**
    * Running tasks grouped by profile.
    *
-   * The task ids are reported as they are, without the project they are keyed under: this shape
-   * is the `RunningTasksByProfile` IPC payload (`shared/types/agent.ts`), whose task ids are read
-   * as task ids. Two projects running the same task therefore show up as that id twice, which is
-   * the truth about how many runs are on the profile. Each one's assignment is looked up by its
-   * own project, so the two never read each other's profile.
+   * The task ids are reported as they are, without the project they are keyed under. Two
+   * projects running the same task therefore show up as that id twice, which is the truth about
+   * how many runs are on the profile. Each one's assignment is looked up by its own project, so
+   * the two never read each other's profile.
    */
   getRunningTasksByProfile(): { byProfile: Record<string, string[]>; totalRunning: number } {
     const byProfile: Record<string, string[]> = {};

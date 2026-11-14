@@ -25,6 +25,29 @@ export interface TerminalCreateOptions {
 }
 
 /**
+ * Open a closed agent window again, under its own id (so its name, `agent-…`, stays the same),
+ * resuming the last session it started: a chat messages it (main: session-messaging/agent-windows.ts)
+ */
+export interface AgentWindowOpenRequest {
+  projectPath: string;
+  terminalId: string;
+  /** The session's name, as `/resume` shows it */
+  title?: string;
+  sessionId: string;
+  /** The account the session ran on (unset: Claude Code's default dir) */
+  configDir?: string;
+  /** The folder the session ran in when it isn't the project's (a worktree), and still there */
+  cwd?: string;
+}
+
+/** An agent window found by its name (agent-…), open or closed */
+export interface AgentWindowMatch {
+  terminalId: string;
+  title?: string;
+  open: boolean;
+}
+
+/**
  * Persisted terminal session data for restoring sessions on app restart
  */
 export interface TerminalSession {
@@ -70,26 +93,10 @@ export interface SDKRateLimitInfo {
   profileId: string;
   /** Profile name for display */
   profileName?: string;
-  /** Suggested alternative profile */
-  suggestedProfile?: {
-    id: string;
-    name: string;
-  };
   /** When detected */
   detectedAt: Date;
   /** Original error message */
   originalError?: string;
-
-  // Auto-swap information (NEW)
-  /** Whether this rate limit was automatically handled via account swap */
-  wasAutoSwapped?: boolean;
-  /** Profile that was swapped to (if auto-swapped) */
-  swappedToProfile?: {
-    id: string;
-    name: string;
-  };
-  /** Why the swap occurred: 'proactive' (before limit) or 'reactive' (after limit hit) */
-  swapReason?: 'proactive' | 'reactive';
 }
 
 /**

@@ -15,6 +15,12 @@ export interface TerminalTaskSessionOptions {
   /** Task the session belongs to: while it runs, the window follows the session read-only */
   taskId?: string;
   /**
+   * The session becomes the window's own (a Claude chat's, opened with the chat's Clawd button):
+   * recorded like one the window started, so the window resumes it when restored and is found as
+   * the one running it (session-messaging/shared-session.ts)
+   */
+  own?: boolean;
+  /**
    * Project the task belongs to. A task id is only unique within a project, so the main process
    * needs it to find the right run among the projects that may be running a task of this id.
    * Optional because a window restored from a saved session, or an older renderer, sends the
@@ -77,11 +83,12 @@ import type {
   TerminalWorktreeResult,
   OtherWorktreeInfo,
   ClaudeSessionItem,
+  AgentWindowMatch,
+  AgentWindowOpenRequest,
 } from './terminal';
 import type {
   ClaudeProfileSettings,
   ClaudeProfile,
-  ClaudeAutoSwitchSettings,
   ClaudeUsageSnapshot,
   AllProfilesUsage
 } from './agent';
@@ -92,7 +99,9 @@ import type {
   InsightsSessionSummary,
   InsightsChatStatus,
   InsightsStreamChunk,
-  InsightsModelConfig
+  InsightsModelConfig,
+  ChatSlashCommand,
+  SessionMessageOrigin
 } from './insights';
 import type { APIProfile, ProfilesFile, TestConnectionResult, DiscoverModelsResult } from './profile';
 
@@ -272,6 +281,14 @@ export interface ElectronAPI {
   }) => void) => () => void;
   /** Listen for Claude busy state changes (for visual indicator: red=busy, green=idle) */
   onTerminalClaudeBusy: (callback: (id: string, isBusy: boolean) => void) => () => void;
+  /** An agent window answers a chat's message (read-only), or no longer does (null) */
+  onTerminalReceivingMessage: (callback: (id: string, from: SessionMessageOrigin | null) => void) => () => void;
+  /** Give a window answering a message back to the user */
+  takeOverTerminal: (id: string) => void;
+  /** An agent window of the project by its name (agent-…), open or closed */
+  findAgentWindow: (projectPath: string, name: string) => Promise<AgentWindowMatch | null>;
+  /** A chat messages a closed agent window: open it again */
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void) => () => void;
   /** Listen for Claude exit (user closed Claude within terminal, returned to shell) */
   onTerminalClaudeExit: (callback: (id: string) => void) => () => void;
   /** Listen for pending Claude resume notifications (resumed once the window is shown) */
@@ -288,7 +305,7 @@ export interface ElectronAPI {
   // Claude profile management (multi-account support)
   getClaudeProfiles: () => Promise<IPCResult<ClaudeProfileSettings>>;
   saveClaudeProfile: (profile: ClaudeProfile) => Promise<IPCResult<ClaudeProfile>>;
-  deleteClaudeProfile: (profileId: string) => Promise<IPCResult>;
+  deleteClaudeProfile: (profileId: string, replacementId?: string) => Promise<IPCResult>;
   loginClaudeAccount: (profileId?: string) => Promise<IPCResult>;
   redetectClaudeAccounts: () => Promise<IPCResult<ClaudeProfileSettings>>;
   renameClaudeProfile: (profileId: string, newName: string) => Promise<IPCResult>;
@@ -310,21 +327,15 @@ export interface ElectronAPI {
   cancelClaudeAuthLogin: (profileId: string) => Promise<IPCResult>;
   /** Listen for OAuth subprocess progress events */
   onClaudeAuthLoginProgress: (callback: (data: { status: string; message?: string }) => void) => () => void;
-  /** Get auto-switch settings */
-  getAutoSwitchSettings: () => Promise<IPCResult<ClaudeAutoSwitchSettings>>;
-  /** Update auto-switch settings */
-  updateAutoSwitchSettings: (settings: Partial<ClaudeAutoSwitchSettings>) => Promise<IPCResult>;
   /** Request usage fetch from a terminal (sends /usage command) */
   fetchClaudeUsage: (terminalId: string) => Promise<IPCResult>;
-  /** Get the best available profile (for manual switching) */
-  getBestAvailableProfile: (excludeProfileId?: string) => Promise<IPCResult<ClaudeProfile | null>>;
   /** Listen for SDK/CLI rate limit events (non-terminal) */
   /** Listen for auth failure events (401 errors requiring re-authentication) */
   onAuthFailure: (callback: (info: AuthFailureInfo) => void) => () => void;
   /** Retry a rate-limited operation with a different profile */
   retryWithProfile: (request: RetryWithProfileRequest) => Promise<IPCResult>;
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   /** Request current usage snapshot */
   requestUsageUpdate: () => Promise<IPCResult<ClaudeUsageSnapshot | null>>;
   /** Request all profiles usage immediately (for startup/refresh)
@@ -334,13 +345,6 @@ export interface ElectronAPI {
   /** Listen for usage data updates */
   /** Usage of the account in use; null right after switching to an account whose usage isn't known yet */
   onUsageUpdated: (callback: (usage: ClaudeUsageSnapshot | null) => void) => () => void;
-  /** Listen for proactive swap notifications */
-  onProactiveSwapNotification: (callback: (notification: {
-    fromProfile: { id: string; name: string };
-    toProfile: { id: string; name: string };
-    reason: string;
-    usageSnapshot: ClaudeUsageSnapshot;
-  }) => void) => () => void;
   /** Listen for all profiles usage updates (for multi-profile display) */
   onAllProfilesUsageUpdated?: (callback: (allProfilesUsage: AllProfilesUsage) => void) => () => void;
 
@@ -413,7 +417,7 @@ export interface ElectronAPI {
 
   // Insights operations
   getInsightsSession: (projectId: string) => Promise<IPCResult<InsightsSession | null>>;
-  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[]) => void;
+  sendInsightsMessage: (projectId: string, message: string, modelConfig?: InsightsModelConfig, images?: ImageAttachment[], to?: SessionMessageOrigin) => void;
   stopInsightsMessage: (projectId: string, sessionId?: string) => Promise<boolean>;
   regenerateInsightsMessage: (projectId: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
   editInsightsMessage: (projectId: string, messageId: string, content: string, modelConfig?: InsightsModelConfig, sessionId?: string) => void;
@@ -436,6 +440,12 @@ export interface ElectronAPI {
   updateInsightsModelConfig: (projectId: string, sessionId: string, modelConfig: InsightsModelConfig) => Promise<IPCResult>;
   /** Full-size image stored for an Insights message, as a data URL */
   getInsightsAttachment: (projectId: string, relativePath: string, mimeType: string) => Promise<IPCResult<string>>;
+  /** Claude Code's slash commands and skills in the project (the chat's `/` menu with the Clawd button) */
+  listInsightsCommands: (projectId: string) => Promise<IPCResult<ChatSlashCommand[]>>;
+  /** Open an agent window's Claude Code session as a chat of the project; the chat's id (error: OpenWindowAsChatError) */
+  openWindowAsChat: (projectId: string, terminalId: string) => Promise<IPCResult<string>>;
+  getSessionWindow: (projectId: string, claudeSessionId: string) => Promise<IPCResult<import('./insights').SharedSessionWindow | null>>;
+  syncSharedSession: (projectId: string, chatId: string) => Promise<IPCResult<boolean>>;
 
   // Insights event listeners
   onInsightsStreamChunk: (
@@ -532,17 +542,28 @@ export interface ElectronAPI {
   getBrowserDrawerState: () => Promise<IPCResult<import('./browser-drawer').BrowserDrawerState>>;
   subscribeBrowserDrawer: () => Promise<IPCResult>;
   unsubscribeBrowserDrawer: () => Promise<IPCResult>;
-  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number) => void;
+  viewBrowserPage: (pageId: string | null, width: number, height: number, scale?: number, popup?: boolean) => void;
   sendBrowserInput: (pageId: string, input: import('./browser-drawer').BrowserDrawerInput) => void;
   browserFrameDrawn: (pageId: string) => void;
   navigateBrowserPage: (pageId: string, action: import('./browser-drawer').BrowserDrawerNavigation, url?: string) => void;
+  copyBrowserSelection: (pageId: string) => Promise<boolean>;
   closeBrowserPage: (pageId: string) => void;
   newBrowserPage: (sessionId: string) => void;
+  getBrowserBookmarks: (sessionId: string) => Promise<IPCResult<import('./browser-drawer').BrowserBookmark[]>>;
+  getBrowserExtensions: (sessionId: string, switches?: Record<string, boolean>) => Promise<IPCResult<import('./browser-drawer').BrowserExtensions | null>>;
+  runBrowserExtension: (pageId: string, extensionId: string, name: string) => Promise<IPCResult<{ popupId?: string }>>;
+  restartChatBrowser: (sessionId: string) => Promise<IPCResult>;
   setBrowserColorScheme: (scheme: 'light' | 'dark') => void;
   openChatBrowser: (projectId: string, chatId: string, choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult>;
-  closeChatBrowser: (projectId: string, chatId: string) => Promise<IPCResult>;
+  closeChatBrowser: (projectId: string, chatId: string, keepTabs?: boolean) => Promise<IPCResult>;
   onBrowserDrawerState: (callback: (state: import('./browser-drawer').BrowserDrawerState) => void) => () => void;
   onBrowserFrame: (callback: (frame: import('./browser-drawer').BrowserDrawerFrame) => void) => () => void;
+  onBrowserCursor: (callback: (cursor: import('./browser-drawer').BrowserDrawerCursor) => void) => () => void;
+  getChatBrowserRequirements: (choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined, refresh?: boolean) => Promise<IPCResult<import('./browser-drawer').ChatBrowserRequirements>>;
+  autoconfigureChatBrowser: (choice: import('./browser-profiles').PlaywrightBrowserChoice | null | undefined) => Promise<IPCResult<import('./browser-drawer').ChatBrowserRequirements>>;
+  onChatBrowserRequirementsChanged: (callback: (change: { configuring: boolean }) => void) => () => void;
+  setBrowserShortcuts: (active: boolean) => void;
+  onBrowserShortcut: (callback: (shortcut: import('../utils/browser-shortcuts').BrowserShortcut) => void) => () => void;
 
   // MCP Server health check operations
   checkMcpHealth: (server: CustomMcpServer) => Promise<IPCResult<McpHealthCheckResult>>;
@@ -564,6 +585,8 @@ export interface ElectronAPI {
   openProjectWindow: (projectId: string) => Promise<IPCResult<{ focused: boolean }>>;
   closeProjectWindow: (projectId: string) => Promise<IPCResult>;
   onProjectWindowsChanged: (callback: (windows: import('./window').ProjectWindowInfo[]) => void) => () => void;
+  onWindowCloseRequested: (callback: () => void) => () => void;
+  chooseWindowClose: (choice: import('./window').WindowCloseChoice) => Promise<IPCResult>;
 
   // Windows shell setting (Settings > General)
   /** The value the app started with, the one it runs with, and the last WSL availability check */
@@ -572,9 +595,6 @@ export interface ElectronAPI {
   refreshWslAvailability: () => Promise<IPCResult<import('./settings').ShellRuntimeStatus>>;
   /** Restart the app (applies a changed shell setting) */
   relaunchApp: () => Promise<IPCResult>;
-
-  // Queue Routing API (rate limit recovery)
-  queue: import('../../preload/api/queue-api').QueueAPI;
 }
 
 /** Platform information exposed via contextBridge for platform-specific behavior */

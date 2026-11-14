@@ -30,6 +30,11 @@ for (const envPath of possibleEnvPaths) {
   }
 }
 
+// Started from a Workbench terminal (agent window): that window's account token, which it injects
+// for its own Claude Code, isn't this app's setup. Left in, account detection read it as an
+// environment-wide OAuth token overriding every account's sign-in.
+if (process.env.WORKBENCH_TERMINAL_ID) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+
 import { app, BrowserWindow, ipcMain, shell, nativeImage, session, screen, Menu, MenuItem, type Rectangle } from 'electron';
 import { join } from 'path';
 import { writeFileSync, rmSync, cpSync } from 'fs';
@@ -56,10 +61,12 @@ import { initializeClaudeProfileManager, getClaudeProfileManager } from './claud
 import { isProfileAuthenticated, getPlanFromConfigDir } from './claude-profile/profile-utils';
 import { isLinux, isMacOS, isWindows, isWSL } from './platform';
 import { initShellRuntime } from './platform/shell-runtime';
+import { whenChatBrowserRuntimeReady } from './browser-drawer/browser-runtime';
 import { detectBrowserProfiles } from './browser-profiles/detect';
 import { removeLeftoverBrowserProfileCopies, removeLiveBrowserProfileCopies } from './browser-profiles/profile-copy';
 import { removeLeftoverTempFolders, TEMP_FOLDER_PREFIXES } from './temp-folders';
-import { scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
+import { conversationExists, scanChatBrowserLeftovers } from './browser-drawer/chat-browser-restore';
+import { NEW_CHAT_BROWSER_ID } from '../shared/types/browser-drawer';
 import { checkRuntimeAtStartup } from './worktree/runtime-switch';
 import { ensureDevDesktopEntry } from './dev-desktop-entry';
 import { ptyDaemonClient } from './terminal/pty-daemon-client';
@@ -84,7 +91,7 @@ import {
   registerWindow,
   showWindow
 } from './window-manager';
-import { notifyProjectWindowsChanged } from './ipc-handlers/window-handlers';
+import { hasOtherWindows, notifyProjectWindowsChanged } from './ipc-handlers/window-handlers';
 import { safeSendToRenderer, setRendererWindowsProvider } from './ipc-handlers/utils';
 import type { AppSettings, AuthFailureInfo } from '../shared/types';
 import { projectStore } from './project-store';
@@ -339,6 +346,14 @@ async function removeCrashLeftovers(): Promise<void> {
   } catch (error) {
     appLog.warn('[Startup] Could not look at the chat browsers left by an earlier run:', error);
   }
+  // Kept tabs of chats that are gone (their project removed, their chat deleted outside the app)
+  await browserDrawer.chatBrowsers.savedTabs.prune(async (projectId, chatId) => {
+    const project = projects.find((p) => p.id === projectId);
+    if (!project) return false;
+    return chatId === NEW_CHAT_BROWSER_ID || conversationExists(project.path, chatId);
+  }).catch((error: unknown) => {
+    appLog.warn('[Startup] Could not look at the chat browsers\' kept tabs:', error);
+  });
   await removeLeftoverTempFolders({ skip: [TEMP_FOLDER_PREFIXES.chatBrowser] }).catch((error: unknown) => {
     appLog.warn('[Startup] Could not remove the temp folders left by an earlier run:', error);
   });
@@ -428,20 +443,30 @@ function createWindow(assignedProjectId: string | null = null, restored: Restore
   }
   const recovery: RendererRecoveryState = { attempts: 0, windowStart: 0 };
 
-  // Background mode: closing a window hides it to the tray; agents and terminals keep running
-  // and its project stays open, so the tray still lists it and selecting it brings the window
-  // back. Only "Quit window" on a project card closes a window for real, and real quits (tray
-  // "Quit", OS quit) set isQuitting first and close normally.
+  // Background mode: closing a window hides it to the tray (with other project windows open, it
+  // asks first, CloseWindowDialog): agents and terminals keep running and its project stays open,
+  // so the tray still lists it and selecting it brings the window back. Closing the project there,
+  // or "Quit window" on a project card, closes a window for real, and real quits (tray "Quit", OS
+  // quit) set isQuitting first and close normally.
   appWindow.on('close', (event) => {
     const hideToTray =
       !isQuitting &&
       appTray !== null &&
       !isWindowCloseAllowed() &&
       !isClosingForReal(appWindow.id);
-    if (hideToTray) {
-      event.preventDefault();
+    if (!hideToTray) return;
+    event.preventDefault();
+    // With other project windows open, the window asks whether to keep running in the background
+    // or close its project (WINDOW_CLOSE_CHOICE); the only window, or a renderer that can't show
+    // the question, hides to the tray
+    const contents = appWindow.webContents;
+    if (!hasOtherWindows(appWindow.id) || contents.isCrashed() || contents.isLoading()) {
       appWindow.hide();
+      return;
     }
+    if (appWindow.isMinimized()) appWindow.restore();
+    appWindow.focus();
+    contents.send(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED);
   });
   appWindow.on('show', () => appTray?.refresh());
   appWindow.on('hide', () => appTray?.refresh());
@@ -658,6 +683,8 @@ app.whenReady().then(async () => {
   // Decide where tools run on Windows (native, or WSL with the windowsShell setting) before the
   // tool cache and Claude accounts are read; detection runs in the background, windows don't wait
   void initShellRuntime(readSettingsFile()?.windowsShell);
+  // Where chat browsers run (Windows: also with the WSL shell, Settings > Browser), once the shell is known
+  void whenChatBrowserRuntimeReady();
   // Browser profiles for the Playwright connector, looked for once (after the shell runtime is known)
   void detectBrowserProfiles();
   // The browser drawer: Playwright's headless browsers (task runs, chats), watched for every window
@@ -813,8 +840,8 @@ app.whenReady().then(async () => {
   });
 
   // Initialize Claude profile manager, then start usage monitor
-  // We do this sequentially to ensure profile data (including auto-switch settings)
-  // is loaded BEFORE the usage monitor attempts to read settings.
+  // We do this sequentially to ensure profile data
+  // is loaded BEFORE the usage monitor attempts to read it.
   // This prevents the "UsageMonitor disabled" error due to race condition.
   // Forwarding is registered once, here: the monitor's events go to every window either way
   initializeUsageMonitorForwarding(() => getFocusedWindow());
@@ -937,6 +964,9 @@ app.on('before-quit', (event) => {
 
   // Remember every open window while they are still open (reopened on the next launch)
   saveWindowStateOnQuit();
+  // What the pages keep in localStorage (the Claude page's last chat, the browser drawer's width):
+  // Chromium writes it out only from time to time, and a quick quit could lose the latest
+  session.defaultSession.flushStorageData();
 
   // Stop synchronous services immediately
   stopPeriodicUpdates();

@@ -12,8 +12,12 @@ import { ScrollArea } from './ui/scroll-area';
 import { cn } from '../lib/utils';
 import type { Project } from '../../shared/types';
 
-// Projects are sorted by name; the sort button toggles A–Z / Z–A
-type SortMode = 'nameAsc' | 'nameDesc';
+// Projects are listed latest opened first; the sort button goes on to A–Z, then Z–A
+type SortMode = 'recent' | 'nameAsc' | 'nameDesc';
+const NEXT_SORT_MODE: Record<SortMode, SortMode> = { recent: 'nameAsc', nameAsc: 'nameDesc', nameDesc: 'recent' };
+
+/** When the project was last opened (projects never opened since this was recorded: last changed) */
+const openedTime = (project: Project): number => new Date(project.lastOpenedAt ?? project.updatedAt).getTime();
 
 interface ProjectsPageProps {
   projects: Project[];
@@ -72,7 +76,7 @@ export function ProjectsPage({
   const formatRelative = useRelativeTime();
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>('nameAsc');
+  const [sortMode, setSortMode] = useState<SortMode>('recent');
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -80,11 +84,13 @@ export function ProjectsPage({
       ? projects.filter((p) => p.name.toLowerCase().includes(needle) || p.path.toLowerCase().includes(needle))
       : projects;
     return [...filtered].sort((a, b) =>
-      sortMode === 'nameAsc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
+      sortMode === 'recent'
+        ? openedTime(b) - openedTime(a)
+        : sortMode === 'nameAsc' ? a.name.localeCompare(b.name) : b.name.localeCompare(a.name)
     );
   }, [projects, query, sortMode]);
 
-  const nextSortMode: SortMode = sortMode === 'nameAsc' ? 'nameDesc' : 'nameAsc';
+  const nextSortMode = NEXT_SORT_MODE[sortMode];
 
   return (
     <ScrollArea className="h-full">
@@ -202,7 +208,7 @@ export function ProjectsPage({
                     <p className="mt-1 text-xs text-(--nav-label-color)">{t('projectsPage.notInitialized')}</p>
                   )}
                   <p className="mt-auto flex items-center gap-2 pt-5 text-sm text-muted-foreground">
-                    {formatRelative(project.updatedAt)}
+                    {formatRelative(project.lastOpenedAt ?? project.updatedAt)}
                     {hasWindow && <span className="text-(--nav-label-color)">{t('projectsPage.open')}</span>}
                   </p>
 

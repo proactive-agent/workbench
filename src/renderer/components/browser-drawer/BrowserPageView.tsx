@@ -1,7 +1,12 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent, MouseEvent, ClipboardEvent, WheelEvent } from 'react';
 import type { BrowserDrawerFrame, BrowserDrawerInput } from '../../../shared/types/browser-drawer';
-import { alignedViewportLength, devicePixelOffset, isPasteShortcut, mouseButton } from './browser-drawer-utils';
+
+type BrowserDrawerButton = Extract<BrowserDrawerInput, { kind: 'mousedown' | 'mouseup' }>['button'];
+import { alignedViewportLength, devicePixelOffset, isCopyShortcut, isPasteShortcut, mouseButton, pageCursor } from './browser-drawer-utils';
+import { noteDrawerInput } from '../../stores/browser-drawer-store';
+import { cn } from '../../lib/utils';
+import { AgentLoader } from '../ui/agent-loader';
 
 /** How long the drawer's size has to settle before the page's viewport follows it */
 const RESIZE_DEBOUNCE_MS = 150;
@@ -11,9 +16,16 @@ const MAX_FRAME_SCALE = 2;
 /** The device pixels per CSS pixel frames are asked at: the window's devicePixelRatio, 1 to 2 */
 const frameScale = () => Math.min(Math.max(window.devicePixelRatio || 1, 1), MAX_FRAME_SCALE);
 
+/** Modifier keys as Playwright names them, with the mouse event's flag for each */
+const MODIFIERS = [['Control', 'ctrlKey'], ['Shift', 'shiftKey'], ['Alt', 'altKey'], ['Meta', 'metaKey']] as const;
+
 interface BrowserPageViewProps {
   pageId: string;
   label: string;
+  /** An extension's popup, shown over the tab (the window views both at once) */
+  popup?: boolean;
+  /** Workbench's loader over it, with this label, until its first frame is drawn */
+  loader?: string;
 }
 
 /**
@@ -30,13 +42,21 @@ function alignCanvas(canvas: HTMLCanvasElement, container: HTMLElement) {
   if (canvas.style.transform !== transform) canvas.style.transform = transform;
 }
 
-export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
+export function BrowserPageView({ pageId, label, popup = false, loader }: BrowserPageViewProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  /** A frame of the page has been drawn (the loader, if any, goes) */
+  const [framed, setFramed] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   /** The viewport of the last frame drawn (input is mapped to it) */
   const viewportRef = useRef<{ width: number; height: number } | null>(null);
   const moveRef = useRef<{ x: number; y: number } | null>(null);
   const moveFrameRef = useRef<number | null>(null);
+  /** The cursor the page asks for where the mouse is (the main process asks it), by page */
+  const [cursor, setCursor] = useState<{ pageId: string; cursor: string } | null>(null);
+
+  useEffect(() => window.electronAPI.onBrowserCursor?.((update) => {
+    if (update.pageId === pageId) setCursor({ pageId, cursor: pageCursor(update.cursor) });
+  }), [pageId]);
 
   // The page's viewport follows the area's size
   useEffect(() => {
@@ -49,7 +69,7 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       // and a viewport of whole device pixels, so they are drawn without resampling
       const scale = frameScale();
       if (width > 0 && height > 0) {
-        window.electronAPI.viewBrowserPage(pageId, alignedViewportLength(width, scale), alignedViewportLength(height, scale), window.devicePixelRatio || 1);
+        window.electronAPI.viewBrowserPage(pageId, alignedViewportLength(width, scale), alignedViewportLength(height, scale), window.devicePixelRatio || 1, popup);
       }
     };
     report();
@@ -80,9 +100,9 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
       window.removeEventListener('resize', onWindowResize);
       density?.removeEventListener('change', onDensity);
       clearTimeout(timer);
-      window.electronAPI.viewBrowserPage(null, 0, 0);
+      window.electronAPI.viewBrowserPage(null, 0, 0, undefined, popup);
     };
-  }, [pageId]);
+  }, [pageId, popup]);
 
   // Frames: the newest one is drawn, older ones waiting meanwhile are dropped. Each one drawn (or
   // dropped) is acknowledged: the next frame waits for it, so frames never pile up
@@ -91,6 +111,7 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     let drawing = false;
     let disposed = false;
     viewportRef.current = null;
+    setFramed(false);
     const drawn = () => window.electronAPI.browserFrameDrawn(pageId);
     const draw = async () => {
       if (drawing || !pending) return;
@@ -109,6 +130,7 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
           alignCanvas(canvas, container);
           canvas.getContext('2d')?.drawImage(bitmap, 0, 0);
           viewportRef.current = { width: frame.width, height: frame.height };
+          setFramed(true);
         }
         bitmap.close();
       } catch {
@@ -136,6 +158,25 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     if (moveFrameRef.current !== null) cancelAnimationFrame(moveFrameRef.current);
   }, []);
 
+  /**
+   * Keys and buttons the page has been sent as pressed and not yet released. They are released on
+   * that page when another tab is shown or the focus leaves (else the page keeps them down: after a
+   * Ctrl+click opened a tab, every key typed back there would be Ctrl+key)
+   */
+  const heldKeysRef = useRef(new Set<string>());
+  const heldButtonsRef = useRef(new Map<BrowserDrawerButton, { x: number; y: number }>());
+  const releaseHeld = (target: string) => {
+    for (const key of heldKeysRef.current) window.electronAPI.sendBrowserInput(target, { kind: 'keyup', key });
+    for (const [button, point] of heldButtonsRef.current) {
+      window.electronAPI.sendBrowserInput(target, { kind: 'mouseup', ...point, button, clickCount: 1 });
+    }
+    heldKeysRef.current.clear();
+    heldButtonsRef.current.clear();
+  };
+  const releaseRef = useRef(releaseHeld);
+  releaseRef.current = releaseHeld;
+  useEffect(() => () => releaseRef.current(pageId), [pageId]);
+
   const send = (input: BrowserDrawerInput) => window.electronAPI.sendBrowserInput(pageId, input);
 
   /** The pointer's position in the page's CSS pixels */
@@ -151,16 +192,42 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
     };
   };
 
+  /**
+   * The page gets the modifiers a click is made with (pressed before the canvas had the focus, its
+   * keys never reached it): Ctrl/Cmd+click and a middle click on a link open it in a new tab, as the
+   * browser itself does
+   */
+  const syncModifiers = (event: MouseEvent<HTMLCanvasElement>) => {
+    for (const [key, flag] of MODIFIERS) {
+      const held = heldKeysRef.current.has(key);
+      if (event[flag] && !held) {
+        heldKeysRef.current.add(key);
+        send({ kind: 'keydown', key });
+      } else if (!event[flag] && held) {
+        heldKeysRef.current.delete(key);
+        send({ kind: 'keyup', key });
+      }
+    }
+  };
+
   const onMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
     event.preventDefault();
     canvasRef.current?.focus();
     const point = pagePoint(event);
-    if (point) send({ kind: 'mousedown', ...point, button: mouseButton(event.button), clickCount: event.detail || 1 });
+    if (!point) return;
+    noteDrawerInput(pageId);
+    syncModifiers(event);
+    const button = mouseButton(event.button);
+    heldButtonsRef.current.set(button, point);
+    send({ kind: 'mousedown', ...point, button, clickCount: event.detail || 1 });
   };
 
   const onMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
+    const button = mouseButton(event.button);
+    // Released on the page it was pressed on (another tab may be shown by now)
+    if (!heldButtonsRef.current.delete(button)) return;
     const point = pagePoint(event);
-    if (point) send({ kind: 'mouseup', ...point, button: mouseButton(event.button), clickCount: event.detail || 1 });
+    if (point) send({ kind: 'mouseup', ...point, button, clickCount: event.detail || 1 });
   };
 
   // Moves go once per animation frame
@@ -181,12 +248,17 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
   const onKeyDown = (event: KeyboardEvent<HTMLCanvasElement>) => {
     if (event.nativeEvent.isComposing || isPasteShortcut(event)) return;
     event.preventDefault();
+    noteDrawerInput(pageId);
+    // Asked before the keys go: a cut removes the text once they reach the page
+    if (isCopyShortcut(event) && !event.repeat) void window.electronAPI.copyBrowserSelection(pageId);
+    heldKeysRef.current.add(event.key);
     send({ kind: 'keydown', key: event.key });
   };
 
   const onKeyUp = (event: KeyboardEvent<HTMLCanvasElement>) => {
     if (event.nativeEvent.isComposing || isPasteShortcut(event)) return;
     event.preventDefault();
+    heldKeysRef.current.delete(event.key);
     send({ kind: 'keyup', key: event.key });
   };
 
@@ -197,13 +269,14 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
   };
 
   return (
-    <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-background">
+    <div ref={containerRef} className={cn('absolute inset-0 overflow-hidden', !popup && 'bg-background')}>
       <canvas
         ref={canvasRef}
         tabIndex={0}
         role="img"
         aria-label={label}
         className="block outline-none"
+        style={{ cursor: cursor?.pageId === pageId ? cursor.cursor : 'default' }}
         // Captured: a button released outside the canvas still reaches the page (no stuck drag)
         onPointerDown={(event) => {
           try {
@@ -220,7 +293,14 @@ export function BrowserPageView({ pageId, label }: BrowserPageViewProps) {
         onKeyUp={onKeyUp}
         onPaste={onPaste}
         onContextMenu={(event) => event.preventDefault()}
+        // Keys still down when the focus leaves are released: their release goes elsewhere
+        onBlur={() => releaseHeld(pageId)}
       />
+      {loader && !framed && (
+        <div className="absolute inset-0 flex items-center justify-center bg-background">
+          <AgentLoader size={24} label={loader} />
+        </div>
+      )}
     </div>
   );
 }

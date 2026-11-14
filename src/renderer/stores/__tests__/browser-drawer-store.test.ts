@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { useBrowserDrawerStore, clampDrawerWidth, chooseSelectedPage, projectPages, BROWSER_DRAWER_MIN_WIDTH } from '../browser-drawer-store';
+import { useBrowserDrawerStore, clampDrawerWidth, chooseSelectedPage, noteDrawerInput, projectPages, BROWSER_DRAWER_MIN_WIDTH } from '../browser-drawer-store';
 import type { BrowserDrawerPage, BrowserDrawerSession } from '../../../shared/types/browser-drawer';
 
 const session = (id: string, projectId?: string, chatId?: string): BrowserDrawerSession => ({
@@ -12,8 +12,20 @@ describe('browser drawer store', () => {
     useBrowserDrawerStore.setState({
       open: false, loaded: false, selectedPageId: null, revealSessionId: null,
       state: { available: true, sessions: [], pages: [] },
-      projectId: 'app', chatId: null, views: {}, newTabSessionId: null,
+      projectId: 'app', chatId: null, views: {}, newTabSessionId: null, newTabAskedAt: 0, focusPageId: null, focusRequestedByUser: false,
     });
+  });
+
+  it("forgets a chat's open error once its browser is open, however it opened", () => {
+    useBrowserDrawerStore.setState({ openErrors: {} });
+    const { setOpenError, receiveState } = useBrowserDrawerStore.getState();
+    setOpenError('app', 'c1', "Node.js isn't installed on Windows");
+    setOpenError('app', 'c2', 'Other');
+    receiveState({ available: true, sessions: [], pages: [], chatBrowsers: [{ projectId: 'app', chatId: 'c1', status: 'starting' }] }, 'app');
+    expect(Object.keys(useBrowserDrawerStore.getState().openErrors)).toEqual(['app:c1', 'app:c2']);
+    // A chat's turn opened it (open_chat_browser), not the drawer's button
+    receiveState({ available: true, sessions: [], pages: [], chatBrowsers: [{ projectId: 'app', chatId: 'c1', status: 'open' }] }, 'app');
+    expect(useBrowserDrawerStore.getState().openErrors).toEqual({ 'app:c2': 'Other' });
   });
 
   it("opens on a session of the window's project that starts and shows its page once known", () => {
@@ -70,12 +82,14 @@ describe('browser drawer store', () => {
   });
 
   it('keeps its width within the window', () => {
-    expect(clampDrawerWidth(100, 1600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
-    expect(clampDrawerWidth(700, 1600)).toBe(700);
+    expect(clampDrawerWidth(100, 1600, 500)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    expect(clampDrawerWidth(700, 1600, 500)).toBe(700);
     // Up to what leaves the chat 500px beside the app's collapsed sidebar (56px)
-    expect(clampDrawerWidth(1500, 1600)).toBe(1044);
-    expect(clampDrawerWidth(1044, 1600)).toBe(1044);
-    expect(clampDrawerWidth(900, 600)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    expect(clampDrawerWidth(1500, 1600, 500)).toBe(1044);
+    expect(clampDrawerWidth(1044, 1600, 500)).toBe(1044);
+    expect(clampDrawerWidth(900, 600, 500)).toBe(BROWSER_DRAWER_MIN_WIDTH);
+    // A chat needing more room (more composer buttons) keeps it
+    expect(clampDrawerWidth(1500, 1600, 620)).toBe(924);
   });
 
   it("shows a chat's own browser only, and keeps each context's view", () => {
@@ -125,7 +139,45 @@ describe('browser drawer store', () => {
     receiveState({ available: true, sessions, pages: [page('p1', 's')] }, 'app');
     openNewTab('s');
     receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')] }, 'app');
-    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p2', newTabSessionId: null });
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p2', newTabSessionId: null, focusPageId: 'p2', focusRequestedByUser: true });
     vi.unstubAllGlobals();
+  });
+
+  it('shows and focuses a tab its browser opens right after the user clicked in it, and leaves others in the background', () => {
+    vi.useFakeTimers();
+    const { receiveState } = useBrowserDrawerStore.getState();
+    const sessions = [session('s', 'app')];
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null });
+
+    // Claude opens a tab: the tab shown stays
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null });
+
+    // The user Ctrl+clicks a link in p1: the tab it opens is shown and focused
+    noteDrawerInput('p1');
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's'), page('p4', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p4', focusPageId: 'p4', focusRequestedByUser: false });
+    useBrowserDrawerStore.getState().clearFocusRequest();
+
+    // Long after the click, a new tab is Claude's again
+    vi.advanceTimersByTime(10_000);
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's'), page('p3', 's'), page('p4', 's'), page('p5', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p4', focusPageId: null });
+    vi.useRealTimers();
+  });
+
+  it('forgets a + press whose tab never appeared', () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('window', { electronAPI: { newBrowserPage: () => {} } });
+    const { receiveState, openNewTab } = useBrowserDrawerStore.getState();
+    const sessions = [session('s', 'app')];
+    receiveState({ available: true, sessions, pages: [page('p1', 's')], connectedSessions: ['s'] }, 'app');
+    openNewTab('s');
+    vi.advanceTimersByTime(20_000);
+    receiveState({ available: true, sessions, pages: [page('p1', 's'), page('p2', 's')], connectedSessions: ['s'] }, 'app');
+    expect(useBrowserDrawerStore.getState()).toMatchObject({ selectedPageId: 'p1', focusPageId: null, newTabSessionId: null });
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 });

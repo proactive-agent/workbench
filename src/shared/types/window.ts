@@ -9,3 +9,6 @@ export interface ProjectWindowInfo {
   /** Project the window shows, or null while it shows none (welcome screen) */
   projectId: string | null;
 }
+
+/** Hide the window to the tray, or quit (this window, or the app when it is the last one) */
+export type WindowCloseChoice = 'background' | 'quit';

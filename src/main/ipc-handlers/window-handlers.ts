@@ -8,7 +8,7 @@
 
 import { BrowserWindow, ipcMain } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants/ipc';
-import type { IPCResult, ProjectWindowInfo } from '../../shared/types';
+import type { IPCResult, ProjectWindowInfo, WindowCloseChoice } from '../../shared/types';
 import { projectStore } from '../project-store';
 import {
   findWindowForProject,
@@ -90,4 +90,25 @@ export function registerWindowHandlers({ createProjectWindow }: WindowHandlerDep
     window.close();
     return { success: true };
   });
+
+  // The close button's question answered (index.ts asks it while other project windows are open):
+  // keep running in the background hides the window to the tray; Close project closes this window
+  // (never the app: with the others closed meanwhile, the tray keeps it running)
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE_CHOICE, (event, choice: WindowCloseChoice): IPCResult => {
+    const windowId = senderWindowId(event);
+    const window = windowId !== undefined ? BrowserWindow.fromId(windowId) : null;
+    if (!window || window.isDestroyed()) return { success: false, error: 'No window to close' };
+    if (choice === 'background') {
+      window.hide();
+    } else {
+      markClosingForReal(window.id);
+      window.close();
+    }
+    return { success: true };
+  });
+}
+
+/** Whether windows other than this one are open (closing it then leaves the app running) */
+export function hasOtherWindows(windowId: number): boolean {
+  return listProjectWindows().some((other) => other.windowId !== windowId);
 }

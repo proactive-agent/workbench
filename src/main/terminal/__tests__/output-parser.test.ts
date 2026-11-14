@@ -96,6 +96,15 @@ describe('output-parser', () => {
       // If both patterns present, busy should win
       expect(detectClaudeBusyState('● Working\n> ')).toBe('busy');
     });
+
+    it("reads Claude Code's footer: working, then waiting for input", () => {
+      expect(detectClaudeBusyState('* Discombobulating…\r\n❯ \r\x1b[2Besc to interrupt · ← for agents')).toBe('busy');
+      // The idle footer wins over output that looks busy (the block logo, a diff's line numbers)
+      expect(detectClaudeBusyState('█████\r\n  12 │ code\r\n⏵⏵ bypass permissions on (shift+tab to cycle)')).toBe('idle');
+      expect(detectClaudeBusyState('❯ \r\n? for shortcuts')).toBe('idle');
+      // A finished turn redraws its last lines, not the footer
+      expect(detectClaudeBusyState('● ok\r\n✻ Crunched for 1s · done 12:55 PM\r\n❯ ')).toBe('idle');
+    });
   });
 
   describe('extractRateLimitReset', () => {

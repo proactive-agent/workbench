@@ -1,7 +1,7 @@
 /**
  * Details of an account found in Claude Code's configuration: its name (editable) and the
  * current values of its setup (provider, config dir, sign-in, settings and variables with the
- * file they come from). Detected accounts can't be removed.
+ * file they come from). Deleting an account is in its row (ClaudeAccountsSection).
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';

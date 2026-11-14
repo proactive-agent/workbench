@@ -45,6 +45,7 @@ export const TEMP_FOLDER_PREFIXES = {
   chatBrowser: 'workbench-chat-browser-',
   browserBridge: 'workbench-browser-bridge-',
   mcpProbe: 'workbench-mcp-probe-',
+  windowTools: 'workbench-window-tools-',
 } as const;
 type TempFolderPrefix = (typeof TEMP_FOLDER_PREFIXES)[keyof typeof TEMP_FOLDER_PREFIXES];
 

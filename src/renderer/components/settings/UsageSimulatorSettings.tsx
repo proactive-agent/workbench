@@ -4,7 +4,8 @@ import { Input } from '../ui/input';
 import { cn } from '../../lib/utils';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
-import { SessionResets, UsageCardSurface, UsageHero } from '../usage/UsageBreakdown';
+import { SessionResets, SpendUsed, UsageCardSurface, UsageHero } from '../usage/UsageBreakdown';
+import { SAMPLE_SPEND_LIMIT } from '../usage/spend-limit';
 import { ApiProfileUsageCard, ReauthRequiredCard, UsageUnavailableCard } from '../usage/UsageStateCards';
 import { createSkinPicker } from '../usage/clawd/skins';
 import { IS_DEV_BUILD } from '../../lib/title-bar';
@@ -26,6 +27,9 @@ const PREVIEW_ROWS = [
   { half: 'am', pm: false, pickSkin: createSkinPicker() },
   { half: 'pm', pm: true, pickSkin: createSkinPicker() },
 ] as const;
+
+/** The Enterprise preview's own skin memory */
+const SPEND_PICK_SKIN = createSkinPicker();
 
 /** The simulator's sliders */
 const RANGE_CLASS = cn(
@@ -51,7 +55,8 @@ const NO_USAGE: ClaudeUsageSnapshot = {
 
 /**
  * Development builds only (like the DEVELOPMENT BUILD strip): live previews of the top of the
- * usage popover in the dark and the light theme, at its real size, with a pretend date, time and
+ * usage popover in the dark and the light theme (also an Enterprise account's, with its monthly
+ * spend limit), at its real size, with a pretend date, time and
  * 5-hour usage - to see the sky (day and night, the moon's phase, rain and winter snow) and
  * Clawd's moods and seasonal skins at any moment. The time is shown twice: in the morning (top
  * row) and in the evening (bottom row). An empty date is today, and the usage starts at the real
@@ -98,6 +103,21 @@ export function UsageSimulatorSettings() {
     const base = realUsage ?? NO_USAGE;
     return sessionPercent == null ? base : { ...base, sessionPercent };
   }, [realUsage, sessionPercent]);
+  // An Enterprise account's card: its monthly spend limit (the real one when the account in use
+  // has one, else a sample) spent as far as the usage slider says
+  const spendUsage = useMemo((): ClaudeUsageSnapshot => {
+    const base = realUsage ?? NO_USAGE;
+    const limit = base.spendLimit?.limit ? base.spendLimit : SAMPLE_SPEND_LIMIT;
+    const percent = sessionPercent ?? Math.round(base.sessionPercent);
+    return {
+      ...base,
+      sessionPercent: percent,
+      weeklyPercent: percent,
+      sessionResetTimestamp: undefined,
+      weeklyResetTimestamp: undefined,
+      spendLimit: { ...limit, used: ((limit.limit ?? 0) * percent) / 100 },
+    };
+  }, [realUsage, sessionPercent]);
 
   if (!IS_DEV_BUILD) return null;
 
@@ -121,6 +141,26 @@ export function UsageSimulatorSettings() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* An Enterprise account's popover: a monthly spend limit instead of the 5-hour and weekly
+          windows, at the morning row's moment */}
+      <div className="mb-6 flex items-center gap-4">
+        {PREVIEW_THEMES.map((theme) => (
+          <div
+            key={theme}
+            className={`${theme} w-[17rem] rounded-xl border border-transparent text-xs text-popover-foreground shadow-[0_8px_24px_rgba(0,0,0,0.24)]`}
+          >
+            <div className="relative isolate space-y-2.5 p-3">
+              <UsageCardSurface />
+              <UsageHero usage={spendUsage} active pickSkin={SPEND_PICK_SKIN} pinned={moments[0]} />
+              <SpendUsed usage={spendUsage} />
+            </div>
+          </div>
+        ))}
+        <div className="flex min-w-0 flex-1 justify-center text-center text-sm text-muted-foreground">
+          {t('usageSimulator.spendLimit')}
+        </div>
       </div>
 
       {/* The popover in each theme side by side, whatever the app's theme, so both can be compared

@@ -14,6 +14,9 @@ import { useSettingsStore } from '../../stores/settings-store';
 import type { WebGLContextManagerType } from '../../lib/webgl-context-manager';
 import { isTerminalGridDragging } from '../../lib/terminal-grid-drag';
 import { formatPastedPaths, imagePasteKey, readTerminalPaste } from '../../lib/terminal-paste';
+import { sessionTarget } from '../../lib/session-targets';
+import { useProjectStore } from '../../stores/project-store';
+import { agentSessionName, parseSessionName, sessionNameTag } from '../../../shared/utils/session-names';
 
 
 /** Written after replayed output: closes an OSC 8 link left open and resets the SGR style */
@@ -211,7 +214,19 @@ export function useXterm({ terminalId, onCommandEnter, onResize, onDimensionsRea
             pasteText(paths.length > 0 ? formatPastedPaths(paths) : '');
           });
       } else if (paste.kind === 'text') {
-        pasteText(paste.text);
+        // The name of another chat or agent window of the project, pasted into Claude Code: typed as
+        // [Chat #…] or [Agent #…], which the window's Claude reads as where to send the prompt
+        const terminal = useTerminalStore.getState().getTerminal(terminalId);
+        if (!terminal?.isCLIMode || !parseSessionName(paste.text)) {
+          pasteText(paste.text);
+          return;
+        }
+        const project = useProjectStore.getState().projects.find((candidate) => candidate.path === terminal.projectPath);
+        sessionTarget(paste.text, project, agentSessionName(terminalId))
+          .catch(() => null)
+          .then((target) => {
+            if (!isDisposedRef.current) pasteText(target ? sessionNameTag(target) : paste.text);
+          });
       } else if (paste.kind === 'image') {
         xterm.input(imagePasteKey(isWindows));
       } else {

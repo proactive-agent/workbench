@@ -51,8 +51,6 @@ const mockProfileManager = {
   setActiveProfile: vi.fn(() => true),
   deleteProfile: vi.fn(() => true),
   renameProfile: vi.fn(() => true),
-  getAutoSwitchSettings: vi.fn(),
-  updateAutoSwitchSettings: vi.fn(() => true),
   isInitialized: vi.fn(() => true),
   findAbandonedProfileByName: vi.fn((_name: string): ClaudeProfile | undefined => undefined),
   findProfileByName: vi.fn((_name: string): ClaudeProfile | undefined => undefined)

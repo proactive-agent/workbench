@@ -7,10 +7,13 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { ClaudeProfile, ProfileUsageSummary } from '../../../../shared/types';
 import { ClaudeAccountsSection } from '../ClaudeAccountsSection';
 import { useClaudeAccounts } from '../hooks/useClaudeAccounts';
+import { useClaudeProfileStore } from '../../../stores/claude-profile-store';
+import { useSettingsStore } from '../../../stores/settings-store';
+import { useProjectStore } from '../../../stores/project-store';
 
 vi.mock('../hooks/useClaudeAccounts', () => ({ useClaudeAccounts: vi.fn() }));
 vi.mock('../DetectedAccountDialog', () => ({ DetectedAccountDialog: () => null }));
@@ -79,5 +82,60 @@ describe('ClaudeAccountsSection', () => {
     expect(screen.queryByText(/new@example\.com · Session/)).not.toBeInTheDocument();
     // No summary at all: just the email
     expect(screen.getByText('me@work.example')).toBeInTheDocument();
+  });
+
+  it('marks the window\'s account in use while no API profile is in use', () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    renderWith([]);
+
+    expect(screen.getAllByText('claudeAccounts.inUse')).toHaveLength(1);
+  });
+
+  it('marks no Claude account in use while an API profile is in use', () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: 'api-profile' });
+    renderWith([]);
+
+    expect(screen.queryByText('claudeAccounts.inUse')).not.toBeInTheDocument();
+    useSettingsStore.setState({ activeProfileId: null });
+  });
+
+  it('offers deleting only the accounts not in use, after a confirmation', async () => {
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com')], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    renderWith([]);
+
+    // Rows: personal (in use), work, new
+    const deleteButtons = screen.getAllByLabelText('claudeAccounts.deleteAriaLabel');
+    expect(deleteButtons).toHaveLength(2);
+
+    fireEvent.click(deleteButtons[0]);
+    expect(await screen.findByText('claudeAccounts.dialog.deleteTitle')).toBeInTheDocument();
+  });
+
+  it("offers deleting the app's account in use from a window on another account, which takes its place", async () => {
+    const deleteClaudeProfile = vi.fn(async () => ({ success: true }));
+    vi.stubGlobal('electronAPI', { deleteClaudeProfile });
+    const work = profile('work', 'Work', 'me@work.example');
+    useClaudeProfileStore.setState({ profiles: [profile('personal', 'Personal', 'me@example.com'), work], activeProfileId: 'personal' });
+    useSettingsStore.setState({ activeProfileId: null });
+    const previous = useProjectStore.getState();
+    useProjectStore.setState({
+      projects: [{ id: 'p', settings: { claudeProfileId: 'work' } }] as unknown as typeof previous.projects,
+      activeProjectId: 'p',
+    });
+    try {
+      renderWith([]);
+      // Rows: personal (the app's, not this window's), work (this window's, in use), new
+      const deleteButtons = screen.getAllByLabelText('claudeAccounts.deleteAriaLabel');
+      expect(deleteButtons).toHaveLength(2);
+      fireEvent.click(deleteButtons[0]);
+      fireEvent.click(await screen.findByRole('button', { name: 'claudeAccounts.dialog.delete' }));
+      await vi.waitFor(() => expect(deleteClaudeProfile).toHaveBeenCalledWith('personal', 'work'));
+    } finally {
+      useProjectStore.setState({ projects: previous.projects, activeProjectId: previous.activeProjectId });
+      vi.unstubAllGlobals();
+    }
   });
 });

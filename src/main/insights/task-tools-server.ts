@@ -14,6 +14,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net';
 import { randomBytes } from 'node:crypto';
 import { TASK_TOOLS, runTaskTool, type TaskToolContext } from './task-tools';
+import { SESSION_TOOLS, runSessionTool, type SessionToolContext } from '../session-messaging/tools';
 import { TASK_TOOLS_SERVER_NAME, type TaskToolsMcpServer } from './task-tools-mcp';
 
 const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
@@ -172,9 +173,38 @@ function ensureServer(): Promise<number> {
   return listening;
 }
 
-/** Open the task tools for one chat turn of a project */
-export function openTaskToolsSession(context: TaskToolContext): Promise<TaskToolsSession> {
-  return openMcpToolsSession(insightsProvider(context));
+/** The messaging tools of a chat turn or an agent window (session-messaging/tools.ts) */
+export function sessionToolsProvider(context: SessionToolContext): McpToolsProvider {
+  return {
+    instructions: "Message this Workbench project's Claude chats and agent windows.",
+    tools: SESSION_TOOLS.map(({ name, description, inputSchema, readOnly }) => ({
+      name,
+      description,
+      inputSchema,
+      annotations: { readOnlyHint: readOnly, destructiveHint: false },
+    })),
+    call: (name, args) => runSessionTool(context, name, args),
+  };
+}
+
+/**
+ * Open a chat turn's Workbench tools: the task tools (the Kanban button) and the messaging tools
+ * (Settings > Agents), either or both
+ */
+export function openChatToolsSession(options: { tasks?: TaskToolContext; messaging?: SessionToolContext }): Promise<TaskToolsSession> {
+  const parts = [
+    ...(options.tasks ? [insightsProvider(options.tasks)] : []),
+    ...(options.messaging ? [sessionToolsProvider(options.messaging)] : []),
+  ];
+  return openMcpToolsSession({
+    instructions: parts.map((part) => part.instructions).join(' '),
+    tools: parts.flatMap((part) => part.tools),
+    call: (name, args) => {
+      const part = parts.find((candidate) => candidate.tools.some((tool) => tool.name === name));
+      if (!part) throw new Error(`Unknown tool: ${name}`);
+      return part.call(name, args);
+    },
+  });
 }
 
 /** Open a token for any set of tools (task runs' messaging tools) */

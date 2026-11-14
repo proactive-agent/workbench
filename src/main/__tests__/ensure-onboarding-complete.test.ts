@@ -55,6 +55,7 @@ vi.mock('../claude-profile-manager', () => ({
 
 vi.mock('../project-account', () => ({ projectAccount: vi.fn() }));
 vi.mock('../task-messaging/window-hint', () => ({ agentWindowMessagingHint: () => '' }));
+vi.mock('../session-messaging/window-tools', () => ({ windowToolsConfig: async () => undefined }));
 
 vi.mock('../claude-profile/credential-utils', () => ({
   getFullCredentialsFromKeychain: vi.fn(),

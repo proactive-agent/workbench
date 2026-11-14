@@ -202,6 +202,13 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
     setExpandedTerminalId(prev => prev === terminalId ? null : terminalId);
   }, []);
 
+  // Expanding only means something beside other windows: with one, its button is hidden, and a
+  // window left alone isn't kept expanded for when another opens
+  const canExpand = terminals.length > 1;
+  useEffect(() => {
+    if (!canExpand) setExpandedTerminalId(null);
+  }, [canExpand]);
+
 
   // While a window is dragged, the order the drop would give: the grid is laid out in it, so the
   // windows move into their new cells as the cursor moves (null when nothing is dragged)
@@ -433,7 +440,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
                       onNewTaskClick={onNewTaskClick}
                       terminalCount={1}
                       isExpanded={true}
-                      onToggleExpand={() => handleToggleExpand(expandedTerminal.id)}
+                      onToggleExpand={canExpand ? () => handleToggleExpand(expandedTerminal.id) : undefined}
                     />
                   </div>
                 );
@@ -486,7 +493,7 @@ export function TerminalGrid({ projectPath, onNewTaskClick }: TerminalGridProps)
                           onNewTaskClick={onNewTaskClick}
                           terminalCount={terminals.length}
                           isExpanded={false}
-                          onToggleExpand={() => handleToggleExpand(terminal.id)}
+                          onToggleExpand={canExpand ? () => handleToggleExpand(terminal.id) : undefined}
                         />
                       </div>
                     );

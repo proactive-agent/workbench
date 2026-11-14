@@ -15,15 +15,15 @@
  *   opens new tabs
  * - opens and closes the chats' own browsers (chat-browsers.ts), which it tells by their title
  *
- * In WSL mode the browsers run inside the distribution, where their registry and sockets are: the
- * registry is read through `\\wsl.localhost`, the bridge runs there (with the distribution's
- * node) and also says which registered browsers answer, and workspace folders are matched to
- * projects as Windows paths (toHostPath).
+ * Chat browsers run natively, on Windows also while the shell is WSL (browser-runtime.ts), so the
+ * registry, the bridge and the browsers' sockets are this machine's.
  */
 
-import type { WebContents } from 'electron';
+import { clipboard, type WebContents } from 'electron';
 import { IPC_CHANNELS } from '../../shared/constants';
 import type {
+  BrowserBookmark,
+  BrowserExtensions,
   BrowserDrawerInput,
   BrowserDrawerNavigation,
   BrowserDrawerPage,
@@ -33,14 +33,14 @@ import type {
 import type { PlaywrightBrowserChoice } from '../../shared/types/browser-profiles';
 import { appLog } from '../app-logger';
 import { isMacOS, isWindows } from '../platform';
-import { getWslInfo, toHostPath, whenShellRuntimeReady } from '../platform/shell-runtime';
-import path from 'path';
+import { whenChatBrowserRuntimeReady } from './browser-runtime';
 import { getAllWindows } from '../window-manager';
 import { clampPixelScale } from './pixel-scale';
-import { readLiveSessions, registryAccess, registryOs, setRegistryAccess, type RegistryDescriptor } from './registry';
+import { readLiveSessions, registryAccess, registryOs, type RegistryDescriptor } from './registry';
 import { getChatBrowserWorkspaces, sessionProjectId, type ProjectLocation } from './project-match';
 import { BrowserBridgeProcess, type BridgeMessage, type BridgeSession } from './bridge-process';
-import { ChatBrowsers } from './chat-browsers';
+import { ChatBrowsers, type ChatBrowserOpenOptions } from './chat-browsers';
+import { readBookmarksBar } from '../browser-profiles/bookmarks';
 
 /** How often the registry is read */
 const POLL_INTERVAL_MS = 2000;
@@ -54,11 +54,9 @@ export function toDrawerSessions(
   chats: ReadonlyMap<string, string>,
   caseInsensitive: boolean,
   chatOfTitle: (title: string) => { projectId: string; chatId: string; browser?: PlaywrightBrowserChoice | null } | undefined = () => undefined,
-  /** A workspace folder as the app stores paths (WSL mode: the distribution's Linux paths as Windows ones) */
-  hostPath: (dir: string) => string = (dir) => dir,
 ): BrowserDrawerSession[] {
   return descriptors.map((descriptor) => {
-    const workspaceDir = descriptor.workspaceDir ? hostPath(descriptor.workspaceDir) : undefined;
+    const workspaceDir = descriptor.workspaceDir;
     const projectId = sessionProjectId(workspaceDir, projects, chats, caseInsensitive);
     const chat = projectId ? chatOfTitle(descriptor.title) : undefined;
     // A chat's browser shows the browser the chat chose: the registry can't tell, since a profile's
@@ -83,7 +81,7 @@ export function bridgeSessions(descriptors: readonly RegistryDescriptor[], sessi
   return descriptors
     .filter((d): d is RegistryDescriptor & { endpoint: string; playwrightLib: string } =>
       withProject.has(d.guid) && !!d.endpoint && !!d.playwrightLib)
-    .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib }));
+    .map((d) => ({ id: d.guid, endpoint: d.endpoint, browserName: d.browserName, playwrightLib: d.playwrightLib, ...(d.bidi ? { bidi: true } : {}) }));
 }
 
 /** A viewport size the drawer may ask for (whole CSS pixels within limits), or 0 for none */
@@ -125,6 +123,8 @@ export interface BrowserDrawerServiceOptions {
   registryDir?: string;
   bridge?: BrowserBridgeProcess;
   chatBrowsers?: ChatBrowsers;
+  /** Puts copied text on the system clipboard */
+  writeClipboard?: (text: string) => void;
 }
 
 export class BrowserDrawerService {
@@ -175,19 +175,9 @@ export class BrowserDrawerService {
    * which runs there too (Windows can't reach the browsers' Unix sockets)
    */
   async start(): Promise<void> {
-    await whenShellRuntimeReady();
+    // After the shell runtime (it waits for that)
+    await whenChatBrowserRuntimeReady();
     if (this.stopped) return;
-    const wsl = getWslInfo();
-    if (wsl && !this.options.registryDir) {
-      setRegistryAccess({
-        dir: toHostPath(path.posix.join(wsl.home, '.cache', 'ms-playwright', 'b')),
-        // Only a running bridge is asked: a check never starts it (it runs once a drawer opens).
-        // Until then the chat browsers Workbench holds open count as live (knownLive below)
-        connect: (endpoint) => (this.bridge.running
-          ? this.bridge.probe([endpoint]).then((live) => (live ? live.has(endpoint) : null))
-          : Promise.resolve(null)),
-      });
-    }
     void this.poll();
     this.timer = setInterval(() => void this.poll(), POLL_INTERVAL_MS);
     this.timer.unref?.();
@@ -212,14 +202,17 @@ export class BrowserDrawerService {
       sender.once('destroyed', () => {
         this.unsubscribe(id);
         this.views.delete(id);
+        this.views.delete(-id);
       });
     }
     await this.bridge.start();
     this.syncBridgeSessions(true);
     // The view asked for before subscribing (unless the drawer closed again meanwhile)
-    const pending = this.views.get(sender.id);
-    if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
-      this.view(sender, pending.pageId, pending.width, pending.height, pending.scale);
+    for (const popup of [false, true]) {
+      const pending = this.views.get(popup ? -sender.id : sender.id);
+      if (pending && this.subscribers.has(sender.id) && !sender.isDestroyed()) {
+        this.view(sender, pending.pageId, pending.width, pending.height, pending.scale, popup);
+      }
     }
   }
 
@@ -234,18 +227,25 @@ export class BrowserDrawerService {
   /** A window's drawer closed: its page is no longer streamed */
   unsubscribe(viewerId: number): void {
     this.views.delete(viewerId);
+    this.views.delete(-viewerId);
     if (!this.subscribers.delete(viewerId)) return;
     this.bridge.send({ type: 'view', viewerId, pageId: null, width: 0, height: 0 });
+    this.bridge.send({ type: 'view', viewerId: -viewerId, pageId: null, width: 0, height: 0 });
   }
 
-  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown, scale?: unknown): void {
+  /**
+   * Stream a page to a window. A window views two pages at most: its tab, and the extension popup
+   * shown over it (`popup`, viewer id negated)
+   */
+  view(sender: WebContents, pageId: string | null, width: unknown, height: unknown, scale?: unknown, popup?: unknown): void {
     if (this.stopped) return;
-    this.views.set(sender.id, { pageId, width, height, scale });
+    const viewerId = popup === true ? -sender.id : sender.id;
+    this.views.set(viewerId, { pageId, width, height, scale });
     if (!this.subscribers.has(sender.id)) return;
     const known = pageId !== null && this.pages.some((page) => page.id === pageId);
     this.bridge.send({
       type: 'view',
-      viewerId: sender.id,
+      viewerId,
       pageId: known ? pageId : null,
       width: viewportDimension(width),
       height: viewportDimension(height),
@@ -268,7 +268,7 @@ export class BrowserDrawerService {
     if (action === 'goto') {
       if (typeof url !== 'string' || !/^(https?|about|file):/i.test(url)) return;
       this.bridge.send({ type: 'navigate', pageId, action, url });
-    } else if (action === 'back' || action === 'forward' || action === 'reload') {
+    } else if (action === 'back' || action === 'forward' || action === 'reload' || action === 'stop') {
       this.bridge.send({ type: 'navigate', pageId, action });
     }
   }
@@ -277,20 +277,78 @@ export class BrowserDrawerService {
     if (this.pages.some((page) => page.id === pageId)) this.bridge.send({ type: 'closePage', pageId });
   }
 
+  /**
+   * The copy or cut shortcut on a page: its selected text goes on the system clipboard (the headless
+   * browser's own clipboard never reaches it). Asked before the shortcut's keys are sent, so a cut
+   * reads the text before removing it. Whether there was text to copy
+   */
+  async copySelection(pageId: string): Promise<boolean> {
+    if (!this.pages.some((page) => page.id === pageId)) return false;
+    const text = await this.bridge.selectedText(pageId);
+    if (!text) return false;
+    (this.options.writeClipboard ?? ((value: string) => clipboard.writeText(value)))(text);
+    return true;
+  }
+
   /** Open a new tab in a session's browser */
   newPage(sessionId: string): void {
     if (this.sessions.some((session) => session.id === sessionId && session.projectId)) this.bridge.send({ type: 'newPage', sessionId });
   }
 
-  /** Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool call) */
-  async openChatBrowser(projectId: string, chatId: string, choice: PlaywrightBrowserChoice | null | undefined): Promise<void> {
-    const project = this.options.getProjects().find((p) => p.id === projectId);
-    if (!project) throw new Error('The project is not open');
-    await this.chatBrowsers.ensure(projectId, project.path, chatId, choice);
+  /** The bookmarks bar of a chat browser's profile (none for other browsers) */
+  async bookmarks(sessionId: string): Promise<BrowserBookmark[]> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (!session) return [];
+    return readBookmarksBar(this.chatBrowsers.chatOfTitle(session.title)?.browser);
   }
 
-  closeChatBrowser(projectId: string, chatId: string): Promise<void> {
-    return this.chatBrowsers.close(projectId, chatId);
+  /**
+   * A chat browser's extensions (null: it runs none), after switching the ones `switches` names
+   * where the browser can while it runs (Chromium; Firefox's wait for it to start again)
+   */
+  async extensions(sessionId: string, switches?: Record<string, boolean>): Promise<BrowserExtensions | null> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (!session) return null;
+    return (await this.chatBrowsers.holderOfTitle(session.title)?.extensions?.(switches)) ?? null;
+  }
+
+  /**
+   * Click an extension's toolbar button for a chat browser's page: its popup's page id when one
+   * opened (the drawer shows it over the page), nothing when its click handler ran (Chromium) or
+   * its homepage opened in a new tab (Firefox, for an extension without a popup)
+   */
+  async extensionAction(pageId: string, extensionId: string, name: string): Promise<string | undefined> {
+    const page = this.pages.find((p) => p.id === pageId && !p.popup);
+    const session = page && this.sessions.find((s) => s.id === page.sessionId && s.chatId);
+    if (!session || !/^[\w.@{}+-]{1,200}$/.test(extensionId)) throw new Error('The extension cannot be opened here');
+    const target = await this.chatBrowsers.holderOfTitle(session.title)?.extensionTarget?.(extensionId);
+    return this.bridge.extensionAction(pageId, extensionId, name.slice(0, 200), target);
+  }
+
+  /** Start a chat browser again from its profile copy and tabs (its extension switches apply) */
+  async restartChatBrowser(sessionId: string): Promise<void> {
+    const session = this.sessions.find((s) => s.id === sessionId && s.chatId);
+    if (session?.projectId && session.chatId) await this.chatBrowsers.restart(session.projectId, session.chatId);
+  }
+
+  /**
+   * Open a chat's own browser (the drawer's Open browser button, or a turn's first browser tool
+   * call, `withUrl` when that call names an address)
+   */
+  async openChatBrowser(
+    projectId: string,
+    chatId: string,
+    choice: PlaywrightBrowserChoice | null | undefined,
+    options: ChatBrowserOpenOptions = {},
+  ): Promise<void> {
+    const project = this.options.getProjects().find((p) => p.id === projectId);
+    if (!project) throw new Error('The project is not open');
+    await this.chatBrowsers.ensure(projectId, project.path, chatId, choice, options);
+  }
+
+  /** Close a chat's own browser, keeping its tabs to open again unless `keepTabs` is false (its last tab closed) */
+  closeChatBrowser(projectId: string, chatId: string, keepTabs = true): Promise<void> {
+    return this.chatBrowsers.close(projectId, chatId, { keepTabs });
   }
 
   /** Stop watching and stop the bridge (the app is quitting; the browsers stop with their runs) */
@@ -314,7 +372,8 @@ export class BrowserDrawerService {
       this.broadcast();
     } else if (message.type === 'frame') {
       for (const viewerId of message.viewers) {
-        const target = this.subscribers.get(viewerId);
+        // A window's popup view is its id negated
+        const target = this.subscribers.get(Math.abs(viewerId));
         if (target && !target.isDestroyed()) {
           target.send(IPC_CHANNELS.BROWSER_DRAWER_FRAME, {
             pageId: message.pageId,
@@ -322,6 +381,14 @@ export class BrowserDrawerService {
             width: message.width,
             height: message.height,
           });
+        }
+      }
+    } else if (message.type === 'cursor') {
+      // The cursor the page asks for where the mouse is, for the windows viewing it
+      for (const viewerId of new Set(message.viewers.map(Math.abs))) {
+        const target = this.subscribers.get(viewerId);
+        if (target && !target.isDestroyed()) {
+          target.send(IPC_CHANNELS.BROWSER_DRAWER_CURSOR, { pageId: message.pageId, cursor: message.cursor });
         }
       }
     } else if (message.type === 'log') {
@@ -335,7 +402,7 @@ export class BrowserDrawerService {
     for (const session of this.sessions) {
       if (!session.chatId || !session.projectId || !connected.has(session.id)) continue;
       const tabs = this.pages
-        .filter((page) => page.sessionId === session.id)
+        .filter((page) => page.sessionId === session.id && !page.popup)
         .map((page) => ({ url: page.url, title: page.title }));
       this.chatBrowsers.noteTabs(session.projectId, session.chatId, tabs);
     }
@@ -370,13 +437,7 @@ export class BrowserDrawerService {
       const registry = this.options.registryDir
         ? { dir: this.options.registryDir, connect: undefined }
         : registryAccess(registryOs());
-      const wslBeforeBridge = !!getWslInfo() && !this.options.registryDir && !this.bridge.running;
-      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (descriptor) => {
-        if (connected.has(descriptor.guid)) return true;
-        if (!wslBeforeBridge) return false;
-        const chat = this.chatBrowsers.chatOfTitle(descriptor.title);
-        return !!chat && this.chatBrowsers.isOpen(chat.projectId, chat.chatId);
-      });
+      this.descriptors = await readLiveSessions(registry.dir, this.dead, registry.connect, (descriptor) => connected.has(descriptor.guid));
       this.chatBrowsers.syncLive(new Set(this.descriptors.map((descriptor) => descriptor.title)));
       const sessions = toDrawerSessions(
         this.descriptors,
@@ -384,8 +445,6 @@ export class BrowserDrawerService {
         getChatBrowserWorkspaces(),
         isWindows() || isMacOS(),
         (title) => this.chatBrowsers.chatOfTitle(title),
-        // WSL mode: the distribution's folders, as the app stores them (Windows paths)
-        getWslInfo() ? toHostPath : undefined,
       );
       if (JSON.stringify(sessions) !== JSON.stringify(this.sessions)) {
         this.sessions = sessions;

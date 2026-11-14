@@ -33,6 +33,8 @@ export interface RegistryDescriptor {
   playwrightLib?: string;
   /** Playwright's own browser build (no executable of the user's, or one in Playwright's cache) */
   managed?: boolean;
+  /** Driven over WebDriver BiDi (the user's own Firefox, channel `moz-firefox`), not Playwright's own protocol */
+  bidi?: boolean;
 }
 
 /** Sessions with this title prefix are Playwright's own (its dashboard leaves them out too) */
@@ -65,26 +67,15 @@ export function defaultRegistryDir(platform: RegistryOs): string {
 /** Whether a browser's endpoint answers; null when that couldn't be asked (the file is read again next time) */
 export type EndpointCheck = (endpoint: string) => Promise<boolean | null>;
 
-/**
- * Where the registry is and how its browsers are asked whether they run: natively this
- * machine's folder and its sockets; in WSL mode the distribution's folder (read through
- * `\\wsl.localhost`) and the bridge, which runs there (set by the browser drawer service)
- */
-export interface RegistryAccess {
+/** Where the registry is and how its browsers are asked whether they run: this machine's folder and its sockets */
+interface RegistryAccess {
   dir: string;
   connect: EndpointCheck;
 }
 
-let registryAccessOverride: RegistryAccess | null = null;
-
-/** Use another registry (WSL mode), or this machine's again (null) */
-export function setRegistryAccess(access: RegistryAccess | null): void {
-  registryAccessOverride = access;
-}
-
 /** The registry the browsers are in */
 export function registryAccess(platform: RegistryOs): RegistryAccess {
-  return registryAccessOverride ?? { dir: defaultRegistryDir(platform), connect: canConnect };
+  return { dir: defaultRegistryDir(platform), connect: canConnect };
 }
 
 /** A descriptor file's content, or null when it isn't one */
@@ -111,6 +102,7 @@ export function parseDescriptor(text: string): RegistryDescriptor | null {
     ...(typeof value.playwrightVersion === 'string' ? { playwrightVersion: value.playwrightVersion } : {}),
     ...(typeof value.playwrightLib === 'string' ? { playwrightLib: value.playwrightLib } : {}),
     managed: !executablePath || /[\\/]ms-playwright[\\/]/.test(executablePath),
+    ...(typeof launchOptions?.channel === 'string' && /^(moz-firefox|bidi-)/.test(launchOptions.channel) ? { bidi: true } : {}),
   };
 }
 

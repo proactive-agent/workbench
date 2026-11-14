@@ -39,6 +39,8 @@ interface ModelSearchableSelectProps {
   disabled?: boolean;
   /** Additional CSS classes */
   className?: string;
+  /** Id of the input, for its label */
+  id?: string;
 }
 
 /**
@@ -62,7 +64,8 @@ export function ModelSearchableSelect({
   baseUrl,
   apiKey,
   disabled = false,
-  className
+  className,
+  id
 }: ModelSearchableSelectProps) {
   const { t } = useTranslation();
   const resolvedPlaceholder = placeholder ?? t('settings:modelSelect.placeholder');
@@ -222,6 +225,7 @@ export function ModelSearchableSelect({
       {/* Main input with loading/dropdown indicator */}
       <div className="relative">
         <Input
+          id={id}
           value={value || ''}
           onChange={(e) => {
             handleManualInputChange(e.target.value);

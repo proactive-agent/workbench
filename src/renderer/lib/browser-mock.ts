@@ -101,18 +101,7 @@ const browserMockAPI: ElectronAPI = {
     }
   }),
 
-  // Queue Routing API (rate limit recovery)
-  queue: {
-    getRunningTasksByProfile: async () => ({ success: true, data: { byProfile: {}, totalRunning: 0 } }),
-    getBestProfileForTask: async () => ({ success: true, data: null }),
-    getBestUnifiedAccount: async () => ({ success: true, data: null }),
-    assignProfileToTask: async () => ({ success: true }),
-    updateTaskSession: async () => ({ success: true }),
-    getTaskSession: async () => ({ success: true, data: null }),
-    onQueueProfileSwapped: () => () => {},
-    onQueueSessionCaptured: () => () => {},
-    onQueueBlockedNoProfiles: () => () => {}
-  },
+
 
   // Claude Code Operations
   // Graphify CLI (memory graph)
@@ -151,13 +140,24 @@ const browserMockAPI: ElectronAPI = {
   sendBrowserInput: () => {},
   browserFrameDrawn: () => {},
   navigateBrowserPage: () => {},
+  copyBrowserSelection: async () => false,
   closeBrowserPage: () => {},
   newBrowserPage: () => {},
+  getBrowserBookmarks: async () => ({ success: true, data: [] }),
+  getBrowserExtensions: async () => ({ success: true, data: null }),
+  runBrowserExtension: async () => ({ success: true, data: {} }),
+  restartChatBrowser: async () => ({ success: true }),
   setBrowserColorScheme: () => {},
   openChatBrowser: async () => ({ success: false, error: 'Not available in the browser preview' }),
   closeChatBrowser: async () => ({ success: true }),
   onBrowserDrawerState: () => () => {},
   onBrowserFrame: () => () => {},
+  onBrowserCursor: () => () => {},
+  getChatBrowserRequirements: async () => ({ success: true, data: { missing: [] } }),
+  autoconfigureChatBrowser: async () => ({ success: false, error: 'Not available in the browser preview' }),
+  onChatBrowserRequirementsChanged: () => () => {},
+  setBrowserShortcuts: () => {},
+  onBrowserShortcut: () => () => {},
 
   checkClaudeCodeVersion: async () => ({
     success: true,

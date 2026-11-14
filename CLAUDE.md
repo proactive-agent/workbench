@@ -42,8 +42,11 @@ reviews, requests changes (same session continues) or merges.
 - **Isolated Workspaces** — Git worktree isolation for every build; AI-powered semantic merge
 - **Authentication** — Claude subscription accounts (each a `CLAUDE_CONFIG_DIR`) or API profiles with any
   Anthropic-compatible endpoint
-- **Multi-Account Swapping** — When one Claude account hits a rate limit, switch to an available one automatically
+- **Multiple accounts** — Each project runs on the Claude account chosen for it; work never moves to another account by
+  itself: a rate-limited account's tasks wait for its reset and resume on it
 - **Cross-Platform** — Windows, macOS, and Linux with in-app updates (Settings > Updates)
+- **Pages as left** — Each project's window opens on the page it showed last, also after a restart
+  (`src/renderer/lib/last-view.ts`, localStorage flushed on quit)
 
 ## Critical Rules
 
@@ -208,8 +211,9 @@ workbench/
     task list (TaskCreate/TaskUpdate, enabled with `CLAUDE_CODE_ENABLE_TODO_TOOLS=1`) is mirrored as the task's subtasks.
 - **One-shot calls** (`run-text.ts`, `runClaudeText`) — `claude -p --output-format json --no-session-persistence`, tools
   off unless asked, optional `--json-schema`.
-- **Process + env** (`process.ts`, `env.ts`) — async spawn, stream-json parsing (`stream-types.ts`), best available
-  Claude profile (rate-limit aware) or the active API profile.
+- **Process + env** (`process.ts`, `env.ts`) — async spawn, stream-json parsing (`stream-types.ts`), the run's Claude
+  profile (the project's account, else the account in use; never another one because of limits, only instead of an
+  account that is removed or signed out) or the active API profile.
 - **Session costs** (`project-sessions.ts`, `session-spending.ts`, `session-pricing.ts`) — a project's other Claude
   Code sessions (agent windows, Claude chat, `claude` in a terminal), found by the directory they ran in, and what they
   cost per day from their transcripts (Metrics, `src/main/project-metrics.ts`).
@@ -252,8 +256,42 @@ run's stdin or keeps it in the target's `task_inbox.json` for its next phase. Wi
 (`claudeCodeTasks.sessionMessages`, on by default), task runs also accept Claude Code's built-in SendMessage from the
 user's other sessions (`--settings {"crossSessionInbound":"accept"}`): agent windows are told the task session names
 (`task-messaging/window-hint.ts`), and the Claude chat gets `message_task` (through the broker) plus ListAgents /
-SendMessage with the Kanban button. When a task is merged, the other tasks based on that branch go back to In
+SendMessage with the Kanban or Clawd button, or on a turn that sends the user's message to an agent window or answers
+one (a read-only turn otherwise has neither, so a page it reads can't steer it into messaging a window). When a task is merged, the other tasks based on that branch go back to In
 Progress to take it in (`task-messaging/merge-sync.ts` → `src/main/task-resync/`), also while messaging is off.
+
+### Chats and agent windows messaging each other
+
+With Task messaging and Messages from your Claude sessions on, a project's Claude chats and agent windows message each
+other by stable names (`shared/utils/session-names.ts`: `chat-<id timestamp in base 36>`, `agent-<first 8 of the
+terminal id>`), which a copy button gives on the chat's top bar and the window's header. Both get Workbench's
+`list_sessions` and `message_chat` tools (`src/main/session-messaging/tools.ts`): chat turns in their Workbench tools
+(with or without the Kanban button), agent windows through `--mcp-config` (a file with a token per window, in a temp
+folder of its own removed when the window closes, `window-tools.ts`) with the tools pre-approved and their name in `--append-system-prompt`. A chat runs
+only while it replies, so `message_chat` is delivered by Workbench (`InsightsService.receiveMessage`): the message shows
+in the chat marked with its sender (`InsightsChatMessage.from`), reaches Claude framed as another session's, and the chat
+replies on its own (after the reply it is writing). An agent window is a live Claude Code session, so messages to it go
+through Claude Code's own SendMessage: `list_sessions` gives each window's `sendMessageTo` name (`live-sessions.ts`, from
+`claude agents --json`, matched by the window's recorded session or the process under its shell). An agent window's
+header also opens its session as a chat ("Open as chat", `session-import.ts`): the transcript's active branch becomes the
+chat's messages and the chat resumes the session (opened again, the same chat shows what was said since; a window
+running a chat's own session opens that chat). A name pasted into a chat's
+composer (a chat or agent window of the project, `renderer/lib/session-targets.ts`) becomes the message's recipient, shown
+as an attachment (the latest paste wins): the message keeps it (`InsightsChatMessage.to`) and reaches Claude framed to be
+delivered there. Pasted into an agent window it is typed as `[Chat #<hash>]` / `[Agent #<hash>]` (`useXterm.ts`), which
+the window's system prompt explains. A chat auto-replies to at most 5 messages from other sessions in a row, read-only (nobody is watching: no
+Clawd, Kanban, GitHub or GitLab tools, whatever the chat's buttons); further ones, those that arrived while a reply the
+user stopped was running, and any that arrive while such messages wait, are shown without a reply until the user
+writes (the next turn passes them on, once). A closed window's name still counts (`agent-sessions.json` keeps the sessions each window started,
+`session-messaging/agent-windows.ts`): a chat message to it opens the window again in the background under the same id,
+resuming its last session in the folder it ran in (a worktree too), and an open window back at its shell resumes it (only with the shell in the foreground, never typed into another
+program); the chat's turn waits for that inside its run (Stop and newer messages see the chat replying). Windows accept messages from the user's
+other sessions (`crossSessionInbound: "accept"` in the window's own `--settings` file, which also names the theme, unless
+the user's settings refuse or hold them). A window a chat's turn sends a message to (its SendMessage, seen in the
+turn's stream) is read-only until it has answered, when it accepts such messages without asking
+(`session-messaging/receiving.ts`: busy, then idle, from its output and `claude agents`; only the user's keys are
+ignored, not the terminal's own replies; a cursor report only right after the program asked for one), with a Take
+over button in its header.
 
 ### MCP Connectors
 
@@ -267,25 +305,33 @@ Data saved before the browser connector moved from Puppeteer to Playwright (id `
 task metadata in the project store, drafts, chats), so nothing else knows the old names.
 
 Playwright is Microsoft's `@playwright/mcp`, pinned (`PLAYWRIGHT_MCP_PACKAGE` in `browser-profiles/managed.ts`, with the
-browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Its row picks a browser profile
-(`McpConnectorSettings.playwrightBrowser`): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
+browser builds that version needs, `PLAYWRIGHT_BUILDS`: bump them together). Settings > Browser picks the default browser profile
+(`McpConnectorSettings.playwrightBrowser`, `settings/BrowserSettings.tsx`, with the homepage a new chat browser opens, the
+bookmarks bar switch and the extensions switch, `AppSettings.browser`: chat browsers' copies then keep the profile's
+extensions, Chromium's without Playwright's `--disable-extensions`, otherwise none; saved copies always keep them, so a copy
+made while the browser is open matches its settings; task runs' copies keep Firefox's only, as before): `src/main/browser-profiles/` finds Chrome, Edge, Brave, Chromium and
 Firefox profiles (`Local State`, `profiles.ini`) once at startup, and each run gets a copy of the chosen profile in the
 app's data folder, `<userData>/browser-profiles/<project>/<profile>/<slot>` (in WSL
 `~/.cache/workbench/browser-profiles` in the distro; snap Chromium, which runs confined, in its own
 `~/snap/chromium/common/workbench-profiles`; never inside the project, where Claude sessions could read its
-cookies; Chrome 136+ refuses remote debugging on its default data dir). Each copy names its Workbench process
+cookies; Chrome 136+ refuses remote debugging on its default data dir). A Chromium copy leaves out the encrypted hashes
+of its protected preferences (`*_encrypted_hash` in Secure Preferences, app-bound like cookies: in a copy they never
+match, and the browser resets those preferences and deletes the extensions it no longer knows), keeping the plain ones,
+and keeps `Service Worker/ScriptCache` (without it extensions' service workers are dropped and never registered again,
+so their popups wait forever). Each copy names its Workbench process
 (`.workbench-copy-owner.json`, its time refreshed while in use), so sweeps never remove another running Workbench's
 copies. Each copy also holds the run's Playwright config (`.workbench-playwright.json`, `playwrightProfileConfig()`),
 passed with `--config`: Chromium browsers run their executable on the copy with `--profile-directory`, the sandbox on
 and without Playwright's `--password-store=basic` / `--use-mock-keychain` (so copied sign-ins decrypt); the user's
 Firefox runs over WebDriver BiDi (channel `moz-firefox`, which Playwright calls experimental; Playwright's plain
-`firefox` is its own patched build) with Sync prefs off. Without a copy (Playwright's own browsers, the availability
+`firefox` is its own patched build) with Sync prefs off and its back-forward cache off (a page it restored on Back or
+Forward came back without BiDi's navigation events, so Playwright kept the page left: the drawer's address and title). Without a copy (Playwright's own browsers, the availability
 check, a failed copy) the server gets `--browser` / `--executable-path` and `--isolated` (a profile in memory;
 Playwright's own Chromium also `--sandbox`, which Playwright leaves off on Linux). Runs
 pass `--output-dir` to their temporary folder, since Playwright otherwise saves snapshots and screenshots in the
 session's working folder (`.playwright-mcp` in the worktree). The task dialog's Playwright row picks a profile for
 that task (`TaskMetadata.playwrightBrowser`, null for Playwright's own Chromium; unset follows Settings), which its runs
-use instead; sweeps keep the copies of every profile Settings or a task still chooses
+use instead; sweeps keep the copies of every profile Settings, a task or a chat still chooses
 (`browser-profiles/choices-in-use.ts`). Why that server and not chrome-devtools-mcp is noted at the top of
 `mcp-config.ts`. The default is Playwright's own Chromium (Chrome for Testing, `--browser chromium`, never the
 installed Chrome); the picker also lists Playwright's Firefox and WebKit (`managed.ts`, found in Playwright's cache
@@ -324,13 +370,83 @@ built-in's id (moved to `<id>-custom` when the settings are read).
 Runs' browsers are headless (`--headless` on every Playwright server's command line, also over a profile copy's config),
 so no browser window opens. Task runs' browsers stay that way, unseen; Claude chats' browsers are watched and driven in
 the **browser drawer** at the main window's right edge (`src/main/browser-drawer/`, `components/browser-drawer/`,
-`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button opens a new tab in the shown tab's browser), a toolbar (back, forward,
-reload, address), the live page below. The drawer is on the Claude page only and shows only the chat's own browser (below);
-closed, the chat opens it again from a button in its top-right corner (with a dot while the chat's browser is open), and
-other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered: widening it
-until the chat is narrower than 500px closes the chat history, then collapses the app's sidebar (not saved; narrowing
-the drawer opens them again in the other order, only what the drawer closed), and it stops where the chat keeps 500px
-beside the collapsed sidebar; each chat keeps its own view (open or closed, the tab shown).
+`browser-drawer-store.ts`), Workbench's own UI: a tab per page of the project's chat browsers (a + button beside them opens a new tab in the shown tab's browser;
+Ctrl/Cmd+click and a middle click open links in new tabs as the browser itself does, the click's modifiers synced
+first; a tab the user opens, with + or right after clicking or typing in a page of that browser, is shown and focused,
+its address bar for +, while tabs Claude opens stay in the background; keys and buttons still down are released on
+their page when another tab shows or the focus leaves; while it shows a tab, the browser's own shortcuts act on it,
+Ctrl/Cmd+T, W, Tab, 1-9, L, R, Alt+Left... as `shared/utils/browser-shortcuts.ts` binds them, letters as the layout
+types them: the headless browser has no window to take them, so the main process catches them in `before-input-event`,
+before the page and the app's menu, and the drawer acts on them; a held key's repeats are swallowed and act again only
+for switching tabs, and a reloaded page stops the catching until its drawer says so again), a toolbar (back, forward,
+reload, address; Back and Forward disabled with nowhere to go, the bridge following each tab's history as it navigates,
+`noteNavigation`: its address against the ones before and after, `history.length` telling a new entry from a replaced
+one, a tab's starting blank page not counted; while the tab shown loads, Workbench's loader over its page), the browser profile's bookmarks bar under it (`browser-profiles/bookmarks.ts`: Chromium's
+`Bookmarks` file, Firefox's `places.sqlite` read from a copy; the browsers are headless, so their own toolbar never
+shows; Settings > Browser can hide it), the profile's extensions at the address bar's end when the chat browser runs them
+(`BrowserExtensionsMenu.tsx`: the pinned ones that run, then a puzzle button listing the others, each with a small switch,
+kept per profile in `AppSettings.browser.extensionSwitches`; a pinned one's switch is in its right-click menu;
+`browser-profiles/extensions.ts`: Chromium's are listed and switched while it runs in its `chrome://extensions` page,
+opened in the background by the holder's `browser_run_code_unsafe` and never listed by the bridge; Playwright's Firefox
+can't reach its add-on manager, so its list is read from the copy's files and a switch is written to the copy's
+`extensions.json` before the next start, offered as Restart browser: `ChatBrowsers.restart` keeps the folder, copy and
+tabs). Clicking a Chromium extension does what its toolbar button does, for the tab shown: the bridge runs CDP's
+`Extensions.triggerAction` (needs `--enable-unsafe-extension-debugging`, added with extensions on, and Playwright's pipe:
+not Windows browsers run over `--cdp-endpoint` in WSL). A headless browser's popup never grows to its content and takes no
+other size, so the popup the browser opens only gives its address (the one the extension set for that tab) and is closed:
+that page opens in a tab behind the page's (`chromiumPopupTab`; the page's tab stays active, so the extension acts on it,
+and a background tab still renders headless), is measured (its document's preferred width and its height at that width,
+at most 800x600, `popupContentSize`), laid out at that width (`<html>` given it, since its tab's viewport stays wider)
+and is listed with `popup` (not a tab), shown over its tab at that size as the window's second view (viewer id negated);
+a click in it measures it again (a newer measuring takes over from one still running). Popup tabs keep their own viewport (`keepsViewport`: a headless Chromium's tabs
+share their window, so resizing one broke the frames of the page behind it), streamed whole, and the drawer shows the
+corner the content takes, with no border or background of its own. A clicked extension's popup box shows at once with Workbench's loader (`extensionOpening` in the store, until the popup
+the main process answered with is listed), then the popup's own box keeps the loader until its first frame is drawn. A popup closes on a click anywhere beside it, the
+window losing the focus, another tab showing or its button again; another extension's replaces it. Firefox's toolbar is
+out of Playwright's reach, so its popup's page (`firefoxExtensionTarget`: the manifest's popup at the profile's
+`moz-extension://<uuid>`) opens in a new tab the same way. Over WebDriver BiDi (the user's own Firefox) that needs the
+system access chat browsers running extensions get (`MOZ_REMOTE_ALLOW_SYSTEM_ACCESS=1`, `chat-browsers.ts`; BiDi refuses
+`moz-extension://` otherwise; the chat's Playwright guard refuses to open the browser's own pages, so only Workbench's
+bridge gets that access), and BiDi still refuses to resize, activate or report events of such a privileged page:
+the popup loads once behind the page's tab, hidden until measured (the extension asks for the active tab of the last
+focused window as it loads; never loaded again: with no events Playwright keeps the script context its tab had, and a
+page loaded again answers nothing more; loaded twice only when the first never answered), and closing it first leaves
+it for `about:blank` (`closePage`), else Playwright keeps it. Newer Firefox (157 here) also refuses to capture or drive
+an extension's page over BiDi ("browsing contexts in privileged scope"; `captureRefused`): the popup then captures
+itself, its extension's `tabs.captureTab` on its own tab (`startTabCast`: the browser's own rendering, a frame at a
+time as a screencast's; Firefox blurs another extension's pages, so only the popup's own extension can, and only one
+holding `<all_urls>` at runtime has captureTab; captures that keep failing switch to drawing, and an unchanged picture
+is asked for less often until it changes or input comes; any failed screenshot counts as refused); one without
+(Grammarly) is drawn from its own document instead
+(`paintSelf`, laid out by the browser as an SVG image, only after the page changed: its sheets with imports expanded
+and media queries resolved as the page matches them, every resource inlined, copies made in a detached document so
+custom elements aren't built again, fields' state, scroll, canvases and videos as pictures, sprites from other SVG
+files, same-origin frames drawn the same way, shadow trees flattened with their computed styles and `::before` /
+`::after`, animations frozen where they are, native checkboxes, radios and select arrows drawn and native fields kept at
+their size), and its input is replayed in the page as DOM events
+(`domInput`: into open shadow trees and same-origin frames as the browser picks the target, pointer and mouse events
+with clicks where the button went down and up, the caret placed where clicked (fields without a caret API keep theirs),
+keys on the focused element with typing and editing keys through the browser's editing commands, the wheel scrolling
+what is under the mouse). The
+main process waits up to 45 seconds for a popup (`EXTENSION_ACTION_TIMEOUT_MS`); cursor lookups skip pages that never
+answer (Juggler's and BiDi's privileged popups).
+The registry's `launchOptions.channel` (`moz-firefox`) tells the bridge a browser runs over BiDi (`bidi`). Under Juggler
+(Playwright's Firefox) the tab stays in front at a fixed popup size, mouse only (Juggler ignores `moz-extension://`
+documents, so their address, title and keys are out of reach, while frames and clicks go through the browser window).
+One without a popup opens its homepage (from `addons.json`) in a new tab. Below the toolbar, the live page. The drawer is on the Claude page only and shows only the chat's own browser (below);
+a button in the chat's top-right corner shows and hides it (with a dot while the chat's browser is open), its close
+button closes the chat's browser once asked (an overlay on the drawer), and
+other pages have no drawer or handle (the browsers keep running). Its width is resizable and remembered. The chat's
+narrowest width is what its composer's tool row needs (`useChatMinWidth`, `lib/composer-fit.ts`: the row marked
+`data-composer-row`, each part at its full width even while squeezed, text marked `data-composer-shrinks` may
+truncate, plus the room of what holds it, scrollbars included), measured when a chat opens or its composer changes (a
+new chat's or a conversation's, another model's label, the interface font): widening the drawer, the
+chat needing more or the window narrowing until the chat is narrower than that closes the chat history, then collapses
+the app's sidebar (not saved; the other way round opens them again in the other order, only what the drawer closed),
+and the drawer stops where the chat keeps that width beside the collapsed sidebar. `useChatRoom` does that from the
+stores outside React, working out the chat's width from the layout's state (never the page, which may not have caught
+up), also when the page shows with the drawer open, and only the drawer's frame (`BrowserDrawerFrame`) takes its width, so a drag renders neither the
+chat page nor the drawer's content again; each chat keeps its own view (open or closed, the tab shown).
 @playwright/mcp binds every browser it launches into Playwright's machine-wide registry (`<cache>/ms-playwright/b`, one
 JSON file per browser: title = the MCP client's name, workspace folder, socket, its playwright-core), which
 `registry.ts` reads every 2 seconds (live = its socket answers; browsers the bridge is connected to aren't asked, its link
@@ -345,27 +461,52 @@ connects to the projects' browsers with each one's own playwright-core
 server; disconnecting leaves the browser running) and reports their pages, each given Workbench's theme as its
 `prefers-color-scheme` (`page.emulateMedia`; every window sends the theme, also when it changes, from `useBrowserDrawerSync`); the page a window shows gets its viewport set
 to the drawer's page area (debounced on resize; the agent sees that size too) and streams JPEG frames
-(`page.screencast`, quality 100) to that window only, one at a time: the window acknowledges each frame it draws
+(`page.screencast`, quality 100; one that didn't start is tried again, and one without a frame yet starts again
+once its page loads) to that window only, one at a time: the window acknowledges each frame it draws
 (`BROWSER_DRAWER_FRAME_DRAWN`), the next waits for that (or a second), and frames waiting meanwhile are replaced by
-newer ones, so the browser makes no more frames than the drawer draws. Frames are drawn on a canvas at their CSS size,
+newer ones, so the browser makes no more frames than the drawer draws. A Chromium page hidden while its screencast runs
+(another tab came to the front: an extension's popup tab, one Claude opened) and shown again sends frames of the window's
+size, not its viewport's, which the drawer would show scaled: such frames are left out and the viewport is set one pixel
+wider and back, which brings them back (`staleChromiumFrame`; after three tries they pass as they come, and right after
+the drawer itself resized the page they pass too: those are frames of the old size). Frames are drawn on a canvas at their CSS size,
 the viewport a whole, even number of device pixels (`alignedViewportLength`) and the canvas moved onto whole device
 pixels, since at a fractional devicePixelRatio (1.25, 1.5) anything else resamples the frame and blurs its text. The
 canvas's mouse, wheel, keys and pasted text are replayed with `page.mouse` / `page.keyboard` from a queue per page,
 mouse moves and wheel steps waiting behind a slow one merged into the newest (a busy page answers each late: replaying
-every move held a click up for seconds), each step given at most 5 seconds. Frames are asked at the window's devicePixelRatio,
+every move held a click up for seconds), each step given at most 5 seconds. The copy and cut
+shortcuts also put the page's selected text on the system clipboard (read in turn with the keys, `copySelection`): a
+headless browser's own clipboard never reaches it. Frames are asked at the window's devicePixelRatio,
 and on HiDPI screens the browsers render that many pixels: `browser-drawer/display-scale.ts` follows the screens'
 largest scale factor (up to 2) into the runs' Playwright config (`setPlaywrightDisplayScale`: `deviceScaleFactor`, plus
 `--force-device-scale-factor` for Chromium, whose screencast otherwise stays at CSS size, rounded up to a whole factor:
 a fractional one leaves the screencast without frames once the viewport is set), a small config file for runs
 without a profile copy; screenshots for agents stay in CSS pixels. The renderer gets bytes and text only (no remote content, no webview).
-The availability probe's browser is titled with Playwright's internal prefix, so it never shows. In WSL mode the
-browsers, their registry and their Unix sockets are inside the distribution, which Windows can't connect to: the bridge
-runs there with the distribution's node (`spawnTool`, script read through `/mnt`), the registry is read through
-`\\wsl.localhost` (the distribution's `~/.cache/ms-playwright/b`), a running bridge also says which of its browsers answer
-(`probe`, `setRegistryAccess` in `registry.ts`; a check never starts it: until a drawer does, the chat browsers
-Workbench holds open count as live), and workspace folders are matched to projects as Windows paths
-(`toHostPath`). Chat browsers' holders run in the distribution too, their folders in its `~/.cache/workbench/tmp`
-(`runtimeTempParent()`; a profile on a Windows drive is slow for a browser), which the startup sweep also looks in.
+The availability probe's browser is titled with Playwright's internal prefix, so it never shows. On Windows chat
+browsers always run on Windows itself (`browser-drawer/browser-runtime.ts`), also while the shell is WSL: much of a WSL
+start was crossing into the distribution (wsl.exe, a profile copied through `\\wsl.localhost`, a Windows Chromium
+through the launcher and relay). With the WSL shell their code runs inside `runNatively()` (`platform/shell-runtime.ts`:
+an AsyncLocalStorage scope in which `isWslRuntime()` is false, so every native path applies): the holder with Windows'
+Node.js (`npx`, `chatBrowserNode()`, looked for when a browser opens), its profile copied on Windows (the chat's choice,
+made from WSL's list, mapped to its Windows profile: `windows-<id>` -> `<id>`, `detectWindowsBrowserProfiles`), the
+bridge and the registry native. A chat turn's Playwright attaches through Windows' registry, so its guard runs on
+Windows too (Workbench's executable as Node through interop, `guardChatPlaywright`), in the turn's Windows folder, and
+translates paths both ways (`WORKBENCH_PATH_MAP`: the server's Windows paths for Claude Code in WSL, Claude Code's Linux
+paths in file arguments for the server); with interop off each turn opens a browser of its own in the distribution.
+Opening one needs Node.js 20+ on Windows and, for one of Playwright's own browsers, its build in Windows' Playwright
+cache (`getChatBrowserRequirements`, for the profile picked in the drawer, kept until checked again or an open fails,
+which is logged and whose error the drawer keeps across its loader, `openErrors`): while either is
+missing, the drawer's empty state (`ChatBrowserStart.tsx`) says what is missing and offers Autoconfigure instead of Open
+browser, which opens a PowerShell window (`Start-Process` from a hidden PowerShell that waits for it: a detached start
+from the app gets no console) running a script that installs Node.js LTS with winget (found by its App Installer path
+too) and fetches the server (and the build). From then on what is missing is checked every 5 seconds (for up to 15
+minutes, `watchChatBrowserRequirements`) and when the window closes, so Open browser comes back as soon as the browser
+can open, without a restart. Sweeps
+keep a `windows-<id>` choice's native `<id>` copies too (`choices-in-use.ts`), and the caches the two runtimes share
+(`resolveCommand`, sweep times) are kept per runtime. Each start logs how long it took and where. Chat browsers no longer run
+inside the distribution (no bridge there, no registry read through `\\wsl.localhost`), but the startup sweep still looks
+in its `~/.cache/workbench/tmp` for holder folders an older version left. With the WSL shell, Playwright's availability
+check (made in the distribution) doesn't gate the drawer's Open browser (`ChatBrowserRequirements.fromWsl`); with
+PowerShell, Node.js is looked for as runs find npx (`resolveCommand`).
 
 **Chat browsers** (`browser-drawer/chat-browsers.ts`) — each Claude chat has at most one browser, owned by Workbench, not
 by a turn: it stays open between turns and while the user is on other chats or pages, so the user and the chat work in
@@ -375,18 +516,26 @@ its profile copy, `--idle-timeout 0`, a profile in its folder instead of `--isol
 title (`Workbench chat <uuid>`) and opens `about:blank`, so its browser is bound under that title; a turn's Playwright
 gets `--endpoint <title>` and attaches to it (`contexts()[0]`). The chat's guard asks Workbench to open the browser
 before each tool call (`open_chat_browser`, a token per turn on the task tools server) and refuses `browser_close`;
-inside WSL2 with NAT networking (no way to the app's 127.0.0.1) it sends that call through the task tools bridge
+inside WSL2 (NAT networking has no way to the app's 127.0.0.1, and mirrored networking's Hyper-V firewall blocks it by default) it sends that call through the task tools bridge
 (`task-tools-bridge.cjs`, a Windows process it starts once through interop: `WORKBENCH_CHAT_BROWSER_RELAY`), and with
 interop off chats fall back to a browser per turn. The
 drawer's empty state on the Claude page has the chat's browser profile picker (`InsightsModelConfig.playwrightBrowser`;
-unset = Settings > Connectors; the New chat page starts from Settings) and an Open browser button, which also switches
+unset = Settings > Browser; the New chat page starts from Settings) and an Open browser button, which also switches
 Playwright on for the chat; the picker shows only while the chat has no browser (one profile per chat at a time). The
 New chat page's browser (chat id `new`) moves to the conversation its first message creates. A chat browser closes when
-the user closes its last tab, its chat is deleted, its browser goes away (its registry entry stops answering) or the
-app quits.
+the user closes it (the drawer's close button) or its last tab, its chat is deleted, its browser goes away (its registry
+entry stops answering) or the app quits. Its tabs are kept then (`saved-tabs.ts`, `<userData>/chat-browser-tabs.json`
+by project and chat), except for a deleted chat or a last tab closed, listed as `ChatBrowserInfo.status: 'saved'` (the
+drawer says how many) and opened again when the chat's browser next opens. A browser opening with nothing to open again
+shows the homepage, unless it opens for a turn's call that names an address (the guard's `open_chat_browser` with
+`withUrl`: browser_navigate with a url, also when it comes while the browser starts): the turn's Playwright takes the
+browser's first tab, so the address goes there and kept tabs open beside it. Kept tabs stay kept until the browser has
+started (a close or quit while it starts loses none; tabs still reopening count as its tabs), and those of chats that
+are gone (project removed, chat file deleted) are dropped at startup.
 
 **Crash leftovers** — Workbench's folders in the system temp folder (`temp-folders.ts`: `workbench-task-`,
-`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`) are made with an
+`workbench-insights-`, `workbench-chat-browser-`, `workbench-browser-bridge-`, `workbench-mcp-probe-`,
+`workbench-window-tools-`) are made with an
 owner file naming the Workbench process (`folder-owner.ts`, the same one profile copies have), and a task phase's or chat
 turn's also names its Claude Code process. At startup (`removeCrashLeftovers()` in `index.ts`, in the background),
 `browser-drawer/chat-browser-restore.ts` looks at the chat browsers a crash left: each holder folder keeps a record
@@ -420,6 +569,10 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   later turns `--resume` it, and editing a sent message or regenerating a reply forks it at the earlier reply
   (`--resume <id> --resume-session-at <uuid> --fork-session`), leaving the original session as it was. Chats are saved
   in `.workbench/chats/` (`session-storage.ts`); a new chat is saved only once it has a message.
+- **The page as it was left** — the page opens on the chat it showed last (per project, kept in localStorage across
+  restarts and flushed on quit; the New chat page when that is where the user left, a new chat when the chat is gone),
+  with the composer's text and pasted recipient, the history's open state and the chat's browser drawer view as they
+  were. The sidebar's Claude item clicked on the Claude page starts a new chat, like the page's New chat button.
 - **Chats reply at the same time** — one reply runs per chat (`insights-executor.ts`, keyed by project and chat), and
   switching chats, opening a new chat or leaving the page never stops one; Stop ends the reply of the chat it is pressed
   in, and deleting a chat stops its reply and closes its browser. Every event (stream chunks, status, errors) names its
@@ -431,8 +584,30 @@ headless stream-json run built in `insights/claude-code-runner.ts`, on the proje
   `.workbench/compeng/**` (Self-improve on). `--permission-mode dontAsk` denies everything else without asking.
   Playwright runs through `insights/playwright-guard.cjs`, in the turn's own folder without the client's roots, so
   its workspace root (where files a tool call names are written) is that folder, not the project; the guard also
-  leaves out `browser_run_code_unsafe`. The chat may read that folder (`--add-dir`), where snapshots are linked.
+  leaves out `browser_run_code_unsafe` and refuses to open the browser's own pages (`about:` but `about:blank`,
+  `chrome:`, `resource:`, extensions' pages: anything but http(s), file, data and blob addresses). The chat may read that folder (`--add-dir`), where snapshots are linked.
   It attaches to the chat's own browser (see Chat browsers above); in WSL with interop off each turn launches its own.
+- **Clawd button** (`InsightsModelConfig.agentMode`) — the chat's turns get what an agent window has instead: no
+  `--tools` or `--strict-mcp-config` (every tool, the user's own MCP servers too) and the agent windows' permissions
+  (`--dangerously-skip-permissions` when Settings skips them, else `--permission-mode auto`, since a headless turn can't
+  ask). Off again, the same session continues read-only. With it on, the composer's `/` menu lists Claude Code's slash
+  commands and skills, minus built-ins that don't fit a chat (`/clear`, `/model`...) (`insights-slash-commands.ts`; asked per project and account with the
+  control protocol's `initialize` request, without MCP servers or a model call, again when the button is switched on,
+  `insights/chat-commands.ts`). A local command's output (`/compact`) is its reply and keeps the session. A chat with a session also shows a Clawd button under the browser
+  button that shows its session in an agent window: the one running it already, else a new one resuming it as its own
+  (`claude --resume` on its account, `openProjectSession`, recorded in `agent-sessions.json` so it is found and
+  restored; a window back at its shell resumes it only with nothing else running there), its border flashing once in the
+  primary color (`highlightRequest` in `terminal-store.ts`). The chat and the window then
+  share one session and take turns (`session-messaging/shared-session.ts`; only windows that recorded the session are
+  looked at, one running Claude Code while `claude agents` says it runs that session, busy unless it reports idle):
+  every reply that resumes the session checks inside its turn (the executor's `prepare`, so the chat already counts as
+  replying): the window working in it ends the turn (`agent_window_busy`; the user's message goes back to the composer,
+  another session's message waits for the user), what was said in the window comes in from the transcript (whole
+  turns only, before the messages the chat holds, one sync at a time per chat, `mergeSessionTurns`), and the window is
+  read-only meanwhile (`holdForChatReply` in `receiving.ts`, a hold per reply, with Take over) and resumes the session
+  again once no reply holds it, so its Claude Code has the chat's turn. The chat page follows the window
+  (`useSharedSessionWindow`, also asked again before a send): while it works the chat doesn't send, edit or
+  regenerate; while it is idle its turns come in (`syncSharedSession`). Neither branches the session.
 - **MCP per chat** — `--strict-mcp-config` loads only the servers chosen in the chat's MCP menu
   (`InsightsMcpMenu.tsx`, the Connectors defaults until changed) and, with the Kanban button on, Workbench's task tools
   (`insights/task-tools.ts`, served over local MCP HTTP by `task-tools-server.ts` with a token per turn): they create,
@@ -463,7 +638,7 @@ agent window (`src/main/live-agent/`, `src/renderer/components/live-agent/`). It
 and Claude Code hooks in the project's and its worktrees' `.claude/settings.local.json` (`project-setup.ts`); the
 `.workbench/flow` folder's existence is the setting, switched on when a project is set up. A relay worker
 (`live-agent-relay.ts`, `relay/`) runs while any project has it on; each window's graph shows only the sessions run in
-it, never headless ones.
+it, never headless ones, except a chat's session the window resumed (its hooks report the window).
 
 ### Electron MCP (testing the app from a task)
 
@@ -499,7 +674,7 @@ loaded with the FontFace API before xterm measures), Anthropic Serif (sidebar "W
 (optional interface font). Settings > General > Appearance picks the interface and command line fonts.
 
 **Settings UI (claude.ai style)** — The dialog (`settings/AppSettings.tsx`) has one menu: General, Accounts, Agents,
-Project, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_BUILD`), Updates.
+Project, Browser, Connectors, Developer, Simulation (`npm run dev` builds only, `IS_DEV_BUILD`), Updates.
 
 - **General** — Appearance (theme, graph colors, Shell on Windows, interface and command line fonts, display) and
   notifications.
@@ -525,20 +700,25 @@ borderless selects, or dropdown menus (no collapsible rows). UI copy conventions
 trailing period in setting descriptions, and no green check / red x status icons (state the status in text).
 
 **Usage popover** — The header's usage indicator (`UsageIndicator.tsx`) opens `components/usage/`: the 5-hour limit
-under Clawd's pixel sky (local time, moon phase, seasonal decor; `usage/clawd/`) and the weekly limits. Loading
+under Clawd's pixel sky (local time, moon phase, seasonal decor; `usage/clawd/`) and the weekly limits. Enterprise
+accounts have neither window, only a monthly spend limit (the usage API's `spend`, `ClaudeUsageSnapshot.spendLimit`):
+the badge, the popover and the Accounts row show the share and amount spent of it instead. Loading
 overlays use `AgentLoader` (`ui/agent-loader.tsx`, the live agent node bouncing) instead of a spinner.
 
 **IPC** — Handlers in `src/main/ipc-handlers/` (by domain), safe APIs exposed in `src/preload/`, renderer calls
 `window.electronAPI.*`.
 
-**Agent management** (`src/main/agent/`) — `agent-manager.ts` (starts, stops and restarts Claude Code task runs and
-relays their events), `agent-state.ts` (profile/session assignment for account swapping).
+**Agent management** (`src/main/agent/`) — `agent-manager.ts` (starts and stops Claude Code task runs and
+relays their events), `agent-state.ts` (the profile and session of each running task).
 
 **Claude profiles** (`src/main/claude-profile/`) — `credential-utils.ts` (OS keychain), `token-refresh.ts` (OAuth
-refresh), `usage-monitor.ts` (usage and rate limits), `profile-scorer.ts` (profile selection). On every start,
+refresh), `usage-monitor.ts` (usage and rate limits). On every start,
 `claude-code-detection.ts` finds Claude Code's own setups (`~/.claude`, `CLAUDE_CONFIG_DIR`, `~/.claude-*`: subscription
 sign-in, cloud provider, API key or gateway, from managed settings, the dir's `settings.json` and the environment) and
-lists them as accounts (`ClaudeProfile.detected`): usable and renamable, never removed. Claude Code's default `~/.claude`
+lists them as accounts (`ClaudeProfile.detected`): usable and renamable. Deleting one (the trash button in its row, shown for every account but the window's; the app's
+account in use only from a window on another account, which takes its place; never one with running tasks) signs it out with `claude auth logout` and removes its config dir, or for the default `~/.claude` only the
+settings that set up how it reaches Claude (`claude-profile/account-deletion.ts`); projects that chose it lose the
+reference. Claude Code's default `~/.claude`
 runs without `CLAUDE_CONFIG_DIR`, keeps its sign-in in `~/.claude.json` and its plain keychain entry
 (`config-dir-paths.ts`).
 
@@ -605,7 +785,8 @@ start, the session runs natively and the Settings row says why. These modules ar
 - **Agent windows** know their `shellKind` (`'cmd' | 'powershell' | 'posix'`); command builders in
   `terminal/cli-integration-handler.ts` and `shared/utils/shell-escape.ts` choose syntax from it, not from
   `isWindows()`. WSL windows type bash syntax (wrapped in `bash -c` when the login shell is fish).
-- **WSL2 NAT networking** can't reach the app's `127.0.0.1`: Claude chat's task tools go through a stdio bridge
+- **WSL2** can't reach the app's `127.0.0.1` (NAT networking, or mirrored networking behind the Hyper-V firewall's default):
+  Claude chat's task tools go through a stdio bridge
   (`insights/task-tools-bridge.cjs`) run as a Windows process through interop, and the Live agent hook command has
   a WSL branch. Watchers poll `\\wsl.localhost` paths (`fs.watch` fails there).
 - **Worktrees** use relative links only when both runtimes' git is 2.48 or newer; on a runtime switch,

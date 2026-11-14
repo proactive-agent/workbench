@@ -1,21 +1,34 @@
 /**
  * Claude accounts (Accounts page): the Claude Code setups found in its own configuration (see
  * claude-code-detection). Each project window has its own account in use (saved for its project);
- * with automatic switching on, tasks move to the next account when it hits a limit. Each row shows the account's email and usage (or its
- * provider); its menu switches to it, signs it in again and shows its details. Adding an account
+ * while an API profile is in use, that profile is the one in use and no account is marked. Each row
+ * shows the account's email and usage (or its provider); its menu switches to it (leaving an API
+ * profile in use), signs it in again and shows its details; accounts not in use can be deleted from their row. Adding an account
  * (or signing one in again) runs Claude Code's own sign-in (`claude auth login`) in the user's
  * terminal; the accounts are then detected again until the sign-in shows up.
  */
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Check, Info, MoreHorizontal, Plus, RefreshCw } from 'lucide-react';
-import { Button } from '../ui/button';
+import { Check, Info, MoreHorizontal, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Button, buttonVariants } from '../ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from '../ui/alert-dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '../ui/dropdown-menu';
 import { cn } from '../../lib/utils';
 import { SettingsRow } from './SettingsRow';
 import { DetectedAccountDialog } from './DetectedAccountDialog';
 import { useClaudeAccounts } from './hooks/useClaudeAccounts';
 import { switchClaudeAccount, useWindowClaudeAccountId } from '../../hooks/useWindowClaudeAccount';
+import { formatSpend } from '../usage/spend-limit';
+import { useSettingsStore } from '../../stores/settings-store';
 import type { ClaudeProfile } from '../../../shared/types';
 
 /** How often (and how long) the accounts are detected again while a sign-in runs in a terminal */
@@ -24,9 +37,12 @@ const LOGIN_WATCH_MAX_TRIES = 200;
 
 export function ClaudeAccountsSection() {
   const { t } = useTranslation('settings');
-  const { profiles: allProfiles, usage, reload } = useClaudeAccounts();
+  const { profiles: allProfiles, activeProfileId, usage, reload } = useClaudeAccounts();
   // The account this window's project runs on
   const accountId = useWindowClaudeAccountId();
+  // An API profile in use takes over from the Claude accounts: it alone is marked in use
+  const apiProfileInUse = useSettingsStore((state) => state.activeProfileId);
+  const setActiveApiProfile = useSettingsStore((state) => state.setActiveProfile);
   // Only Claude Code's own setups are accounts
   const profiles = allProfiles.filter((profile) => profile.detected);
 
@@ -39,16 +55,44 @@ export function ClaudeAccountsSection() {
   const [busyId, setBusyId] = useState<string | null>(null);
   // The last failed action on an account, shown in its row instead of the description
   const [rowError, setRowError] = useState<{ id: string; message: string } | null>(null);
+  // The account whose deletion waits for confirmation
+  const [deleteTarget, setDeleteTarget] = useState<ClaudeProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      // The account in use for projects without their own (not this window's): this window's account takes its place
+      const replacement = deleteTarget.id === activeProfileId && accountId && accountId !== deleteTarget.id ? accountId : undefined;
+      const result = await window.electronAPI.deleteClaudeProfile(deleteTarget.id, replacement);
+      if (!result.success) {
+        setDeleteError(result.error || t('claudeAccounts.toast.deleteFailed'));
+        return;
+      }
+      setDeleteTarget(null);
+      await reload();
+    } catch {
+      setDeleteError(t('claudeAccounts.toast.deleteFailed'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   const handleUse = async (profile: ClaudeProfile) => {
     setBusyId(profile.id);
     setRowError(null);
     try {
       // Saved for this window's project; other windows keep their own account
-      const result = await switchClaudeAccount(profile.id);
+      const result = profile.id === accountId ? { success: true } as const : await switchClaudeAccount(profile.id);
       if (!result.success) {
         const title = t('claudeAccounts.toast.switchFailed');
         setRowError({ id: profile.id, message: result.error ? `${title}: ${result.error}` : title });
+      } else if (apiProfileInUse && !(await setActiveApiProfile(null))) {
+        // Back from the API profile to Claude accounts
+        setRowError({ id: profile.id, message: t('claudeAccounts.toast.switchFailed') });
       }
       await reload();
     } finally {
@@ -106,6 +150,15 @@ export function ClaudeAccountsSection() {
     };
   }, [login, reload, t]);
 
+  // Only accounts that can be deleted show the delete button (on hover, like API profiles): not this
+  // window's account, nor one set up from outside its config dir, which would be listed again. The
+  // app's account in use (for projects without their own) can go when this window runs on another:
+  // that one takes its place
+  const canDelete = (profile: ClaudeProfile) =>
+    profile.id !== accountId
+    && !!accountId
+    && !(profile.detected?.isDefaultDir && profile.detected.definedOutside);
+
   const describe = (profile: ClaudeProfile): string => {
     // A setup on a cloud provider, an API key or a gateway: what it reaches Claude through
     const detected = profile.detected;
@@ -128,10 +181,19 @@ export function ClaudeAccountsSection() {
     if (summary?.isRateLimited) parts.push(t('claudeAccounts.rateLimited'));
     // Usage only once it was fetched for this account (lastFetchedAt): never placeholder zeros
     if (summary && summary.isAuthenticated && !summary.fetchError && summary.lastFetchedAt) {
-      parts.push(t('claudeAccounts.usage', {
-        session: Math.round(summary.sessionPercent),
-        weekly: Math.round(summary.weeklyPercent)
-      }));
+      const spend = summary.spendLimit;
+      // Enterprise: a monthly spend limit instead of the session and weekly windows
+      if (spend) {
+        const used = formatSpend(spend.used, spend.currency);
+        parts.push(spend.limit
+          ? t('claudeAccounts.spendUsage', { used, limit: formatSpend(spend.limit, spend.currency) })
+          : t('claudeAccounts.spendNoLimit', { used }));
+      } else {
+        parts.push(t('claudeAccounts.usage', {
+          session: Math.round(summary.sessionPercent),
+          weekly: Math.round(summary.weeklyPercent)
+        }));
+      }
     }
     return parts.join(' · ');
   };
@@ -139,11 +201,12 @@ export function ClaudeAccountsSection() {
   return (
     <>
       {profiles.map((profile) => {
-        const isActive = profile.id === accountId;
+        const isActive = !apiProfileInUse && profile.id === accountId;
         const isBusy = busyId === profile.id;
         return (
           <SettingsRow
             key={profile.id}
+            className="group"
             label={
               <span className="flex min-w-0 items-baseline gap-2">
                 <span className="truncate">{profile.name}</span>
@@ -158,6 +221,24 @@ export function ClaudeAccountsSection() {
               )
             }
           >
+            {canDelete(profile) && (
+              <div className="opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setDeleteTarget(profile);
+                  }}
+                  disabled={isBusy}
+                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                  title={t('claudeAccounts.dialog.delete')}
+                  aria-label={t('claudeAccounts.deleteAriaLabel', { name: profile.name })}
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.75} />
+                </Button>
+              </div>
+            )}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -197,7 +278,7 @@ export function ClaudeAccountsSection() {
             <span role={addStatus.error ? 'alert' : undefined} className={addStatus.error ? 'text-destructive' : undefined}>
               {addStatus.message}
             </span>
-          ) : profiles.length > 1 ? t('claudeAccounts.addDescriptionMore') : t('claudeAccounts.addDescription')
+          ) : t('claudeAccounts.addDescription')
         }
       >
         <Button variant="outline" size="sm" className="gap-1.5" onClick={() => void startLogin()}>
@@ -212,6 +293,42 @@ export function ClaudeAccountsSection() {
         onOpenChange={(open) => setDetails((current) => ({ ...current, open }))}
         onSaved={() => void reload()}
       />
+
+      {/* Confirm before the account is signed out and its configuration removed */}
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (isDeleting || open) return;
+          setDeleteTarget(null);
+          setDeleteError(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('claudeAccounts.dialog.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.detected?.isDefaultDir
+                ? t('claudeAccounts.dialog.deleteDescriptionDefault', { name: deleteTarget.name })
+                : t('claudeAccounts.dialog.deleteDescription', { name: deleteTarget?.name ?? '', dir: deleteTarget?.configDir ?? '' })}
+            </AlertDialogDescription>
+            {deleteError && <p role="alert" className="text-sm text-destructive">{deleteError}</p>}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>{t('claudeAccounts.dialog.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Stay open until the delete finishes, so a failure can be shown here
+                e.preventDefault();
+                void handleDelete();
+              }}
+              disabled={isDeleting}
+              className={buttonVariants({ variant: 'destructive', size: 'sm' })}
+            >
+              {isDeleting ? t('claudeAccounts.dialog.deleting') : t('claudeAccounts.dialog.delete')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

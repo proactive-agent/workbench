@@ -7,7 +7,6 @@
  * - usage-parser: Usage data parsing and reset time calculations
  * - rate-limit-manager: Rate limit event tracking
  * - profile-storage: Disk persistence
- * - profile-scorer: Profile availability scoring and auto-switch logic
  * - profile-utils: Helper utilities
  */
 
@@ -20,10 +19,9 @@ import type {
   ClaudeProfileSettings,
   ClaudeUsageData,
   ClaudeRateLimitEvent,
-  ClaudeAutoSwitchSettings,
-  APIProfile
+  UsageDetails,
+  UsageSpendLimit
 } from '../shared/types';
-import type { UnifiedAccount } from '../shared/types/unified-account';
 
 // Module imports
 import { encryptToken, decryptToken } from './claude-profile/token-encryption';
@@ -38,17 +36,9 @@ import {
 import {
   loadProfileStoreAsync,
   saveProfileStore,
-  ProfileStoreData,
-  DEFAULT_AUTO_SWITCH_SETTINGS
+  ProfileStoreData
 } from './claude-profile/profile-storage';
-import {
-  getBestAvailableProfile,
-  shouldProactivelySwitch as shouldProactivelySwitchImpl,
-  getProfilesSortedByAvailability as getProfilesSortedByAvailabilityImpl,
-  getBestAvailableUnifiedAccount
-} from './claude-profile/profile-scorer';
 import { getCredentialsFromKeychain, getKeychainServiceName, normalizeWindowsPath, updateProfileSubscriptionMetadata } from './claude-profile/credential-utils';
-import { loadProfilesFile } from './services/profile/profile-manager';
 import {
   getClaudeProfilesDir,
   generateProfileId as generateProfileIdImpl,
@@ -108,6 +98,31 @@ function sameName(a: string | undefined, b: string | undefined): boolean {
 }
 
 /**
+ * A profile's usage from a fetched snapshot: its percents, spend limit, resets and model-scoped
+ * weekly limit (the reset times the earlier usage had when the fetch names none)
+ */
+function usageFromAPI(
+  existing: ClaudeUsageData | undefined,
+  sessionPercent: number,
+  weeklyPercent: number,
+  spendLimit: UsageSpendLimit | undefined,
+  details: UsageDetails | undefined,
+): ClaudeUsageData {
+  return {
+    sessionUsagePercent: sessionPercent,
+    sessionResetTime: details?.sessionResetTimestamp ?? existing?.sessionResetTime ?? '',
+    weeklyUsagePercent: weeklyPercent,
+    weeklyResetTime: details?.weeklyResetTimestamp ?? existing?.weeklyResetTime ?? '',
+    opusUsagePercent: existing?.opusUsagePercent,
+    lastUpdated: new Date(),
+    ...(spendLimit ? { spendLimit } : {}),
+    ...(details?.fablePercent !== undefined ? { fablePercent: details.fablePercent } : {}),
+    ...(details?.fableResetTimestamp ? { fableResetTimestamp: details.fableResetTimestamp } : {}),
+    ...(details?.fableModelName ? { fableModelName: details.fableModelName } : {}),
+  };
+}
+
+/**
  * Manages Claude Code profiles for multi-account support.
  * Profiles are stored in the app's userData directory.
  * Each profile points to a separate Claude config directory.
@@ -119,7 +134,7 @@ export class ClaudeProfileManager {
   private initialized: boolean = false;
   /** Set once the store for this session's runtime (native or WSL) is chosen; nothing is saved before */
   private storeReady: boolean = false;
-  /** Called whenever the account in use changes, from any caller (Settings, swaps, terminals) */
+  /** Called whenever the account in use changes, from any caller (Settings, terminals) */
   private activeProfileListeners = new Set<(profileId: string, previousProfileId: string) => void>();
 
   constructor() {
@@ -614,8 +629,7 @@ export class ClaudeProfileManager {
     return {
       version: 3,
       profiles: [defaultProfile],
-      activeProfileId: sanitizedName,
-      autoSwitch: DEFAULT_AUTO_SWITCH_SETTINGS
+      activeProfileId: sanitizedName
     };
   }
 
@@ -641,27 +655,8 @@ export class ClaudeProfileManager {
 
     return {
       profiles: profilesWithAuth,
-      activeProfileId: this.data.activeProfileId,
-      autoSwitch: this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS
+      activeProfileId: this.data.activeProfileId
     };
-  }
-
-  /**
-   * Get auto-switch settings
-   */
-  getAutoSwitchSettings(): ClaudeAutoSwitchSettings {
-    return this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS;
-  }
-
-  /**
-   * Update auto-switch settings
-   */
-  updateAutoSwitchSettings(settings: Partial<ClaudeAutoSwitchSettings>): void {
-    this.data.autoSwitch = {
-      ...(this.data.autoSwitch || DEFAULT_AUTO_SWITCH_SETTINGS),
-      ...settings
-    };
-    this.save();
   }
 
   /**
@@ -805,6 +800,43 @@ export class ClaudeProfileManager {
 
     this.save();
     return true;
+  }
+
+  /**
+   * Why an account found in Claude Code's configuration can't be deleted, or null when it can:
+   * not the account in use (unless `replacementId` names another account to take its place for
+   * the projects without their own: a window on another account deletes it), not the only account,
+   * and not set up from outside its config dir (environment variables or managed settings, which
+   * would list it again)
+   */
+  detectedAccountDeletionBlocker(profileId: string, replacementId?: string): string | null {
+    const profile = this.getProfile(profileId);
+    if (!profile) return 'Account not found';
+    if (!profile.detected || !profile.configDir) return "Not an account from Claude Code's configuration";
+    if (profile.id === this.data.activeProfileId && (!replacementId || replacementId === profileId || !this.getProfile(replacementId))) {
+      return "The account in use can't be deleted";
+    }
+    if (this.data.profiles.length <= 1) return "The only Claude account can't be deleted";
+    if (profile.detected.isDefaultDir && profile.detected.definedOutside) {
+      return 'This account is set up by environment variables or managed settings outside Claude Code\'s config dir; remove them there';
+    }
+    return null;
+  }
+
+  /**
+   * Drop a deleted account (see account-deletion.ts, which removed its files) from the accounts.
+   * References to it move to the account in use.
+   */
+  removeDetectedAccount(profileId: string): void {
+    const others = this.data.profiles.filter((p) => p.id !== profileId);
+    if (others.length === this.data.profiles.length || others.length === 0) return;
+    const removed = this.data.profiles.find((p) => p.id === profileId)!;
+    this.data.profiles = others;
+    const fallback = others.find((p) => p.id === this.data.activeProfileId)
+      ?? others.find((p) => p.detected?.isDefaultDir) ?? others[0];
+    if (removed.isDefault && !others.some((p) => p.isDefault)) fallback.isDefault = true;
+    this.remapRemovedProfiles(new Map([[profileId, fallback.id]]));
+    this.save();
   }
 
   /**
@@ -1013,22 +1045,19 @@ export class ClaudeProfileManager {
    * Update usage data for a profile from API response (percentages directly)
    * This is called by the usage monitor after fetching usage via the API
    */
-  updateProfileUsageFromAPI(profileId: string, sessionPercent: number, weeklyPercent: number): ClaudeUsageData | null {
+  updateProfileUsageFromAPI(
+    profileId: string,
+    sessionPercent: number,
+    weeklyPercent: number,
+    spendLimit?: UsageSpendLimit,
+    details?: UsageDetails
+  ): ClaudeUsageData | null {
     const profile = this.getProfile(profileId);
     if (!profile) {
       return null;
     }
 
-    // Preserve existing reset times if available, otherwise use empty string
-    const existingUsage = profile.usage;
-    const usage: ClaudeUsageData = {
-      sessionUsagePercent: sessionPercent,
-      sessionResetTime: existingUsage?.sessionResetTime ?? '',
-      weeklyUsagePercent: weeklyPercent,
-      weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
-      opusUsagePercent: existingUsage?.opusUsagePercent,
-      lastUpdated: new Date()
-    };
+    const usage = usageFromAPI(profile.usage, sessionPercent, weeklyPercent, spendLimit, details);
     profile.usage = usage;
     this.save();
     return usage;
@@ -1038,31 +1067,21 @@ export class ClaudeProfileManager {
    * Batch update usage data for multiple profiles from API responses.
    * Updates all profiles in memory first, then saves once to avoid race conditions.
    *
-   * @param updates - Array of { profileId, sessionPercent, weeklyPercent } objects
+   * @param updates - Array of { profileId, sessionPercent, weeklyPercent, spendLimit? } objects
    * @returns Number of profiles successfully updated
    */
   batchUpdateProfileUsageFromAPI(
-    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number }>
+    updates: Array<{ profileId: string; sessionPercent: number; weeklyPercent: number; spendLimit?: UsageSpendLimit; details?: UsageDetails }>
   ): number {
     let updatedCount = 0;
 
-    for (const { profileId, sessionPercent, weeklyPercent } of updates) {
+    for (const { profileId, sessionPercent, weeklyPercent, spendLimit, details } of updates) {
       const profile = this.getProfile(profileId);
       if (!profile) {
         continue;
       }
 
-      // Preserve existing reset times if available
-      const existingUsage = profile.usage;
-      const usage: ClaudeUsageData = {
-        sessionUsagePercent: sessionPercent,
-        sessionResetTime: existingUsage?.sessionResetTime ?? '',
-        weeklyUsagePercent: weeklyPercent,
-        weeklyResetTime: existingUsage?.weeklyResetTime ?? '',
-        opusUsagePercent: existingUsage?.opusUsagePercent,
-        lastUpdated: new Date()
-      };
-      profile.usage = usage;
+      profile.usage = usageFromAPI(profile.usage, sessionPercent, weeklyPercent, spendLimit, details);
       updatedCount++;
     }
 
@@ -1106,82 +1125,6 @@ export class ClaudeProfileManager {
       return { limited: false };
     }
     return isProfileRateLimitedImpl(profile);
-  }
-
-  /**
-   * Get the best profile to switch to based on availability and usage
-   * Returns null if no good alternative is available
-   *
-   * Selection logic:
-   * 1. Filters by availability (authenticated, not rate-limited, below thresholds)
-   * 2. Returns the available profile with the most headroom (lowest usage)
-   * 3. Falls back to "least bad" option if no profile meets all criteria
-   */
-  getBestAvailableProfile(excludeProfileId?: string): ClaudeProfile | null {
-    const settings = this.getAutoSwitchSettings();
-    return getBestAvailableProfile(this.data.profiles, settings, excludeProfileId);
-  }
-
-  /**
-   * Load API profiles from profiles.json with error handling
-   * Shared helper to avoid duplication across methods
-   */
-  private async loadProfilesFileSafe(): Promise<{ profiles: APIProfile[]; activeProfileId?: string }> {
-    try {
-      const file = await loadProfilesFile();
-      return { profiles: file.profiles, activeProfileId: file.activeProfileId ?? undefined };
-    } catch (error) {
-      console.error('[ClaudeProfileManager] Failed to load profiles file:', error);
-      return { profiles: [] };
-    }
-  }
-
-  /**
-   * Load API profiles from profiles.json
-   * Used by the unified account selection to consider API profiles as fallback
-   */
-  async loadAPIProfiles(): Promise<APIProfile[]> {
-    const { profiles } = await this.loadProfilesFileSafe();
-    return profiles;
-  }
-
-  /**
-   * Get the best available unified account from both OAuth and API profiles
-   * This enables cross-type account switching when OAuth profiles are exhausted
-   *
-   * @param excludeAccountId - Unified account ID to exclude (e.g., 'oauth-profile1')
-   * @returns The best available UnifiedAccount, or null if none available
-   */
-  async getBestAvailableUnifiedAccount(excludeAccountId?: string): Promise<UnifiedAccount | null> {
-    const settings = this.getAutoSwitchSettings();
-    const activeOAuthId = this.data.activeProfileId;
-
-    // Load API profiles and active API profile ID from profiles.json
-    const { profiles: apiProfiles, activeProfileId: activeAPIId } = await this.loadProfilesFileSafe();
-
-    return getBestAvailableUnifiedAccount(
-      this.data.profiles,
-      apiProfiles,
-      settings,
-      {
-        excludeAccountId,
-        activeOAuthId,
-        activeAPIId
-      }
-    );
-  }
-
-  /**
-   * Determine if we should proactively switch profiles based on current usage
-   */
-  shouldProactivelySwitch(profileId: string): { shouldSwitch: boolean; reason?: string; suggestedProfile?: ClaudeProfile } {
-    const profile = this.getProfile(profileId);
-    if (!profile) {
-      return { shouldSwitch: false };
-    }
-
-    const settings = this.getAutoSwitchSettings();
-    return shouldProactivelySwitchImpl(profile, this.data.profiles, settings);
   }
 
   /**
@@ -1320,13 +1263,6 @@ export class ClaudeProfileManager {
       clearRateLimitEventsImpl(profile);
       this.save();
     }
-  }
-
-  /**
-   * Get profiles sorted by availability (best first)
-   */
-  getProfilesSortedByAvailability(): ClaudeProfile[] {
-    return getProfilesSortedByAvailabilityImpl(this.data.profiles);
   }
 
   /**

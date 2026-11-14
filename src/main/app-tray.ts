@@ -1,8 +1,8 @@
 /**
  * Background mode: system tray icon with a small menu.
  *
- * While the tray exists, closing a window only hides it (agents and terminals keep running,
- * and the window stays listed below); "Quit" in the tray menu (or quitting from the OS) exits
+ * While the tray exists, closing a window asks whether to keep running in the background, which
+ * hides it (agents and terminals keep running, and the window stays listed below), or to quit; "Quit" in the tray menu (or quitting from the OS) exits
  * the app. The menu shows the active Claude plan and the current 5-hour session usage when
  * they're known.
  *

@@ -12,6 +12,7 @@ import { keepOpenProjectsOnAccount, projectAccount } from '../project-account';
 import { readSettingsFileAsync } from '../settings-utils';
 import { appLog } from '../app-logger';
 import { createProfileDirectory } from '../claude-profile/profile-utils';
+import { deleteClaudeCodeAccountFiles } from '../claude-profile/account-deletion';
 import { isValidConfigDir } from '../utils/config-path-validator';
 import { getToolInfoAsync } from '../cli-tool-manager';
 import { isDefaultClaudeConfigDir } from '../claude-profile/config-dir-paths';
@@ -20,6 +21,9 @@ import { isWslRuntime, toRuntimePath } from '../platform/shell-runtime';
 import { safeSendToRenderer } from './utils';
 import { openTerminalWithCommand } from './claude-code-handlers';
 import { readClipboardFilePaths } from '../terminal/clipboard-files';
+import { acceptsWindowInput, releaseWindow } from '../session-messaging/receiving';
+import { findAgentWindow } from '../session-messaging/agent-windows';
+import { parseSessionName } from '../../shared/utils/session-names';
 
 
 /**
@@ -28,7 +32,7 @@ import { readClipboardFilePaths } from '../terminal/clipboard-files';
 export function registerTerminalHandlers(
   terminalManager: TerminalManager,
   getMainWindow: () => BrowserWindow | null,
-  agentManager?: Pick<AgentManager, 'isRunning' | 'getRunSession'>
+  agentManager?: Pick<AgentManager, 'isRunning' | 'getRunSession' | 'getRunningTasksByProfile'>
 ): void {
 
   // ============================================
@@ -60,7 +64,24 @@ export function registerTerminalHandlers(
   ipcMain.on(
     IPC_CHANNELS.TERMINAL_INPUT,
     (_, id: string, data: string) => {
+      // A window answering a chat's message ignores the user's keys (Take over gives it back);
+      // the app's own writes don't come this way
+      if (!acceptsWindowInput(id, data)) return;
       terminalManager.write(id, data);
+    }
+  );
+
+  ipcMain.on(IPC_CHANNELS.TERMINAL_TAKE_OVER, (_, id: string) => {
+    if (typeof id === 'string') releaseWindow(id);
+  });
+
+  ipcMain.handle(
+    IPC_CHANNELS.TERMINAL_FIND_AGENT_WINDOW,
+    async (_, projectPath: unknown, name: unknown) => {
+      if (typeof projectPath !== 'string' || typeof name !== 'string') return null;
+      const parsed = parseSessionName(name);
+      if (parsed?.kind !== 'agent' || !projectStore.getProjects().some((project) => project.path === projectPath)) return null;
+      return findAgentWindow(projectPath, parsed.name).catch(() => null);
     }
   );
 
@@ -278,11 +299,29 @@ export function registerTerminalHandlers(
 
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_PROFILE_DELETE,
-    async (_, profileId: string): Promise<IPCResult> => {
+    async (_, profileId: string, replacementId?: unknown): Promise<IPCResult> => {
       try {
         const profileManager = getClaudeProfileManager();
-        if (profileManager.getProfile(profileId)?.detected) {
-          return { success: false, error: "This account comes from Claude Code's configuration and can't be removed" };
+        const replacement = typeof replacementId === 'string' ? replacementId : undefined;
+        // An account from Claude Code's configuration: signed out and its configuration removed
+        // (account-deletion.ts), then dropped from the accounts and from projects that chose it
+        const profile = profileManager.getProfile(profileId);
+        if (profile?.detected) {
+          const blocker = profileManager.detectedAccountDeletionBlocker(profileId, replacement);
+          if (blocker) return { success: false, error: blocker };
+          if (agentManager?.getRunningTasksByProfile().byProfile[profileId]?.length) {
+            return { success: false, error: "Tasks are running on this account; it can't be deleted until they stop" };
+          }
+          await deleteClaudeCodeAccountFiles(profile);
+          // The account in use for projects without their own: the deleting window's account takes its place
+          if (replacement && profileManager.getActiveProfile()?.id === profileId) profileManager.setActiveProfile(replacement);
+          profileManager.removeDetectedAccount(profileId);
+          for (const project of projectStore.getProjects()) {
+            if (project.settings?.claudeProfileId === profileId) {
+              projectStore.updateProjectSettings(project.id, { claudeProfileId: undefined });
+            }
+          }
+          return { success: true };
         }
         const success = profileManager.deleteProfile(profileId);
         if (!success) {
@@ -445,46 +484,6 @@ export function registerTerminalHandlers(
   // The new authentication flow (CLAUDE_PROFILE_AUTHENTICATE) doesn't require
   // manual code submission - the user completes OAuth directly in the browser.
 
-  // Get auto-switch settings
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS,
-    async (): Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        const settings = profileManager.getAutoSwitchSettings();
-        return { success: true, data: settings };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to get auto-switch settings'
-        };
-      }
-    }
-  );
-
-  // Update auto-switch settings
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_UPDATE_AUTO_SWITCH,
-    async (_, settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>): Promise<IPCResult> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        profileManager.updateAutoSwitchSettings(settings);
-
-        // Restart usage monitor with new settings
-        const monitor = getUsageMonitor();
-        monitor.stop();
-        monitor.start();
-
-        return { success: true };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to update auto-switch settings'
-        };
-      }
-    }
-  );
-
   // Fetch usage by sending /usage command to terminal
   ipcMain.handle(
     IPC_CHANNELS.CLAUDE_PROFILE_FETCH_USAGE,
@@ -497,23 +496,6 @@ export function registerTerminalHandlers(
         return {
           success: false,
           error: error instanceof Error ? error.message : 'Failed to fetch usage'
-        };
-      }
-    }
-  );
-
-  // Get best available profile
-  ipcMain.handle(
-    IPC_CHANNELS.CLAUDE_PROFILE_GET_BEST_PROFILE,
-    async (_, excludeProfileId?: string): Promise<IPCResult<ClaudeProfile | null>> => {
-      try {
-        const profileManager = getClaudeProfileManager();
-        const bestProfile = profileManager.getBestAvailableProfile(excludeProfileId);
-        return { success: true, data: bestProfile };
-      } catch (error) {
-        return {
-          success: false,
-          error: error instanceof Error ? error.message : 'Failed to get best profile'
         };
       }
     }
@@ -722,10 +704,5 @@ export function initializeUsageMonitorForwarding(getWindow: () => BrowserWindow 
   // Forward all profiles usage updates to renderer (for multi-profile display)
   monitor.on('all-profiles-usage-updated', (allProfilesUsage: AllProfilesUsage) => {
     safeSendToRenderer(getWindow, IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, allProfilesUsage);
-  });
-
-  // Forward proactive swap notifications to renderer
-  monitor.on('show-swap-notification', (notification: unknown) => {
-    safeSendToRenderer(getWindow, IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, notification);
   });
 }

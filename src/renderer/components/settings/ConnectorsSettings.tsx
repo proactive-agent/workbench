@@ -12,8 +12,7 @@ import { Button } from '../ui/button';
 import { SettingsSection } from './SettingsSection';
 import { SettingsRow, SettingsRows } from './SettingsRow';
 import { ConnectorRow, ConnectorSwitchTip } from './ConnectorRow';
-import { BUILTIN_CONNECTOR_META, customServerIcon, isChromiumNotDownloaded } from './connector-meta';
-import { PlaywrightBrowserSelect } from './PlaywrightBrowserSelect';
+import { BUILTIN_CONNECTOR_META, customServerIcon } from './connector-meta';
 import { BUILTIN_MCP_CONNECTOR_IDS } from '../../../shared/utils/mcp-connectors';
 import { useMcpUnavailableReason } from '../../hooks/useMcpAvailability';
 import { CustomMcpDialog } from '../CustomMcpDialog';
@@ -205,19 +204,6 @@ export function ConnectorsSettings({ settings, onSettingsChange }: ConnectorsSet
                 description={description}
                 disabled={!!unavailable}
               >
-                {/* Stays usable while the server is unavailable: another browser can be the fix */}
-                {id === 'playwright' && (
-                  <PlaywrightBrowserSelect
-                    value={connectors.playwrightBrowser}
-                    // Playwright's own Chromium failed for a build that isn't downloaded (only that error comes with the
-                    // install command); other failures show their message in the description
-                    chromiumMissing={!connectors.playwrightBrowser && isChromiumNotDownloaded(unavailable?.fixCommand)}
-                    onChange={(choice) => updateConnectors((current) => {
-                      const { playwrightBrowser: _previous, ...rest } = current;
-                      return choice ? { ...rest, playwrightBrowser: choice } : rest;
-                    })}
-                  />
-                )}
                 <ConnectorSwitchTip reason={unavailable?.tip} fixCommand={unavailable?.fixCommand}>
                   <Switch
                     checked={checked && !unavailable}

@@ -13,6 +13,8 @@ import React from 'react';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useXterm } from '../useXterm';
 import { terminalBufferManager } from '../../../lib/terminal-buffer-manager';
+import { useTerminalStore } from '../../../stores/terminal-store';
+import { useProjectStore } from '../../../stores/project-store';
 
 // Mock xterm.js
 vi.mock('@xterm/xterm', () => ({
@@ -555,6 +557,34 @@ describe('useXterm keyboard handlers', () => {
       });
 
       expect(mockInput).toHaveBeenCalledWith('\x16');
+    });
+
+    it("types a pasted name of the project's chat or agent window as a tag Claude Code reads as the recipient", async () => {
+      useProjectStore.setState({ projects: [{ id: 'p1', path: '/project' }] as never });
+      useTerminalStore.setState({
+        terminals: [
+          { id: 'test-terminal', title: 'Me', projectPath: '/project', isCLIMode: true },
+          { id: '1a25c6f1-0000-0000-0000-000000000000', title: 'Agent 1', projectPath: '/project', isCLIMode: true },
+        ] as never,
+      });
+      const mockPaste = vi.fn();
+      Object.defineProperty(navigator, 'platform', { value: 'Linux', writable: true });
+      const { terminalElement } = await setupMockXterm({ paste: mockPaste });
+
+      await act(async () => {
+        firePaste(terminalElement, { text: 'agent-1a25c6f1' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // Typed once the recipient is looked up
+      await vi.waitFor(() => expect(mockPaste).toHaveBeenLastCalledWith('[Agent #1a25c6f1]'));
+
+      // A name of no session of the project stays text
+      await act(async () => {
+        firePaste(terminalElement, { text: 'agent-ffffffff' });
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      await vi.waitFor(() => expect(mockPaste).toHaveBeenLastCalledWith('agent-ffffffff'));
+      useTerminalStore.setState({ terminals: [] });
     });
 
     it('pastes copied files as their paths, quoted when they have spaces, as the runtime sees them', async () => {

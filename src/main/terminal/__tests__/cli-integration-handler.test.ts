@@ -140,6 +140,13 @@ const PROFILE_CONFIG_DIR = path.resolve('/tmp/claude-config');
 
 // Mock PtyManager.writeToPty - the implementation now uses this instead of terminal.pty.write
 const mockWriteToPty = vi.fn();
+// The window's Workbench messaging tools: a config file, when a test sets one
+const mockWindowToolsConfig = vi.hoisted(() => vi.fn(async (): Promise<string | undefined> => undefined));
+vi.mock('../../session-messaging/window-tools', () => ({
+  windowToolsConfig: mockWindowToolsConfig,
+  windowSettingsFile: (file: string) => `${file.slice(0, file.lastIndexOf('/'))}/settings.json`,
+}));
+
 vi.mock('../pty-manager', () => ({
   writeToPty: mockWriteToPty,
 }));
@@ -1345,6 +1352,29 @@ describe('cli-integration-handler - Helper Functions', () => {
       // One flag: Claude Code keeps only the last --append-system-prompt
       expect(written.match(/ --append-system-prompt /g)).toHaveLength(1);
       expect(written).toMatch(/ --append-system-prompt 'The Graphify knowledge graph of this project is in C:\\My Repo\\\.workbench\\knowledge [^']* ## Project memory [^']*'/);
+    });
+  });
+
+  describe('Workbench messaging tools of an agent window', () => {
+    it('hands the window its tools with --mcp-config, pre-approved, its settings, and tells it its name', async () => {
+      const { invokeCLIAsync } = await import('../cli-integration-handler');
+      mockPlatform('linux');
+      mockGetClaudeCliInvocationAsync.mockResolvedValue({ command: '/usr/bin/claude', env: {} });
+      mockInitializeClaudeProfileManager.mockResolvedValue({
+        getActiveProfile: vi.fn(() => ({ id: 'default', name: 'Default', isDefault: true })),
+        getProfile: vi.fn(),
+        getProfileToken: vi.fn(() => null),
+        markProfileUsed: vi.fn(),
+      });
+      mockWindowToolsConfig.mockResolvedValueOnce("/home/me/.config/Workbench/window-tools/it's/mcp.json");
+
+      await invokeCLIAsync(createMockTerminal({ id: 'abcdef12-0000-0000-0000-000000000000', shellKind: 'posix' }), undefined, undefined, () => null);
+      const written = mockWriteToPty.mock.calls[0][1] as string;
+      expect(written).toContain(
+        " --mcp-config '/home/me/.config/Workbench/window-tools/it'\\''s/mcp.json'" +
+          " --settings '/home/me/.config/Workbench/window-tools/it'\\''s/settings.json' --allowedTools mcp__workbench"
+      );
+      expect(written).toContain('In Workbench this agent window is named agent-abcdef12.');
     });
   });
 

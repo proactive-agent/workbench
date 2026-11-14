@@ -40,8 +40,6 @@ vi.mock('../claude-profile/claude-code-detection', () => ({
 }));
 
 import { ClaudeProfileManager } from '../claude-profile-manager';
-import { getBestAvailableProfile } from '../claude-profile/profile-scorer';
-import { DEFAULT_AUTO_SWITCH_SETTINGS } from '../claude-profile/profile-storage';
 import type { ClaudeProfile } from '../../shared/types';
 
 const ESC = '\u001b';
@@ -106,7 +104,8 @@ describe('ClaudeProfileManager startup repair', () => {
         },
       ],
       activeProfileId: 'primary-1',
-      autoSwitch: DEFAULT_AUTO_SWITCH_SETTINGS,
+      // Saved before automatic account switching was removed: still loads, and is dropped
+      autoSwitch: { enabled: true, proactiveSwapEnabled: true, sessionThreshold: 95, weeklyThreshold: 99 },
     }));
   });
 
@@ -135,6 +134,7 @@ describe('ClaudeProfileManager startup repair', () => {
     expect(stored.profiles.map((p: ClaudeProfile) => p.id)).toEqual(['primary']);
     expect(stored.activeProfileId).toBe('primary');
     expect(stored.profiles[0].rateLimitEvents).toEqual([]);
+    expect(stored.autoSwitch).toBeUndefined();
     expect(existsSync(duplicateDir)).toBe(true);
   });
 
@@ -150,14 +150,6 @@ describe('ClaudeProfileManager startup repair', () => {
     // Still switched away from it: it can't run anything
     expect(manager.getSettings().activeProfileId).toBe('primary');
     expect(manager.findAbandonedProfileByName('work')?.id).toBe('primary-1');
-  });
-
-  it('never picks an account without credentials when switching away from a rate-limited one', () => {
-    const profiles: ClaudeProfile[] = [
-      { id: 'primary', name: 'Primary', configDir: primaryDir, isDefault: true, createdAt: new Date() },
-      { id: 'primary-1', name: 'Primary', configDir: duplicateDir, isDefault: false, createdAt: new Date() },
-    ];
-    expect(getBestAvailableProfile(profiles, DEFAULT_AUTO_SWITCH_SETTINGS, 'primary')).toBeNull();
   });
 });
 

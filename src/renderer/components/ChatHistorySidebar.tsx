@@ -31,6 +31,7 @@ import {
 } from './ui/alert-dialog';
 import { cn } from '../lib/utils';
 import type { InsightsSessionSummary } from '../../shared/types';
+import { CHAT_HISTORY_WIDTH } from '../lib/layout-widths';
 
 interface ChatHistorySidebarProps {
   sessions: InsightsSessionSummary[];
@@ -119,7 +120,7 @@ export function ChatHistorySidebar({
   }, {} as Record<string, InsightsSessionSummary[]>);
 
   return (
-    <div className="relative flex h-full w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <div className="relative flex h-full shrink-0 flex-col border-r border-border bg-sidebar" style={{ width: CHAT_HISTORY_WIDTH }}>
       {/* Window drag band over the top padding; the first row below sits level with the app sidebar's header row */}
       <div className="electron-drag absolute inset-x-0 top-0 z-10 h-6" />
       {/* Session list */}

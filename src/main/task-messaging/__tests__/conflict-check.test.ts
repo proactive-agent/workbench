@@ -49,7 +49,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  rmSync(tmp, { recursive: true, force: true });
+  // Windows: a git process the test started may still hold a file in it for a moment (EPERM)
+  rmSync(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
 });
 
 describe('findConflicts', () => {

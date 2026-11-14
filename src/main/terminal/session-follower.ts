@@ -191,7 +191,7 @@ export class SessionFollower {
  * the Linux home, read through its UNC path (a Linux path is translated), and the app's own
  * CLAUDE_CONFIG_DIR (a Windows setting Claude Code in WSL doesn't see) is left out.
  */
-async function findTranscript(sessionId: string, configDir: string | undefined): Promise<string | null> {
+export async function findTranscript(sessionId: string, configDir: string | undefined): Promise<string | null> {
   const appConfigDir = isClaudeHomeInWsl() ? undefined : process.env.CLAUDE_CONFIG_DIR;
   const root = configDir ? toHostPath(expandClaudeHome(configDir)) : appConfigDir || joinClaudeHome('.claude');
   const projectsDir = path.join(root, 'projects');

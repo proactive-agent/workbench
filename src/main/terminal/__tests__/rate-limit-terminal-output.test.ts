@@ -8,8 +8,6 @@ import type { TerminalProcess } from '../types';
 
 const profileManager = vi.hoisted(() => ({
   recordRateLimitEvent: vi.fn(() => ({ type: 'session' })),
-  getAutoSwitchSettings: vi.fn(() => ({ enabled: false, autoSwitchOnRateLimit: false })),
-  getBestAvailableProfile: vi.fn(() => null),
 }));
 
 vi.mock('electron', () => ({ app: { getPath: () => '/tmp' }, BrowserWindow: vi.fn() }));
@@ -29,7 +27,7 @@ function terminal(): TerminalProcess {
 }
 
 function feed(data: string): void {
-  handleRateLimit(terminal(), data, new Map(), () => null, vi.fn(async () => {}));
+  handleRateLimit(terminal(), data, new Map(), () => null);
 }
 
 describe('handleRateLimit (terminal output)', () => {

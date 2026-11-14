@@ -23,7 +23,7 @@ vi.mock('../../settings-utils', () => ({
     },
   }),
 }));
-vi.mock('../task-tools-server', () => ({ openTaskToolsSession: async () => undefined }));
+vi.mock('../task-tools-server', () => ({ openChatToolsSession: async () => undefined }));
 // A task elsewhere picked another profile: its copies are kept by the chat copy's sweep
 const taskPick = { id: 'firefox:work', browser: 'firefox', engine: 'firefox', profileName: 'Work', executablePath: '/f', userDataDir: '/f', profilePath: '/f/work' };
 vi.mock('../../browser-profiles/choices-in-use', () => ({

@@ -85,6 +85,9 @@ const wslRef = vi.hoisted(() => ({
   info: null as null | { distro: string; networkingMode: string | null; interop?: boolean; tools: { claude: { path: string | null; version?: string | null } } },
   version: 2,
 }));
+/** Node.js on Windows while chat browsers run there (browser-runtime.ts) */
+const windowsRef = vi.hoisted(() => ({ node: null as null | { node: string; npx: string; version: string } }));
+vi.mock('../../browser-drawer/browser-runtime', () => ({ chatBrowserNode: async () => windowsRef.node }));
 vi.mock('../../platform/shell-runtime', () => ({
   whenShellRuntimeReady: async () => ({}),
   isWslRuntime: () => false,
@@ -106,6 +109,7 @@ import {
   INSIGHTS_GITLAB_RULES,
   resetTaskToolsBridgeForTests,
   guardChatPlaywright,
+  getTaskToolsRoute,
   CHAT_BROWSER_RELAY_ENV,
   supportsSystemPromptSnapshot,
   toClaudeModel,
@@ -277,16 +281,33 @@ describe('runInsights', () => {
     expect(record().systemPrompt).toContain('use message_task: a running task reads it at its next step');
   });
 
-  it('keeps ListAgents and SendMessage out without the task tools or with session messages off', async () => {
+  it('keeps ListAgents and SendMessage out with session messages off, and gives them without the task tools', async () => {
     const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
-    for (const overrides of [{ sessionMessages: true }, { taskTools, sessionMessages: false }]) {
-      setRun(conversation);
-      await (await run(overrides)).promise;
-      const { args, systemPrompt } = record();
-      for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(args).not.toContain(tool);
-      expect(args[args.indexOf('--tools') + 1]).not.toContain('SendMessage');
-      expect(systemPrompt).not.toContain('ListAgents');
-    }
+    setRun(conversation);
+    await (await run({ taskTools, sessionMessages: false })).promise;
+    const off = record();
+    for (const tool of INSIGHTS_SESSION_MESSAGING_TOOLS) expect(off.args).not.toContain(tool);
+    expect(off.args[off.args.indexOf('--tools') + 1]).not.toContain('SendMessage');
+    expect(off.systemPrompt).not.toContain('ListAgents');
+
+    setRun(conversation);
+    await (await run({ sessionMessages: true })).promise;
+    const on = record();
+    expect(on.args[on.args.indexOf('--tools') + 1].split(',')).toEqual(expect.arrayContaining([...INSIGHTS_SESSION_MESSAGING_TOOLS]));
+  });
+
+  it('tells a chat with the messaging tools its name and how to reach the other chats and windows', async () => {
+    const taskTools = { type: 'http' as const, url: 'http://127.0.0.1:4567/mcp' };
+    setRun(conversation);
+    await (await run({ taskTools, kanbanTools: false, chatName: 'chat-abc123', sessionMessages: true })).promise;
+    const { args, systemPrompt } = record();
+    expect(systemPrompt).toContain('This chat is named chat-abc123');
+    expect(systemPrompt).toContain('message_chat');
+    expect(systemPrompt).toContain('sendMessageTo');
+    expect(systemPrompt).toContain('[Message from');
+    // The Workbench tools hold only the messaging tools: no Kanban section
+    expect(systemPrompt).not.toContain('Workbench task tools');
+    expect(args.slice(args.indexOf('--allowedTools') + 1)).toContain(INSIGHTS_TASK_TOOLS_RULE);
   });
 
   it("gives the CLI the chat's MCP servers next to the task tools", async () => {
@@ -370,6 +391,60 @@ describe('runInsights', () => {
     expect(args).toEqual(expect.arrayContaining(INSIGHTS_GITHUB_RULES));
     for (const rule of INSIGHTS_GITLAB_RULES) expect(args).not.toContain(rule);
     expect(systemPrompt).not.toContain('glab');
+  });
+
+  it('takes a local slash command\'s output as the reply and keeps its session (no assistant message)', async () => {
+    setRun([
+      { type: 'system', subtype: 'init', session_id: 'sess-1', tools: [] },
+      { type: 'system', subtype: 'compact_boundary', session_id: 'sess-1', uuid: 'boundary-1' },
+      { type: 'user', uuid: 'stdout-1', message: { content: '<local-command-stdout>Compacted </local-command-stdout>' } },
+      { type: 'result', subtype: 'success', is_error: false, result: '', session_id: 'sess-1' },
+    ]);
+    const result = await (await run({ message: '/compact' })).promise;
+    expect(result.text).toBe('Compacted');
+    expect(result.claudeRef).toEqual({ sessionId: 'sess-1', messageUuid: 'stdout-1', profileId: 'main' });
+  });
+
+  it('accepts a slash command that printed nothing; other empty replies are still an error', async () => {
+    const quiet = [
+      { type: 'system', subtype: 'init', session_id: 'sess-1', tools: [] },
+      { type: 'result', subtype: 'success', is_error: false, result: '', session_id: 'sess-1' },
+    ];
+    setRun(quiet);
+    await expect((await run({ message: '/reload-plugins' })).promise).resolves.toMatchObject({ text: '' });
+    setRun(quiet);
+    await expect((await run()).promise).rejects.toThrow('empty response');
+  });
+
+  it('gives a turn with the Clawd button what an agent window has: every tool, the user\'s MCP servers, auto mode', async () => {
+    setRun(conversation);
+    await (await run({ agentMode: { skipPermissions: false }, cliTools: { github: true } })).promise;
+    const { args, systemPrompt } = record();
+    expect(args).not.toContain('--tools');
+    expect(args).not.toContain('--strict-mcp-config');
+    expect(args).not.toContain('--dangerously-skip-permissions');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('auto');
+    expect(systemPrompt).toContain("Claude Code's full tool set");
+    // No read-only command list: Bash isn't limited
+    expect(systemPrompt).not.toContain('Only these commands are allowed');
+  });
+
+  it('skips permissions in a Clawd turn when agent windows skip them', async () => {
+    setRun(conversation);
+    await (await run({ agentMode: { skipPermissions: true } })).promise;
+    const { args } = record();
+    expect(args).toContain('--dangerously-skip-permissions');
+    expect(args).not.toContain('--permission-mode');
+  });
+
+  it('resumes the same session read-only once the Clawd button is off again', async () => {
+    setRun(conversation);
+    await (await run({ session: { mode: 'resume', sessionId: 'chat-session', profileId: 'main' } })).promise;
+    const { args, systemPrompt } = record();
+    expect(args[args.indexOf('--resume') + 1]).toBe('chat-session');
+    expect(args[args.indexOf('--permission-mode') + 1]).toBe('dontAsk');
+    expect(args).toContain('--tools');
+    expect(systemPrompt).not.toContain("Claude Code's full tool set");
   });
 
   it('lets Claude write only its project memory when self-improve is on', async () => {
@@ -571,8 +646,8 @@ describe('runInsights', () => {
       expect(systemPrompt).toContain('mcp__workbench__');
     });
 
-    it('turns the task tools off after the bridge failed to start', async () => {
-      wslRef.info = { distro: 'Ubuntu', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+    it.each(['nat', 'mirrored'])('turns the task tools off after the bridge failed to start (%s networking)', async (networkingMode) => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
       setRun([{ type: 'system', subtype: 'init', tools: [], mcp_servers: [{ name: 'workbench', status: 'failed' }] }, ...conversation.slice(1)]);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig.mcpServers.workbench.type).toBe('stdio');
@@ -615,14 +690,19 @@ describe('runInsights', () => {
       expect(record().args).not.toContain('--system-prompt-snapshot');
     });
 
-    it('keeps the task tools with mirrored networking', async () => {
-      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+    it('keeps the task tools directly with mirrored networking when interop is off', async () => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: false, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
       setRun(conversation);
       await (await run({ taskTools: mcpServer })).promise;
       expect(record().mcpConfig).toEqual({ mcpServers: { 'workbench': mcpServer } });
     });
 
-    it("gives the chat browser's guard the Windows relay under NAT networking, and no relay with mirrored networking", async () => {
+    it('uses the bridge with mirrored networking too (the Hyper-V firewall blocks the distribution)', () => {
+      wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: true, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+      expect(getTaskToolsRoute()).toBe('bridge');
+    });
+
+    it("gives the chat browser's guard the Windows relay under NAT networking, and the relay with mirrored networking too", async () => {
       const playwright = {
         type: 'stdio' as const,
         command: 'npx',
@@ -643,9 +723,53 @@ describe('runInsights', () => {
 
         wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', tools: { claude: { path: '/home/me/.local/bin/claude' } } };
         const mirrored = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
-        expect(mirrored.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(JSON.parse(mirrored.env[CHAT_BROWSER_RELAY_ENV]).script).toBe(join(turnDir, 'task-tools-bridge.cjs'));
+        wslRef.info = { distro: 'Ubuntu', networkingMode: 'mirrored', interop: false, tools: { claude: { path: '/home/me/.local/bin/claude' } } };
+        const direct = (await guardChatPlaywright({ playwright }, turnDir)).servers.playwright as { env: Record<string, string> };
+        expect(direct.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(direct.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
         expect(mirrored.env.WORKBENCH_CHAT_BROWSER_URL).toBe('http://127.0.0.1:4567/mcp');
       } finally {
+        rmSync(turnDir, { recursive: true, force: true });
+      }
+    });
+
+    it("runs the guard and its server on Windows when the chat's browser runs there, its paths translated for WSL", async () => {
+      const playwright = {
+        type: 'stdio' as const,
+        command: 'npx',
+        args: ['-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1'],
+        env: { WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp', WORKBENCH_CHAT_BROWSER_TOKEN: 'secret' },
+      };
+      const turnDir = mkdtempSync(join(tmpdir(), 'guard-windows-test-'));
+      try {
+        wslRef.info = { distro: 'Ubuntu', mountRoot: '/mnt/', networkingMode: 'nat', tools: { claude: { path: '/home/me/.local/bin/claude' } } } as typeof wslRef.info;
+        windowsRef.node = { node: 'C:\\Program Files\\nodejs\\node.exe', npx: 'C:\\Program Files\\nodejs\\npx.cmd', version: 'v22.0.0' };
+        const result = await guardChatPlaywright({ playwright }, turnDir);
+        const guarded = result.servers.playwright as { command: string; args: string[]; env: Record<string, string> };
+        const dir = join(turnDir, 'playwright');
+        // Workbench's executable as Node, started through interop; the guard and folders by their Windows paths
+        expect(guarded.command).toBe(`/runtime${process.execPath.replace(/\\/g, '/')}`);
+        expect(guarded.args).toEqual([
+          join(turnDir, 'playwright-guard.cjs'), dir, windowsRef.node.npx,
+          '-y', '@playwright/mcp@0.0.83', '--endpoint', 'Workbench chat c1', '--output-dir', dir, '--file-paths', 'absolute',
+        ]);
+        expect(guarded.env).toMatchObject({
+          ELECTRON_RUN_AS_NODE: '1',
+          WORKBENCH_CHAT_BROWSER_URL: 'http://127.0.0.1:4567/mcp',
+          WORKBENCH_CHAT_BROWSER_TOKEN: 'secret',
+          WSLENV: 'ELECTRON_RUN_AS_NODE:WORKBENCH_CHAT_BROWSER_URL:WORKBENCH_CHAT_BROWSER_TOKEN:WORKBENCH_PATH_MAP',
+        });
+        // Reaches Workbench directly: no relay
+        expect(guarded.env[CHAT_BROWSER_RELAY_ENV]).toBeUndefined();
+        expect(JSON.parse(guarded.env.WORKBENCH_PATH_MAP)).toEqual({ from: dir, to: `/runtime${dir.replace(/\\/g, '/')}`, distro: 'Ubuntu', mountRoot: '/mnt/' });
+        expect(result.dir).toBe(dir);
+
+        // A server that isn't the chat browser's (no chat browser URL) runs in WSL as before
+        const own = (await guardChatPlaywright({ playwright: { ...playwright, env: {} } }, turnDir)).servers.playwright as { command: string };
+        expect(own.command).toBe('node');
+      } finally {
+        windowsRef.node = null;
         rmSync(turnDir, { recursive: true, force: true });
       }
     });

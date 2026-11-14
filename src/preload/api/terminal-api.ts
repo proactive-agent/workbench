@@ -11,20 +11,14 @@ import type {
   TerminalCreateOptions,
   ClaudeProfile,
   ClaudeProfileSettings,
-  ClaudeUsageSnapshot,
   CreateTerminalWorktreeRequest,
   TerminalWorktreeConfig,
   TerminalWorktreeResult,
   OtherWorktreeInfo,
+  AgentWindowMatch,
+  AgentWindowOpenRequest,
+  SessionMessageOrigin,
 } from '../../shared/types';
-
-/** Type for proactive swap notification events */
-interface ProactiveSwapNotification {
-  fromProfile: { id: string; name: string };
-  toProfile: { id: string; name: string };
-  reason: string;
-  usageSnapshot: ClaudeUsageSnapshot;
-}
 
 export interface TerminalAPI {
   // Terminal Operations
@@ -83,13 +77,22 @@ export interface TerminalAPI {
   ) => () => void;
   submitOAuthCode: (terminalId: string, code: string) => Promise<IPCResult>;
   onTerminalClaudeBusy: (callback: (id: string, isBusy: boolean) => void) => () => void;
+  /** An agent window answers a chat's message (read-only), or no longer does (null) */
+  onTerminalReceivingMessage: (callback: (id: string, from: SessionMessageOrigin | null) => void) => () => void;
+  /** Give a window answering a message back to the user */
+  takeOverTerminal: (id: string) => void;
+  /** An agent window of the project by its name (agent-…), open or closed */
+  findAgentWindow: (projectPath: string, name: string) => Promise<AgentWindowMatch | null>;
+  /** A chat messages a closed agent window: open it again */
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void) => () => void;
   onTerminalClaudeExit: (callback: (id: string) => void) => () => void;
   onTerminalPendingResume: (callback: (id: string) => void) => () => void;
 
   // Claude Profile Management
   getClaudeProfiles: () => Promise<IPCResult<ClaudeProfileSettings>>;
   saveClaudeProfile: (profile: ClaudeProfile) => Promise<IPCResult<ClaudeProfile>>;
-  deleteClaudeProfile: (profileId: string) => Promise<IPCResult>;
+  /** `replacementId`: the account that takes the deleted one's place when it is the account in use */
+  deleteClaudeProfile: (profileId: string, replacementId?: string) => Promise<IPCResult>;
   loginClaudeAccount: (profileId?: string) => Promise<IPCResult>;
   redetectClaudeAccounts: () => Promise<IPCResult<ClaudeProfileSettings>>;
   renameClaudeProfile: (profileId: string, newName: string) => Promise<IPCResult>;
@@ -103,19 +106,15 @@ export interface TerminalAPI {
   claudeAuthLoginSubprocess: (profileId: string) => Promise<IPCResult<{ authenticated: boolean; email?: string }>>;
   cancelClaudeAuthLogin: (profileId: string) => Promise<IPCResult>;
   onClaudeAuthLoginProgress: (callback: (data: { status: string; message?: string }) => void) => () => void;
-  getAutoSwitchSettings: () => Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>>;
-  updateAutoSwitchSettings: (settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>) => Promise<IPCResult>;
   fetchClaudeUsage: (terminalId: string) => Promise<IPCResult>;
-  getBestAvailableProfile: (excludeProfileId?: string) => Promise<IPCResult<import('../../shared/types').ClaudeProfile | null>>;
   onAuthFailure: (callback: (info: import('../../shared/types').AuthFailureInfo) => void) => () => void;
   retryWithProfile: (request: import('../../shared/types').RetryWithProfileRequest) => Promise<IPCResult>;
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   requestUsageUpdate: () => Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>>;
   requestAllProfilesUsage: (forceRefresh?: boolean) => Promise<IPCResult<import('../../shared/types').AllProfilesUsage | null>>;
   onUsageUpdated: (callback: (usage: import('../../shared/types').ClaudeUsageSnapshot | null) => void) => () => void;
   onAllProfilesUsageUpdated: (callback: (allProfilesUsage: import('../../shared/types').AllProfilesUsage) => void) => () => void;
-  onProactiveSwapNotification: (callback: (notification: ProactiveSwapNotification) => void) => () => void;
 }
 
 export const createTerminalAPI = (): TerminalAPI => ({
@@ -329,6 +328,29 @@ export const createTerminalAPI = (): TerminalAPI => ({
     };
   },
 
+  onTerminalReceivingMessage: (
+    callback: (id: string, from: SessionMessageOrigin | null) => void
+  ): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, id: string, from: SessionMessageOrigin | null): void => callback(id, from);
+    ipcRenderer.on(IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.TERMINAL_RECEIVING_MESSAGE, handler);
+    };
+  },
+
+  takeOverTerminal: (id: string): void => ipcRenderer.send(IPC_CHANNELS.TERMINAL_TAKE_OVER, id),
+
+  findAgentWindow: (projectPath: string, name: string): Promise<AgentWindowMatch | null> =>
+    ipcRenderer.invoke(IPC_CHANNELS.TERMINAL_FIND_AGENT_WINDOW, projectPath, name),
+
+  onAgentWindowOpenRequest: (callback: (request: AgentWindowOpenRequest) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, request: AgentWindowOpenRequest): void => callback(request);
+    ipcRenderer.on(IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, handler);
+    return () => {
+      ipcRenderer.removeListener(IPC_CHANNELS.AGENT_WINDOW_OPEN_REQUEST, handler);
+    };
+  },
+
   onTerminalClaudeExit: (
     callback: (id: string) => void
   ): (() => void) => {
@@ -366,8 +388,8 @@ export const createTerminalAPI = (): TerminalAPI => ({
   saveClaudeProfile: (profile: ClaudeProfile): Promise<IPCResult<ClaudeProfile>> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_SAVE, profile),
 
-  deleteClaudeProfile: (profileId: string): Promise<IPCResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_DELETE, profileId),
+  deleteClaudeProfile: (profileId: string, replacementId?: string): Promise<IPCResult> =>
+    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_DELETE, profileId, replacementId),
 
   loginClaudeAccount: (profileId?: string): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_ACCOUNTS_LOGIN, profileId),
@@ -417,17 +439,8 @@ export const createTerminalAPI = (): TerminalAPI => ({
     };
   },
 
-  getAutoSwitchSettings: (): Promise<IPCResult<import('../../shared/types').ClaudeAutoSwitchSettings>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS),
-
-  updateAutoSwitchSettings: (settings: Partial<import('../../shared/types').ClaudeAutoSwitchSettings>): Promise<IPCResult> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_UPDATE_AUTO_SWITCH, settings),
-
   fetchClaudeUsage: (terminalId: string): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_FETCH_USAGE, terminalId),
-
-  getBestAvailableProfile: (excludeProfileId?: string): Promise<IPCResult<import('../../shared/types').ClaudeProfile | null>> =>
-    ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_PROFILE_GET_BEST_PROFILE, excludeProfileId),
 
   onAuthFailure: (
     callback: (info: import('../../shared/types').AuthFailureInfo) => void
@@ -447,7 +460,7 @@ export const createTerminalAPI = (): TerminalAPI => ({
   retryWithProfile: (request: import('../../shared/types').RetryWithProfileRequest): Promise<IPCResult> =>
     ipcRenderer.invoke(IPC_CHANNELS.CLAUDE_RETRY_WITH_PROFILE, request),
 
-  // Usage Monitoring (Proactive Account Switching)
+  // Usage Monitoring
   requestUsageUpdate: (): Promise<IPCResult<import('../../shared/types').ClaudeUsageSnapshot | null>> =>
     ipcRenderer.invoke(IPC_CHANNELS.USAGE_REQUEST),
 
@@ -481,18 +494,6 @@ export const createTerminalAPI = (): TerminalAPI => ({
     ipcRenderer.on(IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, handler);
     return () => {
       ipcRenderer.removeListener(IPC_CHANNELS.ALL_PROFILES_USAGE_UPDATED, handler);
-    };
-  },
-
-  onProactiveSwapNotification: (
-    callback: (notification: ProactiveSwapNotification) => void
-  ): (() => void) => {
-    const handler = (_event: Electron.IpcRendererEvent, notification: ProactiveSwapNotification): void => {
-      callback(notification);
-    };
-    ipcRenderer.on(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, handler);
-    return () => {
-      ipcRenderer.removeListener(IPC_CHANNELS.PROACTIVE_SWAP_NOTIFICATION, handler);
     };
   }
 });

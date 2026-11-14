@@ -1,5 +1,5 @@
 import { IPC_CHANNELS, WINDOW_PROJECT_ARG } from '../../../shared/constants';
-import type { IPCResult, ProjectWindowInfo } from '../../../shared/types';
+import type { IPCResult, ProjectWindowInfo, WindowCloseChoice } from '../../../shared/types';
 import { createIpcListener, invokeIpc, sendIpc, type IpcListenerCleanup } from './ipc-utils';
 
 /** Project this window was opened for, from the argument the main process set on it */
@@ -23,6 +23,10 @@ export interface WindowAPI {
   /** Close the window showing a project ("Quit window") */
   closeProjectWindow: (projectId: string) => Promise<IPCResult>;
   onProjectWindowsChanged: (callback: (windows: ProjectWindowInfo[]) => void) => IpcListenerCleanup;
+  /** The window's close button was pressed while other project windows are open */
+  onWindowCloseRequested: (callback: () => void) => IpcListenerCleanup;
+  /** Answer to it: hide the window to the tray, or quit (this window, or the app when it is the last) */
+  chooseWindowClose: (choice: WindowCloseChoice) => Promise<IPCResult>;
 }
 
 export const createWindowAPI = (): WindowAPI => ({
@@ -43,5 +47,11 @@ export const createWindowAPI = (): WindowAPI => ({
   onProjectWindowsChanged: (callback: (windows: ProjectWindowInfo[]) => void): IpcListenerCleanup =>
     createIpcListener(IPC_CHANNELS.WINDOW_PROJECTS_CHANGED, (windows: ProjectWindowInfo[]) =>
       callback(windows)
-    )
+    ),
+
+  onWindowCloseRequested: (callback: () => void): IpcListenerCleanup =>
+    createIpcListener(IPC_CHANNELS.WINDOW_CLOSE_REQUESTED, () => callback()),
+
+  chooseWindowClose: (choice: WindowCloseChoice): Promise<IPCResult> =>
+    invokeIpc(IPC_CHANNELS.WINDOW_CLOSE_CHOICE, choice)
 });

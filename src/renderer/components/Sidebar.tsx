@@ -17,7 +17,8 @@ import {
 import { cn } from '../lib/utils';
 import { useProjectStore } from '../stores/project-store';
 import { useSettingsStore, saveSettings } from '../stores/settings-store';
-import { useBrowserDrawerStore, APP_SIDEBAR_COLLAPSED_WIDTH, APP_SIDEBAR_WIDTH } from '../stores/browser-drawer-store';
+import { useBrowserDrawerStore } from '../stores/browser-drawer-store';
+import { APP_SIDEBAR_COLLAPSED_WIDTH, APP_SIDEBAR_WIDTH } from '../lib/layout-widths';
 import { GitSetupModal } from './GitSetupModal';
 
 import { UsageIndicator } from './UsageIndicator';
@@ -205,11 +206,14 @@ export function Sidebar({
 
   return (
     <TooltipProvider>
-      <aside className={cn(
-        'flex h-full shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground',
-        'transition-[width] duration-300 ease-[cubic-bezier(.32,.72,0,1)]',
-        isCollapsed ? 'w-14' : 'w-72'
-      )}>
+      <aside
+        className={cn(
+          'flex h-full shrink-0 flex-col border-r border-border bg-sidebar text-sidebar-foreground',
+          'transition-[width] duration-300 ease-[cubic-bezier(.32,.72,0,1)]'
+        )}
+        // The widths the Claude chat's room keeping counts on (lib/layout-widths.ts)
+        style={{ width: isCollapsed ? APP_SIDEBAR_COLLAPSED_WIDTH : APP_SIDEBAR_WIDTH }}
+      >
         {/* Header: drag area (extra top padding clears the macOS traffic lights) with toggle + wordmark */}
         <div className={cn(
           'electron-drag flex h-14 shrink-0 items-center gap-1 pt-6',

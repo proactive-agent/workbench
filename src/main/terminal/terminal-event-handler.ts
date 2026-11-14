@@ -8,6 +8,7 @@ import * as ClaudeIntegration from './cli-integration-handler';
 import type { TerminalProcess, WindowGetter } from './types';
 import { IPC_CHANNELS } from '../../shared/constants';
 import { safeSendToRenderer } from '../ipc-handlers/utils';
+import { noteCursorQuery, receivingBusyChanged, stopReceiving } from '../session-messaging/receiving';
 
 /**
  * Event handler callbacks
@@ -22,6 +23,11 @@ export interface EventHandlerCallbacks {
 
 // Track the last known busy state per terminal to avoid duplicate events
 const lastBusyState = new Map<string, boolean>();
+
+/** Whether the window's Claude Code was last seen working */
+export function isClaudeBusyNow(terminalId: string): boolean {
+  return lastBusyState.get(terminalId) === true;
+}
 
 /**
  * Handle terminal data output
@@ -41,6 +47,9 @@ export function handleTerminalData(
 
   // Check for onboarding complete (after login, Claude shows ready state)
   callbacks.onOnboardingComplete(terminal, data);
+
+  // The program asked for the cursor position: xterm's report may pass a read-only window
+  if (data.includes('\x1b[6n') || data.includes('\x1b[?6n')) noteCursorQuery(terminal.id);
 
   // Detect Claude busy state changes (only when in Claude mode)
   if (terminal.isCLIMode) {
@@ -71,8 +80,7 @@ export function handleTerminalData(
  */
 export function createEventCallbacks(
   getWindow: WindowGetter,
-  lastNotifiedRateLimitReset: Map<string, string>,
-  switchProfileCallback: (terminalId: string, profileId: string) => Promise<void>
+  lastNotifiedRateLimitReset: Map<string, string>
 ): EventHandlerCallbacks {
   return {
     onRateLimit: (terminal, data) => {
@@ -80,8 +88,7 @@ export function createEventCallbacks(
         terminal,
         data,
         lastNotifiedRateLimitReset,
-        getWindow,
-        switchProfileCallback
+        getWindow
       );
     },
     onOAuthToken: (terminal, data) => {
@@ -92,8 +99,10 @@ export function createEventCallbacks(
     },
     onClaudeBusyChange: (terminal, isBusy) => {
       safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_CLAUDE_BUSY, terminal.id, isBusy);
+      receivingBusyChanged(terminal.id, isBusy);
     },
     onClaudeExit: (terminal) => {
+      stopReceiving(terminal.id);
       ClaudeIntegration.handleClaudeExit(terminal, getWindow);
     }
   };

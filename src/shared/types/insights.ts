@@ -26,10 +26,57 @@ export interface InsightsModelConfig {
   /** The GitLab button: Claude can use the GitLab CLI (glab) in this conversation */
   gitlabTools?: boolean;
   /**
+   * The Clawd button: the conversation's turns get what an agent window has (every tool, changing
+   * the project's files, the user's own MCP servers, slash commands and skills). Turning it off
+   * keeps the same Claude Code session; later turns are read-only again
+   */
+  agentMode?: boolean;
+  /**
    * The browser the chat's Playwright opens (picked in the browser drawer; null: Playwright's own
    * Chromium); unset = the one in Settings > Connectors
    */
   playwrightBrowser?: PlaywrightBrowserChoice | null;
+}
+
+/** A slash command or skill Claude Code offers in the project (the chat's `/` menu) */
+export interface ChatSlashCommand {
+  name: string;
+  description: string;
+  argumentHint?: string;
+}
+
+/**
+ * Why the chat's `/` menu couldn't list the commands (the error of `listInsightsCommands`; the
+ * renderer words each one): the project is gone, Claude Code didn't answer in time, answered
+ * without a list, or failed to start
+ */
+export type ChatCommandsError = 'projectNotFound' | 'timeout' | 'notListed' | 'failed';
+
+/** Why an agent window couldn't be opened as a chat (the error of `openWindowAsChat`) */
+export type OpenWindowAsChatError = 'projectNotFound' | 'windowNotFound' | 'noSession' | 'failed';
+
+/** The agent window running a chat's Claude Code session too, and what it is doing */
+export interface SharedSessionWindow {
+  terminalId: string;
+  /** Its Claude Code works on something: the chat waits */
+  busy: boolean;
+  /** Back at its shell, with nothing else running there: the chat's Clawd button resumes the session in it */
+  resumable: boolean;
+}
+
+/**
+ * Where a chat message from another of the user's sessions came from (a chat or an agent window
+ * of the project, by its stable name: shared/utils/session-names.ts)
+ */
+export interface SessionMessageOrigin {
+  kind: 'chat' | 'agent';
+  name: string;
+  title?: string;
+  /**
+   * Set on what makes an agent window read-only when it is a chat replying in the window's own
+   * Claude Code session (the two share it), rather than a message the window answers
+   */
+  sharing?: boolean;
 }
 
 type InsightsChatRole = 'user' | 'assistant';
@@ -60,6 +107,13 @@ export interface InsightsChatMessage {
   stopped?: boolean;
   /** Where this reply ends in Claude Code's session (assistant messages only) */
   claudeRef?: ClaudeSessionRef;
+  /** A message another chat or agent window sent (user messages only): not typed by the user */
+  from?: SessionMessageOrigin;
+  /**
+   * The chat or agent window the user sent this message to (a session name pasted into the
+   * composer; user messages only): Claude delivers it there
+   */
+  to?: SessionMessageOrigin;
 }
 
 /**
@@ -85,6 +139,8 @@ export interface InsightsSession {
    * edit or regenerate) forks it there
    */
   claudeHead?: ClaudeSessionRef;
+  /** The agent window session this chat was opened from ("Open as chat"), kept to open it again */
+  fromSessionId?: string;
   createdAt: Date;
   updatedAt: Date;
   archivedAt?: Date;
@@ -100,6 +156,10 @@ export interface InsightsSessionSummary {
   createdAt: Date;
   updatedAt: Date;
   archivedAt?: Date;
+  /** The agent window session the chat was opened from (InsightsSession.fromSessionId) */
+  fromSessionId?: string;
+  /** The Claude Code session the chat goes on in (InsightsSession.claudeHead's) */
+  claudeSessionId?: string;
 }
 
 export interface InsightsChatStatus {

@@ -15,6 +15,14 @@ describe('buildConversationPrompt', () => {
   });
 });
 
+describe('buildConversationPrompt with a slash command', () => {
+  it('keeps the command at the start, where Claude Code runs it, with the conversation after it', () => {
+    const prompt = buildConversationPrompt('/review the auth module', [{ role: 'user', content: 'Hi' }, { role: 'assistant', content: 'Hello' }]);
+    expect(prompt.startsWith('/review the auth module\n\n')).toBe(true);
+    expect(prompt).toContain('User: Hi');
+  });
+});
+
 describe('extractToolInput', () => {
   it('describes common tool arguments', () => {
     expect(extractToolInput({ command: 'graphify query auth' })).toBe('graphify query auth');
@@ -85,5 +93,15 @@ describe('buildSystemPrompt', () => {
 
     it('has no project memory section while self-improve is off', () => {
     expect(buildSystemPrompt()).not.toContain('## Project memory');
+  });
+});
+
+describe('buildSystemPrompt with the Clawd button', () => {
+  it('says Claude can change files in the project folder, without the read-only rules', () => {
+    const prompt = buildSystemPrompt({ agentMode: true, cliTools: { github: true } });
+    expect(prompt).toContain("Claude Code's full tool set");
+    expect(prompt).toContain("not in a task's worktree");
+    expect(prompt).not.toContain("You can't change them");
+    expect(prompt).not.toContain('Only these commands are allowed');
   });
 });

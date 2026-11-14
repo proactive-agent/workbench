@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Loader2,
@@ -29,7 +29,7 @@ import { ScrollArea } from './ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { cn, formatLongRelativeTime } from '../lib/utils';
 import { stripTaskSuggestions } from '../../shared/utils/task-suggestions';
-import { GitHubIcon, GitLabIcon, GraphIcon, KanbanIcon, McpIcon } from './icons/app-icons';
+import { ClawdIcon, GitHubIcon, GitLabIcon, GraphIcon, InsightsIcon, KanbanIcon, McpIcon, MessagesIcon } from './icons/app-icons';
 import { BUILTIN_CONNECTOR_META } from './settings/connector-meta';
 import {
   useInsightsStore,
@@ -55,15 +55,22 @@ import { useImageUpload } from './task-form/useImageUpload';
 import { loadTasks } from '../stores/task-store';
 import { ChatHistorySidebar } from './ChatHistorySidebar';
 import { BrowserDrawerButton } from './browser-drawer/BrowserDrawerButton';
-import {
-  useBrowserDrawerStore,
-  APP_SIDEBAR_COLLAPSED_WIDTH,
-  APP_SIDEBAR_WIDTH,
-  CHAT_MIN_WIDTH,
-} from '../stores/browser-drawer-store';
+import { useBrowserDrawerStore } from '../stores/browser-drawer-store';
 import { IS_DEV_BUILD, TITLE_BAR_STRIP_HEIGHT } from '../lib/title-bar';
 import { InsightsModelSelector } from './InsightsModelSelector';
 import { InsightsMcpMenu } from './InsightsMcpMenu';
+import { InsightsSlashMenu } from './InsightsSlashMenu';
+import { InsightsAgentWindowButton } from './InsightsAgentWindowButton';
+import { useSharedSessionWindow } from '../hooks/useSharedSessionWindow';
+import { useChatMinWidth } from '../hooks/useChatMinWidth';
+import { useChatRoom } from '../hooks/useChatRoom';
+import { CHAT_HISTORY_WIDTH } from '../lib/layout-widths';
+import { InsightsChatNameButton } from './InsightsChatNameButton';
+import { splitSlashCommands, useSlashCommandMenu } from './insights-slash-commands';
+import { useWindowClaudeAccountId } from '../hooks/useWindowClaudeAccount';
+import { closedAgentWindow, mayNameClosedAgent, sessionTargetNow, windowSessionTitle, type SessionTarget } from '../lib/session-targets';
+import { useProjectStore } from '../stores/project-store';
+import { agentSessionName, chatSessionName } from '../../shared/utils/session-names';
 import { useSettingsStore } from '../stores/settings-store';
 import { getDefaultMcpConnectorIds } from '../../shared/utils/mcp-connectors';
 import { AttachmentPreviewDialog } from './AttachmentPreviewDialog';
@@ -84,11 +91,6 @@ interface InsightsProps {
  */
 const TOP_STRIP_HEIGHT = IS_DEV_BUILD ? 0 : TITLE_BAR_STRIP_HEIGHT;
 
-/** The chat history sidebar's width (px, ChatHistorySidebar's w-64) */
-const CHAT_HISTORY_WIDTH = 256;
-/** The width (px) collapsing the app's sidebar gives the chat */
-const APP_SIDEBAR_COLLAPSE_GAIN = APP_SIDEBAR_WIDTH - APP_SIDEBAR_COLLAPSED_WIDTH;
-
 export function Insights({ projectId }: InsightsProps) {
   const { t, i18n } = useTranslation('common');
   const session = useInsightsStore((state) => state.session);
@@ -100,10 +102,30 @@ export function Insights({ projectId }: InsightsProps) {
   const currentTool = useInsightsStore((state) => state.currentTool);
   const isLoadingSessions = useInsightsStore((state) => state.isLoadingSessions);
 
-  const [inputValue, setInputValue] = useState('');
+  // The composer's text, kept in the store so it is still there after a visit to another page
+  const inputValue = useInsightsStore((state) => state.composerText);
+  const setInputValue = useInsightsStore((state) => state.setComposerText);
+  // Where the caret is in the composer (the `/` menu follows it)
+  const [caret, setCaret] = useState(0);
+  // The chat or agent window the next message goes to: a session name pasted into the composer,
+  // shown as an attachment (one at a time: the latest paste wins). It belongs to the chat it was
+  // chosen in: another chat starts without one, and coming back to the page finds it again
+  const chatKey = session?.id ?? 'new';
+  const composerSendTo = useInsightsStore((state) => state.composerSendTo);
+  const sendTo = composerSendTo?.chatKey === chatKey ? composerSendTo.target : null;
+  const setSendTo = useCallback((next: SessionTarget | null | ((current: SessionTarget | null) => SessionTarget | null)) => {
+    useInsightsStore.setState((state) => {
+      const current = state.composerSendTo?.chatKey === chatKey ? state.composerSendTo.target : null;
+      const target = typeof next === 'function' ? next(current) : next;
+      return { composerSendTo: target ? { chatKey, target } : null };
+    });
+  }, [chatKey]);
+  const projectPath = useProjectStore((state) => state.projects.find((project) => project.id === projectId)?.path);
   const [creatingTask, setCreatingTask] = useState<Set<string>>(new Set());
   const [taskCreated, setTaskCreated] = useState<Set<string>>(new Set());
-  const [showSidebar, setShowSidebar] = useState(true);
+  // The chat history beside the chat (kept as the user left it)
+  const showSidebar = useInsightsStore((state) => state.chatHistoryOpen);
+  const setShowSidebar = useInsightsStore((state) => state.setChatHistoryOpen);
   const showArchived = useInsightsStore((state) => state.showArchived);
   const [viewportEl, setViewportEl] = useState<HTMLElement | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
@@ -112,6 +134,8 @@ export function Insights({ projectId }: InsightsProps) {
   const setPendingImages = useInsightsStore((state) => state.setPendingImages);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // The composer's box: the `/` menu is placed at it
+  const composerRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [previewAttachment, setPreviewAttachment] = useState<ImageAttachment | null>(null);
 
@@ -119,62 +143,51 @@ export function Insights({ projectId }: InsightsProps) {
   const draftModelConfig = useInsightsStore((state) => state.draftModelConfig);
   // The browser drawer beside the chat (its top border runs on along the top bar while it is open)
   const drawerOpen = useBrowserDrawerStore((state) => state.open);
-  const drawerWidth = useBrowserDrawerStore((state) => state.width);
   const chatColumnRef = useRef<HTMLDivElement | null>(null);
-  /** The chat history was closed by the drawer (not by the user): the drawer may open it again */
-  const historyClosedByDrawerRef = useRef(false);
-  const appSidebarSaved = useSettingsStore((state) => state.settings.sidebarCollapsed ?? false);
-  const appSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.appSidebarCollapsedByDrawer);
   const setAppSidebarCollapsedByDrawer = useBrowserDrawerStore((state) => state.setAppSidebarCollapsedByDrawer);
   const narrowDrawerBy = useBrowserDrawerStore((state) => state.narrowBy);
-  /** The drawer as the last change left it: which way it moved decides what may close or open */
-  const lastDrawerRef = useRef({ open: false, width: drawerWidth });
-  // Opening or widening the drawer until the chat is narrower than CHAT_MIN_WIDTH closes the chat
-  // history, then collapses the app's sidebar; narrowing or closing the drawer opens them again in
-  // the other order, each once the chat keeps that width with it. Only what the drawer closed opens
-  // again: a history or sidebar the user closed stays closed. Only the drawer growing closes them,
-  // so one the user opens again (which narrows the drawer by its width) stays open
-  useLayoutEffect(() => {
-    const last = lastDrawerRef.current;
-    lastDrawerRef.current = { open: drawerOpen, width: drawerWidth };
-    const grew = drawerOpen && (!last.open || drawerWidth > last.width);
-    const shrank = drawerOpen ? last.open && drawerWidth < last.width : last.open;
-    let width = chatColumnRef.current?.getBoundingClientRect().width ?? 0;
-    if (width <= 0) return;
-    if (grew && width < CHAT_MIN_WIDTH) {
-      if (showSidebar) {
-        historyClosedByDrawerRef.current = true;
-        setShowSidebar(false);
-        width += CHAT_HISTORY_WIDTH;
-      }
-      if (width < CHAT_MIN_WIDTH && !appSidebarSaved && !appSidebarCollapsedByDrawer) setAppSidebarCollapsedByDrawer(true);
-      return;
-    }
-    if (!shrank) return;
-    if (appSidebarCollapsedByDrawer) {
-      if (width - APP_SIDEBAR_COLLAPSE_GAIN < CHAT_MIN_WIDTH) return;
-      setAppSidebarCollapsedByDrawer(false);
-      width -= APP_SIDEBAR_COLLAPSE_GAIN;
-    }
-    if (!showSidebar && historyClosedByDrawerRef.current && width - CHAT_HISTORY_WIDTH >= CHAT_MIN_WIDTH) {
-      historyClosedByDrawerRef.current = false;
-      setShowSidebar(true);
-    }
-    // The drawer's changes only: not the sidebars', so the user's toggles stay as they are
-  }, [drawerOpen, drawerWidth]);
+  // The chat keeps the width its composer needs beside the drawer (sidebars close and open again
+  // as the drawer moves, without this page rendering again)
+  useChatRoom();
+  const [composerRow, setComposerRow] = useState<HTMLDivElement | null>(null);
   // The app's sidebar is the drawer's to collapse only on this page
   useEffect(() => () => setAppSidebarCollapsedByDrawer(false), [setAppSidebarCollapsedByDrawer]);
   const toggleHistory = () => {
-    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its width
-    if (!showSidebar && historyClosedByDrawerRef.current) narrowDrawerBy(CHAT_HISTORY_WIDTH);
-    historyClosedByDrawerRef.current = false;
+    const drawer = useBrowserDrawerStore.getState();
+    const reopened = !showSidebar && drawer.historyClosedByDrawer;
+    drawer.setHistoryClosedByDrawer(false);
     setShowSidebar(!showSidebar);
+    // Opened again by the user: the drawer gives up the room the history takes, so the chat keeps its
+    // width (once the history shows, so the drawer's narrowing counts it)
+    if (reopened) narrowDrawerBy(CHAT_HISTORY_WIDTH);
   };
 
   const effectiveModelConfig = chatModelConfig({ session, draftModelConfig });
 
+  // The composer's `/` menu: Claude Code's slash commands and skills, with the Clawd button on
+  // The account the chat's turns run on (an API profile in use, else the project's Claude
+  // account): the commands depend on it
+  const claudeAccountId = useWindowClaudeAccountId();
+  const apiProfileId = useSettingsStore((state) => state.activeProfileId);
+  const slashMenu = useSlashCommandMenu({
+    projectId,
+    accountKey: apiProfileId ? `api:${apiProfileId}` : claudeAccountId,
+    enabled: effectiveModelConfig?.agentMode === true,
+    value: inputValue,
+    caret,
+    onInsert: (value, nextCaret) => {
+      setInputValue(value);
+      setCaret(nextCaret);
+      requestAnimationFrame(() => textareaRef.current?.setSelectionRange(nextCaret, nextCaret));
+    },
+  });
+
   const isLoading = status.phase === 'thinking' || status.phase === 'streaming';
   const replyingIds = replyingSessionIds({ session, status, backgroundRuns });
+  // An agent window running this chat's session too: while its Claude Code works, the chat waits
+  // (sending, editing or regenerating would branch the session)
+  const sharedWindow = useSharedSessionWindow(projectId, session);
+  const windowBusy = sharedWindow.busy;
 
   // Stop turns disabled once clicked, until the reply has ended
   const [stopRequested, setStopRequested] = useState(false);
@@ -255,7 +268,8 @@ export function Insights({ projectId }: InsightsProps) {
     };
   }, [viewportEl, checkIfAtBottom, scrollToBottom]);
 
-  // The page always opens on a new chat (IPC listeners are registered app-wide in useIpcListeners)
+  // The page opens as it was left: the last chat, or the New chat page (IPC listeners are
+  // registered app-wide in useIpcListeners)
   useEffect(() => {
     openInsightsPage(projectId, showArchived);
   }, [projectId]);
@@ -288,13 +302,27 @@ export function Insights({ projectId }: InsightsProps) {
     setCreatingTask(new Set());
   }, [session?.id]);
 
-  const handleSend = () => {
+  // A send waiting for the window's state (Enter again meanwhile does nothing)
+  const checkingRef = useRef(false);
+  const handleSend = async () => {
     const message = inputValue.trim();
     const hasImages = pendingImages.length > 0;
-    if ((!message && !hasImages) || isLoading) return;
+    if ((!message && !hasImages) || isLoading || windowBusy || checkingRef.current) return;
+    // An agent window sharing the session may have started working since it was last looked at:
+    // asked now, so the message stays in the composer rather than being refused after it left
+    if (session?.claudeHead) {
+      checkingRef.current = true;
+      try {
+        if ((await sharedWindow.check())?.busy) return;
+      } finally {
+        checkingRef.current = false;
+      }
+    }
 
     setInputValue('');
-    sendMessage(projectId, message, effectiveModelConfig, hasImages ? pendingImages : undefined);
+    const to = sendTo ? { kind: sendTo.kind, name: sendTo.name, ...(sendTo.title ? { title: sendTo.title } : {}) } : undefined;
+    sendMessage(projectId, message, effectiveModelConfig, hasImages ? pendingImages : undefined, to);
+    setSendTo(null);
     setPendingImages([]);
     setImageError(null);
     stickToBottomRef.current = true; // Follow the reply to a message just sent
@@ -302,17 +330,30 @@ export function Insights({ projectId }: InsightsProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // The open `/` menu takes the arrows, Enter, Tab and Escape
+    if (slashMenu.handleKeyDown(e)) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSend();
+      void handleSend();
     }
   };
 
   const handleNewSession = async () => {
+    // Choices made on an earlier New chat page don't carry over from a conversation
+    if (session) useInsightsStore.getState().setDraftModelConfig(undefined);
     await newSession(projectId);
     setTaskCreated(new Set());
     textareaRef.current?.focus();
   };
+
+  // The sidebar's Claude item clicked while the page shows: a new chat, as the New chat button
+  const newChatRequest = useInsightsStore((state) => state.newChatRequest);
+  const handledNewChatRef = useRef(newChatRequest);
+  useEffect(() => {
+    if (newChatRequest === handledNewChatRef.current) return;
+    handledNewChatRef.current = newChatRequest;
+    void handleNewSession();
+  }, [newChatRequest]);
 
   const handleSelectSession = async (sessionId: string) => {
     if (sessionId !== session?.id) {
@@ -377,7 +418,14 @@ export function Insights({ projectId }: InsightsProps) {
 
   const messages = session?.messages || [];
   const isEmpty = messages.length === 0 && !streamingContent && !currentTool && !isLoading;
-  const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading;
+  // The chat's narrowest width, measured when a chat opens and when its composer changes (a new
+  // chat's toolbar or a conversation's, another model's label)
+  useChatMinWidth(
+    composerRow,
+    chatColumnRef,
+    `${session?.id ?? ''}:${isEmpty}:${effectiveModelConfig?.profileId}:${effectiveModelConfig?.model}:${effectiveModelConfig?.thinkingLevel}`
+  );
+  const canSend = (inputValue.trim().length > 0 || pendingImages.length > 0) && !isLoading && !windowBusy;
 
   // Time-of-day greeting, refreshed every minute so it follows the clock while the page stays open
   const [hour, setHour] = useState(() => new Date().getHours());
@@ -391,6 +439,12 @@ export function Insights({ projectId }: InsightsProps) {
         : hour < 18 ? 'insights.greeting.afternoon'
           : 'insights.greeting.evening';
 
+  // The composer's text split around the listed slash commands it names (colored with the Clawd
+  // button on)
+  const inputParts = useMemo(() => splitSlashCommands(inputValue, slashMenu.names), [inputValue, slashMenu.names]);
+  const commandHighlight = inputParts.some((part) => part.command);
+  const highlightRef = useRef<HTMLDivElement | null>(null);
+
   // Auto-grow the composer textarea with its content (capped by max-h-96)
   useLayoutEffect(() => {
     const el = textareaRef.current;
@@ -398,6 +452,15 @@ export function Insights({ projectId }: InsightsProps) {
     el.style.height = 'auto';
     el.style.height = `${Math.min(el.scrollHeight, 384)}px`;
   }, [inputValue, isEmpty]);
+
+  // The copy behind the field leaves out the field's scrollbar and follows its scroll
+  useLayoutEffect(() => {
+    const field = textareaRef.current;
+    const copy = highlightRef.current;
+    if (!field || !copy) return;
+    copy.style.right = `${field.offsetWidth - field.clientWidth}px`;
+    copy.scrollTop = field.scrollTop;
+  });
 
   // The composer moves between the empty-state and conversation layouts; keep focus on it
   useEffect(() => {
@@ -463,6 +526,32 @@ export function Insights({ projectId }: InsightsProps) {
   };
   const githubButton = cliToggle('githubTools', 'gh', GitHubIcon, t('insights.githubTools'));
   const gitlabButton = cliToggle('gitlabTools', 'glab', GitLabIcon, t('insights.gitlabTools'));
+  // Clawd button: the conversation's turns get what an agent window has (changing files, any
+  // command, the user's MCP servers, slash commands and skills); off again, the same session
+  // continues read-only
+  const agentMode = effectiveModelConfig?.agentMode === true;
+  const clawdButton = (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={() => void handleModelConfigChange({ ...baseModelConfig, agentMode: !agentMode })}
+          disabled={isLoading}
+          aria-pressed={agentMode}
+          aria-label={t('insights.agentMode.label')}
+          className={cn(
+            'flex h-8 w-8 items-center justify-center rounded-lg transition-colors disabled:pointer-events-none disabled:opacity-40',
+            agentMode
+              ? 'bg-primary/15 text-primary hover:bg-primary/20'
+              : 'text-muted-foreground hover:bg-nav-hover hover:text-foreground'
+          )}
+        >
+          <ClawdIcon className="h-4 w-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-72">{t(agentMode ? 'insights.agentMode.on' : 'insights.agentMode.off')}</TooltipContent>
+    </Tooltip>
+  );
   const kanbanButton = (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -541,15 +630,52 @@ export function Insights({ projectId }: InsightsProps) {
   const composer = (
     <div className="space-y-2">
       <div
+        ref={composerRef}
         className={cn(
           'relative rounded-(--radius-composer) bg-background',
           'shadow-[0_4px_20px_rgba(0,0,0,0.075),0_0_0_1px_var(--input)]',
           'transition-shadow duration-150 focus-within:shadow-[0_4px_20px_rgba(0,0,0,0.1),0_0_0_1px_var(--input)]'
         )}
       >
-        {/* Image preview strip */}
-        {pendingImages.length > 0 && (
+        {slashMenu.open && (
+          <InsightsSlashMenu
+            anchorRef={composerRef}
+            items={slashMenu.items}
+            activeIndex={slashMenu.activeIndex}
+            loading={slashMenu.loading}
+            error={slashMenu.error}
+            onSelect={slashMenu.select}
+            onHover={slashMenu.setActiveIndex}
+          />
+        )}
+        {/* Attachments: the message's recipient (a pasted session name), then files */}
+        {(pendingImages.length > 0 || sendTo) && (
           <div className="flex flex-wrap items-center gap-3 px-4 pt-4">
+            {sendTo && (
+              <div className="group relative" title={sendTo.name}>
+                <div
+                  className="flex h-14 max-w-64 items-center gap-2.5 overflow-hidden rounded-lg border border-border bg-muted px-3"
+                  aria-label={t(sendTo.kind === 'chat' ? 'insights.sendTo.chat' : 'insights.sendTo.agent', { title: sendTo.title || sendTo.name })}
+                >
+                  {sendTo.kind === 'chat'
+                    ? <InsightsIcon className="h-5 w-5 shrink-0 text-primary" />
+                    : <ClawdIcon className="h-5 w-5 shrink-0 text-primary" />}
+                  <div className="min-w-0">
+                    <div className="truncate text-xs text-foreground">{sendTo.title || sendTo.name}</div>
+                    <div className="truncate font-mono text-[0.6875rem] text-muted-foreground">{sendTo.name}</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSendTo(null)}
+                  className="absolute right-0 top-0 flex h-4 w-4 -translate-y-1/2 translate-x-1/2 items-center justify-center rounded-full border border-border bg-background text-foreground opacity-0 shadow-sm transition-opacity focus-visible:opacity-100 group-hover:opacity-100"
+                  title={t('insights.sendTo.remove')}
+                  aria-label={t('insights.sendTo.remove')}
+                >
+                  <X className="h-2.5 w-2.5" strokeWidth={2.5} />
+                </button>
+              </div>
+            )}
             {pendingImages.map((image) => (
               <div key={image.id} className="group relative" title={image.filename}>
                 {image.thumbnail ? (
@@ -579,39 +705,102 @@ export function Insights({ projectId }: InsightsProps) {
                 </button>
               </div>
             ))}
-            <span className="text-xs text-muted-foreground">
-              {t('insights.attachments.count', { count: pendingImages.length })}
-            </span>
+            {pendingImages.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {t('insights.attachments.count', { count: pendingImages.length })}
+              </span>
+            )}
           </div>
         )}
 
+        {/* The listed slash commands in the text show in the primary color: the text is drawn by a
+            copy behind the field (same box, wrapping and scroll), and the field's own text is
+            transparent while it holds one */}
+        <div className="relative">
+        {commandHighlight && (
+          <div
+            ref={highlightRef}
+            aria-hidden="true"
+            className={cn(
+              'pointer-events-none absolute inset-y-0 left-0 overflow-hidden whitespace-pre-wrap break-words',
+              isEmpty ? 'px-4 pt-4 pb-1' : 'py-3 pl-4 pr-12',
+              'text-[0.9375rem] leading-relaxed text-foreground',
+              isLoading && 'opacity-60'
+            )}
+          >
+            {inputParts.map((part, index) => (
+              part.command ? <span key={index} className="text-primary">{part.text}</span> : part.text
+            ))}
+            {/* A last empty line takes its room, as in the field */}
+            {inputValue.endsWith('\n') && ' '}
+          </div>
+        )}
         <textarea
           ref={textareaRef}
           rows={1}
           value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
+          onChange={(e) => {
+            setInputValue(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
+          onPaste={(e) => {
+            // A chat or agent window's name: the message's recipient, not text
+            const text = e.clipboardData?.files?.length ? '' : e.clipboardData?.getData('text/plain') ?? '';
+            const selfName = session ? chatSessionName(session.id) : null;
+            const target = text ? sessionTargetNow(text, projectPath, selfName) : null;
+            // A closed agent window's name: asked of the app, pasted as text when no window had it
+            if (!target && text && mayNameClosedAgent(text, projectPath, selfName)) {
+              e.preventDefault();
+              const start = e.currentTarget.selectionStart ?? inputValue.length;
+              const end = e.currentTarget.selectionEnd ?? start;
+              void closedAgentWindow(text, projectPath, selfName).then((closed) => {
+                if (closed) setSendTo(closed);
+                else setInputValue((value) => value.slice(0, start) + text + value.slice(end));
+              });
+              return;
+            }
+            if (target) {
+              e.preventDefault();
+              setSendTo(target);
+              // An agent window is shown by its session's name once read (its title is just "Claude")
+              if (target.kind === 'agent' && projectPath) {
+                void windowSessionTitle(projectPath, target.name).then((title) => {
+                  if (title) setSendTo((current) => (current?.name === target.name ? { ...current, title } : current));
+                });
+              }
+              return;
+            }
+            void handlePaste(e);
+          }}
+          onScroll={(e) => {
+            if (highlightRef.current) highlightRef.current.scrollTop = e.currentTarget.scrollTop;
+          }}
           placeholder={isEmpty ? t('insights.placeholder') : t('insights.replyPlaceholder')}
           aria-label={t('insights.placeholder')}
           spellCheck
           lang={i18n.language}
           className={cn(
-            'block max-h-96 w-full resize-none overflow-y-auto border-0 bg-transparent',
+            'relative block max-h-96 w-full resize-none overflow-y-auto border-0 bg-transparent',
             isEmpty ? 'min-h-[3rem] px-4 pt-4 pb-1' : 'min-h-[3rem] py-3 pl-4 pr-12',
             'text-[0.9375rem] leading-relaxed text-foreground placeholder:text-(--field-placeholder)',
-            'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60'
+            'focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60',
+            // The copy behind shows the text; a light selection lets it show through
+            commandHighlight && 'text-transparent caret-foreground selection:bg-primary/25'
           )}
           disabled={isLoading}
         />
+        </div>
 
         {isEmpty ? (
-          /* Toolbar (new chat): attach on the left; the model and send on the right */
-          <div className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
-            <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{kanbanButton}</div>
+          /* Toolbar (new chat): attach on the left; the model and send on the right. The chat is kept
+             wide enough for all of it (useChatMinWidth); narrower still, the model's label truncates */
+          <div ref={setComposerRow} data-composer-row className="flex items-center justify-between gap-2 px-2.5 pb-2.5">
+            <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
             <div className="flex min-w-0 items-center gap-1.5">
               {modelSelector}
-              {/* Send button only appears once there is something to send; it turns into stop while Claude works */}
+              {/* Send button, disabled until there is something to send; it turns into stop while Claude works */}
               {isLoading ? (
                 <button
                   type="button"
@@ -623,11 +812,12 @@ export function Insights({ projectId }: InsightsProps) {
                 >
                   <Square className="h-3 w-3 fill-current" />
                 </button>
-              ) : canSend && (
+              ) : (
                 <button
                   type="button"
-                  onClick={handleSend}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90"
+                  onClick={() => void handleSend()}
+                  disabled={!canSend}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-opacity hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
                   aria-label={t('insights.send')}
                   title={t('insights.send')}
                 >
@@ -653,7 +843,7 @@ export function Insights({ projectId }: InsightsProps) {
           ) : (
           <button
             type="button"
-            onClick={handleSend}
+            onClick={() => void handleSend()}
             disabled={!canSend}
             className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-nav-hover hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
             aria-label={t('insights.send')}
@@ -675,6 +865,11 @@ export function Insights({ projectId }: InsightsProps) {
       </div>
 
       {/* Image error */}
+      {windowBusy && sharedWindow.terminalId && (
+        <p className="px-1 text-xs text-muted-foreground">
+          {t('insights.agentWindow.working', { name: agentSessionName(sharedWindow.terminalId) })}
+        </p>
+      )}
       {imageError && (
         <p className="px-1 text-xs text-destructive">{imageError}</p>
       )}
@@ -751,7 +946,12 @@ export function Insights({ projectId }: InsightsProps) {
               <TooltipContent side="right">{t('insights.newChat')}</TooltipContent>
             </Tooltip>
           </div>
-          <BrowserDrawerButton projectId={projectId} />
+          {/* The browser drawer's button, and under it the chat's session in an agent window */}
+          <div className="flex flex-col items-end gap-3">
+            <BrowserDrawerButton projectId={projectId} />
+            <InsightsAgentWindowButton projectId={projectId} session={session} replying={isLoading} windowId={sharedWindow.terminalId} />
+            <InsightsChatNameButton session={session} />
+          </div>
         </div>
 
         {isEmpty ? (
@@ -771,7 +971,9 @@ export function Insights({ projectId }: InsightsProps) {
         ) : (
           <>
             {/* Messages */}
-            <ScrollArea className="min-h-0 flex-1" onViewportRef={setViewportEl}>
+            {/* Radix lays the messages out as a table, as wide as their widest line (a tool call's command
+                that doesn't wrap): block keeps them within the chat's width */}
+            <ScrollArea className="min-h-0 flex-1" viewportClassName="[&>div]:block!" onViewportRef={setViewportEl}>
               <div className="mx-auto max-w-3xl space-y-6 px-4 py-8">
                 {messages.map((message, index) => (
                   <MessageBubble
@@ -779,7 +981,7 @@ export function Insights({ projectId }: InsightsProps) {
                     message={message}
                     onRegenerate={
                       // The latest reply can be written again once Claude is done
-                      index === messages.length - 1 && message.role === 'assistant' && !isLoading
+                      index === messages.length - 1 && message.role === 'assistant' && !isLoading && !windowBusy
                         ? () => {
                           setTaskCreated(new Set());
                           regenerateMessage(projectId, effectiveModelConfig);
@@ -789,7 +991,7 @@ export function Insights({ projectId }: InsightsProps) {
                     onEdit={
                       // A sent message can be edited once Claude is done; the chat after it is
                       // replaced by the edited message's reply
-                      message.role === 'user' && !isLoading
+                      message.role === 'user' && !isLoading && !windowBusy
                         ? (content) => {
                           setTaskCreated(new Set());
                           stickToBottomRef.current = true; // Follow the edited message's reply
@@ -845,10 +1047,11 @@ export function Insights({ projectId }: InsightsProps) {
               <div className="mx-auto max-w-3xl">
                 {composer}
                 {/* Under the field: attach, disclaimer, model */}
-                <div className="mt-1.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 text-sm">
-                  <div className="flex items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{kanbanButton}</div>
-                  <span className="truncate text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
-                  <div className="flex justify-end">{modelSelector}</div>
+                {/* The disclaimer gives up its room first (down to nothing), the model's label only after */}
+                <div ref={setComposerRow} data-composer-row className="mt-1.5 flex items-center gap-2 text-sm">
+                  <div className="flex shrink-0 items-center gap-1">{attachButton}{mcpButton}{githubButton}{gitlabButton}{clawdButton}{kanbanButton}</div>
+                  <span data-composer-shrinks className="min-w-0 flex-1 basis-0 truncate text-center text-xs text-muted-foreground">{t('insights.disclaimer')}</span>
+                  <div className="flex min-w-0 justify-end">{modelSelector}</div>
                 </div>
               </div>
             </div>
@@ -986,6 +1189,30 @@ function MessageBubble({
           />
         ) : (
           <>
+            {/* A message another chat or agent window sent: who sent it, over the message */}
+            {message.from && (
+              <span className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted-foreground">
+                {message.from.kind === 'chat' ? <InsightsIcon className="h-3 w-3 shrink-0" /> : <ClawdIcon className="h-3 w-3 shrink-0" />}
+                <span className="truncate">
+                  {t(message.from.kind === 'chat' ? 'insights.incoming.fromChat' : 'insights.incoming.fromAgent', {
+                    title: message.from.title || message.from.name,
+                    name: message.from.name,
+                  })}
+                </span>
+              </span>
+            )}
+            {/* A message the user sent to another chat or agent window: where it goes */}
+            {message.to && (
+              <span className="flex max-w-[85%] items-center gap-1.5 text-xs text-muted-foreground">
+                {message.to.kind === 'chat' ? <InsightsIcon className="h-3 w-3 shrink-0" /> : <ClawdIcon className="h-3 w-3 shrink-0" />}
+                <span className="truncate">
+                  {t(message.to.kind === 'chat' ? 'insights.outgoing.toChat' : 'insights.outgoing.toAgent', {
+                    title: message.to.title || message.to.name,
+                    name: message.to.name,
+                  })}
+                </span>
+              </span>
+            )}
             {message.content && (
               <div className="ml-auto max-w-[85%] whitespace-pre-wrap break-words rounded-xl bg-muted px-4 py-2.5 text-[0.9375rem] [.dark_&]:bg-[#202020] leading-relaxed text-foreground">
                 {message.content}
@@ -1030,6 +1257,10 @@ function MessageBubble({
   return (
     <div className="group space-y-3" onMouseEnter={() => setNow(Date.now())}>
       {content && <MarkdownContent>{content}</MarkdownContent>}
+      {/* A slash command that ran without output (a local one such as /compact) */}
+      {!content && !message.stopped && !message.toolsUsed?.length && (
+        <p className="text-[0.9375rem] text-muted-foreground">{t('insights.slashCommands.noOutput')}</p>
+      )}
       {/* A stopped reply says so, under what it had written by then */}
       {message.stopped && (
         <p className="text-[0.9375rem] text-muted-foreground">{t('insights.stoppedByUser')}</p>
@@ -1102,6 +1333,15 @@ const TASK_TOOL_PREFIX = 'mcp__workbench__';
 const taskToolName = (toolName: string): string | null =>
   toolName.startsWith(TASK_TOOL_PREFIX) ? toolName.slice(TASK_TOOL_PREFIX.length) : null;
 
+/**
+ * Messaging other sessions: Workbench's tools (list_sessions, message_chat, message_task) and
+ * Claude Code's own (ListAgents, SendMessage)
+ */
+const MESSAGING_TOOLS = new Set(['list_sessions', 'message_chat', 'message_task', 'ListAgents', 'SendMessage']);
+
+/** The icon of a Workbench tool: messaging, else a task tool (Kanban) */
+const workbenchToolIcon = (tool: string): React.ElementType => (MESSAGING_TOOLS.has(tool) ? MessagesIcon : KanbanIcon);
+
 /** A Bash call of the GitHub, GitLab or Graphify CLI: its icon and name (the command is shown as is) */
 const cliCall = (toolName: string, input?: string): { icon: React.ElementType; label: string } | null => {
   if (toolName !== 'Bash' || !input) return null;
@@ -1122,8 +1362,41 @@ const mcpToolIcon = (toolName: string): React.ElementType | null => {
   return BUILTIN_CONNECTOR_META.find(({ id }) => id === server.toLowerCase())?.icon ?? McpIcon;
 };
 
+/** Tools a read-only turn has too (without the Clawd button) */
+const READ_ONLY_TOOLS = new Set(['Read', 'Glob', 'Grep', 'WebFetch', 'WebSearch', 'ListAgents', 'SendMessage', 'CodebaseGraph']);
+
+/**
+ * The MCP servers Workbench gives the chat itself: its task tools, the built-in connectors and the
+ * custom ones (named as buildMcpConfig names them). Any other server is the user's own, which only
+ * a Clawd turn loads
+ */
+const useWorkbenchMcpServers = (): Set<string> => {
+  const customServers = useSettingsStore((state) => state.settings.mcpConnectors?.customServers);
+  return useMemo(() => new Set([
+    'workbench',
+    ...BUILTIN_CONNECTOR_META.map(({ id }) => id),
+    ...(customServers ?? []).map((server) => (server.name || server.id).replace(/[^A-Za-z0-9_-]/g, '_')),
+  ]), [customServers]);
+};
+
+/**
+ * Whether only a turn with the Clawd button could make this call: changing files (other than the
+ * project memory), shell commands besides the gh, glab and graphify ones, the user's own MCP
+ * servers and every tool a read-only turn doesn't have (subagents, skills, ...)
+ */
+const isClawdTool = (toolName: string, input: string | undefined, workbenchServers: Set<string>): boolean => {
+  const server = /^mcp__(.+?)__/.exec(toolName)?.[1];
+  if (server) return !workbenchServers.has(server) && !workbenchServers.has(server.toLowerCase());
+  if (READ_ONLY_TOOLS.has(toolName) || cliCall(toolName, input)) return false;
+  // Saving a project memory (self-improve) is allowed read-only
+  if ((toolName === 'Write' || toolName === 'Edit') && input?.replace(/\\/g, '/').includes('.workbench/compeng/')) return false;
+  return true;
+};
+
 const getToolIcon = (toolName: string) => {
-  if (taskToolName(toolName)) return KanbanIcon;
+  const taskTool = taskToolName(toolName);
+  if (taskTool) return workbenchToolIcon(taskTool);
+  if (MESSAGING_TOOLS.has(toolName)) return MessagesIcon;
   const mcpIcon = mcpToolIcon(toolName);
   if (mcpIcon) return mcpIcon;
   switch (toolName) {
@@ -1294,6 +1567,7 @@ function RegenerateMessageButton({ onClick }: { onClick: () => void }) {
 function ToolUsageHistory({ tools, actions, trailing }: ToolUsageHistoryProps) {
   const { t } = useTranslation('common');
   const [expanded, setExpanded] = useState(false);
+  const workbenchServers = useWorkbenchMcpServers();
 
   if (tools.length === 0) return null;
 
@@ -1316,9 +1590,10 @@ function ToolUsageHistory({ tools, actions, trailing }: ToolUsageHistoryProps) {
       {expanded && (
         <div className="mt-2 space-y-1 rounded-xl border border-border p-3">
           {tools.map((tool, index) => {
-            // gh, glab and graphify calls show as GitHub, GitLab and Graphify, like the task tools show as Kanban steps
+            // gh, glab and graphify calls show as GitHub, GitLab and Graphify, like the task tools show as Kanban steps and the messaging tools as messages
+            // Calls only the Clawd button allows show Clawd
             const cli = cliCall(tool.name, tool.input);
-            const Icon = cli?.icon ?? getToolIcon(tool.name);
+            const Icon = isClawdTool(tool.name, tool.input, workbenchServers) ? ClawdIcon : cli?.icon ?? getToolIcon(tool.name);
             const taskTool = taskToolName(tool.name);
             const label = cli?.label
               ?? (taskTool ? t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) : tool.name);
@@ -1353,11 +1628,15 @@ interface ToolIndicatorProps {
 
 function ToolIndicator({ name, input }: ToolIndicatorProps) {
   const { t } = useTranslation('common');
+  const workbenchServers = useWorkbenchMcpServers();
 
   // Get friendly name and icon for each tool
   const getToolInfo = (toolName: string) => {
     const taskTool = taskToolName(toolName);
-    if (taskTool) return { icon: KanbanIcon, label: t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) };
+    if (taskTool) return { icon: workbenchToolIcon(taskTool), label: t(`insights.taskTools.${taskTool}`, { defaultValue: taskTool }) };
+    // Claude Code's own messaging tools (Workbench's are task tools above)
+    if (toolName === 'SendMessage') return { icon: MessagesIcon, label: t('insights.tools.sendMessage') };
+    if (toolName === 'ListAgents') return { icon: MessagesIcon, label: t('insights.tools.listAgents') };
     switch (toolName) {
       case 'Read':
         return { icon: FileText, label: t('insights.tools.readingFile') };
@@ -1377,7 +1656,9 @@ function ToolIndicator({ name, input }: ToolIndicatorProps) {
     }
   };
 
-  const { icon: Icon, label } = cliCall(name, input) ?? getToolInfo(name);
+  const info = cliCall(name, input) ?? getToolInfo(name);
+  // Calls only the Clawd button allows show Clawd
+  const { icon: Icon, label } = isClawdTool(name, input, workbenchServers) ? { ...info, icon: ClawdIcon } : info;
 
   return (
     <span className="flex min-w-0 items-center gap-2" title={input}>

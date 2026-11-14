@@ -213,7 +213,9 @@ export class SessionStorage {
             modelConfig: session.modelConfig,
             createdAt: new Date(session.createdAt),
             updatedAt: new Date(session.updatedAt),
-            ...(session.archivedAt ? { archivedAt: new Date(session.archivedAt) } : {})
+            ...(session.archivedAt ? { archivedAt: new Date(session.archivedAt) } : {}),
+            ...(session.fromSessionId ? { fromSessionId: session.fromSessionId } : {}),
+            ...(session.claudeHead?.sessionId ? { claudeSessionId: session.claudeHead.sessionId } : {})
           });
         } catch {
           // Skip invalid session files

@@ -52,6 +52,9 @@ import { appLog } from '../app-logger';
 import { projectAccount } from '../project-account';
 import { claudeThemeFlag } from '../claude-cli-theme';
 import { agentWindowMessagingHint } from '../task-messaging/window-hint';
+import { agentWindowSessionsHint } from '../session-messaging/window-hint';
+import { windowSettingsFile, windowToolsConfig } from '../session-messaging/window-tools';
+import { TASK_TOOLS_SERVER_NAME } from '../insights/task-tools-mcp';
 
 // ============================================================================
 // CLI DISPATCH UTILITIES
@@ -463,11 +466,15 @@ function quoteFlagText(text: string, shellKind: ShellKind): string {
  * sessions started outside the app) and how to message the project's running tasks (when
  * Settings > Agents lets sessions do that) go in together.
  */
-function appendSystemPromptFlag(terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>): string {
+function appendSystemPromptFlag(
+  terminal: Pick<TerminalProcess, 'id' | 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>,
+  sessionTools = false
+): string {
   const texts = [
     graphifyHintText(terminal),
     terminal.selfImprove ? SELF_IMPROVE_NUDGE_ONE_LINE : '',
     agentWindowMessagingHint(terminal.projectPath),
+    sessionTools ? agentWindowSessionsHint(terminal.id) : '',
   ].filter(Boolean);
   if (texts.length === 0) return '';
   return ` --append-system-prompt ${quoteFlagText(texts.join(' '), shellKindOf(terminal))}`;
@@ -484,6 +491,11 @@ export interface InvokeCLIOptions {
    * CLAUDE_CONFIG_DIR even if the terminal (or its active profile) uses another one.
    */
   configDir?: string;
+  /**
+   * The resumed session becomes the window's own (a Claude chat's, opened in the window): recorded
+   * as one it started, so it is found as the window's and resumed when the window is restored
+   */
+  own?: boolean;
 }
 
 /** Session ids are UUIDs; anything else is refused so it never reaches the shell unescaped */
@@ -583,7 +595,7 @@ async function holdsSessionTranscript(configDir: string, cwd: string, sessionId:
  * under its resolved spelling - hence moving it rather than prepending it, which would otherwise
  * search the same account twice.
  */
-function sessionSearchDirs(ownConfigDir: string | undefined): string[] {
+export function sessionSearchDirs(ownConfigDir: string | undefined): string[] {
   const dirs = claudeConfigDirs([ownConfigDir]);
   if (!ownConfigDir) return dirs;
   // Resolved exactly as `claudeConfigDirs` resolves what it is given, so the two agree on spelling
@@ -719,17 +731,35 @@ async function releaseBackgroundSession(
  * session gets, YOLO mode, the Graphify hint and the theme matching the app's
  */
 function buildClaudeExtraFlags(
-  terminal: Pick<TerminalProcess, 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>,
+  terminal: Pick<TerminalProcess, 'id' | 'graphifyOut' | 'selfImprove' | 'shellKind' | 'projectPath'>,
   dangerouslySkipPermissions: boolean | undefined,
   resumeSessionId?: string,
-  newSessionId?: string
+  newSessionId?: string,
+  sessionToolsConfig?: string
 ): string | undefined {
   const flags =
     `${resumeSessionId ? buildResumeSessionFlag(resumeSessionId) : ''}` +
     `${!resumeSessionId && newSessionId ? buildNewSessionFlag(newSessionId) : ''}` +
-    `${dangerouslySkipPermissions ? YOLO_MODE_FLAG : ''}${appendSystemPromptFlag(terminal)}` +
-    `${claudeThemeFlag(shellKindOf(terminal))}`;
+    `${dangerouslySkipPermissions ? YOLO_MODE_FLAG : ''}` +
+    `${sessionToolsConfig ? sessionToolsFlags(sessionToolsConfig, shellKindOf(terminal)) : ''}` +
+    `${appendSystemPromptFlag(terminal, !!sessionToolsConfig)}` +
+    // The window's own settings file names the theme too (Claude Code takes one --settings)
+    `${sessionToolsConfig ? '' : claudeThemeFlag(shellKindOf(terminal))}`;
   return flags || undefined;
+}
+
+/**
+ * The window's Workbench tools (messaging the project's chats and agent windows): its MCP config
+ * file, as Claude Code reads it (a Linux path in WSL), quoted for the window's shell, the settings
+ * file next to it (messages from the user's other sessions accepted) and the tools pre-approved
+ * so using them never asks
+ */
+function sessionToolsFlags(configFile: string, shellKind: ShellKind): string {
+  const file = toRuntimePath(configFile);
+  const quote = (value: string) => shellKind === 'powershell'
+    ? escapePowerShellArg(value)
+    : shellKind === 'posix' ? escapeShellArg(value) : `"${escapeForWindowsDoubleQuote(value)}"`;
+  return ` --mcp-config ${quote(file)} --settings ${quote(toRuntimePath(windowSettingsFile(configFile)))} --allowedTools mcp__${TASK_TOOLS_SERVER_NAME}`;
 }
 
 /**
@@ -1057,14 +1087,14 @@ export function finalizeClaudeInvoke(
 }
 
 /**
- * Handle rate limit detection and profile switching
+ * Handle rate limit detection: the window's account is marked rate limited until its reset
+ * (the window stays on that account)
  */
 export function handleRateLimit(
   terminal: TerminalProcess,
   data: string,
   lastNotifiedRateLimitReset: Map<string, string>,
-  getWindow: WindowGetter,
-  switchProfileCallback: (terminalId: string, profileId: string) => Promise<void>
+  getWindow: WindowGetter
 ): void {
   if (!OutputParser.extractRateLimitReset(data)) {
     return;
@@ -1099,27 +1129,12 @@ export function handleRateLimit(
     console.error('[ClaudeIntegration] Failed to record rate limit event:', err);
   }
 
-  const autoSwitchSettings = profileManager.getAutoSwitchSettings();
-  const bestProfile = profileManager.getBestAvailableProfile(currentProfileId);
-
   safeSendToRenderer(getWindow, IPC_CHANNELS.TERMINAL_RATE_LIMIT, {
     terminalId: terminal.id,
     resetTime,
     detectedAt: new Date().toISOString(),
-    profileId: currentProfileId,
-    suggestedProfileId: bestProfile?.id,
-    suggestedProfileName: bestProfile?.name,
-    autoSwitchEnabled: autoSwitchSettings.autoSwitchOnRateLimit
+    profileId: currentProfileId
   } as RateLimitEvent);
-
-  if (autoSwitchSettings.enabled && autoSwitchSettings.autoSwitchOnRateLimit && bestProfile) {
-    console.warn('[ClaudeIntegration] Auto-switching to profile:', bestProfile.name);
-    switchProfileCallback(terminal.id, bestProfile.id).then(_result => {
-      console.warn('[ClaudeIntegration] Auto-switch completed');
-    }).catch(err => {
-      console.error('[ClaudeIntegration] Auto-switch failed:', err);
-    });
-  }
 }
 
 /**
@@ -1837,8 +1852,11 @@ export async function invokeCLIAsync(
     // A new session gets an id of Workbench's own, so its spending can be read back later
     const newSessionId = resumeSessionId ? undefined : crypto.randomUUID();
 
-    // Extra flags: the session, YOLO mode, the Graphify hint and the matching theme
-    const extraFlags = buildClaudeExtraFlags(terminal, dangerouslySkipPermissions, resumeSessionId, newSessionId);
+    // The window's Workbench tools for messaging the project's chats and agent windows
+    const sessionToolsConfig = await windowToolsConfig(terminal);
+
+    // Extra flags: the session, YOLO mode, the Workbench tools, the Graphify hint and the matching theme
+    const extraFlags = buildClaudeExtraFlags(terminal, dangerouslySkipPermissions, resumeSessionId, newSessionId, sessionToolsConfig);
 
     terminal.isCLIMode = true;
     // Store YOLO mode setting so it persists across profile switches
@@ -1915,6 +1933,7 @@ export async function invokeCLIAsync(
     // terminal already uses that profile, the profile is the default one, or the transcript sits
     // in Claude Code's default dir, where the variable the window carries has to go
     const resumedConfigDir = resumeSessionId ? options.configDir ?? activeProfile?.configDir : undefined;
+    if (resumeSessionId && options.own) trackAgentWindowSession(terminal, resumeSessionId, resumedConfigDir, cwd);
     const sessionAccount = sessionAccountCommand(terminal, resumedConfigDir);
     if (sessionAccount) {
       ensureAccountOnboarded(resumedConfigDir);
@@ -2067,9 +2086,13 @@ async function prepareResumeCommand(terminal: TerminalProcess): Promise<string> 
     const resumed = await resumeOwnSessionFlag(terminal);
     if (resumed.sessionId) await releaseBackgroundSession(resumed.sessionId, claudeCmd, claudeEnv);
 
-    // The session flag, then YOLO mode (preserved from the terminal's stored state), the Graphify
-    // hint and the theme matching the app's
-    const extraFlags = `${resumed.flag}${terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : ''}${appendSystemPromptFlag(terminal)}${claudeThemeFlag(shellKindOf(terminal))}`;
+    // The session flag, then YOLO mode (preserved from the terminal's stored state), the window's
+    // Workbench tools, the Graphify hint and the theme matching the app's
+    const sessionToolsConfig = await windowToolsConfig(terminal);
+    const extraFlags =
+      `${resumed.flag}${terminal.dangerouslySkipPermissions ? YOLO_MODE_FLAG : ''}` +
+      `${sessionToolsConfig ? sessionToolsFlags(sessionToolsConfig, shellKindOf(terminal)) : ''}` +
+      `${appendSystemPromptFlag(terminal, !!sessionToolsConfig)}${sessionToolsConfig ? '' : claudeThemeFlag(shellKindOf(terminal))}`;
 
     // Go to the project directory, then pick the window's own session up again
     const cdCommand = buildCdCommand(windowPath(terminal, terminal.projectPath || terminal.cwd), shellKindOf(terminal));
@@ -2101,7 +2124,7 @@ async function prepareResumeCommand(terminal: TerminalProcess): Promise<string> 
  * The account an agent window's sessions are listed and opened under: its own session's account,
  * else its project's account, else the account in use (undefined is Claude Code's default `~/.claude`)
  */
-async function windowSessionAccount(
+export async function windowSessionAccount(
   terminal: Pick<TerminalProcess, 'id' | 'projectPath'>
 ): Promise<{ own: Awaited<ReturnType<typeof lastAgentSession>>; configDir: string | undefined }> {
   const own = terminal.projectPath ? await lastAgentSession(terminal.projectPath, terminal.id) : undefined;

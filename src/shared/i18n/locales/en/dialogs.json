@@ -84,6 +84,12 @@
     "remove": "Remove",
     "error": "Failed to remove project"
   },
+  "closeWindow": {
+    "title": "Close this window?",
+    "description": "In the background, agents and tasks keep running, and the tray icon opens the window again.",
+    "keepRunning": "Keep running in background",
+    "closeProject": "Close project"
+  },
   "openProject": {
     "title": "Open \"{{projectName}}\" in...",
     "thisWindow": "This window",

@@ -19,16 +19,16 @@ import { KanbanBoard } from './components/KanbanBoard';
 import { TaskDetailModal } from './components/task-detail/TaskDetailModal';
 import { TaskCreationWizard } from './components/TaskCreationWizard';
 import { AppSettingsDialog, type AppSection } from './components/settings/AppSettings';
+import { CloseWindowDialog } from './components/CloseWindowDialog';
 import type { ProjectSettingsSection } from './components/settings/ProjectSettingsContent';
 import { TerminalGrid } from './components/TerminalGrid';
 import { Insights } from './components/Insights';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { ProjectsPage } from './components/ProjectsPage';
 import { AuthFailureModal } from './components/AuthFailureModal';
-import { ProactiveSwapListener } from './components/ProactiveSwapListener';
 import { useProjectStore, loadProjects, initializeProject, removeProject } from './stores/project-store';
 import { useTaskStore, loadTasks } from './stores/task-store';
-import { useInsightsStore, chatBrowserId } from './stores/insights-store';
+import { useInsightsStore, chatBrowserId, switchSession as switchInsightsSession } from './stores/insights-store';
 import { useSettingsStore, loadSettings, loadProfiles } from './stores/settings-store';
 import { loadClaudeProfiles } from './stores/claude-profile-store';
 import { useTerminalStore, restoreTerminalSessions } from './stores/terminal-store';
@@ -45,6 +45,7 @@ import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
 import { INTERFACE_FONT_STACKS } from './lib/font-options';
+import { lastView, rememberView } from './lib/last-view';
 
 
 export function App() {
@@ -92,6 +93,23 @@ export function App() {
       setActiveView('kanban');
     }
   }, [projects.length, activeView]);
+
+  // The window opens its project on the page that project showed last (also after a restart), and
+  // keeps that page remembered from then on
+  const viewProjectId = useProjectStore((state) => state.activeProjectId || state.selectedProjectId);
+  const viewRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!viewProjectId || projects.length === 0) return;
+    if (!viewRestoredRef.current) {
+      viewRestoredRef.current = true;
+      const view = lastView(viewProjectId);
+      if (view && view !== activeView) {
+        setActiveView(view);
+        return;
+      }
+    }
+    rememberView(viewProjectId, activeView);
+  }, [viewProjectId, activeView, projects.length]);
 
   // The Memory view needs the project's memory graph: leave it when the project has none
   const memoryProjectId = useProjectStore((state) => state.activeProjectId ?? state.selectedProjectId);
@@ -592,6 +610,46 @@ export function App() {
     setActiveView('terminals');
   }, [agentsViewRequest, projects, activeProjectId, selectedProjectId, handleSelectProject]);
 
+  // An agent window opened as a chat: show the Claude page of its project, on that chat (the page
+  // opens on the requested chat; one already shown switches to it here)
+  const openChatRequest = useInsightsStore((state) => state.openChatRequest);
+  const handledOpenChatSeqRef = useRef(0);
+  useEffect(() => {
+    if (!openChatRequest || openChatRequest.seq === handledOpenChatSeqRef.current) return;
+    handledOpenChatSeqRef.current = openChatRequest.seq;
+    if (openChatRequest.projectId !== (activeProjectId || selectedProjectId)) {
+      handleSelectProject(openChatRequest.projectId);
+    }
+    if (activeView === 'insights' && openChatRequest.projectId === (activeProjectId || selectedProjectId)) {
+      useInsightsStore.setState({ openChatRequest: null });
+      void switchInsightsSession(openChatRequest.projectId, openChatRequest.chatId);
+      return;
+    }
+    setActiveView('insights');
+  }, [openChatRequest, activeView, activeProjectId, selectedProjectId, handleSelectProject]);
+
+  // A chat messages a closed agent window: it opens again (in the background); a window answering
+  // a chat's message is read-only, shown in its header
+  useEffect(() => {
+    const stopOpen = window.electronAPI.onAgentWindowOpenRequest((request) => {
+      useTerminalStore.getState().reopenAgentWindow(request);
+    });
+    const stopReceiving = window.electronAPI.onTerminalReceivingMessage((id, from) => {
+      useTerminalStore.getState().setReceivingFrom(id, from);
+    });
+    return () => {
+      stopOpen();
+      stopReceiving();
+    };
+  }, []);
+
+  // The sidebar's items. Claude while its page shows (a chat open, or the New chat page): a new
+  // chat, as the page's New chat button; from another page it opens as it was left
+  const handleViewChange = (view: SidebarView) => {
+    if (view === 'insights' && activeView === 'insights') useInsightsStore.getState().requestNewChat();
+    setActiveView(view);
+  };
+
   const handleProjectTabClose = (projectId: string) => {
     // Show confirmation dialog before removing the project
     const project = projects.find(p => p.id === projectId);
@@ -680,14 +738,13 @@ export function App() {
   return (
     <ViewStateProvider>
       <TooltipProvider>
-        <ProactiveSwapListener />
       <div className="flex h-screen bg-background">
         {/* Sidebar */}
         <Sidebar
           onSettingsClick={() => setIsSettingsDialogOpen(true)}
           onNewTaskClick={() => setIsNewTaskDialogOpen(true)}
           activeView={activeView}
-          onViewChange={setActiveView}
+          onViewChange={handleViewChange}
         />
 
         {/* Main content */}
@@ -851,6 +908,9 @@ export function App() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* The close button: keep running in the background or quit */}
+        <CloseWindowDialog />
 
         {/* Open a project: this window or a new one */}
         <Dialog

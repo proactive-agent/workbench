@@ -122,6 +122,10 @@ export const IPC_CHANNELS = {
   TERMINAL_AUTH_CREATED: 'terminal:authCreated',  // Auth terminal created for OAuth flow
   TERMINAL_OAUTH_CODE_NEEDED: 'terminal:oauthCodeNeeded',  // Request user to paste OAuth code from browser
   TERMINAL_OAUTH_CODE_SUBMIT: 'terminal:oauthCodeSubmit',  // User submitted OAuth code to send to terminal
+  TERMINAL_RECEIVING_MESSAGE: 'terminal:receivingMessage',  // An agent window answers a chat's message (read-only), or no longer does
+  TERMINAL_TAKE_OVER: 'terminal:takeOver',  // Give a window answering a message back to the user
+  TERMINAL_FIND_AGENT_WINDOW: 'terminal:findAgentWindow',  // An agent window by its name (agent-…), open or closed
+  AGENT_WINDOW_OPEN_REQUEST: 'terminal:agentWindowOpenRequest',  // Open a closed agent window again (a chat messages it)
   TERMINAL_CLAUDE_BUSY: 'terminal:claudeBusy',  // Claude Code busy state (for visual indicator)
   TERMINAL_CLAUDE_EXIT: 'terminal:claudeExit',  // Claude Code exited (returned to shell)
 
@@ -141,10 +145,7 @@ export const IPC_CHANNELS = {
   CLAUDE_AUTH_LOGIN_SUBPROCESS: 'claude:authLoginSubprocess',  // Run `claude auth login` as subprocess
   CLAUDE_AUTH_LOGIN_PROGRESS: 'claude:authLoginProgress',      // Main → Renderer progress events
   CLAUDE_AUTH_LOGIN_CANCEL: 'claude:authLoginCancel',          // Stop a running `claude auth login`
-  CLAUDE_PROFILE_AUTO_SWITCH_SETTINGS: 'claude:autoSwitchSettings',
-  CLAUDE_PROFILE_UPDATE_AUTO_SWITCH: 'claude:updateAutoSwitch',
   CLAUDE_PROFILE_FETCH_USAGE: 'claude:fetchUsage',
-  CLAUDE_PROFILE_GET_BEST_PROFILE: 'claude:getBestProfile',
 
   // SDK/CLI rate limit event (for non-terminal Claude invocations)
   CLAUDE_SDK_RATE_LIMIT: 'claude:sdkRateLimit',
@@ -153,12 +154,11 @@ export const IPC_CHANNELS = {
   // Retry a rate-limited operation with a different profile
   CLAUDE_RETRY_WITH_PROFILE: 'claude:retryWithProfile',
 
-  // Usage monitoring (proactive account switching)
+  // Usage monitoring
   USAGE_UPDATED: 'claude:usageUpdated',  // Event: usage data updated (main -> renderer)
   USAGE_REQUEST: 'claude:usageRequest',  // Request current usage snapshot
   ALL_PROFILES_USAGE_REQUEST: 'claude:allProfilesUsageRequest',  // Request all profiles usage immediately
   ALL_PROFILES_USAGE_UPDATED: 'claude:allProfilesUsageUpdated',  // Event: all profiles usage data (main -> renderer)
-  PROACTIVE_SWAP_NOTIFICATION: 'claude:proactiveSwapNotification',  // Event: proactive swap occurred
 
   // Settings
   SETTINGS_GET: 'settings:get',
@@ -191,6 +191,8 @@ export const IPC_CHANNELS = {
   WINDOW_OPEN_PROJECT: 'window:openProject',         // Open a project in a new window (or focus the one showing it)
   WINDOW_CLOSE_PROJECT: 'window:closeProject',       // Close the window showing a project ("Quit window")
   WINDOW_PROJECTS_CHANGED: 'window:projectsChanged', // Event: the open windows changed (main -> renderer)
+  WINDOW_CLOSE_REQUESTED: 'window:closeRequested',   // Event: the window's close button was pressed (main -> renderer: ask)
+  WINDOW_CLOSE_CHOICE: 'window:closeChoice',         // What the user chose: keep running in the background or quit
   PROJECT_LIST_CHANGED: 'project:listChanged',       // Event: a project was added or removed (main -> renderer)
 
   // Shell operations
@@ -216,6 +218,10 @@ export const IPC_CHANNELS = {
   INSIGHTS_RENAME_SESSION: 'insights:renameSession',
   INSIGHTS_UPDATE_MODEL_CONFIG: 'insights:updateModelConfig',
   INSIGHTS_GET_ATTACHMENT: 'insights:getAttachment',
+  INSIGHTS_LIST_COMMANDS: 'insights:listCommands',  // Claude Code's slash commands and skills in a project
+  INSIGHTS_OPEN_WINDOW_AS_CHAT: 'insights:openWindowAsChat',  // An agent window's Claude Code session as a chat
+  INSIGHTS_SESSION_WINDOW: 'insights:sessionWindow',          // The agent window running a chat's Claude Code session, if one does
+  INSIGHTS_SYNC_SHARED_SESSION: 'insights:syncSharedSession', // What an agent window said in a chat's session comes into the chat
 
   // Insights events (main -> renderer)
   INSIGHTS_STREAM_CHUNK: 'insights:streamChunk',
@@ -304,11 +310,22 @@ export const IPC_CHANNELS = {
   BROWSER_DRAWER_NAVIGATE: 'browserDrawer:navigate',       // Back, forward, reload or an address
   BROWSER_DRAWER_CLOSE_PAGE: 'browserDrawer:closePage',
   BROWSER_DRAWER_NEW_PAGE: 'browserDrawer:newPage',        // A new tab in a session's browser
+  BROWSER_DRAWER_COPY: 'browserDrawer:copy',               // The copy/cut shortcut: the page's selection to the clipboard
+  BROWSER_DRAWER_BOOKMARKS: 'browserDrawer:bookmarks',     // The bookmarks bar of a session's browser profile
+  BROWSER_DRAWER_EXTENSIONS: 'browserDrawer:extensions',   // A chat browser's extensions, switching some on or off
+  BROWSER_DRAWER_EXTENSION_ACTION: 'browserDrawer:extensionAction', // Click an extension's toolbar button for a page (its popup opens)
+  BROWSER_DRAWER_RESTART_CHAT_BROWSER: 'browserDrawer:restartChatBrowser', // Start a chat browser again (its extension switches apply)
   BROWSER_DRAWER_COLOR_SCHEME: 'browserDrawer:colorScheme', // Workbench's theme, for the chat browsers' pages
   BROWSER_DRAWER_OPEN_CHAT_BROWSER: 'browserDrawer:openChatBrowser',   // Open a chat's own browser
   BROWSER_DRAWER_CLOSE_CHAT_BROWSER: 'browserDrawer:closeChatBrowser', // Close a chat's own browser
   BROWSER_DRAWER_STATE: 'browserDrawer:state',             // main -> renderer: sessions or pages changed
   BROWSER_DRAWER_FRAME: 'browserDrawer:frame',             // main -> renderer: a frame of the viewed page
+  BROWSER_DRAWER_CURSOR: 'browserDrawer:cursor',           // main -> renderer: the cursor the viewed page asks for
+  BROWSER_DRAWER_SHORTCUTS: 'browserDrawer:shortcuts',     // A window's drawer is open with tabs (its browser shortcuts are caught) or not
+  BROWSER_DRAWER_SHORTCUT: 'browserDrawer:shortcut',       // main -> renderer: a browser shortcut was pressed (Ctrl+T, Ctrl+W, Ctrl+Tab...)
+  BROWSER_RUNTIME_STATUS: 'browserRuntime:status',               // Windows: what opening a chat browser with a profile needs that is missing
+  BROWSER_RUNTIME_AUTOCONFIGURE: 'browserRuntime:autoconfigure', // A PowerShell window installs what opening a chat browser needs
+  BROWSER_RUNTIME_STATUS_CHANGED: 'browserRuntime:statusChanged', // main -> renderer: an autoconfigure window opened or closed
 
   // MCP Server health checks
   MCP_CHECK_HEALTH: 'mcp:checkHealth',           // Quick connectivity check
@@ -321,18 +338,5 @@ export const IPC_CHANNELS = {
 
 
   // Spell check
-  SPELLCHECK_SET_LANGUAGES: 'spellcheck:setLanguages',  // Set spell check language (syncs with i18n)
-
-  // Queue routing (rate limit recovery)
-  QUEUE_GET_RUNNING_TASKS_BY_PROFILE: 'queue:getRunningTasksByProfile',
-  QUEUE_GET_BEST_PROFILE_FOR_TASK: 'queue:getBestProfileForTask',
-  QUEUE_GET_BEST_UNIFIED_ACCOUNT: 'queue:getBestUnifiedAccount', // Unified OAuth + API account selection
-  QUEUE_ASSIGN_PROFILE_TO_TASK: 'queue:assignProfileToTask',
-  QUEUE_UPDATE_TASK_SESSION: 'queue:updateTaskSession',
-  QUEUE_GET_TASK_SESSION: 'queue:getTaskSession',
-
-  // Queue routing events (main -> renderer)
-  QUEUE_PROFILE_SWAPPED: 'queue:profileSwapped',      // Task switched to different profile
-  QUEUE_SESSION_CAPTURED: 'queue:sessionCaptured',    // Session ID captured from running task
-  QUEUE_BLOCKED_NO_PROFILES: 'queue:blockedNoProfiles' // All profiles unavailable
+  SPELLCHECK_SET_LANGUAGES: 'spellcheck:setLanguages'  // Set spell check language (syncs with i18n)
 } as const;

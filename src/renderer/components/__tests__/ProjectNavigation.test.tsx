@@ -70,17 +70,19 @@ describe('ProjectsPage', () => {
   const cardNames = () =>
     screen.getAllByRole('button').filter((el) => el.hasAttribute('tabindex')).map((el) => el.querySelector('span')?.textContent);
 
-  it('lists projects by name (A–Z) by default', () => {
-    renderPage();
-    expect(cardNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+  it('lists the latest opened projects first (last changed for those never opened since)', () => {
+    renderPage([...projects, { ...project('d', 'Delta', '2026-09-01T00:00:00Z'), lastOpenedAt: new Date('2026-10-10T00:00:00Z') }]);
+    expect(cardNames()).toEqual(['Delta', 'Bravo', 'Charlie', 'Alpha']);
   });
 
-  it('toggles between descending and ascending name order', () => {
+  it('goes on to name order A–Z, then Z–A, then back to the latest opened', () => {
     renderPage();
-    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.nameDesc' }));
-    expect(cardNames()).toEqual(['Charlie', 'Bravo', 'Alpha']);
     fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.nameAsc' }));
     expect(cardNames()).toEqual(['Alpha', 'Bravo', 'Charlie']);
+    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.nameDesc' }));
+    expect(cardNames()).toEqual(['Charlie', 'Bravo', 'Alpha']);
+    fireEvent.click(screen.getByRole('button', { name: 'projectsPage.sortBy.recent' }));
+    expect(cardNames()).toEqual(['Bravo', 'Charlie', 'Alpha']);
   });
 
   it('filters by name or path when searching', () => {
