@@ -45,6 +45,8 @@ reviews, requests changes (same session continues) or merges.
 - **Multiple accounts** — Each project runs on the Claude account chosen for it; work never moves to another account by
   itself: a rate-limited account's tasks wait for its reset and resume on it
 - **Cross-Platform** — Windows, macOS, and Linux with in-app updates (Settings > Updates)
+- **Pages as left** — Each project's window opens on the page it showed last, also after a restart
+  (`src/renderer/lib/last-view.ts`, localStorage flushed on quit)
 
 ## Critical Rules
 

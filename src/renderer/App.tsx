@@ -45,6 +45,7 @@ import type { Task, Project } from '../shared/types';
 import { AddProjectModal, pickAndAddExistingProject, type AddProjectModalStep } from './components/AddProjectModal';
 import { ViewStateProvider } from './contexts/ViewStateContext';
 import { INTERFACE_FONT_STACKS } from './lib/font-options';
+import { lastView, rememberView } from './lib/last-view';
 
 
 export function App() {
@@ -92,6 +93,23 @@ export function App() {
       setActiveView('kanban');
     }
   }, [projects.length, activeView]);
+
+  // The window opens its project on the page that project showed last (also after a restart), and
+  // keeps that page remembered from then on
+  const viewProjectId = useProjectStore((state) => state.activeProjectId || state.selectedProjectId);
+  const viewRestoredRef = useRef(false);
+  useEffect(() => {
+    if (!viewProjectId || projects.length === 0) return;
+    if (!viewRestoredRef.current) {
+      viewRestoredRef.current = true;
+      const view = lastView(viewProjectId);
+      if (view && view !== activeView) {
+        setActiveView(view);
+        return;
+      }
+    }
+    rememberView(viewProjectId, activeView);
+  }, [viewProjectId, activeView, projects.length]);
 
   // The Memory view needs the project's memory graph: leave it when the project has none
   const memoryProjectId = useProjectStore((state) => state.activeProjectId ?? state.selectedProjectId);
